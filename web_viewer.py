@@ -1,20 +1,20 @@
 # web_viewer.py
-import os
-import io
 import csv
+import io
+import os
 from urllib.parse import urlencode
-from flask import Flask, request, render_template_string, abort, Response, jsonify
-import psycopg
-from psycopg_pool import ConnectionPool
+
+from flask import Flask, Response, abort, jsonify, render_template_string, request
 from jinja2 import DictLoader
+from psycopg_pool import ConnectionPool
 
 # ---------- Config (env) ----------
 PGHOST = os.getenv("PGHOST", "192.168.0.8")
 PGPORT = int(os.getenv("PGPORT", "5433"))
-PGDATABASE = os.getenv("PGDATABASE", "ctip")   # <- suggest using ctip
+PGDATABASE = os.getenv("PGDATABASE", "ctip")  # <- suggest using ctip
 PGUSER = os.getenv("PGUSER", "appuser")
 PGPASSWORD = os.getenv("PGPASSWORD", "change_me")
-PGSCHEMA = os.getenv("PGSCHEMA", "ctip")       # app-only variable (NOT passed to libpq)
+PGSCHEMA = os.getenv("PGSCHEMA", "ctip")  # app-only variable (NOT passed to libpq)
 PGSSLMODE = os.getenv("PGSSLMODE", "disable")
 POOL_MIN = int(os.getenv("POOL_MIN", "1"))
 POOL_MAX = int(os.getenv("POOL_MAX", "10"))
@@ -26,7 +26,9 @@ CONNINFO = (
 )
 
 # Create pool (autocommit for read-only and simple inserts)
-pool = ConnectionPool(conninfo=CONNINFO, min_size=POOL_MIN, max_size=POOL_MAX, kwargs={"autocommit": True})
+pool = ConnectionPool(
+    conninfo=CONNINFO, min_size=POOL_MIN, max_size=POOL_MAX, kwargs={"autocommit": True}
+)
 
 app = Flask(__name__)
 
@@ -145,12 +147,14 @@ TABLE_HTML = """
 """
 
 # Register base template in memory
-app.jinja_loader = DictLoader({'base': BASE_HTML})
+app.jinja_loader = DictLoader({"base": BASE_HTML})
+
 
 # ---------- Helpers ----------
 def url_with_params(base, **kwargs):
     clean = {k: v for k, v in kwargs.items() if v not in [None, "", 0]}
     return f"{base}?{urlencode(clean)}" if clean else base
+
 
 def list_tables(schema: str):
     sql = """
@@ -163,6 +167,7 @@ def list_tables(schema: str):
         cur.execute(sql, (schema,))
         return [r[0] for r in cur.fetchall()]
 
+
 def list_columns(table: str, schema: str):
     sql = """
       select column_name, data_type
@@ -174,9 +179,11 @@ def list_columns(table: str, schema: str):
         cur.execute(sql, (schema, table))
         return [{"name": r[0], "type": r[1]} for r in cur.fetchall()]
 
+
 def text_like_columns(columns):
     text_types = {"character varying", "text", "character", "citext", "uuid"}
     return [c["name"] for c in columns if c["type"] in text_types]
+
 
 def fetch_rows(table: str, schema: str, page=1, page_size=20, q=None, sort=None, order="asc"):
     cols = list_columns(table, schema)
@@ -212,8 +219,9 @@ def fetch_rows(table: str, schema: str, page=1, page_size=20, q=None, sort=None,
         rows = cur.fetchall()
         colnames = [d[0] for d in cur.description]
 
-    dict_rows = [dict(zip(colnames, r)) for r in rows]
+    dict_rows = [dict(zip(colnames, r, strict=False)) for r in rows]
     return cols, dict_rows, total
+
 
 # ---------- Routes ----------
 @app.route("/health")
@@ -226,19 +234,25 @@ def health():
     except Exception as e:
         return jsonify({"status": "error", "detail": str(e)}), 500
 
+
 @app.route("/")
 def home():
     return render_template_string(
         HOME_HTML,
         title="PG Web Viewer",
-        pg_host=PGHOST, pg_port=PGPORT, pg_db=PGDATABASE, pg_user=PGUSER,
-        pg_schema=PGSCHEMA
+        pg_host=PGHOST,
+        pg_port=PGPORT,
+        pg_db=PGDATABASE,
+        pg_user=PGUSER,
+        pg_schema=PGSCHEMA,
     )
+
 
 @app.route("/tables")
 def tables():
     tbls = list_tables(PGSCHEMA)
     return render_template_string(TABLES_HTML, tables=tbls, pg_schema=PGSCHEMA)
+
 
 @app.route("/table/<table>")
 def table_view(table):
@@ -253,18 +267,30 @@ def table_view(table):
     order = request.args.get("order") or "asc"
 
     columns, rows, total = fetch_rows(
-        table=table, schema=PGSCHEMA, page=page,
+        table=table,
+        schema=PGSCHEMA,
+        page=page,
         page_size=min(max(page_size, 5), 200),
-        q=q, sort=sort, order=order
+        q=q,
+        sort=sort,
+        order=order,
     )
 
     return render_template_string(
         TABLE_HTML,
         title=f"Table: {table}",
-        table=table, columns=columns, rows=rows, total=total,
-        page=page, page_size=page_size, q=q, sort=sort, order=order,
-        url_with_params=url_with_params
+        table=table,
+        columns=columns,
+        rows=rows,
+        total=total,
+        page=page,
+        page_size=page_size,
+        q=q,
+        sort=sort,
+        order=order,
+        url_with_params=url_with_params,
     )
+
 
 @app.route("/table/<table>/csv")
 def table_csv(table):
@@ -307,8 +333,9 @@ def table_csv(table):
     return Response(
         data,
         mimetype="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{table}.csv"'}
+        headers={"Content-Disposition": f'attachment; filename="{table}.csv"'},
     )
+
 
 # ---------- Entry ----------
 if __name__ == "__main__":

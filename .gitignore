@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.dist/
+build/
+dist/
+.venv/
+venv/
+.env
+.env.*        # realne sekrety
+*.log
+
+# Tools
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# VS Code
+.vscode/
+.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db

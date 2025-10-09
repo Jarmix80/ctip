@@ -6,17 +6,17 @@
 
 import os
 import socket
+import threading
 import time
 from contextlib import closing
-from datetime import datetime, timezone
-import threading
+from datetime import UTC, datetime
 
 import psycopg
 
 # -------------------- Config (env) --------------------
 PBX_HOST = os.getenv("PBX_HOST", "192.168.0.8")
 PBX_PORT = int(os.getenv("PBX_PORT", "5524"))
-PBX_PIN  = os.getenv("PBX_PIN", "0000")  # CTIP LOGA PIN
+PBX_PIN = os.getenv("PBX_PIN", "0000")  # CTIP LOGA PIN
 
 PGHOST = os.getenv("PGHOST", "192.168.0.8")
 PGPORT = int(os.getenv("PGPORT", "5433"))
@@ -26,37 +26,46 @@ PGPASSWORD = os.getenv("PGPASSWORD", "change_me")
 PGSSLMODE = os.getenv("PGSSLMODE", "disable")
 
 SOCK_CONNECT_TIMEOUT = int(os.getenv("SOCK_CONNECT_TIMEOUT", "5"))
-SOCK_RECV_TIMEOUT    = int(os.getenv("SOCK_RECV_TIMEOUT", "5"))
-RECONNECT_DELAY_SEC  = int(os.getenv("RECONNECT_DELAY_SEC", "3"))
+SOCK_RECV_TIMEOUT = int(os.getenv("SOCK_RECV_TIMEOUT", "5"))
+RECONNECT_DELAY_SEC = int(os.getenv("RECONNECT_DELAY_SEC", "3"))
 
 PAYLOAD_ENCODING = os.getenv("PAYLOAD_ENCODING", "latin-1")
 LOG_PREFIX = "[CTIP]"
+
 
 # -------------------- Helpers --------------------
 def norm_ext(s: str) -> str:
     if not s:
         return s
     s = s.strip()
-    s = s.split('/', 1)[0]
-    while s.endswith('_'):
+    s = s.split("/", 1)[0]
+    while s.endswith("_"):
         s = s[:-1]
-    s = ''.join(ch for ch in s if ch.isdigit())
+    s = "".join(ch for ch in s if ch.isdigit())
     return s
 
+
 def utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
+
 
 def db_connect():
     return psycopg.connect(
-        host=PGHOST, port=PGPORT, dbname=PGDATABASE,
-        user=PGUSER, password=PGPASSWORD, sslmode=PGSSLMODE,
+        host=PGHOST,
+        port=PGPORT,
+        dbname=PGDATABASE,
+        user=PGUSER,
+        password=PGPASSWORD,
+        sslmode=PGSSLMODE,
         autocommit=True,
-        options="-c search_path=ctip"
+        options="-c search_path=ctip",
     )
+
 
 def ensure_tables(conn):
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
         CREATE SCHEMA IF NOT EXISTS ctip;
 
         CREATE TABLE IF NOT EXISTS calls (
@@ -113,32 +122,43 @@ def ensure_tables(conn):
         CREATE INDEX IF NOT EXISTS idx_calls_started_at ON calls(started_at);
         CREATE INDEX IF NOT EXISTS idx_calls_number ON calls(number);
         CREATE INDEX IF NOT EXISTS idx_call_events_ts ON call_events(ts);
-        """)
+        """
+        )
+
 
 def call_insert(conn, ext, number, direction, state):
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO calls(ext, number, direction, started_at, last_state, disposition)
             VALUES (%s, %s, %s, %s, %s, 'UNKNOWN')
             RETURNING id
-        """, (ext, number, direction, utcnow(), state))
+        """,
+            (ext, number, direction, utcnow(), state),
+        )
         return cur.fetchone()[0]
+
 
 def call_update_connected(conn, call_id, answered_by):
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE calls
                SET connected_at = COALESCE(connected_at, %s),
                    answered_by  = COALESCE(answered_by, %s),
                    last_state   = 'CONN',
                    disposition  = 'ANSWERED'
              WHERE id = %s
-        """, (utcnow(), answered_by, call_id))
+        """,
+            (utcnow(), answered_by, call_id),
+        )
+
 
 def call_update_ended(conn, call_id):
     now = utcnow()
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE calls
                SET ended_at = %s,
                    duration_s = CASE
@@ -151,25 +171,36 @@ def call_update_ended(conn, call_id):
                                   ELSE disposition
                                 END
              WHERE id = %s
-        """, (now, now, call_id))
+        """,
+            (now, now, call_id),
+        )
+
 
 def ev_insert(conn, call_id, typ, ext, number, payload_bytes: bytes):
     payload_txt = payload_bytes.decode(PAYLOAD_ENCODING, errors="ignore") if payload_bytes else None
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO call_events(call_id, ts, typ, ext, number, payload)
             VALUES (NULLIF(%s,0), %s, %s, %s, %s, %s)
-        """, (call_id or 0, utcnow(), typ, ext, number, payload_txt))
+        """,
+            (call_id or 0, utcnow(), typ, ext, number, payload_txt),
+        )
+
 
 def enqueue_sms(conn, call_id: int, dest: str, text: str):
     if not dest:
         return
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO sms_out(dest, text, source, status, call_id, meta)
             VALUES (%s, %s, 'ivr', 'NEW', %s, jsonb_build_object('reason','ivr_map'))
             ON CONFLICT (call_id) WHERE source='ivr' DO NOTHING
-        """, (dest, text, call_id))
+        """,
+            (dest, text, call_id),
+        )
+
 
 # -------------------- CTIP Client --------------------
 class CTIPClient(threading.Thread):
@@ -217,20 +248,25 @@ class CTIPClient(threading.Thread):
             return None, None
         ext_norm = norm_ext(ext_raw)
         with self.conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT digit, sms_text
                   FROM ctip.ivr_map
                  WHERE enabled = true
                    AND ext IN (%s, %s)
                  LIMIT 1
-            """, (ext_norm, ext_raw))
+            """,
+                (ext_norm, ext_raw),
+            )
             row = cur.fetchone()
         return (row[0], row[1]) if row else (None, None)
 
     def run(self):
         while not self._stop.is_set():
             try:
-                with closing(socket.create_connection((PBX_HOST, PBX_PORT), timeout=SOCK_CONNECT_TIMEOUT)) as s:
+                with closing(
+                    socket.create_connection((PBX_HOST, PBX_PORT), timeout=SOCK_CONNECT_TIMEOUT)
+                ) as s:
                     s.settimeout(SOCK_RECV_TIMEOUT)
                     self.sock = s
                     print(f"{LOG_PREFIX} connected to {PBX_HOST}:{PBX_PORT}")
@@ -254,7 +290,7 @@ class CTIPClient(threading.Thread):
                                 leftover = lines[-1]
                                 for ln in lines[:-1]:
                                     self.handle_packet(ln)
-                            except socket.timeout:
+                            except TimeoutError:
                                 continue
             except Exception as e:
                 print(f"{LOG_PREFIX} reconnect in {RECONNECT_DELAY_SEC}s after error: {e}")
@@ -277,7 +313,7 @@ class CTIPClient(threading.Thread):
         if typ == "ECHO":
             # ECHO <ext> <digits>
             ext_txt = parts[1] if len(parts) > 1 else None
-            digits  = parts[2] if len(parts) > 2 else None
+            digits = parts[2] if len(parts) > 2 else None
 
             self.current_ext = ext_txt
             self.current_cli = digits
@@ -292,7 +328,7 @@ class CTIPClient(threading.Thread):
         if typ == "RING":
             # RING <ext> <cli>
             ext_txt = parts[1] if len(parts) > 1 else None
-            cli     = parts[2] if len(parts) > 2 else None
+            cli = parts[2] if len(parts) > 2 else None
 
             self.current_ext = ext_txt
             self.current_cli = cli
@@ -304,21 +340,42 @@ class CTIPClient(threading.Thread):
 
             # IVR inference
             ext_norm = norm_ext(ext_txt)
-            ev_insert(self.conn, cid, "INFO", ext_txt, cli, f"NORM_EXT={ext_norm}".encode("ascii", errors="ignore"))
+            ev_insert(
+                self.conn,
+                cid,
+                "INFO",
+                ext_txt,
+                cli,
+                f"NORM_EXT={ext_norm}".encode("ascii", errors="ignore"),
+            )
 
             digit, sms_text = self.lookup_ivr_map(ext_norm)
             if digit is not None and sms_text:
-                ev_insert(self.conn, cid, "INFO", ext_txt, cli, f"IVR_MAP_HIT digit={digit}".encode("ascii", errors="ignore"))
+                ev_insert(
+                    self.conn,
+                    cid,
+                    "INFO",
+                    ext_txt,
+                    cli,
+                    f"IVR_MAP_HIT digit={digit}".encode("ascii", errors="ignore"),
+                )
                 enqueue_sms(self.conn, cid, cli, sms_text)
             else:
-                ev_insert(self.conn, cid, "INFO", ext_txt, cli, f"IVR_MAP_MISS ext={ext_norm}".encode("ascii", errors="ignore"))
+                ev_insert(
+                    self.conn,
+                    cid,
+                    "INFO",
+                    ext_txt,
+                    cli,
+                    f"IVR_MAP_MISS ext={ext_norm}".encode("ascii", errors="ignore"),
+                )
             return
 
         # CONN: connected
         if typ == "CONN":
             # CONN <ext> <peer>
             ext_txt = parts[1] if len(parts) > 1 else None
-            peer    = parts[2] if len(parts) > 2 else None
+            peer = parts[2] if len(parts) > 2 else None
 
             cid = self.current_call_id
             if cid is None:
@@ -333,7 +390,7 @@ class CTIPClient(threading.Thread):
         if typ == "REL":
             # REL <ext> <reason?>
             ext_txt = parts[1] if len(parts) > 1 else None
-            reason  = parts[2] if len(parts) > 2 else None
+            reason = parts[2] if len(parts) > 2 else None
 
             cid = self.current_call_id
             if cid is None:
@@ -354,12 +411,13 @@ class CTIPClient(threading.Thread):
         if typ in ("STAT", "INFO", "EVNT", "WARN", "ERR"):
             cid = self.current_call_id or 0
             ext_txt = parts[1] if len(parts) > 1 else None
-            num     = parts[2] if len(parts) > 2 else None
+            num = parts[2] if len(parts) > 2 else None
             ev_insert(self.conn, cid, typ, ext_txt, num, raw)
             return
 
         # Fallback
         ev_insert(self.conn, self.current_call_id or 0, typ, None, None, raw)
+
 
 # -------------------- Main --------------------
 def main():
@@ -373,6 +431,7 @@ def main():
         print(f"{LOG_PREFIX} stopping...")
         t.stop()
         time.sleep(1)
+
 
 if __name__ == "__main__":
     main()

@@ -1,10 +1,12 @@
 import os
-import time
 import subprocess
+import time
+
+import servicemanager
 import win32event
 import win32service
 import win32serviceutil
-import servicemanager
+
 
 class CollectorService(win32serviceutil.ServiceFramework):
     _svc_name_ = "CollectorService"
@@ -31,7 +33,7 @@ class CollectorService(win32serviceutil.ServiceFramework):
             cwd=self.work_dir,
             stdout=out_f,
             stderr=err_f,
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         return out_f, err_f
 
@@ -99,6 +101,7 @@ class CollectorService(win32serviceutil.ServiceFramework):
                         pass
                     time.sleep(backoff)
                     continue
+
 
 if __name__ == "__main__":
     win32serviceutil.HandleCommandLine(CollectorService)
