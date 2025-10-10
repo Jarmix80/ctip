@@ -63,7 +63,7 @@ Procedura wymaga wcześniejszego zainstalowania zależności opisanych w sekcji 
 4. `collector_full.py` automatyzuje powyższą sekwencję, loguje identyfikator centrali i przerywa pracę, gdy `aLOGA` zostanie odrzucone (np. z powodu aktywnej sesji innego kolektora).
 
 ## Przygotowanie bazy danych
-`collector_full.py` samodzielnie tworzy schemat `ctip` wraz z tabelami `calls`, `call_events`, `sms_out` oraz `ivr_map`. Administrator powinien zapewnić konto z prawami `CREATE` w schemacie docelowym oraz zdefiniować wpisy `ivr_map`, które mapują tonowe wybory IVR na treść wiadomości SMS.
+Schemat `ctip` musi być dostarczony zewnętrznie (migracje lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Administrator powinien przed startem kolektora uruchomić aktualną migrację (np. `psql $DATABASE_URL -f docs/baza/schema_ctip_11.10.2025.sql`) oraz uzupełnić mapę IVR.
 
 Przykładowe wstawienie rekordu:
 ```sql
@@ -71,13 +71,17 @@ INSERT INTO ctip.ivr_map(digit, ext, sms_text)
 VALUES (1, '203', 'Klient oczekuje na rozmowę z działem serwisu.');
 ```
 
-Jeżeli schemat/tabele zostały utworzone wcześniej innym użytkownikiem, `collector_full.py` zgłosi ostrzeżenie o braku uprawnień do rekreacji indeksów. W takiej sytuacji należy przekazać własność obiektów na konto operacyjne (`appuser`), np.:
+Jeżeli schemat został utworzony przez konto `postgres`, należy przekazać własność i prawa operacyjne użytkownikowi aplikacyjnemu (`appuser`), np.:
 ```sql
 ALTER TABLE ctip.sms_out OWNER TO appuser;
 ALTER TABLE ctip.calls OWNER TO appuser;
 ALTER TABLE ctip.call_events OWNER TO appuser;
+ALTER TABLE ctip.contact OWNER TO appuser;
+ALTER TABLE ctip.contact_device OWNER TO appuser;
 ALTER TABLE ctip.ivr_map OWNER TO appuser;
 ALTER SEQUENCE ctip.sms_out_id_seq OWNER TO appuser;
+ALTER SEQUENCE ctip.calls_id_seq OWNER TO appuser;
+ALTER SEQUENCE ctip.call_events_id_seq OWNER TO appuser;
 ```
 
 ## Instalacja i uruchomienie na Linux
@@ -104,7 +108,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `POST /sms/send` – zapis SMS do kolejki `ctip.sms_out`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
 
-Autoryzacja zostanie uzupełniona w kolejnych iteracjach (obecnie funkcja `get_current_user_id` zwraca identyfikator testowy `1`).
+Każde żądanie musi zawierać nagłówek `X-User-Id` (liczbowy identyfikator użytkownika); w razie braku serwer zwróci `401 UNAUTHORIZED`. Docelowo mechanizm można zastąpić warstwą JWT/SSO.
 
 ## Instalacja jako usługa Windows
 1. Zainstaluj Python oraz zależności (`pip install psycopg pywin32`).
@@ -133,8 +137,12 @@ Funkcja `send_sms` w `sms_sender.py` jest atrapą wypisującą komunikat na STDO
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; katalog aktualnie pusty, przeznaczony do uzupełnienia przez administratora.
+- 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.
 - `prototype/index.html` – statyczny prototyp interfejsu użytkownika prezentujący widok listy połączeń CTIP, panel szczegółów, szybkie akcje SMS oraz historię wiadomości (dane przykładowe, brak połączenia z API).
 
 ## Testowanie i rozwój
 Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`) oraz minimalne testy klienta monitorującego (`tests/test_conect_sli.py`). Uruchom je poleceniem `python -m unittest`. W przypadku rozszerzania logiki parsowania zdarzeń oraz wysyłki SMS rekomendowane jest dopisywanie kolejnych testów (zarówno dla parsowania strumienia, jak i integracji z API SMS). Każda modyfikacja kodu powinna być od razu odzwierciedlona w dokumentacji i w sekwencjach testowych.
+  - Zadania planowane.
+## Zadania planowane
+Szczegółowy rejestr zadań znajduje się w pliku `docs/projekt/zadania_planowane.md`.
