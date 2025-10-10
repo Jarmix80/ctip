@@ -63,7 +63,7 @@ Procedura wymaga wcześniejszego zainstalowania zależności opisanych w sekcji 
 4. `collector_full.py` automatyzuje powyższą sekwencję, loguje identyfikator centrali i przerywa pracę, gdy `aLOGA` zostanie odrzucone (np. z powodu aktywnej sesji innego kolektora).
 
 ## Przygotowanie bazy danych
-Schemat `ctip` musi być dostarczony zewnętrznie (migracje lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Administrator powinien przed startem kolektora uruchomić aktualną migrację (np. `psql $DATABASE_URL -f docs/baza/schema_ctip_11.10.2025.sql`) oraz uzupełnić mapę IVR.
+Schemat `ctip` musi być dostarczony zewnętrznie (migracje Alembic lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Przed uruchomieniem kolektora ustaw `.env` (np. na podstawie `.env.example`), wykonaj `alembic upgrade head`, a w sytuacjach awaryjnych możesz jednorazowo zaimportować zrzut SQL (np. `psql $DATABASE_URL -f docs/baza/schema_ctip_11.10.2025.sql`). Po migracji uzupełnij mapę IVR.
 
 Przykładowe wstawienie rekordu:
 ```sql
