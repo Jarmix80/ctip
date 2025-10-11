@@ -43,3 +43,24 @@
 - Sandboxing: danger-full-access
 - Sieć: enabled
 - Polityka zatwierdzania: never
+
+## Sesja 3 (2025-10-11T03:55:09+02:00)
+### Streszczenie
+- Wdrożono pełny moduł backendu FastAPI (pakiet `app/`), w tym logikę kontaktów, połączeń, szablonów SMS i API panelu klienckiego.
+- Zainicjowano migracje Alembic z tabelą `ctip.sms_template`, relacjami i indeksami, a także rozszerzono `sms_sender.py` o transport SerwerSMS (token/login, tryb testowy).
+- Dodano dokumentację (`docs/centralka/serwersms_https_api_v2_manual.md`, README z sekcją endpointów i zmiennych), plik `.env.example`, manual SerwerSMS oraz wpisy archiwalne.
+- Usunięto artefakty (`pass.txt`, logi w `docs/LOG/`, pliki Zone.Identifier) i zaktualizowano `.gitignore`.
+
+### Pliki zmodyfikowane
+`README.md`, `.env.example`, `app/__init__.py`, `app/api/*`, `app/core/config.py`, `app/db/*`, `app/main.py`, `app/models/*`, `app/schemas/*`, `app/services/*`, `sms_sender.py`, `alembic.ini`, `alembic/env.py`, `alembic/versions/*`, `docs/centralka/serwersms_https_api_v2_manual.md`, `docs/projekt/zadania_planowane.md`, `docs/archiwum/sesja_codex_2025-10-11.md`, `.gitignore`
+
+### Metryki repozytorium
+- Gałąź: `main`
+- Ostatni commit: `d021ce9 Transport SMS: konfiguracja SerwerSMS i nowe zmienne środowiskowe`
+- Status roboczy: brak zmian (`git status --short` jest pusty)
+
+### Ustawienia Codex
+- Poziom rozumowania: high
+- Sandboxing: workspace-write
+- Sieć: restricted
+- Polityka zatwierdzania: on-request
