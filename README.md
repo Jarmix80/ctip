@@ -121,6 +121,7 @@ Zmiana konfiguracji wymaga zatrzymania usługi, aktualizacji plików i ponownego
 
 ## Integracja wysyłki SMS
 Funkcja `send_sms` w `sms_sender.py` jest atrapą wypisującą komunikat na STDOUT. Należy podmienić implementację na właściwe API (np. REST operatora) i obsłużyć błędy biznesowe. W razie niepowodzenia wpis `sms_out` powinien otrzymać status `ERROR` wraz z treścią błędu.
+Przykładową biblioteką kliencką jest projekt SerwerSMS: ``https://github.com/SerwerSMSpl/serwersms-python-api``. Szczegółowy manual HTTPS API v2 znajduje się w pliku `docs/centralka/serwersms_https_api_v2_manual.md` (opracowany na bazie https://dev.serwersms.pl/https-api-v2/wprowadzenie i powiązanych podstron).
 
 ## Diagnostyka i monitoring
 - Logi kolektora zawierają prefiks `LOG_PREFIX` i są wypisywane na STDOUT/STDERR lub do pliku (w Windows wg konfiguracji usługi).
