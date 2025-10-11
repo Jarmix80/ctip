@@ -47,7 +47,8 @@ def _map_sms(model: SmsOut | None) -> SmsHistoryItem | None:
         status=model.status,
         provider_status=model.provider_status,
         sender=str(model.created_by) if model.created_by is not None else None,
-        template=model.origin or model.source,
+        template_id=model.template_id,
+        template_name=model.template.name if getattr(model, "template", None) else None,
         text=model.text,
     )
 
@@ -60,7 +61,8 @@ def _map_sms_many(models: Iterable[SmsOut]) -> list[SmsHistoryItem]:
             status=item.status,
             provider_status=item.provider_status,
             sender=str(item.created_by) if item.created_by is not None else None,
-            template=item.origin or item.source,
+            template_id=item.template_id,
+            template_name=item.template.name if getattr(item, "template", None) else None,
             text=item.text,
         )
         for item in models

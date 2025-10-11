@@ -45,6 +45,8 @@ class SmsHistoryItem(BaseModel):
     template_name: str | None
     text: str
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class SmsSendRequest(BaseModel):
     """Żądanie wysłania SMS z poziomu UI."""

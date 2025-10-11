@@ -105,8 +105,12 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /health` – status serwera.
 - `GET /calls` – lista połączeń z filtrami (kierunek, status, wewnętrzny, zakres dat, wyszukiwanie tekstowe).
 - `GET /calls/{call_id}` – szczegóły połączenia (zdarzenia CTIP, historia SMS).
-- `POST /sms/send` – zapis SMS do kolejki `ctip.sms_out`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
+- `GET /sms/templates` – lista szablonów (globalnych i użytkownika).
+- `POST /sms/templates` – dodawanie szablonów (globalny tylko dla administratora).
+- `POST /sms/send` – zapis SMS do kolejki `ctip.sms_out` (treść lub szablon).
+- `GET /sms/history` – historia wysyłek z filtrem po numerze/statusie/połączeniu.
+- `GET /sms/account` – podstawowe statystyki (liczba wysłanych, oczekujących, błędnych).
 
 Każde żądanie musi zawierać nagłówek `X-User-Id` (liczbowy identyfikator użytkownika); w razie braku serwer zwróci `401 UNAUTHORIZED`. Docelowo mechanizm można zastąpić warstwą JWT/SSO.
 

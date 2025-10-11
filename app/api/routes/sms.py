@@ -20,6 +20,19 @@ from app.schemas.sms import (
 router = APIRouter(prefix="/sms", tags=["sms"])
 
 
+def _map_sms(model: SmsOut) -> SmsHistoryItem:
+    return SmsHistoryItem(
+        id=model.id,
+        created_at=model.created_at,
+        status=model.status,
+        provider_status=model.provider_status,
+        sender=str(model.created_by) if model.created_by is not None else None,
+        template_id=model.template_id,
+        template_name=model.template.name if model.template else None,
+        text=model.text,
+    )
+
+
 async def _resolve_template(session: AsyncSession, template_id: int, user_id: int) -> SmsTemplate:
     stmt = select(SmsTemplate).where(SmsTemplate.id == template_id)
     result = await session.execute(stmt)
@@ -119,16 +132,7 @@ async def enqueue_sms(
     await session.commit()
     await session.refresh(sms)
 
-    return SmsHistoryItem(
-        id=sms.id,
-        created_at=sms.created_at,
-        status=sms.status,
-        provider_status=sms.provider_status,
-        sender=str(user_id),
-        template_id=sms.template_id,
-        template_name=template.name if template else None,
-        text=sms.text,
-    )
+    return _map_sms(sms)
 
 
 @router.get("/account", response_model=SmsAccountSummary)
@@ -149,3 +153,27 @@ async def get_account_summary(
         failed=int(failed_q.scalar() or 0),
         last_template_update=latest_template_q.scalar(),
     )
+
+
+@router.get("/history", response_model=list[SmsHistoryItem])
+async def sms_history(
+    dest: str | None = Query(default=None),
+    call_id: int | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=500),
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    _: int = Depends(get_current_user_id),
+) -> list[SmsHistoryItem]:
+    """Zwraca historię SMS z opcjonalnym filtrowaniem po numerze, ID połączenia i statusie."""
+    stmt = select(SmsOut).order_by(SmsOut.created_at.desc()).limit(limit)
+
+    if dest:
+        stmt = stmt.where(SmsOut.dest == dest)
+    if call_id is not None:
+        stmt = stmt.where(SmsOut.call_id == call_id)
+    if status_filter:
+        stmt = stmt.where(SmsOut.status == status_filter)
+
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    return [_map_sms(row) for row in rows]
