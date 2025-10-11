@@ -41,6 +41,12 @@ Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej same
 |-------|------------------|------|
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE` | jak wyżej | Dostęp do PostgreSQL. |
 | `POLL_SEC` | `3` | Okres odpytywania kolejki `sms_out`. |
+| `SMS_DEFAULT_SENDER` | `KseroPartner` | Domyślna nazwa nadawcy przekazywana do API. |
+| `SMS_TYPE` | `eco+` | Kanał/typ wiadomości (zgodnie z konfiguracją operatora). |
+| `SMS_API_URL` | `https://api2.serwersms.pl` | Bazowy adres HTTPS API. |
+| `SMS_API_TOKEN` | *(puste)* | Token dostępowy (opcjonalnie, gdy operator go udostępnia). |
+| `SMS_API_USERNAME`, `SMS_API_PASSWORD` | *(puste)* | Login i hasło do HTTPS API (jeśli nie używamy tokenu). |
+| `SMS_TEST_MODE` | `true` | Umożliwia wysyłkę w trybie testowym bez naliczania kosztów. |
 
 ### Uruchamianie kolektora w WSL z pliku `.env`
 W środowiskach Windows Subsystem for Linux zaleca się przechowywanie konfiguracji w pliku `.env` (format `KEY=VALUE`). Przed startem `collector_full.py` oraz `sms_sender.py` należy wczytać zmienne, np.:

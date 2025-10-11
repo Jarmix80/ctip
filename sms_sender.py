@@ -21,7 +21,13 @@ CONN = dict(
 POLL_SEC = int(os.getenv("POLL_SEC", "3"))
 
 provider = HttpSmsProvider(
-    settings.sms_api_url, settings.sms_api_token, settings.sms_default_sender
+    settings.sms_api_url,
+    settings.sms_api_token,
+    settings.sms_default_sender,
+    username=settings.sms_api_username,
+    password=settings.sms_api_password,
+    sms_type=settings.sms_type,
+    test_mode=settings.sms_test_mode,
 )
 
 

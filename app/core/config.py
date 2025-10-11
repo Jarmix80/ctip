@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     sms_type: str = Field(default="eco+", alias="SMS_TYPE")
     sms_api_url: str = Field(default="https://api2.serwersms.pl", alias="SMS_API_URL")
     sms_api_token: str | None = Field(default=None, alias="SMS_API_TOKEN")
+    sms_api_username: str | None = Field(default=None, alias="SMS_API_USERNAME")
+    sms_api_password: str | None = Field(default=None, alias="SMS_API_PASSWORD")
+    sms_test_mode: bool = Field(default=True, alias="SMS_TEST_MODE")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
