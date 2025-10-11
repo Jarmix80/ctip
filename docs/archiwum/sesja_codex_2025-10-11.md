@@ -64,3 +64,20 @@
 - Sandboxing: workspace-write
 - Sieć: restricted
 - Polityka zatwierdzania: on-request
+## Sesja 4 (2025-10-11T15:35:02+02:00)
+### Streszczenie
+- Wyzerowano schemat `ctip` (nowa, pusta baza) i uruchomiono `alembic upgrade head`; migracje `7615e8207b7a` oraz `e0ea7dc108d6` przebiegły bez błędów.
+- Nowy test `tests/test_db_schema.py` potwierdził obecność tabel, kolumn, indeksów i kluczy obcych.
+- Pełny zestaw testów jednostkowych (`python -m unittest discover`) przeszedł poprawnie.
+
+### Metryki repozytorium
+- Gałąź: `main`
+- Ostatni commit: `f80ebe2 Migracja init: jawne tworzenie tabel ctip`
+- Status roboczy: brak zmian (`git status` czysty)
+
+### Ustawienia Codex
+- Poziom rozumowania: high
+- Sandboxing: workspace-write
+- Sieć: enabled
+- Polityka zatwierdzania: never
+
