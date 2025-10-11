@@ -1,0 +1,66 @@
+# Baza danych CTIP – opis techniczny
+
+## Zakres i przeznaczenie
+Schemat `ctip` przechowuje dane połączeń telefonicznych oraz kolejkowanych powiadomień SMS generowanych przez kolektor `collector_full.py`. Aktualną definicję struktury należy czytać z pliku `docs/baza/schema_ctip.sql`. Plik `docs/baza/ctip_plain` pozostaje jedynie jako archiwalny zrzut, nieodpowiadający bieżącej strukturze.
+
+## Kluczowe obiekty w schemacie `ctip`
+- **calls** – główna tabela połączeń. Zawiera podstawowe atrybuty (numer wewnętrzny `ext`, numer zewnętrzny `number`, kierunek `direction`, znaczniki czasowe, stan i dyspozycję). Pola `direction` oraz `disposition` zabezpieczono constraintami.
+- **call_events** – dziennik zdarzeń CTIP skorelowany z połączeniem (`call_id`). Przechowuje typ zdarzenia (`typ`), rozszerzenie (`ext`), numer (`number`) oraz surowy payload (dekodowany do tekstu).
+- **sms_out** – kolejka wiadomości SMS. Zawiera status przetwarzania (`status`), treść (`text`), odbiorcę (`dest`), opcjonalne powiązanie z połączeniem (`call_id`) oraz metadane (`meta` w formacie JSONB). Unikalny indeks `uq_sms_out_callid_ivr` zabezpiecza pojedyncze powiadomienie na call_id w źródle `ivr`.
+- **ivr_map** – mapowanie wyborów IVR na treści SMS. Kluczem głównym jest para (`digit`, `ext`); pole `enabled` pozwala szybko dezaktywować regułę.
+
+Każda tabela posiada sekwencję autoinkrementacji `bigserial` zdefiniowaną w pliku `schema_ctip.sql`. Indeksy wspierają najczęstsze zapytania: filtry po `started_at`, `ext`, `direction`, `status` czy `call_id`.
+
+## Łączenie się z bazą
+### Psql (administracja)
+```bash
+psql "host=192.168.0.8 port=5433 dbname=ctip user=appuser password=change_me sslmode=disable options=-csearch_path=ctip"
+```
+Zaleca się wymuszenie `sslmode=require` przy połączeniach spoza sieci lokalnej oraz ograniczenie uprawnień użytkownika aplikacyjnego do `CONNECT`, `USAGE` na schemacie i `SELECT/INSERT/UPDATE` na tabelach.
+
+### Python / psycopg
+```python
+import psycopg
+
+with psycopg.connect(
+    host="192.168.0.8",
+    port=5433,
+    dbname="ctip",
+    user="appuser",
+    password="***",
+    options="-c search_path=ctip",
+    sslmode="require",
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM calls WHERE started_at > now() - interval '1 day'")
+        print(cur.fetchone())
+```
+Ustawienie `autocommit=True` jest zgodne z zachowaniem kolektora; w scenariuszach transakcyjnych zaleca się zarządzanie transakcjami ręcznie.
+
+## Odzyskiwanie i aktualizacje schematu
+1. Przygotuj pustą bazę / schemat i nadaj uprawnienia użytkownikowi.
+2. Załaduj aktualny schemat:
+   ```bash
+   psql -f docs/baza/schema_ctip.sql "postgresql://postgres@db-host/template1"
+   ```
+3. Zweryfikuj istnienie indeksów i constraintów (`\d ctip.calls` itp.).
+4. (Opcjonalnie) wstaw wstępne dane do `ivr_map` zgodnie z konfiguracją IVR.
+
+Wszelkie zmiany struktury powinny być dokumentowane poprzez aktualizację `schema_ctip.sql` oraz niniejszego pliku. Zalecane jest utrzymywanie migracji (np. w narzędziu `alembic`) w przypadku rozbudowy schematu.
+
+## Typowe operacje administracyjne
+- Monitorowanie zapytań:
+  ```sql
+  SELECT date_trunc('hour', started_at) AS slot, count(*) FROM ctip.calls GROUP BY slot ORDER BY slot DESC LIMIT 24;
+  ```
+- Czyszczenie starych logów zdarzeń (przykładowo po 180 dniach):
+  ```sql
+  DELETE FROM ctip.call_events WHERE ts < now() - interval '180 days';
+  ```
+- Weryfikacja błędów SMS:
+  ```sql
+  SELECT id, dest, error_msg FROM ctip.sms_out WHERE status = 'ERROR' ORDER BY created_at DESC LIMIT 50;
+  ```
+
+Przed wykonaniem operacji destrukcyjnych zawsze wykonaj kopię zapasową (`pg_dump --schema=ctip`). Regularne backupy powinny obejmować zarówno dane, jak i strukturę schematu.

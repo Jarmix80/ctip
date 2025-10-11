@@ -14,6 +14,10 @@ class CallEvent(Base):
     """Poszczególne zdarzenia CTIP powiązane z połączeniem."""
 
     __tablename__ = "call_events"
+    __table_args__ = (
+        Index("idx_events_call_id", "call_id"),
+        Index("idx_events_ts", "ts"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     call_id: Mapped[int | None] = mapped_column(ForeignKey("ctip.calls.id", ondelete="CASCADE"))
@@ -27,6 +31,3 @@ class CallEvent(Base):
 
 
 from .call import Call  # noqa: E402
-
-Index("idx_events_call_id", CallEvent.call_id)
-Index("idx_events_ts", CallEvent.ts)

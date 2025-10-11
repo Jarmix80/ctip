@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <title>CTIP Prototype</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --primary: #1f3f69;
+      --accent: #c62828;
+      --text: #1a1a1a;
+      --muted: #6b6f76;
+      --border: #d6dbe2;
+      --success: #2e7d32;
+      font-family: "Open Sans", Arial, sans-serif;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      background: white;
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      font-size: 18px;
+      margin: 0;
+      color: var(--primary);
+      letter-spacing: 0.02em;
+    }
+    header .user {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: 14px;
+    }
+    header .badge {
+      background: rgba(31, 63, 105, 0.08);
+      padding: 4px 10px;
+      border-radius: 24px;
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .page {
+      display: flex;
+      padding: 16px 24px 32px;
+      gap: 24px;
+    }
+    .filters, .calls {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+      align-items: end;
+    }
+    .filters label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .filters input, .filters select, .filters button {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .filters button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .filters .ghost {
+      background: transparent;
+      color: var(--primary);
+      border: 1px solid var(--primary);
+    }
+    .columns-toggle {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .columns-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    .columns-toggle input {
+      accent-color: var(--primary);
+    }
+    .main {
+      flex: 1;
+      min-width: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    thead th {
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 8px;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tbody td {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 8px;
+      vertical-align: middle;
+    }
+    tbody tr {
+      cursor: pointer;
+    }
+    tbody tr:hover, tbody tr.active {
+      background: rgba(31, 63, 105, 0.05);
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .tag.in {
+      background: rgba(46, 125, 50, 0.12);
+      color: var(--success);
+    }
+    .tag.out {
+      background: rgba(198, 40, 40, 0.12);
+      color: var(--accent);
+    }
+    .layout {
+      display: flex;
+      gap: 24px;
+    }
+    .details {
+      width: 360px;
+      min-width: 320px;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: sticky;
+      top: 100px;
+      max-height: calc(100vh - 140px);
+      overflow-y: auto;
+    }
+    .detail-section h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .contact-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 13px;
+      background: rgba(31, 63, 105, 0.03);
+    }
+    .contact-card div {
+      margin-bottom: 4px;
+    }
+    .sms-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sms-actions .group {
+      display: flex;
+      gap: 8px;
+    }
+    .sms-btn {
+      flex: 1;
+      border: none;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    .sms-btn:hover {
+      transform: translateY(-1px);
+    }
+    .sms-btn.app {
+      background: rgba(31, 63, 105, 0.12);
+      color: var(--primary);
+    }
+    .sms-btn.counter {
+      background: rgba(198, 40, 40, 0.12);
+      color: var(--accent);
+    }
+    .sms-btn.custom {
+      background: rgba(31, 63, 105, 0.05);
+      color: var(--text);
+      border: 1px dashed var(--border);
+    }
+    .custom-editor {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13px;
+      background: rgba(31, 63, 105, 0.03);
+    }
+    .custom-editor textarea {
+      width: 100%;
+      min-height: 90px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      padding: 8px;
+      resize: vertical;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    .custom-editor .actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .custom-editor button {
+      background: var(--primary);
+      color: white;
+      border-radius: 6px;
+      padding: 6px 16px;
+      border: none;
+      cursor: pointer;
+    }
+    .history {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .history-entry {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: white;
+      font-size: 13px;
+    }
+    .history-entry .meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .history-entry .meta span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .timeline-entry {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .timeline-entry span {
+      color: var(--muted);
+      min-width: 70px;
+    }
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1000;
+    }
+    .toast {
+      background: white;
+      border-radius: 12px;
+      padding: 14px 18px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+      border-left: 4px solid var(--success);
+      min-width: 240px;
+      font-size: 14px;
+    }
+    .footer {
+      margin-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    @media (max-width: 1100px) {
+      .layout {
+        flex-direction: column;
+      }
+      .details {
+        position: static;
+        width: auto;
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/3d/9d/52/3d9d525d-6b79-e13c-6d90-bfa7bb306ae0/AppIcon-0-0-1x_U007emarketing-0-8-0-0-85-220.png/1200x600wa.png" alt="Logo Ksero-Partner" style="height:40px;border-radius:8px;">
+      <h1>System SMS Ksero-Partner</h1>
+    </div>
+    <div class="user">
+      <div class="badge">Saldo: 152 PLN</div>
+      <div>W tym miesiącu wysłano: <strong>45 SMS</strong></div>
+      <div>Użytkownik: <strong>Anna Kowalska</strong></div>
+    </div>
+  </header>
+  <div class="page">
+    <div class="main">
+      <div class="filters" id="filters">
+        <div>
+          <label>Zakres od</label>
+          <input type="date" id="filter-from">
+        </div>
+        <div>
+          <label>Zakres do</label>
+          <input type="date" id="filter-to">
+        </div>
+        <div>
+          <label>Kierunek</label>
+          <select id="filter-direction">
+            <option value="">Wszystkie</option>
+            <option value="IN">Przychodzące</option>
+            <option value="OUT">Wychodzące</option>
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select id="filter-status">
+            <option value="">Dowolny</option>
+            <option value="ANSWERED">Odebrane</option>
+            <option value="NO_ANSWER">Nieodebrane</option>
+            <option value="FAILED">Błąd</option>
+          </select>
+        </div>
+        <div>
+          <label>Wewnętrzny</label>
+          <select id="filter-ext">
+            <option value="">Dowolny</option>
+          </select>
+        </div>
+        <div>
+          <label>Szukaj (numer, nazwa)</label>
+          <input type="text" id="filter-search" placeholder="np. 888... lub Alfa Sp. z o.o.">
+        </div>
+        <div>
+          <button id="apply-filters">Zastosuj</button>
+        </div>
+        <div>
+          <button class="ghost" id="reset-filters">Resetuj</button>
+        </div>
+      </div>
+      <div class="calls">
+        <div class="columns-toggle" id="column-toggle"></div>
+        <table id="call-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+        <div class="footer">
+          <div id="call-summary"></div>
+          <a href="#" id="export">Eksport CSV</a>
+        </div>
+      </div>
+    </div>
+    <aside class="details" id="details">
+      <div class="detail-section">
+        <h2>Połączenie</h2>
+        <div id="call-meta"></div>
+      </div>
+      <div class="detail-section">
+        <h2>Dane kontaktu</h2>
+        <div class="contact-card" id="contact-card"></div>
+      </div>
+      <div class="detail-section">
+        <h2>Szybkie SMS</h2>
+        <div class="sms-actions">
+          <div class="group">
+            <button class="sms-btn app" data-template="app">Aplikacja</button>
+            <button class="sms-btn counter" data-template="counter">Liczniki</button>
+          </div>
+          <button class="sms-btn custom" data-template="custom">Własna wiadomość</button>
+          <div class="custom-editor" id="custom-editor">
+            <textarea id="custom-text" maxlength="480" placeholder="Treść wiadomości..."></textarea>
+            <div class="actions">
+              <label><input type="checkbox" id="custom-save"> Zapamiętaj treść</label>
+              <button id="custom-send">Wyślij</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-section">
+        <h2>Historia SMS</h2>
+        <div class="history" id="sms-history"></div>
+      </div>
+      <div class="detail-section">
+        <h2>Oś czasu zdarzeń</h2>
+        <div class="timeline" id="call-timeline"></div>
+      </div>
+    </aside>
+  </div>
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    const calls = [
+      {
+        id: 101,
+        direction: "IN",
+        ext: "105",
+        ext_name: "Anna Kowalska",
+        number: "+48888565299",
+        customer: "FHU Alfa Sp. z o.o.",
+        started_at: "2025-10-10T12:26:34+02:00",
+        duration_s: 95,
+        disposition: "ANSWERED",
+        sms: [
+          {
+            at: "2025-10-10T12:27:10+02:00",
+            status: "DELIVERED",
+            sender: "Anna Kowalska",
+            template: "Liczniki",
+            text: "Dzień dobry! Ksero-Partner przypomina o konieczności podania liczników wynajmowanych urządzeń. Prosimy o przesłanie odczytów na adres biuro@ksero-partner.pl"
+          },
+          {
+            at: "2025-10-09T15:12:40+02:00",
+            status: "SENT",
+            sender: "Anna Kowalska",
+            template: "Własna",
+            text: "Dziękujemy za zgłoszenie, oddzwonimy jutro po 9:00."
+          }
+        ],
+        timeline: [
+          { ts: "12:26:34", type: "RING", payload: "RING 105 888565299" },
+          { ts: "12:26:36", type: "CONN", payload: "CONN 105 888565299" },
+          { ts: "12:27:11", type: "REL", payload: "REL 105" }
+        ],
+        contact: {
+          name: "Jan Nowak",
+          company: "FHU Alfa Sp. z o.o.",
+          nip: "6341895042",
+          email: "serwis@alfa.pl",
+          owner: "Anna Kowalska",
+          notes: "Klient oczekuje odpowiedzi dot. licznika."
+        }
+      },
+      {
+        id: 102,
+        direction: "OUT",
+        ext: "203",
+        ext_name: "Piotr Lis",
+        number: "+48601890122",
+        customer: "Magnetica S.A.",
+        started_at: "2025-10-10T11:55:04+02:00",
+        duration_s: 0,
+        disposition: "NO_ANSWER",
+        sms: [],
+        timeline: [
+          { ts: "11:55:04", type: "ECHO", payload: "ECHO 203 601890122" },
+          { ts: "11:55:09", type: "REL", payload: "REL 203 NO ANSWER" }
+        ],
+        contact: {
+          name: "",
+          company: "Magnetica S.A.",
+          nip: "5262890032",
+          email: "helpdesk@magnetica.pl",
+          owner: "Piotr Lis",
+          notes: "Klient preferuje kontakt e-mail."
+        }
+      },
+      {
+        id: 103,
+        direction: "IN",
+        ext: "101",
+        ext_name: "Marek Serwis",
+        number: "+48723840111",
+        customer: "Studio Print",
+        started_at: "2025-10-10T09:08:52+02:00",
+        duration_s: 185,
+        disposition: "ANSWERED",
+        sms: [
+          {
+            at: "2025-10-10T09:12:40+02:00",
+            status: "SENT",
+            sender: "Marek Serwis",
+            template: "Aplikacja",
+            text: "Skorzystaj z naszej aplikacji: https://www.ksero-partner.com.pl/appkp/"
+          }
+        ],
+        timeline: [
+          { ts: "09:08:52", type: "RING", payload: "RING 101 723840111" },
+          { ts: "09:08:55", type: "CONN", payload: "CONN 101 723840111" },
+          { ts: "09:11:57", type: "REL", payload: "REL 101" }
+        ],
+        contact: {
+          name: "Paweł Zawada",
+          company: "Studio Print",
+          nip: "9542180045",
+          email: "studio@print.pl",
+          owner: "Marek Serwis",
+          notes: "Awaria modułu skanera, czeka na serwisanta."
+        }
+      }
+    ];
+
+    const filters = {
+      direction: "",
+      status: "",
+      search: "",
+      ext: ""
+    };
+
+    const smsStatusLabels = {
+      DELIVERED: "Dostarczony",
+      SENT: "Wysłano",
+      ERROR: "Błąd",
+      QUEUED: "W kolejce"
+    };
+
+    const columns = [
+      {
+        key: "status",
+        label: "Status",
+        default: true,
+        render: (call) => `<span class="tag ${call.direction === "IN" ? "in" : "out"}">${call.direction === "IN" ? "Przych." : "Wych."}</span>`
+      },
+      {
+        key: "ext",
+        label: "Wewnętrzny",
+        default: true,
+        render: (call) => `${call.ext} <span style="color: var(--muted);">${call.ext_name}</span>`
+      },
+      {
+        key: "number",
+        label: "Numer zewnętrzny",
+        default: true,
+        render: (call) => call.number
+      },
+      {
+        key: "customer",
+        label: "Klient",
+        default: false,
+        render: (call) => call.customer || "Nie powiązany"
+      },
+      {
+        key: "started_at",
+        label: "Czas połączenia",
+        default: true,
+        render: (call) => new Date(call.started_at).toLocaleString("pl-PL")
+      },
+      {
+        key: "duration",
+        label: "Czas trwania",
+        default: true,
+        render: (call) => formatDuration(call.duration_s)
+      },
+      {
+        key: "sms",
+        label: "SMS",
+        default: true,
+        render: (call) => {
+          const smsList = Array.isArray(call.sms) ? call.sms : [];
+          if (!smsList.length) return "Brak";
+          const status = smsList[0].status;
+          return smsStatusLabels[status] || status;
+        }
+      }
+    ];
+
+    const visibleColumns = new Set(columns.filter((col) => col.default).map((col) => col.key));
+
+    let activeCallId = calls.length ? calls[0].id : null;
+    let customEditorVisible = false;
+
+    function formatDuration(seconds) {
+      const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+      const secs = (seconds % 60).toString().padStart(2, "0");
+      return `${mins}:${secs}`;
+    }
+
+    function renderColumnToggles() {
+      const container = document.getElementById("column-toggle");
+      container.innerHTML = "";
+      columns.forEach((col) => {
+        const id = `col-${col.key}`;
+        const label = document.createElement("label");
+        label.innerHTML = `<input type="checkbox" id="${id}" ${visibleColumns.has(col.key) ? "checked" : ""}> ${col.label}`;
+        label.querySelector("input").addEventListener("change", (e) => {
+          if (e.target.checked) {
+            visibleColumns.add(col.key);
+          } else {
+            visibleColumns.delete(col.key);
+          }
+          renderTable();
+          const current = calls.find((c) => c.id === activeCallId);
+          if (current) renderDetails(current);
+        });
+        container.appendChild(label);
+      });
+    }
+
+    function renderTable() {
+      const thead = document.querySelector("#call-table thead");
+      const tbody = document.querySelector("#call-table tbody");
+      thead.innerHTML = "";
+      tbody.innerHTML = "";
+
+      const headerRow = document.createElement("tr");
+      columns
+        .filter((col) => visibleColumns.has(col.key))
+        .forEach((col) => {
+          const th = document.createElement("th");
+          th.textContent = col.label;
+          headerRow.appendChild(th);
+        });
+      thead.appendChild(headerRow);
+
+      const filtered = calls.filter((call) => {
+        if (filters.direction && call.direction !== filters.direction) return false;
+        if (filters.status && call.disposition !== filters.status) return false;
+        if (filters.ext && call.ext !== filters.ext) return false;
+        if (filters.search) {
+          const needle = filters.search.toLowerCase();
+          const haystack = [
+            call.number,
+            call.customer || "",
+            call.contact?.name || "",
+            call.contact?.company || ""
+          ]
+            .join(" ")
+            .toLowerCase();
+          if (!haystack.includes(needle)) return false;
+        }
+        return true;
+      });
+
+      filtered.forEach((call) => {
+        const tr = document.createElement("tr");
+        tr.dataset.id = call.id;
+        if (call.id === activeCallId) tr.classList.add("active");
+        tr.innerHTML = columns
+          .filter((col) => visibleColumns.has(col.key))
+          .map((col) => `<td>${col.render(call)}</td>`)
+          .join("");
+        tr.addEventListener("click", () => {
+          activeCallId = call.id;
+          renderDetails(call);
+        });
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById("call-summary").textContent = `Wyników: ${filtered.length} / ${calls.length}`;
+
+      if (!filtered.length) {
+        activeCallId = null;
+        document.getElementById("call-meta").innerHTML = "<div>Brak połączeń w wybranych filtrach.</div>";
+        document.getElementById("contact-card").innerHTML = "<div>Brak danych kontaktowych.</div>";
+        document.getElementById("sms-history").innerHTML = "";
+        document.getElementById("call-timeline").innerHTML = "";
+        return;
+      }
+
+      if (!filtered.some((call) => call.id === activeCallId)) {
+        activeCallId = filtered[0].id;
+        renderDetails(filtered[0]);
+      }
+    }
+
+    function renderDetails(call) {
+      if (!call) return;
+
+      document.querySelectorAll("#call-table tbody tr").forEach((row) => {
+        row.classList.toggle("active", Number(row.dataset.id) === call.id);
+      });
+
+      document.getElementById("call-meta").innerHTML = `
+        <div><strong>${call.direction === "IN" ? "Połączenie przychodzące" : "Połączenie wychodzące"}</strong></div>
+        <div>Wewnętrzny: ${call.ext} (${call.ext_name})</div>
+        <div>Numer zewnętrzny: ${call.number}</div>
+        <div>Czas połączenia: ${new Date(call.started_at).toLocaleString("pl-PL")}</div>
+        <div>Czas trwania: ${formatDuration(call.duration_s)}</div>
+        <div>Status: ${call.disposition}</div>
+      `;
+
+      const contact = call.contact || {};
+      const name = contact.name || "Nie powiązany";
+      const company = contact.company || "Nie powiązany";
+      document.getElementById("contact-card").innerHTML = `
+        <div><strong>${name}</strong></div>
+        <div>${company}</div>
+        <div>NIP: ${contact.nip || "–"}</div>
+        <div>Email: ${contact.email || "–"}</div>
+        <div>Opiekun: ${contact.owner || "Brak przypisania"}</div>
+        <div style="margin-top: 8px; color: var(--muted);">${contact.notes || "Brak notatek"}</div>
+      `;
+
+      const history = document.getElementById("sms-history");
+      history.innerHTML = "";
+      const smsList = Array.isArray(call.sms) ? call.sms : [];
+      if (!smsList.length) {
+        history.innerHTML = '<div class="history-entry"><div class="meta"><span>Brak wysłanych SMS</span></div></div>';
+      } else {
+        smsList.forEach((sms) => {
+          const entry = document.createElement("div");
+          entry.classList.add("history-entry");
+          const label = smsStatusLabels[sms.status] || sms.status;
+          entry.innerHTML = `
+            <div class="meta">
+              <strong>${sms.template}</strong>
+              <span>${new Date(sms.at).toLocaleString("pl-PL")}</span>
+            </div>
+            <div>Status: <strong>${label}</strong></div>
+            <div>Nadawca: ${sms.sender}</div>
+            <div style="margin-top: 6px;">${sms.text}</div>
+          `;
+          history.appendChild(entry);
+        });
+      }
+
+      const timeline = document.getElementById("call-timeline");
+      timeline.innerHTML = "";
+      const stats = getCallStats(call.number);
+      const monthEntry = document.createElement("div");
+      monthEntry.classList.add("timeline-entry");
+      monthEntry.innerHTML = `<strong>W tym miesiącu</strong><div>${stats.monthCount} razy</div>`;
+      timeline.appendChild(monthEntry);
+      const totalEntry = document.createElement("div");
+      totalEntry.classList.add("timeline-entry");
+      totalEntry.innerHTML = `<strong>Łącznie</strong><div>${stats.totalCount} razy</div>`;
+      timeline.appendChild(totalEntry);
+      const timelineEvents = Array.isArray(call.timeline) ? call.timeline : [];
+      timelineEvents
+        .filter((evt) => evt.type === "RING")
+        .forEach((evt) => {
+          const entry = document.createElement("div");
+          entry.classList.add("timeline-entry");
+          entry.innerHTML = `<span>${evt.ts}</span><div>${evt.payload}</div>`;
+          timeline.appendChild(entry);
+        });
+
+      hideCustomEditor();
+    }
+
+    function showToast(message) {
+      const container = document.getElementById("toast-container");
+      const toast = document.createElement("div");
+      toast.classList.add("toast");
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(-10px)";
+      }, 2500);
+      setTimeout(() => container.removeChild(toast), 3000);
+    }
+
+    function hideCustomEditor() {
+      const editor = document.getElementById("custom-editor");
+      editor.style.display = "none";
+      customEditorVisible = false;
+    }
+
+    function toggleCustomEditor() {
+      const editor = document.getElementById("custom-editor");
+      customEditorVisible = !customEditorVisible;
+      editor.style.display = customEditorVisible ? "flex" : "none";
+    }
+
+    function bindActions() {
+      document.getElementById("apply-filters").addEventListener("click", () => {
+        filters.direction = document.getElementById("filter-direction").value;
+        filters.status = document.getElementById("filter-status").value;
+        filters.search = document.getElementById("filter-search").value.trim();
+        filters.ext = document.getElementById("filter-ext").value;
+        renderTable();
+        const current = calls.find((c) => c.id === activeCallId);
+        if (current) renderDetails(current);
+      });
+
+      document.getElementById("reset-filters").addEventListener("click", () => {
+        document.getElementById("filter-direction").value = "";
+        document.getElementById("filter-status").value = "";
+        document.getElementById("filter-search").value = "";
+        document.getElementById("filter-ext").value = "";
+        filters.direction = "";
+        filters.status = "";
+        filters.search = "";
+        filters.ext = "";
+        renderTable();
+        const current = calls.find((c) => c.id === activeCallId);
+        if (current) renderDetails(current);
+      });
+
+      document.querySelectorAll(".sms-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const template = btn.dataset.template;
+          const call = calls.find((c) => c.id === activeCallId);
+          if (!call) return;
+          if (template === "custom") {
+            toggleCustomEditor();
+            return;
+          }
+          let text = "";
+          if (template === "app") {
+            text = "Skorzystaj z naszej aplikacji: https://www.ksero-partner.com.pl/appkp/";
+          } else if (template === "counter") {
+            text = "Dzień dobry! Ksero-Partner przypomina o konieczności podania liczników wynajmowanych urządzeń. Prosimy o przesłanie odczytów na adres biuro@ksero-partner.pl";
+          }
+          if (!Array.isArray(call.sms)) call.sms = [];
+          call.sms.unshift({
+            at: new Date().toISOString(),
+            status: "SENT",
+            sender: "Anna Kowalska",
+            template: template === "app" ? "Aplikacja" : "Liczniki",
+            text
+          });
+          renderTable();
+          renderDetails(call);
+          showToast("SMS został wysłany");
+        });
+      });
+
+      document.getElementById("custom-send").addEventListener("click", () => {
+        const text = document.getElementById("custom-text").value.trim();
+        if (!text) {
+          showToast("Wpisz treść wiadomości");
+          return;
+        }
+        const call = calls.find((c) => c.id === activeCallId);
+        if (!call) return;
+        if (!Array.isArray(call.sms)) call.sms = [];
+        call.sms.unshift({
+          at: new Date().toISOString(),
+          status: "SENT",
+          sender: "Anna Kowalska",
+          template: "Własna",
+          text
+        });
+        const save = document.getElementById("custom-save").checked;
+        showToast(save ? "Wiadomość zapisana jako szablon" : "SMS został wysłany");
+        document.getElementById("custom-text").value = "";
+        document.getElementById("custom-save").checked = false;
+        hideCustomEditor();
+        renderTable();
+        renderDetails(call);
+      });
+    }
+
+    function populateExtFilter() {
+      const select = document.getElementById("filter-ext");
+      const uniqueExts = Array.from(new Set(calls.map((call) => call.ext))).sort();
+      uniqueExts.forEach((ext) => {
+        const option = document.createElement("option");
+        const owner = calls.find((c) => c.ext === ext)?.ext_name || "";
+        option.value = ext;
+        option.textContent = owner ? `${ext} (${owner})` : ext;
+        select.appendChild(option);
+      });
+    }
+
+    function getCallStats(number) {
+      const now = new Date();
+      const month = now.getMonth();
+      const year = now.getFullYear();
+      let monthCount = 0;
+      let totalCount = 0;
+      calls.forEach((call) => {
+        if (call.number !== number) return;
+        totalCount += 1;
+        const dt = new Date(call.started_at);
+        if (dt.getMonth() === month && dt.getFullYear() === year) {
+          monthCount += 1;
+        }
+      });
+      return { monthCount, totalCount };
+    }
+
+    function init() {
+      renderColumnToggles();
+      populateExtFilter();
+      renderTable();
+      if (calls.length) {
+        renderDetails(calls[0]);
+      }
+      bindActions();
+    }
+
+    init();
+  </script>
+</body>
+</html>

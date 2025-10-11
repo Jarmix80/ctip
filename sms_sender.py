@@ -4,27 +4,28 @@ import time
 
 import psycopg
 
+from app.core.config import settings
+from app.services.sms_provider import HttpSmsProvider, SmsTransportError
+
 CONN = dict(
-    host=os.getenv("PGHOST", "192.168.0.8"),
-    port=int(os.getenv("PGPORT", "5433")),
-    dbname=os.getenv("PGDATABASE", "ctip"),
-    user=os.getenv("PGUSER", "appuser"),
-    password=os.getenv("PGPASSWORD", "change_me"),
+    host=os.getenv("PGHOST", settings.pg_host),
+    port=int(os.getenv("PGPORT", settings.pg_port)),
+    dbname=os.getenv("PGDATABASE", settings.pg_database),
+    user=os.getenv("PGUSER", settings.pg_user),
+    password=os.getenv("PGPASSWORD", settings.pg_password),
     options="-c search_path=ctip",
-    sslmode=os.getenv("PGSSLMODE", "disable"),
+    sslmode=os.getenv("PGSSLMODE", settings.pg_sslmode),
     autocommit=True,
 )
 
 POLL_SEC = int(os.getenv("POLL_SEC", "3"))
 
-
-def send_sms(dest: str, text: str) -> tuple[bool, str]:
-    # TODO: implement real provider call here (SMSAPI/Teltonika/etc.)
-    print(f"[FAKE-SEND] SMS to {dest}: {text}")
-    return True, ""
+provider = HttpSmsProvider(
+    settings.sms_api_url, settings.sms_api_token, settings.sms_default_sender
+)
 
 
-def main():
+def main() -> None:
     with psycopg.connect(**CONN) as conn:
         while True:
             try:
@@ -44,17 +45,26 @@ def main():
                         time.sleep(POLL_SEC)
                         continue
 
-                    for id_, dest, text in rows:
-                        ok, err = send_sms(dest, text)
-                        if ok:
-                            cur.execute("UPDATE sms_out SET status='SENT' WHERE id=%s", (id_,))
-                        else:
+                    for sms_id, dest, text in rows:
+                        try:
+                            result = provider.send_sms(dest, text, metadata={"sms_id": sms_id})
+                            if result.success:
+                                cur.execute(
+                                    "UPDATE sms_out SET status='SENT', provider_status=%s, provider_msg_id=%s WHERE id=%s",
+                                    (result.provider_status, result.provider_message_id, sms_id),
+                                )
+                            else:
+                                cur.execute(
+                                    "UPDATE sms_out SET status='ERROR', error_msg=%s, provider_status=%s WHERE id=%s",
+                                    (result.error, result.provider_status, sms_id),
+                                )
+                        except SmsTransportError as exc:
                             cur.execute(
                                 "UPDATE sms_out SET status='ERROR', error_msg=%s WHERE id=%s",
-                                (err, id_),
+                                (str(exc), sms_id),
                             )
-            except Exception as e:
-                print("[ERR]", e)
+            except Exception as exc:
+                print("[ERR]", exc)
                 time.sleep(2)
 
 

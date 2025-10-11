@@ -23,10 +23,12 @@ class SmsOut(Base):
     source: Mapped[str] = mapped_column(Text, default="ivr")
     status: Mapped[str] = mapped_column(Text, default="NEW")
     error_msg: Mapped[str | None] = mapped_column(Text)
-    call_id: Mapped[int | None] = mapped_column(ForeignKey("ctip.calls.id"))
+    call_id: Mapped[int | None] = mapped_column(ForeignKey("ctip.calls.id", ondelete="SET NULL"))
     meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[int | None] = mapped_column()
-    template_id: Mapped[int | None] = mapped_column()
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.sms_template.id", ondelete="SET NULL")
+    )
     origin: Mapped[str] = mapped_column(Text, default="ui")
     provider_msg_id: Mapped[str | None] = mapped_column(Text)
     provider_status: Mapped[str | None] = mapped_column(Text)
@@ -34,9 +36,11 @@ class SmsOut(Base):
     provider_error_desc: Mapped[str | None] = mapped_column(Text)
 
     call: Mapped[Call | None] = relationship(back_populates="sms_list")
+    template: Mapped[SmsTemplate | None] = relationship(lazy="joined")
 
 
 from .call import Call  # noqa: E402
+from .sms_template import SmsTemplate  # noqa: E402
 
 Index("idx_sms_out_status", SmsOut.status)
 Index("idx_sms_out_dest_created", SmsOut.dest, SmsOut.created_at.desc())

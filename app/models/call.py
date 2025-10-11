@@ -20,6 +20,11 @@ class Call(Base):
             "disposition in ('ANSWERED','NO_ANSWER','BUSY','FAILED','UNKNOWN')",
             name="calls_disposition_check",
         ),
+        Index("idx_calls_answered_by", "answered_by"),
+        Index("idx_calls_direction", "direction"),
+        Index("idx_calls_ext", "ext"),
+        Index("idx_calls_started_at", "started_at"),
+        Index("idx_calls_number", "number"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -45,9 +50,3 @@ class Call(Base):
 
 from .call_event import CallEvent  # noqa: E402
 from .sms_out import SmsOut  # noqa: E402
-
-Index("idx_calls_answered_by", Call.answered_by)
-Index("idx_calls_direction", Call.direction)
-Index("idx_calls_ext", Call.ext)
-Index("idx_calls_started_at", Call.started_at)
-Index("idx_calls_number", Call.number)

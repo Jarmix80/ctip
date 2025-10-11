@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
-from sqlalchemy import ForeignKey, Index, Text
+from sqlalchemy import ForeignKey, Index, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -14,6 +14,11 @@ class Contact(Base):
     """Informacje o kontrahencie/przypisanym numerze telefonu."""
 
     __tablename__ = "contact"
+    __table_args__ = (
+        UniqueConstraint("number", name="uq_contact_number"),
+        Index("idx_contact_number", "number"),
+        Index("idx_contact_ext", "ext"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     number: Mapped[str] = mapped_column(Text, nullable=False)
@@ -25,8 +30,11 @@ class Contact(Base):
     email: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, default="manual")
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
     devices: Mapped[list[ContactDevice]] = relationship(
         back_populates="contact", cascade="all, delete-orphan", lazy="selectin"
@@ -44,10 +52,6 @@ class ContactDevice(Base):
     serial_number: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     contact: Mapped[Contact] = relationship(back_populates="devices")
-
-
-Index("idx_contact_number", Contact.number)
-Index("idx_contact_ext", Contact.ext)
