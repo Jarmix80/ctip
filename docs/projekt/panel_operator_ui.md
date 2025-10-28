@@ -7,6 +7,8 @@
 - Szybka wysyłka wiadomości (`POST /operator/api/sms/send`) z automatycznym uzupełnieniem numeru na podstawie wybranego połączenia.
 - Wyszukiwarka kontaktów (`/operator/api/contacts/by-number/{number}`) prezentująca dane, pola Firebird i notatki operatora.
 - Historia SMS dla numeru (`/operator/api/sms/history?number=`) z możliwością filtrowania limitu wpisów; treści zawierające dane logowania są anonimizowane (`***`) dla bezpieczeństwa.
+- Pasek szablonów prezentuje predefiniowane przyciski („Aplikacja”, „Liczniki”), aktywne szablony globalne oraz własne szablony operatora pobrane z `/operator/api/sms/templates`.
+- W ustawieniach szybkiej wysyłki dostępna jest opcja potwierdzania wysyłki przed dodaniem do kolejki oraz zapamiętania bieżącej treści jako nowego szablonu operatora.
 - Ustawienia operatora: edycja profilu (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmiana hasła oraz własne szablony SMS (CRUD).
 - Obsługa opcji „Zapamiętaj mnie” – wydłużona ważność tokenu (`ADMIN_SESSION_REMEMBER_HOURS`) i przechowywanie w `localStorage`.
 

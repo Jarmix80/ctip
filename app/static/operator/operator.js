@@ -18,11 +18,32 @@
       visible: false,
       contactId: null,
     },
+    templates: [],
+    quickSms: {
+      selectedTemplateId: "__custom__",
+      confirmBeforeSend: true,
+      saveAsTemplate: false,
+    },
   };
 
   const elements = {};
 
   const TOKEN_KEY = "admin-session-token";
+  const SMS_CONFIRM_KEY = "operator-sms-confirm";
+  const DEFAULT_TEMPLATES = [
+    {
+      id: "default-app",
+      name: "Aplikacja",
+      body:
+        "Instrukcja instalacji aplikacji Ksero Partner znajdziesz na stronie https://www.ksero-partner.com.pl/appkp/.",
+    },
+    {
+      id: "default-counter",
+      name: "Liczniki",
+      body:
+        "Dzień dobry! Ksero-Partner przypomina o konieczności podania liczników urządzeń. Prosimy o przesłanie odczytów na adres biuro@ksero-partner.pl.",
+    },
+  ];
 
   const readToken = () =>
     window.localStorage?.getItem(TOKEN_KEY) ||
@@ -79,6 +100,25 @@
       elements.loginError.textContent = "";
     }
     renderSmsStats();
+  };
+
+  const loadQuickSmsPreferences = () => {
+    try {
+      const storedConfirm = window.localStorage?.getItem(SMS_CONFIRM_KEY);
+      if (storedConfirm !== null) {
+        state.quickSms.confirmBeforeSend = storedConfirm === "true";
+      }
+    } catch (err) {
+      console.warn("Nie udało się odczytać preferencji SMS", err);
+    }
+  };
+
+  const persistConfirmPreference = (value) => {
+    try {
+      window.localStorage?.setItem(SMS_CONFIRM_KEY, value ? "true" : "false");
+    } catch (err) {
+      console.warn("Nie udało się zapisać preferencji SMS", err);
+    }
   };
 
   const fetchJson = async (url, options = {}) => {
@@ -400,8 +440,145 @@
         <td>${sms.status}</td>
         <td>${sms.text}</td>
       `;
-      tbody.appendChild(tr);
+    tbody.appendChild(tr);
     });
+  };
+
+  const getQuickTemplateButtons = () => {
+    const activeTemplates = (state.templates || []).filter((tpl) => tpl.is_active);
+    const userTemplates = activeTemplates.map((tpl) => ({
+      id: `tpl-${tpl.id}`,
+      templateId: tpl.id,
+      name: tpl.name,
+      body: tpl.body,
+    }));
+    return [
+      { id: "__custom__", name: "Własna wiadomość", body: "", isCustom: true },
+      ...DEFAULT_TEMPLATES,
+      ...userTemplates,
+    ];
+  };
+
+  const renderSmsTemplates = () => {
+    if (!elements.smsTemplateList) {
+      return;
+    }
+    const buttons = getQuickTemplateButtons();
+    elements.smsTemplateList.innerHTML = "";
+    const group = document.createElement("div");
+    group.className = "op-template-button-group";
+    buttons.forEach((button) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "op-template-button";
+      if (state.quickSms.selectedTemplateId === button.id) {
+        btn.classList.add("selected");
+      }
+      btn.dataset.templateId = button.id;
+      if (button.templateId != null) {
+        btn.dataset.apiId = String(button.templateId);
+      }
+      btn.textContent = button.name;
+      btn.title = button.body ? button.body : "Własna wiadomość";
+      group.appendChild(btn);
+    });
+    elements.smsTemplateList.appendChild(group);
+    const hasUserTemplates = (state.templates || []).some((tpl) => tpl.is_active);
+    if (!hasUserTemplates) {
+      const info = document.createElement("p");
+      info.className = "op-sms-template-info";
+      info.textContent = "Brak aktywnych szablonów operatora – dodaj je w ustawieniach.";
+      elements.smsTemplateList.appendChild(info);
+    }
+  };
+
+  const applyTemplateButton = (button) => {
+    state.quickSms.selectedTemplateId = button.id;
+    if (button.isCustom) {
+      if (elements.smsSaveTemplate) {
+        elements.smsSaveTemplate.checked = false;
+      }
+      state.quickSms.saveAsTemplate = false;
+      if (elements.smsFeedback) {
+        elements.smsFeedback.textContent = "Wpisz treść własnej wiadomości.";
+        elements.smsFeedback.className = "op-form-hint";
+      }
+      if (elements.smsText) {
+        elements.smsText.focus();
+      }
+    } else {
+      if (elements.smsText) {
+        elements.smsText.value = button.body || "";
+        elements.smsText.focus();
+      }
+      if (elements.smsFeedback) {
+        elements.smsFeedback.textContent = `Załadowano szablon „${button.name}”.`;
+        elements.smsFeedback.className = "op-form-hint info";
+      }
+      if (elements.smsSaveTemplate) {
+        elements.smsSaveTemplate.checked = false;
+      }
+      state.quickSms.saveAsTemplate = false;
+    }
+    renderSmsTemplates();
+  };
+
+  const handleTemplateListClick = (event) => {
+    const button = event.target.closest("button[data-template-id]");
+    if (!button) {
+      return;
+    }
+    const templateId = button.dataset.templateId;
+    const templates = getQuickTemplateButtons();
+    const entry = templates.find((tpl) => tpl.id === templateId);
+    if (!entry) {
+      return;
+    }
+    applyTemplateButton(entry);
+  };
+
+  const loadSmsTemplates = async () => {
+    try {
+      const data = await fetchJson("/operator/api/sms/templates");
+      state.templates = Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.warn("Nie udało się pobrać szablonów SMS", err);
+      state.templates = [];
+    }
+    renderSmsTemplates();
+  };
+
+  const saveCustomTemplate = async (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+    const exists = (state.templates || []).some(
+      (tpl) => tpl.is_active && tpl.body.trim() === trimmed
+    );
+    if (exists) {
+      showToast("Taki szablon już istnieje – pomijam zapis.", "info");
+      return;
+    }
+    let name = window.prompt("Podaj nazwę szablonu SMS", "Nowy szablon");
+    if (!name) {
+      return;
+    }
+    name = name.trim();
+    if (!name) {
+      return;
+    }
+    try {
+      await fetchJson("/operator/api/sms/templates", {
+        method: "POST",
+        body: JSON.stringify({ name, body: trimmed, is_active: true }),
+      });
+      showToast("Szablon został zapisany.", "success");
+      await loadSmsTemplates();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Nie udało się zapisać szablonu.";
+      showToast(message, "error");
+    }
   };
 
   const loadCalls = async () => {
@@ -465,6 +642,23 @@
       elements.smsFeedback.className = "op-form-hint error";
       return;
     }
+    if (elements.smsConfirmToggle) {
+      state.quickSms.confirmBeforeSend = Boolean(elements.smsConfirmToggle.checked);
+    }
+    if (elements.smsSaveTemplate) {
+      state.quickSms.saveAsTemplate = Boolean(elements.smsSaveTemplate.checked);
+    }
+    if (state.quickSms.confirmBeforeSend) {
+      const preview = text.length > 280 ? `${text.slice(0, 280)}…` : text;
+      const confirmed = window.confirm(
+        `Czy na pewno wysłać SMS na numer ${dest}?\n\n${preview}`
+      );
+      if (!confirmed) {
+        elements.smsFeedback.textContent = "Wysyłka anulowana.";
+        elements.smsFeedback.className = "op-form-hint";
+        return;
+      }
+    }
     try {
       await fetchJson("/operator/api/sms/send", {
         method: "POST",
@@ -475,9 +669,18 @@
           origin: "operator",
         }),
       });
+      if (state.quickSms.saveAsTemplate) {
+        await saveCustomTemplate(text);
+        state.quickSms.saveAsTemplate = false;
+        if (elements.smsSaveTemplate) {
+          elements.smsSaveTemplate.checked = false;
+        }
+      }
       elements.smsFeedback.textContent = "Wiadomość dodana do kolejki.";
       elements.smsFeedback.className = "op-form-hint success";
-      elements.smsText.value = "";
+      if (state.quickSms.selectedTemplateId === "__custom__") {
+        elements.smsText.value = "";
+      }
       await updateSmsStats();
       if (state.selectedCallId) {
         await loadCallDetail(state.selectedCallId);
@@ -485,6 +688,7 @@
         const history = await fetchJson(`/operator/api/sms/history?number=${encodeURIComponent(dest)}&limit=20`);
         renderSmsHistory(history || []);
       }
+      renderSmsTemplates();
     } catch (err) {
       elements.smsFeedback.textContent = err.message;
       elements.smsFeedback.className = "op-form-hint error";
@@ -610,6 +814,9 @@
     elements.smsDest = document.getElementById("sms-dest");
     elements.smsText = document.getElementById("sms-text");
     elements.smsFeedback = document.getElementById("sms-feedback");
+    elements.smsTemplateList = document.getElementById("sms-template-list");
+    elements.smsConfirmToggle = document.getElementById("sms-confirm-toggle");
+    elements.smsSaveTemplate = document.getElementById("sms-save-template");
     elements.filterForm = document.getElementById("op-filter-form");
     elements.filterSearch = document.getElementById("filter-search");
     elements.filterDirection = document.getElementById("filter-direction");
@@ -618,6 +825,12 @@
     elements.logout = document.getElementById("op-logout");
     elements.smsStatsToday = document.getElementById("sms-stats-today");
     elements.smsStatsMonth = document.getElementById("sms-stats-month");
+    if (elements.smsConfirmToggle) {
+      elements.smsConfirmToggle.checked = state.quickSms.confirmBeforeSend;
+    }
+    if (elements.smsSaveTemplate) {
+      elements.smsSaveTemplate.checked = state.quickSms.saveAsTemplate;
+    }
   };
 
   const bindEvents = () => {
@@ -632,6 +845,26 @@
     if (elements.smsForm) {
       elements.smsForm.addEventListener("submit", (event) => {
         handleSmsSubmit(event).catch((err) => showToast(err.message, "error"));
+      });
+    }
+    if (elements.smsTemplateList) {
+      elements.smsTemplateList.addEventListener("click", handleTemplateListClick);
+    }
+    if (elements.smsConfirmToggle) {
+      elements.smsConfirmToggle.addEventListener("change", (event) => {
+        state.quickSms.confirmBeforeSend = Boolean(event.target.checked);
+        persistConfirmPreference(state.quickSms.confirmBeforeSend);
+      });
+    }
+    if (elements.smsSaveTemplate) {
+      elements.smsSaveTemplate.addEventListener("change", (event) => {
+        state.quickSms.saveAsTemplate = Boolean(event.target.checked);
+      });
+    }
+    if (elements.smsText) {
+      elements.smsText.addEventListener("input", () => {
+        state.quickSms.selectedTemplateId = "__custom__";
+        renderSmsTemplates();
       });
     }
     if (elements.filterForm) {
@@ -684,8 +917,8 @@
     try {
       state.user = await fetchJson("/operator/api/me");
       renderUser();
+      await Promise.all([loadSmsTemplates(), updateSmsStats()]);
       await loadCalls();
-      await updateSmsStats();
       showApp();
     } catch (err) {
       clearToken();
@@ -725,7 +958,9 @@
   };
 
   const init = async () => {
+    loadQuickSmsPreferences();
     initElements();
+    renderSmsTemplates();
     bindEvents();
     const token = readToken();
     if (token) {

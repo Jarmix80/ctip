@@ -193,8 +193,18 @@
 
         <div class="op-card op-sms-card">
           <header>
-            <h2>Szybka wysyłka SMS</h2>
+            <div class="op-sms-header-text">
+              <h2>Szybka wysyłka SMS</h2>
+              <p>Wybierz aktywny szablon lub przygotuj własną wiadomość.</p>
+            </div>
+            <a href="/operator/settings" class="op-ghost small">Zarządzaj</a>
           </header>
+          <div class="op-sms-templates">
+            <span class="op-sms-templates-label">Szablony</span>
+            <div class="op-template-list" id="sms-template-list">
+              <p class="op-empty">Ładowanie szablonów…</p>
+            </div>
+          </div>
           <form id="quick-sms-form" class="op-form">
             <div class="op-form-field">
               <label for="sms-dest">Numer docelowy</label>
@@ -203,6 +213,18 @@
             <div class="op-form-field">
               <label for="sms-text">Treść wiadomości</label>
               <textarea id="sms-text" name="text" rows="3" maxlength="480" required></textarea>
+            </div>
+            <div class="op-form-field checkbox">
+              <label class="op-checkbox">
+                <input type="checkbox" id="sms-confirm-toggle" checked>
+                Potwierdzaj wysyłkę przed dodaniem do kolejki
+              </label>
+            </div>
+            <div class="op-form-field checkbox">
+              <label class="op-checkbox">
+                <input type="checkbox" id="sms-save-template">
+                Po wysłaniu zapisz jako mój szablon
+              </label>
             </div>
             <div class="op-form-actions">
               <button type="submit" class="op-primary">Wyślij</button>
