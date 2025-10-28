@@ -1,0 +1,27 @@
+<header class="monitor-card-header">
+  <div>
+    <h3>Log sms_sender</h3>
+    <p>Odświeżono: {{ generated_at }}</p>
+  </div>
+  <div class="monitor-card-meta">
+    {% if log_path %}
+    <span class="path">{{ log_path }}</span>
+    {% else %}
+    <span class="path muted">Brak pliku logu dla bieżącej daty.</span>
+    {% endif %}
+  </div>
+</header>
+<div class="log-stream">
+  {% if entries %}
+  <ul class="log-stream-list">
+    {% for entry in entries|reverse %}
+    <li>
+      <span class="log-stream-ts">{{ entry.timestamp.strftime("%H:%M:%S") if entry.timestamp else "—" }}</span>
+      <span class="log-stream-msg">{{ entry.message }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="log-stream-empty">Brak wpisów logu dla bieżącej daty.</p>
+  {% endif %}
+</div>

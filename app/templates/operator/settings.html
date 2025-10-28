@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>Ustawienia operatora CTIP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/operator/operator.css">
+    <script defer src="/static/operator/settings.js"></script>
+  </head>
+  <body class="op-settings">
+    <header class="op-settings-header">
+      <div>
+        <h1>Ustawienia operatora</h1>
+        <p>Zarządzaj danymi konta, hasłem i własnymi szablonami SMS.</p>
+      </div>
+      <a href="/operator" class="op-ghost op-settings-back">← Wróć do panelu</a>
+    </header>
+    <main class="op-settings-main">
+      <section class="op-card op-settings-card">
+        <header>
+          <h2>Dane operatora</h2>
+          <p>Aktualizuj dane widoczne w powiadomieniach i logowaniach.</p>
+        </header>
+        <form id="profile-form" class="op-settings-form">
+          <div class="op-form-grid">
+            <div class="op-form-field">
+              <label for="profile-email">Adres e-mail</label>
+              <input id="profile-email" name="email" type="email" autocomplete="username" required>
+            </div>
+            <div class="op-form-field">
+              <label for="profile-first-name">Imię</label>
+              <input id="profile-first-name" name="first_name" type="text" autocomplete="given-name">
+            </div>
+            <div class="op-form-field">
+              <label for="profile-last-name">Nazwisko</label>
+              <input id="profile-last-name" name="last_name" type="text" autocomplete="family-name">
+            </div>
+            <div class="op-form-field">
+              <label for="profile-internal-ext">Numer wewnętrzny</label>
+              <input id="profile-internal-ext" name="internal_ext" type="text" autocomplete="tel-extension">
+            </div>
+            <div class="op-form-field">
+              <label for="profile-mobile-phone">Telefon komórkowy</label>
+              <input id="profile-mobile-phone" name="mobile_phone" type="tel" autocomplete="tel">
+            </div>
+          </div>
+          <div class="op-form-actions">
+            <button type="submit" class="op-primary" id="profile-submit">Zapisz dane</button>
+          </div>
+          <p class="op-form-hint" id="profile-feedback"></p>
+        </form>
+      </section>
+
+      <section class="op-card op-settings-card">
+        <header>
+          <h2>Zmiana hasła</h2>
+          <p>Hasło musi mieć co najmniej 8 znaków, zalecamy użycie liter, cyfr i znaków specjalnych.</p>
+        </header>
+        <form id="password-form" class="op-settings-form">
+          <div class="op-form-grid">
+            <div class="op-form-field">
+              <label for="password-current">Aktualne hasło</label>
+              <input id="password-current" name="current_password" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="op-form-field">
+              <label for="password-new">Nowe hasło</label>
+              <input id="password-new" name="new_password" type="password" autocomplete="new-password" required>
+            </div>
+            <div class="op-form-field">
+              <label for="password-confirm">Potwierdź nowe hasło</label>
+              <input id="password-confirm" name="confirm_password" type="password" autocomplete="new-password" required>
+            </div>
+          </div>
+          <div class="op-form-actions">
+            <button type="submit" class="op-primary" id="password-submit">Zmień hasło</button>
+          </div>
+          <p class="op-form-hint" id="password-feedback"></p>
+        </form>
+      </section>
+
+      <section class="op-card op-settings-card">
+        <header>
+          <h2>Szablony SMS</h2>
+          <p>Twórz krótkie wiadomości, z których skorzystasz w panelu operatora.</p>
+        </header>
+        <form id="template-form" class="op-settings-form">
+          <input type="hidden" id="template-id">
+          <div class="op-form-grid">
+            <div class="op-form-field">
+              <label for="template-name">Nazwa szablonu</label>
+              <input id="template-name" name="name" type="text" maxlength="120" required>
+            </div>
+            <div class="op-form-field checkbox">
+              <label class="op-checkbox">
+                <input id="template-active" name="is_active" type="checkbox" checked>
+                Aktywny szablon
+              </label>
+            </div>
+          </div>
+          <div class="op-form-field">
+            <label for="template-body">Treść wiadomości</label>
+            <textarea id="template-body" name="body" rows="3" maxlength="480" required></textarea>
+          </div>
+          <div class="op-form-actions">
+            <button type="submit" class="op-primary" id="template-submit">Dodaj szablon</button>
+            <button type="button" class="op-ghost" id="template-cancel" hidden>Anuluj edycję</button>
+          </div>
+          <p class="op-form-hint" id="template-feedback"></p>
+        </form>
+
+        <div class="op-settings-table-wrapper">
+          <table class="op-settings-table">
+            <thead>
+              <tr>
+                <th>Nazwa</th>
+                <th>Status</th>
+                <th>Zakres</th>
+                <th>Podgląd</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody id="templates-body">
+              <tr>
+                <td colspan="5" class="op-empty">Ładowanie szablonów…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <div id="toast-container" class="toast-container"></div>
+  </body>
+</html>

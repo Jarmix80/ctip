@@ -80,4 +80,3 @@
 - Sandboxing: workspace-write
 - Sieć: enabled
 - Polityka zatwierdzania: never
-

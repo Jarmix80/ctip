@@ -24,6 +24,7 @@ class ContactSchema(BaseModel):
     id: int
     number: str
     ext: str | None
+    firebird_id: str | None
     first_name: str | None
     last_name: str | None
     company: str | None

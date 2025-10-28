@@ -1,0 +1,313 @@
+<section
+  class="users-section"
+  x-data="adminUsers()"
+  x-init="init()"
+  data-users='{{ users | tojson | safe }}'
+  data-can-manage='{{ can_manage | tojson }}'
+  data-current-id='{{ current_user_id }}'
+>
+  <header class="monitor-card-header history-header">
+    <div>
+      <h3>Użytkownicy panelu</h3>
+      <p>Zarządzaj kontami administratorów i operatorów.</p>
+    </div>
+    <div class="dashboard-actions" x-show="canManage" x-cloak>
+      <button type="button" class="btn-secondary" @click.prevent="reload()" :disabled="loading">
+        <template x-if="!loading">Odśwież</template>
+        <template x-if="loading">Wczytywanie…</template>
+      </button>
+    </div>
+  </header>
+
+  <div class="users-grid" x-show="canManage" x-cloak>
+    <form class="config-form users-form" @submit.prevent="createUser">
+      <h4>Dodaj użytkownika</h4>
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="user-email">E-mail</label>
+          <input id="user-email" type="email" x-model="form.email" required>
+        </div>
+        <div class="form-field">
+          <label for="user-first-name">Imię</label>
+          <input id="user-first-name" type="text" x-model="form.firstName">
+        </div>
+        <div class="form-field">
+          <label for="user-last-name">Nazwisko</label>
+          <input id="user-last-name" type="text" x-model="form.lastName">
+        </div>
+        <div class="form-field">
+          <label for="user-ext">Numer wewnętrzny</label>
+          <input id="user-ext" type="text" x-model="form.internalExt" placeholder="np. 105">
+        </div>
+        <div class="form-field">
+          <label for="user-mobile">Telefon komórkowy</label>
+          <input id="user-mobile" type="tel" x-model="form.mobilePhone" required placeholder="np. +48 600 700 800">
+        </div>
+        <div class="form-field">
+          <label for="user-role">Rola</label>
+          <select id="user-role" x-model="form.role">
+            <option value="operator">Operator</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" :disabled="saving">
+          <template x-if="!saving">Utwórz</template>
+          <template x-if="saving">Trwa zapisywanie…</template>
+        </button>
+      </div>
+      <template x-if="formPassword">
+        <div class="form-message success">
+          Ostatnio wygenerowane hasło: <code x-text="formPassword"></code>
+        </div>
+      </template>
+    </form>
+  </div>
+
+  <div class="users-table-wrapper">
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th>E-mail</th>
+          <th>Imię i nazwisko</th>
+          <th>Wewnętrzny</th>
+          <th>Telefon</th>
+          <th>Rola</th>
+          <th>Status</th>
+          <th>Ostatnie logowanie</th>
+          <th>Aktywne sesje</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-if="users.length === 0">
+          <tr>
+            <td colspan="9" class="sms-history-empty">Brak użytkowników.</td>
+          </tr>
+        </template>
+        <template x-for="user in users" :key="user.id">
+          <tr :class="{ 'user-disabled': !user.is_active }">
+            <td>
+              <strong x-text="user.email"></strong>
+              <div class="user-meta" x-text="formatDate(user.created_at)"></div>
+            </td>
+            <td>
+              <span x-text="formatName(user)"></span>
+            </td>
+            <td x-text="user.internal_ext || '—'"></td>
+            <td x-text="formatPhone(user.mobile_phone)"></td>
+            <td>
+              <span class="badge" :class="user.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="user.role"></span>
+            </td>
+            <td>
+              <span class="status-chip" :class="user.is_active ? 'success' : 'warning'" x-text="user.is_active ? 'Aktywny' : 'Zablokowany'"></span>
+            </td>
+            <td x-text="formatDate(user.last_login_at) || '—'"></td>
+            <td x-text="user.sessions_active"></td>
+            <td class="user-actions">
+              <template x-if="canManage">
+                <div class="user-actions-group">
+                  <button type="button" class="btn-secondary" @click.prevent="openModal(user.id)">
+                    Szczegóły
+                  </button>
+                  <button type="button" class="btn-secondary" @click.prevent="resetPassword(user)" :disabled="loading || actionUserId === user.id">
+                    Reset hasła
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    @click.prevent="toggleActive(user)"
+                    :disabled="loading || actionUserId === user.id"
+                    x-text="user.is_active ? 'Dezaktywuj' : 'Aktywuj'"
+                  ></button>
+                  <button
+                    type="button"
+                    class="btn-secondary btn-delete"
+                    @click.prevent="deleteUser(user)"
+                    :disabled="loading || actionUserId === user.id || user.id === currentUserId"
+                  >
+                    Usuń
+                  </button>
+                </div>
+              </template>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <template x-if="error">
+    <div class="form-message error" x-text="error"></div>
+  </template>
+  <template x-if="success">
+    <div class="form-message success" x-text="success"></div>
+  </template>
+
+  <div
+    class="users-modal"
+    x-show="modalOpen"
+    x-cloak
+    @keydown.escape.window="closeModal"
+    x-transition.opacity.duration.150ms
+  >
+    <div class="users-modal-backdrop" @click="closeModal"></div>
+    <div class="users-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="users-modal-title">
+      <header class="users-modal-header">
+        <div>
+          <h4 id="users-modal-title" x-text="modalDetail?.email || 'Szczegóły użytkownika'"></h4>
+          <p x-text="modalDetail ? formatName(modalDetail) : 'Wczytywanie szczegółów konta.'"></p>
+        </div>
+        <button type="button" class="users-modal-close" @click.prevent="closeModal">×</button>
+      </header>
+      <div class="users-modal-body">
+        <template x-if="modalLoading">
+          <p class="users-modal-status">Trwa pobieranie danych użytkownika…</p>
+        </template>
+        <template x-if="!modalLoading && modalError">
+          <div class="form-message error" x-text="modalError"></div>
+        </template>
+        <template x-if="!modalLoading && modalDetail">
+          <div class="users-modal-summary">
+            <div>
+              <span class="status-chip" :class="modalDetail.is_active ? 'success' : 'warning'" x-text="modalDetail.is_active ? 'Aktywny' : 'Zablokowany'"></span>
+              <dl>
+                <div>
+                  <dt>Utworzony</dt>
+                  <dd x-text="formatDate(modalDetail.created_at)"></dd>
+                </div>
+                <div>
+                  <dt>Ostatnia modyfikacja</dt>
+                  <dd x-text="formatDate(modalDetail.updated_at)"></dd>
+                </div>
+                <div>
+                  <dt>Ostatnie logowanie</dt>
+                  <dd x-text="formatDate(modalDetail.last_login_at)"></dd>
+                </div>
+                <div>
+                  <dt>Telefon</dt>
+                  <dd x-text="formatPhone(modalDetail.mobile_phone)"></dd>
+                </div>
+                <div>
+                  <dt>Numer wewnętrzny</dt>
+                  <dd x-text="modalDetail.internal_ext || '—'"></dd>
+                </div>
+              </dl>
+            </div>
+            <div>
+              <span class="badge" :class="modalDetail.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="modalDetail.role"></span>
+              <div class="users-modal-stat">
+                <strong x-text="modalDetail.sessions_active"></strong>
+                <span>Aktywnych sesji</span>
+              </div>
+            </div>
+          </div>
+
+          <template x-if="modalPassword">
+            <div class="form-message success">
+              Nowe hasło: <code x-text="modalPassword"></code>
+            </div>
+          </template>
+          <template x-if="modalSuccess">
+            <div class="form-message success" x-text="modalSuccess"></div>
+          </template>
+
+          <form class="config-form users-form" @submit.prevent="saveModal()" x-show="canManage" x-cloak>
+            <h5>Edycja danych użytkownika</h5>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="modal-user-email">E-mail</label>
+                <input id="modal-user-email" type="email" x-model="modalEdit.email" required>
+              </div>
+              <div class="form-field">
+                <label for="modal-user-first">Imię</label>
+                <input id="modal-user-first" type="text" x-model="modalEdit.firstName">
+              </div>
+              <div class="form-field">
+                <label for="modal-user-last">Nazwisko</label>
+                <input id="modal-user-last" type="text" x-model="modalEdit.lastName">
+              </div>
+              <div class="form-field">
+                <label for="modal-user-mobile">Telefon komórkowy</label>
+                <input id="modal-user-mobile" type="tel" x-model="modalEdit.mobilePhone" placeholder="np. +48 600 700 800">
+              </div>
+              <div class="form-field">
+                <label for="modal-user-ext">Numer wewnętrzny</label>
+                <input id="modal-user-ext" type="text" x-model="modalEdit.internalExt">
+              </div>
+              <div class="form-field">
+                <label for="modal-user-role">Rola</label>
+                <select id="modal-user-role" x-model="modalEdit.role">
+                  <option value="operator">Operator</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" :disabled="modalSaving">
+                <template x-if="!modalSaving">Zapisz</template>
+                <template x-if="modalSaving">Zapisywanie…</template>
+              </button>
+              <button
+                type="button"
+                class="btn-secondary"
+                @click.prevent="resetPassword(modalDetail)"
+                :disabled="modalSaving || actionUserId === modalDetail.id"
+              >
+                Reset hasła
+              </button>
+            </div>
+          </form>
+
+          <section class="users-sessions">
+            <header>
+              <h5>Sesje administracyjne</h5>
+              <p>Lista wygenerowanych tokenów wraz z datą ważności.</p>
+            </header>
+            <template x-if="modalDetail.sessions.length === 0">
+              <p class="users-sessions-empty">Brak aktywnych lub historycznych sesji.</p>
+            </template>
+            <template x-if="modalDetail.sessions.length > 0">
+              <div class="users-sessions-table-wrapper">
+                <table class="users-sessions-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Utworzona</th>
+                      <th>Wygasa</th>
+                      <th>Status</th>
+                      <th>Adres IP</th>
+                      <th>Przeglądarka</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="session in modalDetail.sessions" :key="session.id">
+                      <tr>
+                        <td x-text="session.id"></td>
+                        <td x-text="formatDate(session.created_at)"></td>
+                        <td x-text="formatDate(session.expires_at)"></td>
+                        <td>
+                          <span
+                            class="status-chip"
+                            :class="session.revoked_at ? 'warning' : 'success'"
+                            x-text="session.revoked_at ? `Unieważniona: ${formatDate(session.revoked_at)}` : 'Aktywna'"
+                          ></span>
+                        </td>
+                        <td x-text="session.client_ip || '—'"></td>
+                        <td x-text="session.user_agent || '—'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </section>
+        </template>
+      </div>
+      <footer class="users-modal-footer">
+        <button type="button" class="btn-secondary" @click.prevent="closeModal()">Zamknij</button>
+      </footer>
+    </div>
+  </div>
+</section>

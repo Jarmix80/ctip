@@ -150,6 +150,7 @@ CREATE TABLE ctip.contact (
     id bigint NOT NULL,
     number text NOT NULL,
     ext text,
+    firebird_id text,
     first_name text,
     last_name text,
     company text,
@@ -313,6 +314,9 @@ ALTER TABLE ONLY ctip.calls
 ALTER TABLE ONLY ctip.ivr_map
     ADD CONSTRAINT ivr_map_pkey PRIMARY KEY (digit, ext);
 
+ALTER TABLE ONLY ctip.ivr_map
+    ADD CONSTRAINT uq_ivr_map_ext UNIQUE (ext);
+
 
 --
 -- TOC entry 4680 (class 2606 OID 16436)
@@ -396,6 +400,7 @@ CREATE UNIQUE INDEX uq_sms_out_callid_ivr ON ctip.sms_out USING btree (call_id) 
 
 CREATE INDEX idx_contact_number ON ctip.contact USING btree (number);
 CREATE INDEX idx_contact_ext ON ctip.contact USING btree (ext);
+CREATE INDEX idx_contact_firebird_id ON ctip.contact USING btree (firebird_id);
 CREATE INDEX idx_sms_out_dest_created ON ctip.sms_out USING btree (dest, created_at DESC);
 CREATE INDEX idx_sms_out_created_by ON ctip.sms_out USING btree (created_by, created_at DESC);
 
@@ -493,6 +498,121 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.contact TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.contact_device TO appuser;
 GRANT ALL ON SEQUENCE ctip.contact_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.contact_device_id_seq TO appuser;
+
+--
+-- Sekcja: tabele administracyjne panelu CTIP
+--
+
+CREATE SEQUENCE ctip.admin_user_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.admin_user_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.admin_user_id_seq OWNED BY ctip.admin_user.id;
+
+CREATE TABLE ctip.admin_user (
+    id integer NOT NULL DEFAULT nextval('ctip.admin_user_id_seq'::regclass),
+    first_name text,
+    last_name text,
+    email text NOT NULL,
+    internal_ext text,
+    mobile_phone text,
+    role text DEFAULT 'admin'::text NOT NULL,
+    password_hash text NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT admin_user_pkey PRIMARY KEY (id),
+    CONSTRAINT admin_user_role_check CHECK (role = ANY (ARRAY['admin'::text, 'operator'::text]))
+);
+
+ALTER TABLE ctip.admin_user OWNER TO postgres;
+
+CREATE UNIQUE INDEX ix_admin_user_email ON ctip.admin_user USING btree (email);
+
+CREATE SEQUENCE ctip.admin_session_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.admin_session_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.admin_session_id_seq OWNED BY ctip.admin_session.id;
+
+CREATE TABLE ctip.admin_session (
+    id integer NOT NULL DEFAULT nextval('ctip.admin_session_id_seq'::regclass),
+    user_id integer NOT NULL,
+    token text NOT NULL,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    client_ip text,
+    user_agent text,
+    CONSTRAINT admin_session_pkey PRIMARY KEY (id),
+    CONSTRAINT admin_session_user_id_fkey FOREIGN KEY (user_id)
+        REFERENCES ctip.admin_user (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+);
+
+ALTER TABLE ctip.admin_session OWNER TO postgres;
+
+CREATE UNIQUE INDEX ix_admin_session_token ON ctip.admin_session USING btree (token);
+
+CREATE TABLE ctip.admin_setting (
+    key text NOT NULL,
+    value text NOT NULL,
+    is_secret boolean DEFAULT false NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_by integer,
+    CONSTRAINT admin_setting_pkey PRIMARY KEY (key),
+    CONSTRAINT admin_setting_updated_by_fkey FOREIGN KEY (updated_by)
+        REFERENCES ctip.admin_user (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE SET NULL
+);
+
+ALTER TABLE ctip.admin_setting OWNER TO postgres;
+
+CREATE SEQUENCE ctip.admin_audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.admin_audit_log_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.admin_audit_log_id_seq OWNED BY ctip.admin_audit_log.id;
+
+CREATE TABLE ctip.admin_audit_log (
+    id integer NOT NULL DEFAULT nextval('ctip.admin_audit_log_id_seq'::regclass),
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    user_id integer,
+    action text NOT NULL,
+    payload json,
+    client_ip text,
+    CONSTRAINT admin_audit_log_pkey PRIMARY KEY (id),
+    CONSTRAINT admin_audit_log_user_id_fkey FOREIGN KEY (user_id)
+        REFERENCES ctip.admin_user (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE SET NULL
+);
+
+ALTER TABLE ctip.admin_audit_log OWNER TO postgres;
+
+CREATE INDEX ix_admin_audit_log_created_at ON ctip.admin_audit_log USING btree (created_at);
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_user TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_session TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_setting TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_audit_log TO appuser;
+GRANT ALL ON SEQUENCE ctip.admin_user_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.admin_session_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.admin_audit_log_id_seq TO appuser;
 
 
 --

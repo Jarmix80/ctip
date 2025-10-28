@@ -1,0 +1,100 @@
+cdn.min.js:1  Alpine Expression Error: Cannot set properties of null (setting '_x_dataStack')
+
+Expression: "!loading"
+
+ template
+te @ cdn.min.js:1
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+en @ cdn.min.js:5
+D @ cdn.min.js:1
+(anonymous) @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+n @ cdn.min.js:5
+lr @ cdn.min.js:5
+S @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+_r @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+[NEW] Explain Console errors by using Copilot in Edge: click
+
+         to explain an error.
+        Learn more
+        Don't show again
+cdn.min.js:1  Uncaught TypeError: Cannot set properties of null (setting '_x_dataStack')
+P @ cdn.min.js:1
+o @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+Ne @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+en @ cdn.min.js:5
+D @ cdn.min.js:1
+(anonymous) @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+n @ cdn.min.js:5
+lr @ cdn.min.js:5
+S @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+_r @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+favicon.ico:1   GET http://127.0.0.1:8000/favicon.ico 404 (Not Found)
+cdn.min.js:1  Alpine Expression Error: Cannot set properties of null (setting '_x_dataStack')
+
+Expression: "loading"
+
+ <template x-if=​"loading">​…​</template>​
+te @ cdn.min.js:1
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+Rn @ cdn.min.js:1
+cdn.min.js:1  Uncaught TypeError: Cannot set properties of null (setting '_x_dataStack')
+P @ cdn.min.js:1
+o @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+Ne @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+Rn @ cdn.min.js:1
+admin.js:172  TypeError: htmx.load is not a function
+    at Proxy.loadSection (admin.js:163:20)
+    at Proxy.fetchCurrentUser (admin.js:105:14)
+    at async Proxy.login (admin.js:196:9)
+loadSection @ admin.js:172
+fetchCurrentUser @ admin.js:105
+await in fetchCurrentUser
+login @ admin.js:196
+await in login
+Ne @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+o @ cdn.min.js:5
+cdn.min.js:1  Alpine Expression Error: Cannot set properties of null (setting '_x_dataStack')
+
+Expression: "!loading"
+
+ <template x-if=​"!loading">​…​</template>​
+te @ cdn.min.js:1
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+Rn @ cdn.min.js:1
+cdn.min.js:1  Uncaught TypeError: Cannot set properties of null (setting '_x_dataStack')
+P @ cdn.min.js:1
+o @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+Ne @ cdn.min.js:5
+(anonymous) @ cdn.min.js:5
+nr @ cdn.min.js:1
+(anonymous) @ cdn.min.js:5
+r @ cdn.min.js:5
+Rn @ cdn.min.js:1

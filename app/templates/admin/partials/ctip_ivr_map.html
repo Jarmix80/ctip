@@ -1,0 +1,87 @@
+<section
+  class="config-section"
+  x-data="ctipIvrMap()"
+  x-init="init()"
+  data-items='{{ entries | tojson | safe }}'
+  data-token='{{ admin_token }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Automatyczne SMS (IVR)</h2>
+      <p>Konfiguracja wiadomości wysyłanych po wybraniu określonego numeru IVR.</p>
+    </div>
+  </header>
+
+  <div class="config-table" x-show="entries.length" x-cloak>
+    <table>
+      <thead>
+        <tr>
+          <th>Numer wewnętrzny</th>
+          <th>Cyfra IVR</th>
+          <th>Treść wiadomości</th>
+          <th>Status</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="item in entries" :key="item.ext">
+          <tr>
+            <td x-text="item.ext"></td>
+            <td x-text="item.digit"></td>
+            <td>
+              <div style="max-width: 420px; white-space: pre-wrap; font-size: 13px;" x-text="item.sms_text"></div>
+            </td>
+            <td>
+              <span class="status-chip" :class="item.enabled ? 'success' : 'warning'" x-text="item.enabled ? 'Aktywny' : 'Wyłączony'"></span>
+            </td>
+            <td style="display: flex; gap: 8px;">
+              <button type="button" class="btn-secondary" @click.prevent="edit(item)">Edytuj</button>
+              <button type="button" class="btn-secondary" @click.prevent="remove(item)" :disabled="entries.length === 1">Usuń</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <template x-if="!entries.length">
+    <p class="config-empty">Brak zdefiniowanych wiadomości IVR. Dodaj nową konfigurację poniżej.</p>
+  </template>
+
+  <form class="config-form" @submit.prevent="save">
+    <h3 x-text="editingExt ? `Edytuj wpis ${editingExt}` : 'Dodaj nową wiadomość'" style="margin:0;"></h3>
+    <div class="form-grid" style="margin-top: 12px;">
+      <div class="form-field">
+        <label for="ivr-ext">Numer wewnętrzny</label>
+        <input id="ivr-ext" type="text" x-model="form.ext" maxlength="16" :disabled="Boolean(editingExt)" required>
+      </div>
+      <div class="form-field">
+        <label for="ivr-digit">Cyfra IVR</label>
+        <input id="ivr-digit" type="number" min="0" max="99" x-model.number="form.digit" required>
+      </div>
+      <div class="form-field" style="align-self: flex-end;">
+        <label>
+          <input type="checkbox" x-model="form.enabled">
+          Włącz automatyczną wysyłkę
+        </label>
+      </div>
+    </div>
+    <div class="form-field">
+      <label for="ivr-text">Treść SMS</label>
+      <textarea id="ivr-text" rows="3" maxlength="4096" x-model="form.smsText" required></textarea>
+    </div>
+    <div class="form-actions" style="gap: 10px;">
+      <button type="submit" :disabled="saving">
+        <template x-if="!saving">Zapisz</template>
+        <template x-if="saving">Zapisywanie…</template>
+      </button>
+      <button type="button" class="btn-secondary" @click.prevent="resetForm" :disabled="saving">Wyczyść</button>
+    </div>
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>

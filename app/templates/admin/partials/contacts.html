@@ -1,0 +1,294 @@
+<section
+  class="contacts-section users-section"
+  x-data="adminContacts()"
+  x-init="init()"
+  data-contacts='{{ contacts | tojson | safe }}'
+  data-can-manage='{{ can_manage | tojson }}'
+  data-can-delete='{{ can_delete | tojson }}'
+>
+  <header class="monitor-card-header history-header">
+    <div>
+      <h3>Książka adresowa</h3>
+      <p>Zarządzaj kontaktami telefonicznymi i mapuj je na identyfikatory z bazy Firebird.</p>
+    </div>
+    <div class="dashboard-actions">
+      <button type="button" class="btn-secondary" @click.prevent="fetchContacts(true)" :disabled="loading">
+        <template x-if="!loading">Odśwież</template>
+        <template x-if="loading">Wczytywanie…</template>
+      </button>
+    </div>
+  </header>
+
+  <form class="config-form contacts-search" @submit.prevent="searchContacts">
+    <div class="form-field">
+      <label for="contacts-search-input">Szukaj (numer, nazwa, e-mail, Firebird ID)</label>
+      <input
+        id="contacts-search-input"
+        type="search"
+        placeholder="Wpisz fragment numeru, nazwy firmy albo identyfikator Firebird"
+        x-model="search"
+      >
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-secondary" :disabled="loading">Filtruj</button>
+      <button type="button" class="btn-secondary" @click.prevent="clearSearch" :disabled="!search.length">Wyczyść</button>
+    </div>
+  </form>
+
+  <div class="contacts-grid users-grid" x-show="canManage" x-cloak>
+    <form class="config-form contacts-form" @submit.prevent="createContact">
+      <h4>Dodaj kontakt</h4>
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="contact-number">Numer telefonu</label>
+          <input id="contact-number" type="text" x-model="form.number" required placeholder="+48 600 700 800">
+        </div>
+        <div class="form-field">
+          <label for="contact-ext">Numer wewnętrzny</label>
+          <input id="contact-ext" type="text" x-model="form.ext" placeholder="np. 105">
+        </div>
+        <div class="form-field">
+          <label for="contact-firebird">ID Firebird</label>
+          <input id="contact-firebird" type="text" x-model="form.firebirdId" placeholder="np. 56321">
+        </div>
+        <div class="form-field">
+          <label for="contact-first-name">Imię</label>
+          <input id="contact-first-name" type="text" x-model="form.firstName">
+        </div>
+        <div class="form-field">
+          <label for="contact-last-name">Nazwisko</label>
+          <input id="contact-last-name" type="text" x-model="form.lastName">
+        </div>
+        <div class="form-field">
+          <label for="contact-company">Firma</label>
+          <input id="contact-company" type="text" x-model="form.company">
+        </div>
+        <div class="form-field">
+          <label for="contact-email">E-mail</label>
+          <input id="contact-email" type="email" x-model="form.email" placeholder="kontakt@example.com">
+        </div>
+        <div class="form-field">
+          <label for="contact-nip">NIP</label>
+          <input id="contact-nip" type="text" x-model="form.nip">
+        </div>
+        <div class="form-field">
+          <label for="contact-source">Źródło</label>
+          <input id="contact-source" type="text" x-model="form.source" placeholder="manual, import, CTI">
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="contact-notes">Uwagi</label>
+        <textarea id="contact-notes" rows="3" x-model="form.notes" placeholder="Notatki operacyjne lub instrukcja dla operatora."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" :disabled="saving">
+          <template x-if="!saving">Zapisz kontakt</template>
+          <template x-if="saving">Zapisywanie…</template>
+        </button>
+      </div>
+      <template x-if="success">
+        <div class="form-message success" x-text="success"></div>
+      </template>
+      <template x-if="error">
+        <div class="form-message error" x-text="error"></div>
+      </template>
+    </form>
+  </div>
+
+  <template x-if="!canManage && error">
+    <div class="form-message error" x-text="error"></div>
+  </template>
+
+  <div class="users-table-wrapper contacts-table-wrapper">
+    <template x-if="loading">
+      <div class="form-message info" role="status">Wczytywanie danych kontaktów…</div>
+    </template>
+    <table class="users-table contacts-table">
+      <thead>
+        <tr>
+          <th>Numer</th>
+          <th>Osoba</th>
+          <th>E-mail/Firma</th>
+          <th>ID Firebird</th>
+          <th>Uwagi</th>
+          <th>Źródło</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-if="contacts.length === 0 && !loading">
+          <tr>
+            <td colspan="7" class="sms-history-empty">Brak zapisanych kontaktów.</td>
+          </tr>
+        </template>
+        <template x-for="contact in contacts" :key="contact.id">
+          <tr>
+            <td>
+              <strong x-text="contact.number"></strong>
+              <div class="user-meta" x-text="formatDate(contact.updated_at)"></div>
+              <div class="user-meta" x-show="contact.ext" x-text="`Wewnętrzny: ${contact.ext}`"></div>
+            </td>
+            <td>
+              <span x-text="formatName(contact)"></span>
+            </td>
+            <td>
+              <div x-text="contact.email || '—'"></div>
+              <div class="user-meta" x-text="contact.company || '—'"></div>
+            </td>
+            <td>
+              <div x-text="formatFirebird(contact.firebird_id)"></div>
+              <div class="user-meta" x-text="contact.nip || '—'"></div>
+            </td>
+            <td>
+              <span x-text="truncateNotes(contact.notes)"></span>
+            </td>
+            <td>
+              <span class="status-chip info" x-text="contact.source || 'manual'"></span>
+            </td>
+            <td class="user-actions">
+              <div class="user-actions-group">
+                <button type="button" class="btn-secondary" @click.prevent="openModal(contact.id)">Szczegóły</button>
+                <template x-if="canDelete">
+                  <button
+                    type="button"
+                    class="btn-secondary btn-delete"
+                    @click.prevent="deleteContact(contact)"
+                    :disabled="actionContactId === contact.id"
+                  >
+                    Usuń
+                  </button>
+                </template>
+              </div>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <div
+    class="users-modal contacts-modal"
+    x-show="modalOpen"
+    x-cloak
+    @keydown.escape.window="closeModal"
+    x-transition.opacity.duration.150ms
+  >
+    <div class="users-modal-backdrop" @click="closeModal"></div>
+    <div class="users-modal-dialog contacts-modal-dialog" role="dialog" aria-modal="true">
+      <header class="users-modal-header">
+        <div>
+          <h4 x-text="modalDetail ? modalDetail.number : 'Szczegóły kontaktu'"></h4>
+          <p x-text="modalDetail ? formatName(modalDetail) : 'Wczytywanie szczegółów kontaktu.'"></p>
+        </div>
+        <button type="button" class="users-modal-close" @click.prevent="closeModal">×</button>
+      </header>
+      <div class="users-modal-body">
+        <template x-if="modalLoading">
+          <p class="users-modal-status">Trwa pobieranie danych kontaktu…</p>
+        </template>
+        <template x-if="!modalLoading && !modalDetail && modalError">
+          <div class="form-message error" x-text="modalError"></div>
+        </template>
+        <template x-if="!modalLoading && modalDetail">
+          <div class="users-modal-summary">
+            <dl>
+              <div>
+                <dt>Numer telefonu</dt>
+                <dd x-text="modalDetail.number"></dd>
+              </div>
+              <div>
+                <dt>Imię i nazwisko</dt>
+                <dd x-text="formatName(modalDetail)"></dd>
+              </div>
+              <div>
+                <dt>E-mail</dt>
+                <dd x-text="modalDetail.email || '—'"></dd>
+              </div>
+              <div>
+                <dt>Firma</dt>
+                <dd x-text="modalDetail.company || '—'"></dd>
+              </div>
+              <div>
+                <dt>ID Firebird</dt>
+                <dd x-text="formatFirebird(modalDetail.firebird_id)"></dd>
+              </div>
+              <div>
+                <dt>Uwagi</dt>
+                <dd x-text="modalDetail.notes || '—'"></dd>
+              </div>
+              <div>
+                <dt>Źródło</dt>
+                <dd x-text="modalDetail.source || 'manual'"></dd>
+              </div>
+              <div>
+                <dt>Utworzono</dt>
+                <dd x-text="formatDate(modalDetail.created_at)"></dd>
+              </div>
+              <div>
+                <dt>Ostatnia modyfikacja</dt>
+                <dd x-text="formatDate(modalDetail.updated_at)"></dd>
+              </div>
+            </dl>
+          </div>
+          <template x-if="modalSuccess">
+            <div class="form-message success" x-text="modalSuccess"></div>
+          </template>
+          <template x-if="modalError">
+            <div class="form-message error" x-text="modalError"></div>
+          </template>
+          <form class="config-form contacts-edit-form" x-show="canManage" x-cloak @submit.prevent="updateContact">
+            <h4>Edytuj kontakt</h4>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="contact-edit-number">Numer telefonu</label>
+                <input id="contact-edit-number" type="text" x-model="modalEdit.number" required>
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-ext">Numer wewnętrzny</label>
+                <input id="contact-edit-ext" type="text" x-model="modalEdit.ext">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-firebird">ID Firebird</label>
+                <input id="contact-edit-firebird" type="text" x-model="modalEdit.firebirdId">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-first">Imię</label>
+                <input id="contact-edit-first" type="text" x-model="modalEdit.firstName">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-last">Nazwisko</label>
+                <input id="contact-edit-last" type="text" x-model="modalEdit.lastName">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-company">Firma</label>
+                <input id="contact-edit-company" type="text" x-model="modalEdit.company">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-email">E-mail</label>
+                <input id="contact-edit-email" type="email" x-model="modalEdit.email">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-nip">NIP</label>
+                <input id="contact-edit-nip" type="text" x-model="modalEdit.nip">
+              </div>
+              <div class="form-field">
+                <label for="contact-edit-source">Źródło</label>
+                <input id="contact-edit-source" type="text" x-model="modalEdit.source">
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="contact-edit-notes">Uwagi</label>
+              <textarea id="contact-edit-notes" rows="3" x-model="modalEdit.notes"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" :disabled="modalSaving">
+                <template x-if="!modalSaving">Zapisz zmiany</template>
+                <template x-if="modalSaving">Zapisywanie…</template>
+              </button>
+            </div>
+          </form>
+        </template>
+      </div>
+    </div>
+  </div>
+</section>

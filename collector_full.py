@@ -573,8 +573,12 @@ class CTIPClient(threading.Thread):
         if not typ:
             return
 
-        if typ in {"AOK", "ANAK"}:
-            self.handle_control_packet(typ, parts)
+        original_typ = typ
+        if typ and typ.startswith("A") and len(typ) > 1:
+            typ = typ[1:]
+
+        if original_typ in {"AOK", "ANAK"}:
+            self.handle_control_packet(original_typ, parts)
             return
 
         if self.awaiting_login_ack and self.login_request_ts is not None:
@@ -600,7 +604,7 @@ class CTIPClient(threading.Thread):
                 call_id=cid,
             )
             self._register_context(ctx)
-            ev_insert(self.conn, cid, "ECHO", ext_txt, digits, raw)
+            ev_insert(self.conn, cid, typ, ext_txt, digits, raw)
             return
 
         # RING: incoming rings to internal (IN)
@@ -617,7 +621,7 @@ class CTIPClient(threading.Thread):
                 call_id=cid,
             )
             self._register_context(ctx)
-            ev_insert(self.conn, cid, "RING", ext_txt, cli, raw)
+            ev_insert(self.conn, cid, typ, ext_txt, cli, raw)
 
             # IVR inference
             ext_norm = ctx.ext_norm or norm_ext(ext_txt)
@@ -682,7 +686,7 @@ class CTIPClient(threading.Thread):
                 self.last_context = ctx
 
             call_update_connected(self.conn, ctx.call_id, answered_by=ext_txt)
-            ev_insert(self.conn, ctx.call_id, "CONN", ext_txt, peer, raw)
+            ev_insert(self.conn, ctx.call_id, typ, ext_txt, peer, raw)
             return
 
         # REL: released
@@ -693,11 +697,11 @@ class CTIPClient(threading.Thread):
 
             ctx = self._get_context(ext_txt)
             if ctx is None:
-                ev_insert(self.conn, 0, "REL", ext_txt, reason, raw)
+                ev_insert(self.conn, 0, typ, ext_txt, reason, raw)
                 return
 
             call_update_ended(self.conn, ctx.call_id)
-            ev_insert(self.conn, ctx.call_id, "REL", ext_txt, reason, raw)
+            ev_insert(self.conn, ctx.call_id, typ, ext_txt, reason, raw)
             self._unregister_context(ctx)
             return
 

@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     app_title: str = "CTIP API"
     app_version: str = "0.1.0"
 
+    pbx_host: str = Field(default="192.168.0.11", alias="PBX_HOST")
+    pbx_port: int = Field(default=5524, alias="PBX_PORT")
+    pbx_pin: str = Field(default="1234", alias="PBX_PIN")
+
     pg_host: str = Field(default="192.168.0.8", alias="PGHOST")
     pg_port: int = Field(default=5433, alias="PGPORT")
     pg_database: str = Field(default="ctip", alias="PGDATABASE")
@@ -26,6 +30,22 @@ class Settings(BaseSettings):
     sms_api_username: str | None = Field(default=None, alias="SMS_API_USERNAME")
     sms_api_password: str | None = Field(default=None, alias="SMS_API_PASSWORD")
     sms_test_mode: bool = Field(default=True, alias="SMS_TEST_MODE")
+
+    admin_secret_key: str | None = Field(default=None, alias="ADMIN_SECRET_KEY")
+    admin_session_ttl_minutes: int = Field(default=60, alias="ADMIN_SESSION_TTL_MINUTES")
+    admin_session_remember_hours: int = Field(default=72, alias="ADMIN_SESSION_REMEMBER_HOURS")
+    admin_panel_url: str | None = Field(
+        default="http://localhost:8000/admin", alias="ADMIN_PANEL_URL"
+    )
+
+    email_host: str | None = Field(default=None, alias="EMAIL_HOST")
+    email_port: int = Field(default=587, alias="EMAIL_PORT")
+    email_username: str | None = Field(default=None, alias="EMAIL_USERNAME")
+    email_password: str | None = Field(default=None, alias="EMAIL_PASSWORD")
+    email_sender_name: str | None = Field(default=None, alias="EMAIL_SENDER_NAME")
+    email_sender_address: str | None = Field(default=None, alias="EMAIL_SENDER_ADDRESS")
+    email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
+    email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -11,6 +11,9 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `ctip_sniff.py` – narzędzie diagnostyczne zapisujące surowy strumień CTIP do pliku w celu analizy protokołu.
 - `conect_sli.py` – lekki monitor CTIP uruchamiany w trybie interaktywnym, wykonujący `aWHO`/`aLOGA` i wypisujący zdarzenia na STDOUT.
 - `collector_fullwork.py` oraz katalog `docs/` – materiały warsztatowe i referencyjne, niezalecane do użycia w produkcji.
+- `app/api/routes/admin_*` – moduł API panelu administratora (logowanie, konfiguracja PostgreSQL/CTIP/SerwerSMS, audyt zmian oraz health-checki `/admin/status/summary`, `/admin/status/database`, `/admin/status/ctip`, `/admin/status/sms`).
+- `app/web/admin_ui.py` + `app/templates/admin/` – interfejs administracyjny w technologii HTMX + Alpine (adres `/admin`).
+- `app/api/routes/admin_contacts.py` + `app/services/admin_contacts.py` – warstwa API i logika książki adresowej z obsługą pola `firebird_id`.
 
 ## Wymagania systemowe
 - Python 3.11 lub nowszy (z bibliotekami `psycopg` oraz – opcjonalnie dla Windows – `pywin32`).
@@ -34,7 +37,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 | `PAYLOAD_ENCODING` | `latin-1` | Kodowanie zapisu surowego payloadu. |
 | `LOG_PREFIX` | `[CTIP]` | Prefiks logów widocznych na STDOUT. |
 
-Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej samej podsieci warstwy dostępowej co host kolektora. Należy zapewnić trasowanie i reguły zapory pozwalające na dwukierunkową komunikację w sieci lokalnej 192.168.0.0/24. Przed startem produkcyjnym należy potwierdzić adres źródłowy hosta z kolektorem (`hostname -I` w WSL – aktualnie 172.29.245.174) i uwzględnić go w regułach zapory centrali.
+Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej samej podsieci warstwy dostępowej co host kolektora. Należy zapewnić trasowanie i reguły zapory pozwalające na dwukierunkową komunikację w sieci lokalnej 192.168.0.0/24. Po przełączeniu WSL w tryb mostkowany (zob. `docs/projekt/update_wsl.md`) host kolektora ma adres `192.168.0.133/24` (`hostname -I`). Zaktualizuj zasady zapory Windows/`pg_hba.conf`, aby dopuścić ten adres do serwera PostgreSQL (`PGHOST:PGPORT`, domyślnie `192.168.0.8:5433`); brak reguły skutkuje timeoutem przy logowaniu administratora.
 
 ### Zmienne środowiskowe modułu SMS (`sms_sender.py`)
 | Nazwa | Domyślna wartość | Opis |
@@ -47,6 +50,33 @@ Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej same
 | `SMS_API_TOKEN` | *(puste)* | Token dostępowy (opcjonalnie, gdy operator go udostępnia). |
 | `SMS_API_USERNAME`, `SMS_API_PASSWORD` | *(puste)* | Login i hasło do HTTPS API (jeśli nie używamy tokenu). |
 | `SMS_TEST_MODE` | `true` | Umożliwia wysyłkę w trybie testowym bez naliczania kosztów. |
+
+### Zmienne środowiskowe modułu e-mail (panel administratora)
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `EMAIL_HOST` | *(puste)* | Adres serwera SMTP. |
+| `EMAIL_PORT` | `587` | Port serwera SMTP (TLS/STARTTLS). |
+| `EMAIL_USERNAME` | *(puste)* | Login do serwera SMTP (opcjonalnie). |
+| `EMAIL_PASSWORD` | *(puste)* | Hasło do serwera SMTP (opcjonalnie). |
+| `EMAIL_SENDER_NAME` | *(puste)* | Nazwa nadawcy w wiadomościach e-mail. |
+| `EMAIL_SENDER_ADDRESS` | *(puste)* | Adres nadawcy (From). |
+| `EMAIL_USE_TLS` | `true` | Włącza STARTTLS. |
+| `EMAIL_USE_SSL` | `false` | Połączenie przez SSL/TLS (port 465). |
+
+### Zmienne środowiskowe panelu administratora (`app/api/routes/admin_*`)
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `ADMIN_SECRET_KEY` | *(puste)* | Opcjonalny klucz (Fernet, base64) do szyfrowania wartości poufnych zapisywanych w `ctip.admin_setting`. |
+| `ADMIN_SESSION_TTL_MINUTES` | `60` | Czas życia tokenu sesji administratora (w minutach). |
+| `ADMIN_SESSION_REMEMBER_HOURS` | `72` | Czas życia sesji, gdy użytkownik wybierze opcję „Zapamiętaj mnie” (w godzinach). |
+| `ADMIN_PANEL_URL` | `http://localhost:8000/admin` | Publiczny adres logowania używany w e-mailach i SMS z danymi kont. |
+
+### Lista kontrolna przed uruchomieniem
+1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
+2. Uzupełnij plik `.env` wszystkimi parametrami (PostgreSQL, CTIP, SerwerSMS) oraz wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
+3. Wykonaj migracje: `alembic upgrade head` (dodaje również tabele panelu administracyjnego i nowe sekwencje).
+4. Dodaj pierwszego administratora, np. w SQL: `INSERT INTO ctip.admin_user (email, role, password_hash, is_active) VALUES (...)`; skrót hasła wygeneruj funkcją `hash_password` z `app.services.security`.
+5. Zweryfikuj instalację: `source .venv/bin/activate && python -m unittest` oraz testowe logowanie do `/admin/auth/login` (nagłówek `X-Admin-Session`).
 
 ### Uruchamianie kolektora w WSL z pliku `.env`
 W środowiskach Windows Subsystem for Linux zaleca się przechowywanie konfiguracji w pliku `.env` (format `KEY=VALUE`). Przed startem `collector_full.py` oraz `sms_sender.py` należy wczytać zmienne, np.:
@@ -111,14 +141,72 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /health` – status serwera.
 - `GET /calls` – lista połączeń z filtrami (kierunek, status, wewnętrzny, zakres dat, wyszukiwanie tekstowe).
 - `GET /calls/{call_id}` – szczegóły połączenia (zdarzenia CTIP, historia SMS).
+
+## Panel administracyjny (HTMX + Alpine)
+- Strona startowa znajduje się pod `/admin`; serwuje ją moduł `app/web/admin_ui.py`, korzystając z szablonów w `app/templates/admin/` oraz statycznych zasobów `app/static/admin/`.
+ - Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację bazy/CTIP/SerwerSMS/E-mail oraz pełny widok „Użytkownicy”.
+- Logowanie odbywa się przez `/admin/auth/login` (formularz na stronie głównej). Token sesji (`X-Admin-Session`) zapisywany jest w `localStorage`, a kolejne żądania HTMX/fetch automatycznie go dołączają.
+- W razie odpowiedzi 401/403 podczas ładowania sekcji panel samoczynnie czyści token, wylogowuje użytkownika i sygnalizuje wygaśnięcie sesji.
+- Dashboard udostępnia aktywne akcje dla kafelków statusu: `Testuj połączenie` (baza danych), `Edytuj konfigurację` oraz `Diagnostyka` (CTIP i SerwerSMS). Diagnostyka pobiera dane z `/admin/status/<moduł>` i wyświetla je w panelu bocznym.
+- Formularze konfiguracji: baza (`/admin/partials/config_database`), CTIP (`/admin/partials/config_ctip`) oraz SerwerSMS (`/admin/partials/config_sms`) zapisują dane przez `/admin/config/...` i zapewniają testy połączeń (`/admin/status/database`, `/admin/sms/test`).
+- Sekcja SerwerSMS zawiera monitor pracy `sms_sender`: widok logu (`/admin/partials/sms/logs`) prezentuje końcówkę pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a tabela historii (`/admin/partials/sms/history`) odświeża ostatnie wysyłki z `ctip.sms_out` i pozwala filtrować je po statusach (`NEW`, `RETRY`, `SENT`, `ERROR`, `SIMULATED`). Formularz wysyłki testowej wymusza format numeru E.164, a poprawna próba (w trybie testowym lub produkcyjnym) natychmiast pojawia się w logu i historii.
+- Sekcja CTIP udostępnia podgląd na żywo (`/admin/partials/ctip/live`) z filtrowaniem po wewnętrznych numerach oraz wbudowanym formularzem konfiguracji; kafelek na dashboardzie oferuje zarówno edycję parametrów, jak i szybkie przejście do widoku live. Aktualizacje są dostarczane kanałem WebSocket (`/admin/ctip/ws`), który pomija ramki keep-alive typu `T`.
+- Sekcja Automatyzacje IVR (`/admin/partials/ctip/ivr-map`) pozwala zarządzać mapowaniami cyfr IVR na numery wewnętrzne, treścią automatycznych SMS i ich aktywnością. Każda operacja (utworzenie, aktualizacja, usunięcie) jest audytowana i natychmiast dostępna dla kolektora bez restartu.
+- Sekcja E-mail umożliwia konfigurację serwera SMTP (host, port, logowanie, nadawca), test połączenia oraz wysłanie wiadomości testowej na wskazany adres (`/admin/email/test`). Wynik jest prezentowany w UI i zapisywany w audycie.
+- Sekcja Książka adresowa (`/admin/partials/contacts`) udostępnia CRUD kontaktów z wyszukiwarką po numerze, nazwisku, e-mailu i identyfikatorze Firebird; formularze pozwalają przypisać numer wewnętrzny, notatki operacyjne oraz pole `firebird_id` wykorzystywane do mapowania z bazą Firebird.
+- Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP oraz Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów). Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
+- W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
+- Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta automatycznie wysyłany jest e-mail i SMS z danymi logowania. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
+- Aby uruchomić panel lokalnie:
+  1. `source .venv/bin/activate`
+  2. `uvicorn app.main:app --reload`
+  3. Otwórz przeglądarkę na `http://localhost:8000/admin`
+- Implementacja kolejnych sekcji (konsola SQL, kopie zapasowe, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
+- `GET /admin/contacts`, `POST /admin/contacts`, `PUT /admin/contacts/{contact_id}`, `DELETE /admin/contacts/{contact_id}` – zarządzanie wpisami książki adresowej (wymaga nagłówka `X-Admin-Session` i roli `admin`); obsługa pola `firebird_id` umożliwia powiązanie z rekordami bazy Firebird.
+- `GET /admin/contacts/by-number/{number}` – wyszukaj kontakt po numerze MSISDN (wymagane `X-Admin-Session`; dostęp dla roli `admin` i `operator`).
 - `GET /sms/templates` – lista szablonów (globalnych i użytkownika).
 - `POST /sms/templates` – dodawanie szablonów (globalny tylko dla administratora).
 - `POST /sms/send` – zapis SMS do kolejki `ctip.sms_out` (treść lub szablon).
+- `GET /admin/sms/logs` oraz `GET /admin/sms/history` – JSON wykorzystywany przez monitor SerwerSMS w panelu administratora (wymagany nagłówek `X-Admin-Session`).
 - `GET /sms/history` – historia wysyłek z filtrem po numerze/statusie/połączeniu.
 - `GET /sms/account` – podstawowe statystyki (liczba wysłanych, oczekujących, błędnych).
 
-Każde żądanie musi zawierać nagłówek `X-User-Id` (liczbowy identyfikator użytkownika); w razie braku serwer zwróci `401 UNAUTHORIZED`. Docelowo mechanizm można zastąpić warstwą JWT/SSO.
+## Panel operatora
+- Strona `/operator` udostępnia interfejs bazujący na prototypie (`prototype/index.html`) i komunikuje się z backendem REST (`/operator/api/**`). Widok zawiera panel listy połączeń, szczegóły CTIP, dane kontaktu oraz moduł szybkich SMS.
+- Lista połączeń normalizuje numery CLIP/CLIR do 9 cyfr (usunięcie prefiksów `0`, `+48`, spacji) i pomija połączenia wyłącznie wewnętrzne, aby operator widział wyłącznie ruch przychodzący/wychodzący z/do abonentów zewnętrznych.
+- Dostępne funkcje: filtrowanie listy połączeń (połączenia wewnętrzne są pomijane), podgląd osi czasu CTIP, prezentacja powiązanego kontaktu wraz z numerem Firebird, historia SMS i kolejka szybkiej wysyłki.
+- Panel nagłówka prezentuje liczbę wysłanych SMS w bieżącym dniu i miesiącu (`GET /operator/api/stats`).
+- Operator może dodać lub edytować kontakt bezpośrednio z widoku połączenia (`POST/PUT /operator/api/contacts`), a dane logowania wysłane w wiadomościach SMS są ukrywane w historii dla bezpieczeństwa.
+- Strona `/operator/settings` udostępnia formularze: edycję profilu operatora (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmianę hasła oraz zarządzanie własnymi szablonami SMS (dodawanie, edycja, usuwanie). Szablony globalne są widoczne w trybie tylko do odczytu.
+- Opcja „Zapamiętaj mnie” przechowuje token sesji w `localStorage` i wydłuża ważność sesji (`ADMIN_SESSION_REMEMBER_HOURS`), natomiast standardowe logowanie używa `sessionStorage`.
+- Operatorzy i administratorzy korzystają z tego samego logowania (`/admin/auth/login` lub `/operator/auth/login`). Po uwierzytelnieniu rola `operator` trafia do panelu operatora, natomiast rola `admin` zachowuje pełen dostęp do panelu administracyjnego.
+- Dokument referencyjny: `docs/projekt/panel_operator_ui.md`.
+
+### API operatora
+- `GET /operator/api/me` – dane zalogowanego operatora.
+- `GET /operator/api/profile` – odczyt danych profilu operatora (wraz z rolą).
+- `PUT /operator/api/profile` – aktualizacja danych kontaktowych operatora.
+- `POST /operator/api/profile/change-password` – zmiana hasła (wymaga podania obecnego hasła).
+- `GET /operator/api/calls` – lista połączeń (`limit`, `search`, `direction`).
+- `GET /operator/api/calls/{call_id}` – szczegóły połączenia (oś czasu CTIP, kontakt, historia SMS).
+- `GET /operator/api/contacts/by-number/{number}` – dane kontaktu na podstawie numeru MSISDN.
+- `GET /operator/api/sms/history?number=` – historia wiadomości dla wskazanego numeru.
+- `POST /operator/api/sms/send` – dodanie wiadomości do kolejki `sms_out` (wymaga roli `operator` lub `admin`).
+- `GET /operator/api/sms/templates` – lista szablonów (globalnych i operatora) wraz z informacją o możliwości edycji.
+- `POST /operator/api/sms/templates` – dodanie szablonu operatora.
+- `PUT /operator/api/sms/templates/{id}` – edycja własnego szablonu operatora.
+- `DELETE /operator/api/sms/templates/{id}` – usunięcie szablonu operatora.
+- `GET /operator/api/stats` – bieżące statystyki wysłanych SMS (dzień/miesiąc).
+- `POST /operator/api/contacts` oraz `PUT /operator/api/contacts/{id}` – zarządzanie książką adresową bezpośrednio z panelu operatora.
+
+Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważnym tokenem sesji (rola `operator` lub `admin`); brak nagłówka skutkuje kodem `401 UNAUTHORIZED`.
+
+## Automatyczna wysyłka SMS z IVR
+- Tabela `ctip.ivr_map` przechowuje mapowania cyfr IVR (`digit`) na wewnętrzne numery docelowe (`ext`) wraz z tekstem wiadomości i flagą `enabled`. Dodatkowe ograniczenie `uq_ivr_map_ext` gwarantuje, że dany numer wewnętrzny ma tylko jedną aktywną regułę.
+- Panel administracyjny (`/admin/partials/ctip/ivr-map`) udostępnia pełny CRUD mapowań oraz natychmiast aktualizuje treść wysyłanej wiadomości. Domyślna migracja (`15989372b89d`) tworzy wpis dla cyfry `9` kierującej na wewnętrzny `500` i przypisuje komunikat „Instrukcja instalacji aplikacji Ksero Partner znajdziesz na stronie https://www.ksero-partner.com.pl/appkp/.” – wpis można dowolnie edytować lub wyłączyć.
+- `collector_full.py` odczytuje mapowania w momencie obsługi ramki `RING`; po wykryciu dopasowania dodaje pojedynczą wiadomość do kolejki `ctip.sms_out` (źródło `ivr`, powód `{"reason": "ivr_map"}`) i zabezpiecza się przed duplikatami (`ON CONFLICT (call_id) WHERE source='ivr' DO NOTHING`), dzięki czemu każde połączenie otrzymuje maksymalnie jeden SMS.
+- Historia CTIP (`call_events`) rejestruje zarówno trafienia (`IVR_MAP_HIT`), jak i brak dopasowania (`IVR_MAP_MISS`) wraz z numerem wewnętrznym, co ułatwia diagnostykę konfiguracji IVR.
 
 ## Instalacja jako usługa Windows
 1. Zainstaluj Python oraz zależności (`pip install psycopg pywin32`).
@@ -130,14 +218,14 @@ Każde żądanie musi zawierać nagłówek `X-User-Id` (liczbowy identyfikator u
 Zmiana konfiguracji wymaga zatrzymania usługi, aktualizacji plików i ponownego startu.
 
 ## Integracja wysyłki SMS
-Funkcja `send_sms` w `sms_sender.py` jest atrapą wypisującą komunikat na STDOUT. Należy podmienić implementację na właściwe API (np. REST operatora) i obsłużyć błędy biznesowe. W razie niepowodzenia wpis `sms_out` powinien otrzymać status `ERROR` wraz z treścią błędu.
-Przykładową biblioteką kliencką jest projekt SerwerSMS: ``https://github.com/SerwerSMSpl/serwersms-python-api``. Szczegółowy manual HTTPS API v2 znajduje się w pliku `docs/centralka/serwersms_https_api_v2_manual.md` (opracowany na bazie https://dev.serwersms.pl/https-api-v2/wprowadzenie i powiązanych podstron).
+`sms_sender.py` uruchamia pętlę pobierającą z `ctip.sms_out` wiadomości w statusie `NEW` i przekazuje je do `HttpSmsProvider` (token lub login/hasło operatora SerwerSMS). Każda próba jest logowana przez `log_utils.append_log` do pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a wynik aktualizuje rekord (`SENT` z `provider_status` i `provider_msg_id`, albo `ERROR` z `error_msg`). Podgląd logu i najnowszej historii wysyłek jest dostępny bezpośrednio w panelu administratora (sekcja SerwerSMS). Dodatkowo `HttpSmsProvider` automatycznie generuje identyfikatory `unique_id` w formacie `CTIP-000000`, dzięki czemu operator nie zgłasza już błędu „Niepoprawne znaki w unique_id”. Szczegółowy manual HTTPS API v2 znajduje się w `docs/centralka/serwersms_https_api_v2_manual.md`, a przykładową bibliotekę kliencką udostępnia projekt SerwerSMS: ``https://github.com/SerwerSMSpl/serwersms-python-api``.
 
 ## Diagnostyka i monitoring
 - Logi kolektora zawierają prefiks `LOG_PREFIX` i są wypisywane na STDOUT/STDERR lub do pliku (w Windows wg konfiguracji usługi).
 - Po uruchomieniu należy zweryfikować w logach linię z identyfikatorem centrali (`aWHO`/`aOK`) oraz komunikat potwierdzający `aLOGA`; ich brak oznacza przerwany handshake.
 - `ctip_sniff.py` pozwala szybko zweryfikować, czy centrala zwraca zdarzenia – zapisuje surowe linie do `ctip_sniff.log`.
 - `conect_sli.py` można wykorzystać do ręcznego monitorowania strumienia CTIP (telnet w Pythonie) z poziomu WSL lub Linux; każdy odebrany wiersz trafia do pliku `docs/LOG/Centralka/log_con_sli_<YYYY-MM-DD>.log` wraz ze znacznikiem czasu.
+- `sms_sender.py` tworzy dzienny log `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`; ten sam plik prezentowany jest na żywo w panelu (SerwerSMS → Log sms_sender).
 - Tabela `sms_out` powinna być monitorowana pod kątem wpisów w statusie `ERROR`.
 - Dla weryfikacji poprawności bazy warto okresowo wykonywać zapytania kontrolne, np. liczba połączeń na godzinę, czasy odpowiedzi itp.
 - Analiza logów komunikacji CTIP powinna obejmować korelację zdarzeń z centralą i raportowanie rozłączeń, błędów `NAK` oraz przerw w strumieniu TCP do zespołu utrzymaniowego.
@@ -147,13 +235,13 @@ Przykładową biblioteką kliencką jest projekt SerwerSMS: ``https://github.com
 - `docs/baza` – aktualny schemat `schema_ctip.sql`; plik `ctip_plain` pozostawiono jako nieaktualny zrzut archiwalny (do wglądu historycznego, nie do odtwarzania).
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
-- `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; katalog aktualnie pusty, przeznaczony do uzupełnienia przez administratora.
+- `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu) oraz `panel_admin_ui.md` (plan interfejsu administratora).
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.
 - `prototype/index.html` – statyczny prototyp interfejsu użytkownika prezentujący widok listy połączeń CTIP, panel szczegółów, szybkie akcje SMS oraz historię wiadomości (dane przykładowe, brak połączenia z API).
 
 ## Testowanie i rozwój
-Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`), klienta monitorującego (`tests/test_conect_sli.py`), kolektora CTIP (`tests/test_collector_context.py`), warstwy API (`tests/test_api_auth.py`, `tests/test_sms_schema.py`) oraz świeży zestaw weryfikacji schematu bazy (`tests/test_db_schema.py`). Uruchom je poleceniem `python -m unittest`. W przypadku rozszerzania logiki parsowania zdarzeń oraz wysyłki SMS rekomendowane jest dopisywanie kolejnych testów (zarówno dla parsowania strumienia, jak i integracji z API SMS). Każda modyfikacja kodu powinna być od razu odzwierciedlona w dokumentacji i w sekwencjach testowych.
+Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`), klienta monitorującego (`tests/test_conect_sli.py`), kolektora CTIP (`tests/test_collector_context.py`), warstwy API (`tests/test_api_auth.py`, `tests/test_sms_schema.py`) oraz świeży zestaw weryfikacji schematu bazy (`tests/test_db_schema.py`). `tests/test_admin_backend.py` obejmuje scenariusze panelu administracyjnego, w tym logi i historię SerwerSMS (`/admin/sms/logs`, `/admin/sms/history`). Uruchom je poleceniem `python -m unittest`. W przypadku rozszerzania logiki parsowania zdarzeń oraz wysyłki SMS rekomendowane jest dopisywanie kolejnych testów (zarówno dla parsowania strumienia, jak i integracji z API SMS). Każda modyfikacja kodu powinna być od razu odzwierciedlona w dokumentacji i w sekwencjach testowych.
   - Zadania planowane.
 ## Zadania planowane
 Szczegółowy rejestr zadań znajduje się w pliku `docs/projekt/zadania_planowane.md`.

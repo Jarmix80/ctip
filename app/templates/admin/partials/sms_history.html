@@ -1,0 +1,110 @@
+{% set query = '?limit=' ~ limit %}
+{% if status %}
+  {% set query = query ~ '&status=' ~ status %}
+{% endif %}
+{% set status_label = {
+  None: 'Wszystkie statusy',
+  '': 'Wszystkie statusy',
+  'NEW': 'Nowe (NEW)',
+  'RETRY': 'Ponowne (RETRY)',
+  'SENT': 'Wysłane (SENT)',
+  'ERROR': 'Błędne (ERROR)',
+  'SIMULATED': 'Symulowane (SIMULATED)'
+}[status or ''] %}
+<div
+  id="sms-history-card"
+  class="monitor-card"
+  hx-get="/admin/partials/sms/history{{ query }}"
+  hx-trigger="load delay:200ms, every 12s"
+  hx-target="this"
+  hx-swap="outerHTML"
+  hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+>
+  <header class="monitor-card-header history-header">
+    <div>
+      <h3>Historia wysyłek SMS</h3>
+      <p>Limit: {{ limit }} &bull; {{ status_label }} &bull; Odświeżono: {{ generated_at }}</p>
+    </div>
+    <form
+      class="history-filter"
+      hx-get="/admin/partials/sms/history"
+      hx-target="#sms-history-card"
+      hx-swap="outerHTML"
+    >
+      <label for="history-status">Status</label>
+      <select
+        id="history-status"
+        name="status"
+        hx-trigger="change"
+      >
+        <option value="" {% if not status %}selected{% endif %}>Wszystkie</option>
+        <option value="NEW" {% if status == "NEW" %}selected{% endif %}>Nowe (NEW)</option>
+        <option value="RETRY" {% if status == "RETRY" %}selected{% endif %}>Ponowne (RETRY)</option>
+        <option value="SENT" {% if status == "SENT" %}selected{% endif %}>Wysłane (SENT)</option>
+        <option value="ERROR" {% if status == "ERROR" %}selected{% endif %}>Błędne (ERROR)</option>
+        <option value="SIMULATED" {% if status == "SIMULATED" %}selected{% endif %}>Symulowane (SIMULATED)</option>
+      </select>
+      <input type="hidden" name="limit" value="{{ limit }}">
+    </form>
+  </header>
+  <div class="sms-history-table">
+    {% if items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Numer</th>
+          <th>Status</th>
+          <th>Treść</th>
+          <th>Operator</th>
+          <th>Błąd</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>
+            {% if item.created_at %}
+              {% if item.created_at.tzinfo %}
+                {{ item.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z") }}
+              {% else %}
+                {{ item.created_at.strftime("%Y-%m-%d %H:%M:%S") }}
+              {% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ item.dest }}</td>
+          <td>
+            {% set status_class = "success" if item.status == "SENT" else ("warning" if item.status == "ERROR" else "info") %}
+            <span class="status-chip {{ status_class }}">{{ item.status }}</span>
+          </td>
+          <td>
+            {% set body = item.text or "" %}
+            {% set preview = body[:80] %}
+            {{ preview }}{% if body|length > 80 %}…{% endif %}
+          </td>
+          <td>
+            {% if item.provider_status or item.provider_message_id %}
+              {{ item.provider_status or "—" }}
+              {% if item.provider_message_id %}<span class="muted">#{{ item.provider_message_id }}</span>{% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if item.error_msg %}
+            <span class="error-text">{{ item.error_msg }}</span>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="sms-history-empty">Brak wpisów dla wybranego filtra.</p>
+    {% endif %}
+  </div>
+</div>

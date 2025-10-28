@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>Panel operatora CTIP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/operator/operator.css">
+    <script defer src="/static/operator/operator.js"></script>
+  </head>
+  <body>
+    <div class="op-login-wrapper" id="op-login-wrapper">
+      <div class="op-login-card">
+        <div class="op-login-logo">Ksero-Partner</div>
+        <h1>Panel operatora</h1>
+        <p>Zaloguj się, aby uzyskać dostęp do historii połączeń i szybkich akcji SMS.</p>
+        <form id="op-login-form" class="op-login-form">
+          <div class="op-form-field">
+            <label for="operator-email">Adres e-mail</label>
+            <input id="operator-email" name="email" type="email" autocomplete="username" required>
+          </div>
+          <div class="op-form-field">
+            <label for="operator-password">Hasło</label>
+            <input id="operator-password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="op-login-remember">
+            <label>
+              <input type="checkbox" id="operator-remember" checked>
+              Zapamiętaj mnie
+            </label>
+          </div>
+          <button type="submit" class="op-primary" id="operator-login-submit">Zaloguj się</button>
+          <p class="op-login-error" id="operator-login-error"></p>
+        </form>
+      </div>
+    </div>
+
+    <div class="op-shell" id="op-shell" hidden>
+    <header class="op-header">
+      <div class="op-brand">
+        <span class="op-brand-icon">📞</span>
+        <div>
+          <h1>Panel operatora CTIP</h1>
+          <p>Podgląd połączeń i szybkie akcje SMS.</p>
+        </div>
+      </div>
+      <div class="op-user-box">
+        <div class="op-sms-stats">
+          <div>
+            <span class="op-sms-stat-label">SMS dzisiaj</span>
+            <span class="op-sms-stat-value" id="sms-stats-today">0</span>
+          </div>
+          <div>
+            <span class="op-sms-stat-label">SMS w miesiącu</span>
+            <span class="op-sms-stat-value" id="sms-stats-month">0</span>
+          </div>
+        </div>
+        <div class="op-user-info">
+          <div id="op-user-name">Operator</div>
+          <div id="op-user-email">—</div>
+        </div>
+        <button type="button" class="op-ghost" id="op-open-settings">Ustawienia</button>
+        <button type="button" class="op-primary" id="op-logout">Wyloguj</button>
+      </div>
+    </header>
+
+    <main class="op-main">
+      <section class="op-calls">
+        <form class="op-filters" id="op-filter-form">
+          <div class="op-filter-group">
+            <label for="filter-search">Szukaj</label>
+            <input id="filter-search" name="search" type="search" placeholder="numer telefonu lub wewnętrzny">
+          </div>
+          <div class="op-filter-group">
+            <label for="filter-direction">Kierunek</label>
+            <select id="filter-direction" name="direction">
+              <option value="">Dowolny</option>
+              <option value="IN">Przychodzące</option>
+              <option value="OUT">Wychodzące</option>
+            </select>
+          </div>
+          <div class="op-filter-actions">
+            <button type="submit" class="op-primary">Filtruj</button>
+            <button type="button" class="op-ghost" id="filter-clear">Wyczyść</button>
+          </div>
+        </form>
+
+        <div class="op-table-wrapper">
+          <table class="op-table">
+            <thead>
+              <tr>
+                <th>Czas</th>
+                <th>Kierunek</th>
+                <th>Numer</th>
+                <th>Wewnętrzny</th>
+                <th>Stan</th>
+                <th>Czas trwania</th>
+              </tr>
+            </thead>
+            <tbody id="call-list-body">
+              <tr>
+                <td colspan="6" class="op-empty">Ładowanie połączeń…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="op-details">
+        <div class="op-card op-contact-card">
+          <header>
+            <h2>Dane kontaktu</h2>
+            <span id="contact-status-tag" class="op-tag neutral">Brak danych</span>
+          </header>
+          <dl>
+            <div>
+              <dt>Imię i nazwisko</dt>
+              <dd id="contact-name">—</dd>
+            </div>
+            <div>
+              <dt>Firma</dt>
+              <dd id="contact-company">—</dd>
+            </div>
+            <div>
+              <dt>Numer</dt>
+              <dd id="contact-number">—</dd>
+            </div>
+            <div>
+              <dt>E-mail</dt>
+              <dd id="contact-email">—</dd>
+            </div>
+            <div>
+              <dt>Firebird ID</dt>
+              <dd id="contact-firebird">—</dd>
+            </div>
+            <div>
+              <dt>NIP</dt>
+              <dd id="contact-nip">—</dd>
+            </div>
+            <div>
+              <dt>Uwagi</dt>
+              <dd id="contact-notes">—</dd>
+            </div>
+          </dl>
+          <div class="op-contact-actions">
+            <button type="button" class="op-ghost" id="contact-edit-toggle">Dodaj/edytuj kontakt</button>
+          </div>
+          <form id="contact-form" class="op-form" hidden>
+            <div class="op-form-grid">
+              <div class="op-form-field">
+                <label for="contact-form-number">Numer</label>
+                <input id="contact-form-number" type="text" maxlength="9" required>
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-ext">Wewnętrzny</label>
+                <input id="contact-form-ext" type="text" maxlength="16">
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-first-name">Imię</label>
+                <input id="contact-form-first-name" type="text" maxlength="120">
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-last-name">Nazwisko</label>
+                <input id="contact-form-last-name" type="text" maxlength="120">
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-company">Firma</label>
+                <input id="contact-form-company" type="text" maxlength="160">
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-email">E-mail</label>
+                <input id="contact-form-email" type="email" maxlength="160">
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-firebird">Firebird ID</label>
+                <input id="contact-form-firebird" type="text" maxlength="64">
+              </div>
+              <div class="op-form-field">
+                <label for="contact-form-nip">NIP</label>
+                <input id="contact-form-nip" type="text" maxlength="20">
+              </div>
+            </div>
+            <div class="op-form-field">
+              <label for="contact-form-notes">Uwagi</label>
+              <textarea id="contact-form-notes" rows="3" maxlength="2000"></textarea>
+            </div>
+            <div class="op-form-actions">
+              <button type="submit" class="op-primary">Zapisz kontakt</button>
+            </div>
+          </form>
+          <p class="op-form-hint" id="contact-feedback"></p>
+        </div>
+
+        <div class="op-card op-sms-card">
+          <header>
+            <h2>Szybka wysyłka SMS</h2>
+          </header>
+          <form id="quick-sms-form" class="op-form">
+            <div class="op-form-field">
+              <label for="sms-dest">Numer docelowy</label>
+              <input id="sms-dest" name="dest" type="tel" placeholder="+48…" required>
+            </div>
+            <div class="op-form-field">
+              <label for="sms-text">Treść wiadomości</label>
+              <textarea id="sms-text" name="text" rows="3" maxlength="480" required></textarea>
+            </div>
+            <div class="op-form-actions">
+              <button type="submit" class="op-primary">Wyślij</button>
+            </div>
+            <p class="op-form-hint" id="sms-feedback"></p>
+          </form>
+        </div>
+
+        <div class="op-card op-timeline-card">
+          <header>
+            <h2>Oś czasu</h2>
+          </header>
+          <ul id="timeline-list" class="op-timeline">
+            <li class="op-empty">Wybierz połączenie, aby zobaczyć zdarzenia CTIP.</li>
+          </ul>
+        </div>
+
+        <div class="op-card op-sms-history-card">
+          <header>
+            <h2>Historia SMS</h2>
+          </header>
+          <div class="op-table-wrapper small">
+            <table class="op-table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Status</th>
+                  <th>Treść</th>
+                </tr>
+              </thead>
+              <tbody id="sms-history-body">
+                <tr><td colspan="3" class="op-empty">Brak danych.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+  </body>
+</html>

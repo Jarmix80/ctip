@@ -6,3 +6,5 @@
 4. Monitoring działania migracji i kolektora (alerty na błędy alembic/SchemaValidationError).
 5. Integracja prototypowego UI (`prototype/index.html`) z backendem FastAPI wraz z autoryzacją.
 6. Przejrzenie nieśledzonych katalogów (app/, docs/, tests/ itd.), dodanie istotnych plików do repo i wykonanie `git push` po uporządkowaniu środowiska sieciowego.
+7. Realizacja modułu administracyjnego zgodnie z `docs/projekt/panel_admin_architektura.md` (etapy 1–6).
+8. Implementacja interfejsu administratora według `docs/projekt/panel_admin_ui.md` (menu, widoki, testy E2E).

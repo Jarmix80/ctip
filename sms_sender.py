@@ -6,6 +6,7 @@ import psycopg
 
 from app.core.config import settings
 from app.services.sms_provider import HttpSmsProvider, SmsTransportError
+from log_utils import append_log
 
 CONN = dict(
     host=os.getenv("PGHOST", settings.pg_host),
@@ -31,7 +32,21 @@ provider = HttpSmsProvider(
 )
 
 
+LOG_SUBDIR = "sms"
+LOG_BASE = "sms_sender"
+
+
+def log_event(message: str) -> None:
+    """Zapisuje pojedynczy wpis logu pracy sms_sender."""
+    try:
+        append_log(LOG_SUBDIR, LOG_BASE, message)
+    except Exception:
+        # W skrajnych przypadkach (brak uprawnień) zachowujemy cichy fallback.
+        pass
+
+
 def main() -> None:
+    log_event(f"Start pracy sms_sender (poll={POLL_SEC}s)")
     with psycopg.connect(**CONN) as conn:
         while True:
             try:
@@ -52,6 +67,7 @@ def main() -> None:
                         continue
 
                     for sms_id, dest, text in rows:
+                        log_event(f"[{sms_id}] Próba wysyłki do {dest}")
                         try:
                             result = provider.send_sms(dest, text, metadata={"sms_id": sms_id})
                             if result.success:
@@ -59,18 +75,26 @@ def main() -> None:
                                     "UPDATE sms_out SET status='SENT', provider_status=%s, provider_msg_id=%s WHERE id=%s",
                                     (result.provider_status, result.provider_message_id, sms_id),
                                 )
+                                log_event(
+                                    f"[{sms_id}] Wysłano (status={result.provider_status or 'OK'}, msg_id={result.provider_message_id or '-'})"
+                                )
                             else:
                                 cur.execute(
                                     "UPDATE sms_out SET status='ERROR', error_msg=%s, provider_status=%s WHERE id=%s",
                                     (result.error, result.provider_status, sms_id),
+                                )
+                                log_event(
+                                    f"[{sms_id}] Błąd odpowiedzi operatora: {result.error or 'brak szczegółów'}"
                                 )
                         except SmsTransportError as exc:
                             cur.execute(
                                 "UPDATE sms_out SET status='ERROR', error_msg=%s WHERE id=%s",
                                 (str(exc), sms_id),
                             )
+                            log_event(f"[{sms_id}] Błąd transportu: {exc}")
             except Exception as exc:
                 print("[ERR]", exc)
+                log_event(f"[loop] Wyjątek pętli: {exc}")
                 time.sleep(2)
 
 

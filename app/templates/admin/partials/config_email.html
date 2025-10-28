@@ -1,0 +1,116 @@
+<section
+  class="config-section"
+  x-data="emailConfig()"
+  x-init="init()"
+  x-on:admin:email-test.window="testConnection()"
+  data-initial='{{ config | tojson | safe }}'
+  id="email-config-card"
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja SMTP</h2>
+      <p>Dane serwera e-mail wykorzystywane do wysyłki powiadomień.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="statusState"></span>
+      <span class="config-meta-text" x-text="statusMessage"></span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="smtp-host">Host SMTP</label>
+        <input id="smtp-host" type="text" x-model="host" required>
+      </div>
+      <div class="form-field">
+        <label for="smtp-port">Port</label>
+        <input id="smtp-port" type="number" min="1" max="65535" x-model="port" required>
+      </div>
+      <div class="form-field">
+        <label for="smtp-username">Login</label>
+        <input id="smtp-username" type="text" x-model="username" placeholder="opcjonalnie">
+        <p class="input-help" x-text="username ? 'Login zostanie zapisany.' : 'Pozostaw puste, jeśli serwer nie wymaga autoryzacji.'"></p>
+      </div>
+      <div class="form-field">
+        <label for="smtp-password">Hasło</label>
+        <input id="smtp-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
+      </div>
+      <div class="form-field">
+        <label for="smtp-sender-name">Nazwa nadawcy</label>
+        <input id="smtp-sender-name" type="text" x-model="senderName" placeholder="np. Biuro Ksero-Partner">
+      </div>
+      <div class="form-field">
+        <label for="smtp-sender-address">Adres nadawcy</label>
+        <input id="smtp-sender-address" type="email" x-model="senderAddress" placeholder="np. powiadomienia@ksero-partner.com.pl">
+      </div>
+      <div class="form-field">
+        <label for="smtp-use-tls">Szyfrowanie</label>
+        <div class="toggle">
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input id="smtp-use-tls" type="checkbox" x-model="useTls" @change="handleToggle('tls')">
+            STARTTLS
+          </label>
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input id="smtp-use-ssl" type="checkbox" x-model="useSsl" @change="handleToggle('ssl')">
+            SSL/TLS
+          </label>
+        </div>
+        <p class="input-help" x-text="encryptionMessage"></p>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <template x-if="!saving">Zapisz konfigurację</template>
+        <template x-if="saving">Trwa zapisywanie…</template>
+      </button>
+        <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
+          <template x-if="!testing">Testuj połączenie</template>
+          <template x-if="testing">Testowanie…</template>
+        </button>
+    </div>
+
+    <div class="email-test-panel">
+      <h4>Wiadomość testowa</h4>
+      <p>Wyślij próbny e-mail, aby upewnić się, że konfiguracja działa.</p>
+      <div class="email-test-grid">
+        <div class="form-field">
+          <label for="smtp-test-dest">Adres docelowy</label>
+          <input id="smtp-test-dest" type="email" x-model="testDest" placeholder="np. admin@firma.pl">
+        </div>
+        <div class="form-field">
+          <label for="smtp-test-subject">Temat</label>
+          <input id="smtp-test-subject" type="text" x-model="testSubject" placeholder="Test konfiguracji SMTP">
+        </div>
+        <div class="form-field">
+          <label for="smtp-test-body">Treść wiadomości</label>
+          <textarea id="smtp-test-body" rows="3" x-model="testBody" placeholder="To jest wiadomość testowa."></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" :disabled="sendingTest" @click.prevent="sendTestEmail">
+          <template x-if="!sendingTest">Wyślij test</template>
+          <template x-if="sendingTest">Wysyłanie…</template>
+        </button>
+      </div>
+      <template x-if="mailError">
+        <div class="form-message error" x-text="mailError"></div>
+      </template>
+      <template x-if="mailSuccess">
+        <div class="form-message success" x-text="mailSuccess"></div>
+      </template>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+    <template x-if="testMessage">
+      <div class="form-message" :class="testStatus" x-text="testMessage"></div>
+    </template>
+  </form>
+</section>

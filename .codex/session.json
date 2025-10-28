@@ -1,0 +1,18 @@
+{
+  "timestamp": "2025-10-28T00:00:00+02:00",
+  "summary": [
+    "Panel operatora ma odseparowane logowanie, uproszczony interfejs na bazie prototypu i obsługuje historię CTIP, statystyki SMS oraz edycję kontaktów.",
+    "Dodano moduł administracyjny zarządzania mapowaniami IVR -> SMS, wraz z backendowym API, audytem operacji i domyślną regułą 9 -> 500.",
+    "Collector oraz panel operatora integrują się z `ctip.ivr_map`: kolektor dodaje maksymalnie jedną wiadomość IVR na połączenie, a UI prezentuje znormalizowane numery i ukrywa wrażliwe treści w historii SMS."
+  ],
+  "follow_up": [
+    "Dokończyć formularze ustawień operatora (zmiana hasła, profil, szablony SMS) wraz z testami end-to-end.",
+    "Zweryfikować TTL tokenów przy opcji \"Zapamiętaj mnie\" (różne wartości dla localStorage/sessionStorage).",
+    "Rozszerzyć testy integracyjne kolektora o scenariusz blokujący wielokrotną wysyłkę SMS w obrębie tej samej rozmowy oraz testy UI dla CRUD mapowania IVR."
+  ],
+  "context": {
+    "branch": "main",
+    "python": "3.12",
+    "venv": ".venv"
+  }
+}

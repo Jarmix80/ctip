@@ -51,7 +51,11 @@ class SmsHistoryItem(BaseModel):
 class SmsSendRequest(BaseModel):
     """Żądanie wysłania SMS z poziomu UI."""
 
-    dest: str = Field(..., description="Docelowy numer MSISDN")
+    dest: str = Field(
+        ...,
+        description="Docelowy numer MSISDN",
+        pattern=r"^\+[1-9]\d{7,14}$",
+    )
     text: str | None = Field(None, min_length=1, max_length=480)
     call_id: int | None = Field(None, description="Powiązane połączenie CTIP")
     template_id: int | None = Field(None, description="Szablon użyty do wysyłki")

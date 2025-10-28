@@ -1,0 +1,130 @@
+<section class="ctip-live" x-data="ctipLivePanel()" x-init="init()">
+  <header class="monitor-card-header ctip-live-header">
+    <div>
+      <h2>CTIP – podgląd na żywo</h2>
+      <p>Monitoruj ostatnie zdarzenia centrali i aktualizuj konfigurację połączenia.</p>
+    </div>
+    <div class="ctip-live-actions">
+      <button
+        type="button"
+        class="btn-secondary"
+        onclick="window.AdminPanel.reloadSection('ctip')"
+      >
+        Odśwież widok
+      </button>
+    </div>
+  </header>
+
+  <div class="ctip-live-grid">
+    <div
+      hx-get="/admin/partials/ctip/events"
+      hx-trigger="load"
+      hx-target="this"
+      hx-swap="outerHTML"
+      hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+    >
+      <p class="sms-history-empty">Ładowanie zdarzeń CTIP…</p>
+    </div>
+
+    <div class="monitor-card config-card" id="ctip-config-card">
+      <header class="monitor-card-header">
+        <div>
+          <h3>Konfiguracja CTIP</h3>
+          <p>Adres, port oraz PIN do polecenia LOGA.</p>
+        </div>
+      </header>
+      <div
+        class="ctip-config-wrapper"
+        hx-get="/admin/partials/config/ctip"
+        hx-trigger="load"
+        hx-target="this"
+        hx-swap="innerHTML"
+        hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+      >
+        <p class="sms-history-empty">Ładowanie konfiguracji…</p>
+      </div>
+    </div>
+
+    <div class="monitor-card quick-contact-card">
+      <header class="monitor-card-header">
+        <div>
+          <h3>Szybka edycja kontaktu</h3>
+          <p>Wybierz zdarzenie CTIP, aby zaktualizować dane numeru.</p>
+        </div>
+      </header>
+      <div class="quick-contact-body">
+        <template x-if="editor.loading">
+          <p class="sms-history-empty">Wczytywanie danych kontaktu…</p>
+        </template>
+        <template x-if="!editor.loading && !editor.open">
+          <p class="sms-history-empty">Wskaż połączenie na liście po lewej, aby dodać lub edytować kontakt.</p>
+        </template>
+        <template x-if="!editor.loading && editor.open">
+          <form class="config-form quick-contact-form" @submit.prevent="saveContact">
+            <div class="quick-contact-summary">
+              <div>
+                <label>Numer telefonu</label>
+                <div class="quick-contact-value" x-text="editor.number"></div>
+              </div>
+              <div>
+                <label>Numer wewnętrzny</label>
+                <div class="quick-contact-value" x-text="editor.ext || '—'"></div>
+              </div>
+              <div>
+                <label>Status wpisu</label>
+                <div class="quick-contact-value" x-text="editor.exists ? 'Istniejący kontakt' : 'Nowy kontakt'"></div>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="quick-first-name">Imię</label>
+                <input id="quick-first-name" type="text" x-model="editor.form.firstName">
+              </div>
+              <div class="form-field">
+                <label for="quick-last-name">Nazwisko</label>
+                <input id="quick-last-name" type="text" x-model="editor.form.lastName">
+              </div>
+              <div class="form-field">
+                <label for="quick-company">Firma</label>
+                <input id="quick-company" type="text" x-model="editor.form.company">
+              </div>
+              <div class="form-field">
+                <label for="quick-email">E-mail</label>
+                <input id="quick-email" type="email" x-model="editor.form.email">
+              </div>
+              <div class="form-field">
+                <label for="quick-firebird">Firebird ID</label>
+                <input id="quick-firebird" type="text" x-model="editor.form.firebirdId">
+              </div>
+              <div class="form-field">
+                <label for="quick-nip">NIP</label>
+                <input id="quick-nip" type="text" x-model="editor.form.nip">
+              </div>
+              <div class="form-field">
+                <label for="quick-source">Źródło</label>
+                <input id="quick-source" type="text" x-model="editor.form.source">
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="quick-notes">Uwagi</label>
+              <textarea id="quick-notes" rows="3" x-model="editor.form.notes"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" :disabled="editor.saving">
+                <template x-if="!editor.saving">Zapisz kontakt</template>
+                <template x-if="editor.saving">Zapisywanie…</template>
+              </button>
+              <button type="button" class="btn-secondary" @click.prevent="closeEditor">Zamknij</button>
+            </div>
+            <template x-if="editor.error">
+              <div class="form-message error" x-text="editor.error"></div>
+            </template>
+            <template x-if="editor.success">
+              <div class="form-message success" x-text="editor.success"></div>
+            </template>
+          </form>
+        </template>
+      </div>
+    </div>
+  </div>
+</section>

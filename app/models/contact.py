@@ -18,11 +18,13 @@ class Contact(Base):
         UniqueConstraint("number", name="uq_contact_number"),
         Index("idx_contact_number", "number"),
         Index("idx_contact_ext", "ext"),
+        Index("idx_contact_firebird_id", "firebird_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     number: Mapped[str] = mapped_column(Text, nullable=False)
     ext: Mapped[str | None] = mapped_column(Text)
+    firebird_id: Mapped[str | None] = mapped_column(Text)
     first_name: Mapped[str | None] = mapped_column(Text)
     last_name: Mapped[str | None] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(Text)

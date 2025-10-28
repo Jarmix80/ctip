@@ -1,0 +1,78 @@
+<div
+  id="ctip-events-card"
+  class="monitor-card"
+  data-limit="{{ limit }}"
+  data-ext="{{ ext or '' }}"
+  data-generated="{{ generated_at }}"
+>
+  <header class="monitor-card-header history-header">
+    <div>
+      <h3>Podgląd zdarzeń CTIP</h3>
+      <p data-role="generated-info">Limit: {{ limit }} &bull; {% if ext %}Wewnętrzny {{ ext }} &bull; {% endif %}Odświeżono: {{ generated_at }}</p>
+    </div>
+    <form class="history-filter" onsubmit="return window.AdminPanel.applyCtipFilter(event)">
+      <label for="ctip-events-ext">Wewnętrzny</label>
+      <input
+        id="ctip-events-ext"
+        name="ext"
+        type="text"
+        value="{{ ext or '' }}"
+        placeholder="np. 101"
+        maxlength="16"
+      >
+      <input type="hidden" name="limit" value="{{ limit }}">
+      <button type="submit" class="btn-secondary">Filtruj</button>
+    </form>
+  </header>
+
+  <div class="ctip-events-table">
+    {% if items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Typ</th>
+          <th>Wewnętrzny</th>
+          <th>Numer</th>
+          <th>Dane</th>
+          <th>Kontakt</th>
+        </tr>
+      </thead>
+      <tbody id="ctip-events-body">
+        {% for item in items %}
+        <tr>
+          <td>{{ item.ts.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z") if item.ts.tzinfo else item.ts.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+          <td><span class="status-chip info">{{ item.typ }}</span></td>
+          <td>{{ item.ext or "—" }}</td>
+          <td>{{ item.number or "—" }}</td>
+          <td>
+            {% if item.payload %}
+            <code class="ctip-payload">{{ item.payload[:120] }}{% if item.payload|length > 120 %}…{% endif %}</code>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>
+            {% if item.number %}
+            <button
+              type="button"
+              class="btn-secondary"
+              data-number="{{ item.number }}"
+              data-ext="{{ item.ext or '' }}"
+              onclick="window.AdminPanel.handleCtipContactButton(this)"
+            >
+              Edytuj kontakt
+            </button>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="sms-history-empty">Brak zdarzeń dla wybranego filtra.</p>
+    {% endif %}
+  </div>
+</div>

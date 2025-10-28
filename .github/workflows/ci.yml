@@ -32,6 +32,8 @@ jobs:
         run: black --check .
 
       - name: Pytest (if tests/)
+        env:
+          PYTHONPATH: .
         run: |
           if [ -d tests ]; then
             pytest -q

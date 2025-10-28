@@ -1,0 +1,42 @@
+<section class="dashboard-view">
+  <header class="dashboard-header">
+    <div>
+      <h2>Stan systemu</h2>
+      <p>Aktualne metryki połączenia z bazą, centralą CTIP i SerwerSMS.</p>
+    </div>
+    <div class="dashboard-actions">
+      <button type="button" class="btn-secondary" onclick="window.AdminPanel.reloadSection('dashboard')">
+        Odśwież karty
+      </button>
+    </div>
+  </header>
+
+  <div class="cards-grid">
+    {% for card in cards %}
+    <article class="status-card {{ card.variant }}">
+      <h3>{{ card.title }}</h3>
+      <div class="status-value">{{ card.status }}</div>
+      <div class="status-details">{{ card.details }}</div>
+      {% if card.cta or card.secondary_cta or card.diagnostics_endpoint %}
+      <div class="status-actions">
+        {% if card.cta %}
+        <button type="button" onclick="window.AdminPanel.handleCardAction('{{ card.cta.action }}')">
+          {{ card.cta.label }}
+        </button>
+        {% endif %}
+        {% if card.secondary_cta %}
+        <button type="button" class="btn-secondary" onclick="window.AdminPanel.handleCardAction('{{ card.secondary_cta.action }}')">
+          {{ card.secondary_cta.label }}
+        </button>
+        {% endif %}
+        {% if card.diagnostics_endpoint %}
+        <button type="button" class="btn-secondary" onclick="window.AdminPanel.openDiagnostics('{{ card.diagnostics_endpoint | e }}', '{{ card.title | e }}')">
+          Diagnostyka
+        </button>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>

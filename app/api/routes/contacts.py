@@ -34,6 +34,7 @@ async def get_contact(
         id=contact.id,
         number=contact.number,
         ext=contact.ext,
+        firebird_id=contact.firebird_id,
         first_name=contact.first_name,
         last_name=contact.last_name,
         company=contact.company,
@@ -69,6 +70,7 @@ async def search_contacts(
         | (Contact.company.ilike(needle))
         | (Contact.first_name.ilike(needle))
         | (Contact.last_name.ilike(needle))
+        | (Contact.firebird_id.ilike(needle))
     )
     result = await session.execute(stmt)
     contacts = result.scalars().all()
@@ -78,6 +80,7 @@ async def search_contacts(
             id=contact.id,
             number=contact.number,
             ext=contact.ext,
+            firebird_id=contact.firebird_id,
             first_name=contact.first_name,
             last_name=contact.last_name,
             company=contact.company,

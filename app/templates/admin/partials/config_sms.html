@@ -1,0 +1,129 @@
+<section
+  class="config-section"
+  x-data="smsConfig()"
+  x-init="init()"
+  data-initial='{{ config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja SerwerSMS</h2>
+      <p>Parametry połączeniowe API operatora oraz ustawienia trybu demo.</p>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="sms-url">Adres API</label>
+        <input id="sms-url" type="text" x-model="apiUrl" required>
+      </div>
+      <div class="form-field">
+        <label for="sms-sender">Nadawca domyślny</label>
+        <input id="sms-sender" type="text" x-model="defaultSender" required>
+      </div>
+      <div class="form-field">
+        <label for="sms-type">Typ wiadomości</label>
+        <input id="sms-type" type="text" x-model="smsType" placeholder="np. eco+" required>
+      </div>
+      <div class="form-field">
+        <label for="sms-username">Login API</label>
+        <input id="sms-username" type="text" x-model="apiUsername" placeholder="opcjonalnie">
+        <p class="input-help" x-text="apiUsername ? 'Login zostanie zapisany.' : 'Możesz użyć tokenu zamiast loginu.'"></p>
+      </div>
+      <div class="form-field">
+        <label for="sms-password">Hasło API</label>
+        <input id="sms-password" type="password" x-model="apiPassword" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="apiPassword ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
+      </div>
+      <div class="form-field">
+        <label for="sms-token">Token API</label>
+        <input id="sms-token" type="text" x-model="apiToken" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="apiToken ? 'Token zostanie zaktualizowany.' : (tokenSet ? 'Token jest zapisany.' : 'Brak tokenu w konfiguracji.')"></p>
+      </div>
+      <div class="form-field">
+        <label for="sms-demo">Tryb demo</label>
+        <div class="toggle">
+          <input id="sms-demo" type="checkbox" x-model="testMode">
+          <span>Jeśli włączony – wysyłki mają status symulowany.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <template x-if="!saving">Zapisz konfigurację</template>
+        <template x-if="saving">Trwa zapisywanie…</template>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+
+  <div class="sms-test-card">
+    <div class="sms-test-header">
+      <h3>Wysyłka testowa</h3>
+      <p>Wyślij krótką wiadomość, aby sprawdzić konfigurację operatora.</p>
+    </div>
+    <form class="sms-test-form" @submit.prevent="sendTest">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="sms-test-dest">Numer docelowy</label>
+          <input
+            id="sms-test-dest"
+            type="text"
+            x-model="testDest"
+            placeholder="np. +48500111222"
+            pattern="^\+[1-9]\d{7,14}$"
+            title="Wprowadź numer w formacie E.164, np. +48500111222"
+            required
+          >
+        </div>
+        <div class="form-field" style="grid-column: span 2;">
+          <label for="sms-test-text">Treść wiadomości</label>
+          <textarea id="sms-test-text" rows="3" x-model="testText" required></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" :disabled="testing">
+          <template x-if="!testing">Wyślij test</template>
+          <template x-if="testing">Wysyłanie…</template>
+        </button>
+      </div>
+      <template x-if="testError">
+        <div class="form-message error" x-text="testError"></div>
+      </template>
+      <template x-if="testSuccess">
+        <div class="form-message success" x-text="testSuccess"></div>
+      </template>
+    </form>
+  </div>
+
+  <div class="sms-monitor-grid">
+    <div
+      class="monitor-card"
+      hx-get="/admin/partials/sms/logs"
+      hx-trigger="load, every 5s"
+      hx-target="this"
+      hx-swap="innerHTML"
+      hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+    >
+      <p class="log-stream-empty">Ładowanie logu sms_sender…</p>
+    </div>
+    <div
+      id="sms-history-card"
+      class="monitor-card"
+      hx-get="/admin/partials/sms/history"
+      hx-trigger="load delay:200ms, every 12s"
+      hx-target="this"
+      hx-swap="outerHTML"
+      hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+    >
+      <p class="sms-history-empty">Ładowanie historii wysyłek…</p>
+    </div>
+  </div>
+</section>

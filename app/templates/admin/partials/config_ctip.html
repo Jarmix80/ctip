@@ -1,0 +1,59 @@
+<section
+  class="config-section"
+  x-data="ctipConfig()"
+  x-init="init()"
+  data-initial='{{ config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja CTIP</h2>
+      <p>Adres centrali Slican oraz PIN wymagany do komendy LOGA.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="pinState"></span>
+      <span class="config-meta-text" x-text="pinMessage"></span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="ctip-host">Adres centrali</label>
+        <input id="ctip-host" type="text" x-model="host" required>
+      </div>
+      <div class="form-field">
+        <label for="ctip-port">Port</label>
+        <input id="ctip-port" type="number" min="1" max="65535" x-model="port" required>
+      </div>
+      <div class="form-field">
+        <label for="ctip-pin">PIN (LOGA)</label>
+        <input id="ctip-pin" type="password" x-model="pin" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="pin ? 'PIN zostanie zaktualizowany.' : (pinSet ? 'PIN jest ustawiony.' : 'Brak PIN-u w konfiguracji.')"></p>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <template x-if="!saving">Zapisz konfigurację</template>
+        <template x-if="saving">Trwa zapisywanie…</template>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>
+
+<div
+  hx-get="/admin/partials/ctip/ivr-map"
+  hx-trigger="load"
+  hx-target="this"
+  hx-swap="outerHTML"
+  hx-headers='{"X-Admin-Session": {{ admin_token | tojson }} }'
+>
+  <p class="sms-history-empty">Ładowanie konfiguracji automatycznych SMS…</p>
+</div>

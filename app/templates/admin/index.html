@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pl" x-data="adminApp()">
+  <head>
+    <meta charset="utf-8">
+    <title>Panel administratora CTIP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/admin/styles.css">
+    <script defer src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+    <script defer src="/static/admin/admin.js"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  </head>
+  <body>
+    <div class="login-wrapper" x-show="!loggedIn" x-cloak>
+      <div class="login-card">
+        <div>
+          <h1>Logowanie administratora</h1>
+          <p>Zaloguj się, aby zarządzać środowiskiem CTIP.</p>
+        </div>
+        <div class="login-error" x-show="error" x-text="error" x-cloak></div>
+        <form class="login-form" @submit="login">
+          <div>
+            <label for="admin-login-email">Adres e-mail</label>
+            <input id="admin-login-email" type="email" required x-model="email" autocomplete="username">
+          </div>
+          <div>
+            <label for="admin-login-password">Hasło</label>
+            <input id="admin-login-password" type="password" required x-model="password" autocomplete="current-password">
+          </div>
+          <div class="login-remember">
+            <label>
+              <input type="checkbox" x-model="rememberMe" checked>
+              Zapamiętaj mnie
+            </label>
+          </div>
+          <button type="submit" :disabled="loading">
+            <span x-show="!loading" x-cloak>Zaloguj się</span>
+            <span x-show="loading" x-cloak>Trwa logowanie…</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="admin-shell" x-show="loggedIn" x-cloak>
+      <aside class="admin-sidebar">
+        <div class="admin-brand">
+          <span class="icon">📡</span>
+          <span>CTIP Administrator</span>
+        </div>
+        <nav class="admin-nav">
+          <button :class="{ 'active': section === 'dashboard' }" @click.prevent="openSection('dashboard')">
+            <span class="icon">🏠</span>
+            Dashboard
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'database' }" @click.prevent="openSection('database')">
+            <span class="icon">🗄️</span>
+            Konfiguracja bazy
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'backups' }" @click.prevent="openSection('backups')">
+            <span class="icon">💾</span>
+            Kopie zapasowe
+          </button>
+          <button :class="{ 'active': section === 'ctip' }" @click.prevent="openSection('ctip')">
+            <span class="icon">📞</span>
+            CTIP Live
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'email' }" @click.prevent="openSection('email')">
+            <span class="icon">📧</span>
+            E-mail
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'sms' }" @click.prevent="openSection('sms')">
+            <span class="icon">✉️</span>
+            SerwerSMS
+          </button>
+          <button :class="{ 'active': section === 'contacts' }" @click.prevent="openSection('contacts')">
+            <span class="icon">📇</span>
+            Książka adresowa
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'sql' }" @click.prevent="openSection('sql')">
+            <span class="icon">🧪</span>
+            Konsola SQL
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'users' }" @click.prevent="openSection('users')">
+            <span class="icon">👥</span>
+            Użytkownicy
+          </button>
+        </nav>
+      </aside>
+      <div class="admin-content">
+        <header class="admin-header">
+          <div>
+            <h1 style="margin: 0; font-size: 20px; color: var(--primary);">Panel administracyjny</h1>
+            <p style="margin: 4px 0 0; color: var(--muted); font-size: 13px;">Zarządzanie środowiskiem CTIP i systemem wysyłki SMS.</p>
+          </div>
+          <div class="user-box" x-show="user" x-cloak>
+            <span class="badge" x-text="user?.role === 'admin' ? 'Administrator' : 'Operator'"></span>
+            <div style="text-align: right;">
+              <div style="font-weight: 600;" x-text="[user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email"></div>
+              <div style="font-size: 12px; color: var(--muted);" x-text="user?.email"></div>
+            </div>
+            <button style="border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; background: transparent; cursor: pointer;" @click.prevent="logout">Wyloguj</button>
+          </div>
+        </header>
+        <main class="admin-main" id="admin-content">
+          <div class="placeholder">
+            <strong>Wczytywanie sekcji…</strong>
+            <span>Jeśli ekran nie załaduje się automatycznie, wybierz pozycję z menu obok.</span>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div
+      class="diagnostics-overlay"
+      x-show="diagnosticsOpen"
+      x-cloak
+      :class="{ 'is-open': diagnosticsOpen }"
+      @keydown.escape.window="closeDiagnostics"
+    >
+      <div class="diagnostics-backdrop" @click="closeDiagnostics"></div>
+      <div class="diagnostics-dialog" role="dialog" aria-modal="true" :aria-label="`Diagnostyka: ${diagnosticsTitle}`">
+        <header class="diagnostics-header">
+          <div>
+            <h2 x-text="diagnosticsTitle || 'Diagnostyka'"></h2>
+            <p>Podgląd szczegółowych danych health-check.</p>
+          </div>
+          <button type="button" class="diagnostics-close" @click.prevent="closeDiagnostics">×</button>
+        </header>
+        <div class="diagnostics-body">
+          <template x-if="diagnosticsLoading">
+            <p class="diagnostics-status">Trwa pobieranie danych diagnostycznych…</p>
+          </template>
+          <template x-if="diagnosticsError">
+            <p class="diagnostics-status error" x-text="diagnosticsError"></p>
+          </template>
+          <template x-if="!diagnosticsLoading && diagnosticsPayload && diagnosticsPayload.card">
+            <div class="diagnostics-card" :class="diagnosticsPayload.card.state">
+              <span class="diagnostics-state" x-text="diagnosticsPayload.card.state?.toUpperCase() || 'INFO'"></span>
+              <strong x-text="diagnosticsPayload.card.status"></strong>
+              <p x-text="diagnosticsPayload.card.details"></p>
+            </div>
+          </template>
+          <template x-if="!diagnosticsLoading && diagnosticsPayload">
+            <pre class="diagnostics-json" x-text="diagnosticsPretty"></pre>
+          </template>
+        </div>
+        <footer class="diagnostics-footer">
+          <button type="button" class="btn-secondary" @click.prevent="closeDiagnostics">Zamknij</button>
+        </footer>
+      </div>
+    </div>
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+  </body>
+</html>
