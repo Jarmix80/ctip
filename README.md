@@ -99,7 +99,7 @@ Procedura wymaga wcześniejszego zainstalowania zależności opisanych w sekcji 
 4. `collector_full.py` automatyzuje powyższą sekwencję, loguje identyfikator centrali i przerywa pracę, gdy `aLOGA` zostanie odrzucone (np. z powodu aktywnej sesji innego kolektora).
 
 ## Przygotowanie bazy danych
-Schemat `ctip` musi być dostarczony zewnętrznie (migracje Alembic lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Przed uruchomieniem kolektora ustaw `.env` (np. na podstawie `.env.example`), wykonaj `alembic upgrade head`, a w sytuacjach awaryjnych możesz jednorazowo zaimportować zrzut SQL (np. `psql $DATABASE_URL -f docs/baza/schema_ctip_11.10.2025.sql`). Po migracji uzupełnij mapę IVR.
+Schemat `ctip` musi być dostarczony zewnętrznie (migracje Alembic lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Przed uruchomieniem kolektora ustaw `.env` (np. na podstawie `.env.example`), wykonaj `alembic upgrade head`, a w sytuacjach awaryjnych możesz jednorazowo zaimportować zrzut SQL (np. `psql $DATABASE_URL -f docs/baza/schema_ctip_11.10.2025.sql`). Po migracji uzupełnij mapę IVR. Wszystkie znaczniki czasu w tabelach `calls`, `call_events`, `contact`, `sms_out` i `sms_template` muszą mieć typ `timestamp with time zone`, ponieważ backend zapisuje daty w UTC i udostępnia je operatorowi – brak strefy czasowej kończy się błędem 500 podczas wysyłki SMS lub pobierania statystyk.
 
 Przykładowe wstawienie rekordu:
 ```sql
@@ -135,7 +135,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 ### Uruchomienie środowiska
 1. Zainstaluj pakiet w trybie deweloperskim: `pip install -e .`
 2. Zastosuj aktualną migrację bazy: `psql $DATABASE_URL -f docs/baza/migrations.sql`.
-3. Uruchom serwer: `uvicorn app.main:app --reload`.
+3. Uruchom serwer: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` (wariant `--host 0.0.0.0` udostępnia panel w sieci LAN; w celu zawężenia dostępu ustaw odpowiednie IP).
 
 ### Dostępne endpointy (wersja prototypowa)
 - `GET /health` – status serwera.
@@ -159,7 +159,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta automatycznie wysyłany jest e-mail i SMS z danymi logowania. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
 - Aby uruchomić panel lokalnie:
   1. `source .venv/bin/activate`
-  2. `uvicorn app.main:app --reload`
+  2. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
   3. Otwórz przeglądarkę na `http://localhost:8000/admin`
 - Implementacja kolejnych sekcji (konsola SQL, kopie zapasowe, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
@@ -207,7 +207,9 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 - Tabela `ctip.ivr_map` przechowuje mapowania cyfr IVR (`digit`) na wewnętrzne numery docelowe (`ext`) wraz z tekstem wiadomości i flagą `enabled`. Dodatkowe ograniczenie `uq_ivr_map_ext` gwarantuje, że dany numer wewnętrzny ma tylko jedną aktywną regułę.
 - Panel administracyjny (`/admin/partials/ctip/ivr-map`) udostępnia pełny CRUD mapowań oraz natychmiast aktualizuje treść wysyłanej wiadomości. Domyślna migracja (`15989372b89d`) tworzy wpis dla cyfry `9` kierującej na wewnętrzny `500` i przypisuje komunikat „Instrukcja instalacji aplikacji Ksero Partner znajdziesz na stronie https://www.ksero-partner.com.pl/appkp/.” – wpis można dowolnie edytować lub wyłączyć.
 - `collector_full.py` odczytuje mapowania w momencie obsługi ramki `RING`; po wykryciu dopasowania dodaje pojedynczą wiadomość do kolejki `ctip.sms_out` (źródło `ivr`, powód `{"reason": "ivr_map"}`) i zabezpiecza się przed duplikatami (`ON CONFLICT (call_id) WHERE source='ivr' DO NOTHING`), dzięki czemu każde połączenie otrzymuje maksymalnie jeden SMS.
+- Strumień CTIP nie zawiera informacji o wciśniętych cyfrach IVR – centrala wysyła jedynie pierwszy `RING` na skonfigurowany numer wewnętrzny. Kolektor wnioskuje cyfrę na podstawie trafionego numeru wewnętrznego (`ctip.ivr_map`) i loguje to jako `IVR_MAP_HIT digit=<...>`.
 - Historia CTIP (`call_events`) rejestruje zarówno trafienia (`IVR_MAP_HIT`), jak i brak dopasowania (`IVR_MAP_MISS`) wraz z numerem wewnętrznym, co ułatwia diagnostykę konfiguracji IVR.
+- Dashboard panelu administracyjnego prezentuje kafelek „Automatyczne SMS (IVR)” zawierający licznik błędów/kolejki oraz skrót do historii wysyłek i diagnostyki `/admin/status/ivr`.
 
 ## Instalacja jako usługa Windows
 1. Zainstaluj Python oraz zależności (`pip install psycopg pywin32`).
@@ -217,6 +219,9 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 5. Monitoruj logi: `C:\LOG\smspg\collector_stdout.log` i `collector_stderr.log`.
 
 Zmiana konfiguracji wymaga zatrzymania usługi, aktualizacji plików i ponownego startu.
+
+Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`.
+Dedykowana instrukcja środowiska testowego WSL (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`) dostępna jest w `docs/instal/test_env_wsl.md`, a pełna analiza ryzyk równoległej pracy środowisk produkcyjnego i testowego w `docs/projekt/dual_site_analysis.md`.
 
 ## Integracja wysyłki SMS
 `sms_sender.py` uruchamia pętlę pobierającą z `ctip.sms_out` wiadomości w statusie `NEW` i przekazuje je do `HttpSmsProvider` (token lub login/hasło operatora SerwerSMS). Każda próba jest logowana przez `log_utils.append_log` do pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a wynik aktualizuje rekord (`SENT` z `provider_status` i `provider_msg_id`, albo `ERROR` z `error_msg`). Podgląd logu i najnowszej historii wysyłek jest dostępny bezpośrednio w panelu administratora (sekcja SerwerSMS). Dodatkowo `HttpSmsProvider` automatycznie generuje identyfikatory `unique_id` w formacie `CTIP-000000`, dzięki czemu operator nie zgłasza już błędu „Niepoprawne znaki w unique_id”. Szczegółowy manual HTTPS API v2 znajduje się w `docs/centralka/serwersms_https_api_v2_manual.md`, a przykładową bibliotekę kliencką udostępnia projekt SerwerSMS: ``https://github.com/SerwerSMSpl/serwersms-python-api``.
@@ -237,6 +242,7 @@ Zmiana konfiguracji wymaga zatrzymania usługi, aktualizacji plików i ponownego
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu) oraz `panel_admin_ui.md` (plan interfejsu administratora).
+- `docs/raport` – statyczny raport CPC (HTML + CSV) udostępniany bez logowania pod `http://127.0.0.1:8000/raport`; serwer FastAPI montuje katalog bez prawa zapisu, dzięki czemu pełni rolę tylko-do-odczytu.
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.
 - `prototype/index.html` – statyczny prototyp interfejsu użytkownika prezentujący widok listy połączeń CTIP, panel szczegółów, szybkie akcje SMS oraz historię wiadomości (dane przykładowe, brak połączenia z API).

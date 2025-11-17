@@ -1,11 +1,33 @@
+import json
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import servicemanager
 import win32event
 import win32service
 import win32serviceutil
+
+DEFAULT_ROOT = Path(r"D:\CTIP")
+DEFAULT_CONFIG_NAME = "collector_service_config.json"
+
+
+def _load_config():
+    base_dir = Path(os.environ.get("CTIP_SERVICE_WORKDIR", DEFAULT_ROOT))
+    config_path = Path(os.environ.get("CTIP_SERVICE_CONFIG", base_dir / DEFAULT_CONFIG_NAME))
+    try:
+        with config_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        data = {}
+    except Exception as exc:  # pragma: no cover - log and fallback silently in Windows service
+        try:
+            servicemanager.LogErrorMsg(f"CollectorService config load error: {exc}")
+        except Exception:
+            pass
+        data = {}
+    return data, base_dir, config_path
 
 
 class CollectorService(win32serviceutil.ServiceFramework):
@@ -17,12 +39,21 @@ class CollectorService(win32serviceutil.ServiceFramework):
         super().__init__(args)
         self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
         self.proc = None
-        self.work_dir = r"D:\automate\sms"
-        self.python = os.path.join(self.work_dir, "venv", "Scripts", "python.exe")
-        self.script = os.path.join(self.work_dir, "collector_full.py")
-        self.stdout_log = r"C:\LOG\smspg\collector_stdout.log"
-        self.stderr_log = r"C:\LOG\smspg\collector_stderr.log"
-        os.makedirs(os.path.dirname(self.stdout_log), exist_ok=True)
+        cfg, default_base_dir, _ = _load_config()
+        self.work_dir = cfg.get("work_dir") or str(default_base_dir)
+        self.python = cfg.get("python") or os.path.join(
+            self.work_dir, ".venv", "Scripts", "python.exe"
+        )
+        self.script = cfg.get("script") or os.path.join(self.work_dir, "collector_full.py")
+
+        default_log_dir = cfg.get("log_dir") or os.path.join(self.work_dir, "logs", "collector")
+        stdout_default = os.path.join(default_log_dir, "collector_stdout.log")
+        stderr_default = os.path.join(default_log_dir, "collector_stderr.log")
+        self.stdout_log = cfg.get("stdout_log") or stdout_default
+        self.stderr_log = cfg.get("stderr_log") or stderr_default
+
+        for log_path in (self.stdout_log, self.stderr_log):
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     def _start_child(self):
         out_f = open(self.stdout_log, "ab", buffering=0)

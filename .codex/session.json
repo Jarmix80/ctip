@@ -1,14 +1,16 @@
 {
-  "timestamp": "2025-10-28T00:00:00+02:00",
+  "timestamp": "2025-11-17T14:20:00+01:00",
   "summary": [
-    "Panel operatora ma odseparowane logowanie, uproszczony interfejs na bazie prototypu i obsługuje historię CTIP, statystyki SMS oraz edycję kontaktów.",
-    "Dodano moduł administracyjny zarządzania mapowaniami IVR -> SMS, wraz z backendowym API, audytem operacji i domyślną regułą 9 -> 500.",
-    "Szybka wysyłka SMS udostępnia predefiniowane przyciski (Aplikacja, Liczniki), aktywne szablony operatora, opcjonalne potwierdzenie wysyłki oraz szybkie zapisywanie własnych wiadomości jako szablonów."
+    "collector_service.py wczytuje konfigurację z pliku i domyślnie celuje w D:\\CTIP; requirements dodano warunkowe pywin32, a README odsyła do nowych instrukcji.",
+    "Do katalogu docs/instal trafiły szczegółowe materiały dla Windows Server 2022 (skrypty PowerShell install/update/uninstall/cleanup + pakiet ZIP).",
+    "Przygotowano pełne środowisko testowe WSL: .env.test(.example), skrypt run_test_stack_tmux.sh wymuszający mock CTIP i SMS_TEST_MODE oraz instrukcję test_env_wsl.md.",
+    "Dodano scripts/mock/mock_ctip_server.py i analizę ryzyk dual_site_analysis.md opisującą równoległą pracę produkcji i testów."
   ],
   "follow_up": [
-    "Dodać testy end-to-end (np. Playwright) weryfikujące logowanie operatora, edycję profilu, zmianę hasła, szybkie SMS i zapis szablonów.",
-    "Zweryfikować TTL tokenów przy opcji \"Zapamiętaj mnie\" (różne wartości dla localStorage/sessionStorage).",
-    "Rozszerzyć testy integracyjne kolektora o scenariusz blokujący wielokrotną wysyłkę SMS w obrębie tej samej rozmowy oraz testy UI dla CRUD mapowania IVR."
+    "Na Windows 2022 wykonać rzeczywistą instalację z install_service.ps1 i potwierdzić logi + restart usługi.",
+    "W WSL uruchomić mock CTIP + run_test_stack_tmux.sh i zweryfikować pełny przepływ danych do bazy ctip_test.",
+    "Dodać automatyczny test integracyjny mock→collector→sms_sender na GitHub Actions (można użyć scripts/mock/mock_ctip_server.py).",
+    "Rozbudować dokumentację o procedurę backup/restore dla katalogu D:\\CTIP i bazy produkcyjnej."
   ],
   "context": {
     "branch": "main",

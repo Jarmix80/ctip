@@ -41,6 +41,7 @@ python-dotenv==1.0.1
 python-multipart==0.0.20
 pytokens==0.1.10
 PyYAML==6.0.3
+pywin32==306; sys_platform == "win32"
 rich==14.2.0
 rich-toolkit==0.15.1
 ruff==0.14.0
