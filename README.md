@@ -16,7 +16,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_contacts.py` + `app/services/admin_contacts.py` – warstwa API i logika książki adresowej z obsługą pola `firebird_id`.
 
 ## Wymagania systemowe
-- Python 3.11 lub nowszy (z bibliotekami `psycopg` oraz – opcjonalnie dla Windows – `pywin32`).
+- Python 3.11 lub nowszy (z bibliotekami `psycopg` oraz – opcjonalnie dla Windows – `pywin32`; `uvloop` instalowane tylko na Linux dzięki warunkowi w `requirements.txt`).
 - Dostępny serwer PostgreSQL >= 13 z utworzonym schematem `ctip`.
 - Łącze sieciowe TCP z centralą Slican (port CTIP domyślnie 5524).
 - System Linux lub Windows (dla usługi Windows wymagane uprawnienia administratora).
