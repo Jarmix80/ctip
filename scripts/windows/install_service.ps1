@@ -64,7 +64,7 @@ function Ensure-Venv {
 
     if (Test-Path $TargetDir) {
         $pyvenvCfg = Join-Path $TargetDir "pyvenv.cfg"
-        if (Test-Path $pyvenvCfg -and -not [string]::IsNullOrWhiteSpace($Version)) {
+        if ((Test-Path $pyvenvCfg) -and (-not [string]::IsNullOrWhiteSpace($Version))) {
             $versionLine = Get-Content -Path $pyvenvCfg | Where-Object { $_ -match '^version\\s*=\\s*(.+)$' } | Select-Object -First 1
             if ($versionLine) {
                 $currentVersion = ($versionLine -replace '^version\\s*=\\s*', '').Trim()
