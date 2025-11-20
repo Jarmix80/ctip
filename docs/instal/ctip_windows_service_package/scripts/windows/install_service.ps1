@@ -111,10 +111,26 @@ Write-Host "Aktualizacja pip i instalacja zaleznosci"
 & $pythonExe -m pip install -r requirements.txt
 
 Write-Host "Rejestracja komponentow pywin32 (servicemanager)"
+$postinstallRan = $false
 try {
     & $pythonExe -m pywin32_postinstall -install
+    $postinstallRan = $true
 } catch {
-    Write-Warning "Nie udalo sie uruchomic pywin32_postinstall. Jesli usluga nie startuje, odpal recznie: $pythonExe -m pywin32_postinstall -install"
+    $postScript = Join-Path $venvPath "Scripts\\pywin32_postinstall.py"
+    if (Test-Path $postScript) {
+        try {
+            & $pythonExe $postScript -install
+            $postinstallRan = $true
+        } catch {
+            Write-Warning "pywin32_postinstall.py wywolane jako skrypt zwrocilo blad: $_"
+        }
+    } else {
+        Write-Warning "Nie znaleziono pywin32_postinstall (brak modulu i skryptu w Scripts)."
+    }
+}
+
+if (-not $postinstallRan) {
+    Write-Warning "pywin32_postinstall nie zostal wykonany. Jesli usluga nie startuje, odpal recznie: $pythonExe -m pip install --force-reinstall pywin32 && $pythonExe -m pywin32_postinstall -install"
 }
 
 $logDir = Join-Path $InstallDir "logs\\collector"
