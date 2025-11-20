@@ -1,13 +1,34 @@
+# ruff: noqa: E402
+"""Windows service wrapper for collector_full.py."""
+import importlib
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
-import servicemanager
-import win32event
-import win32service
-import win32serviceutil
+
+def _ensure_pywin32_paths():
+    base = Path(sys.executable).resolve().parent.parent
+    candidates = [
+        base / "Lib" / "site-packages" / "pywin32_system32",
+        base / "Lib" / "site-packages" / "win32",
+        base / "Lib" / "site-packages" / "pythonwin",
+    ]
+    for extra in candidates:
+        if extra.exists():
+            extra_str = str(extra)
+            if extra_str not in sys.path:
+                sys.path.insert(0, extra_str)
+
+
+_ensure_pywin32_paths()
+
+servicemanager = importlib.import_module("servicemanager")
+win32event = importlib.import_module("win32event")
+win32service = importlib.import_module("win32service")
+win32serviceutil = importlib.import_module("win32serviceutil")
 
 DEFAULT_ROOT = Path(r"D:\CTIP")
 DEFAULT_CONFIG_NAME = "collector_service_config.json"
