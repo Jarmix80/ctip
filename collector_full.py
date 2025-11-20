@@ -309,17 +309,38 @@ def ev_insert(conn, call_id, typ, ext, number, payload_bytes: bytes):
         log_db(log_line, prefix=None)
 
 
-def enqueue_sms(conn, call_id: int, dest: str, text: str):
+def enqueue_sms(
+    conn,
+    call_id: int,
+    dest: str,
+    text: str,
+    *,
+    ext: str | None = None,
+    digit: int | None = None,
+):
     if not dest:
         return
     with conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO sms_out(dest, text, source, status, call_id, meta)
-            VALUES (%s, %s, 'ivr', 'NEW', %s, jsonb_build_object('reason','ivr_map'))
+            VALUES (
+                %s,
+                %s,
+                'ivr',
+                'NEW',
+                %s,
+                jsonb_strip_nulls(
+                    jsonb_build_object(
+                        'reason','ivr_map',
+                        'ext', %s,
+                        'digit', %s
+                    )
+                )
+            )
             ON CONFLICT (call_id) WHERE source='ivr' DO NOTHING
         """,
-            (dest, text, call_id),
+            (dest, text, call_id, ext, digit),
         )
 
 
@@ -399,10 +420,15 @@ class CTIPClient(threading.Thread):
 
     def _register_context(self, ctx: CallContext):
         """Zapamiętuje kontekst dla wszystkich powiązanych kluczy."""
-        existing = {self.call_contexts.get(key) for key in ctx.keys if key in self.call_contexts}
+        existing: list[CallContext] = []
+        for key in ctx.keys:
+            current = self.call_contexts.get(key)
+            if current is None or current is ctx:
+                continue
+            if current not in existing:
+                existing.append(current)
         for old in existing:
-            if old is not None and old is not ctx:
-                self._unregister_context(old)
+            self._unregister_context(old)
         for key in ctx.keys:
             self.call_contexts[key] = ctx
         self.last_context = ctx
@@ -625,6 +651,7 @@ class CTIPClient(threading.Thread):
 
             # IVR inference
             ext_norm = ctx.ext_norm or norm_ext(ext_txt)
+            ext_meta = ext_norm or (ext_txt.strip() if ext_txt else None)
             info_payload = (
                 f"NORM_EXT={ext_norm}".encode("ascii", errors="ignore")
                 if ext_norm
@@ -650,7 +677,7 @@ class CTIPClient(threading.Thread):
                     cli,
                     f"IVR_MAP_HIT digit={digit}".encode("ascii", errors="ignore"),
                 )
-                enqueue_sms(self.conn, cid, cli, sms_text)
+                enqueue_sms(self.conn, cid, cli, sms_text, ext=ext_meta, digit=digit)
             else:
                 ev_insert(
                     self.conn,

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy import desc, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -429,6 +430,15 @@ async def operator_send_sms(
     _, admin_user = admin_context
     _ensure_operator(admin_user.role)
 
+    call_id: int | None = payload.call_id
+    if call_id is not None:
+        call_exists = await session.scalar(select(Call.id).where(Call.id == call_id))
+        if call_exists is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Powiązane połączenie nie istnieje lub zostało usunięte.",
+            )
+
     text = payload.text.strip()
     if not text:
         raise HTTPException(
@@ -445,7 +455,14 @@ async def operator_send_sms(
         created_by=admin_user.id,
     )
     session.add(sms)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nie udało się zapisać wiadomości – sprawdź poprawność danych.",
+        ) from exc
     await session.refresh(sms)
 
     return OperatorSendSmsResponse(sms=_map_sms([sms])[0])

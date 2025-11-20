@@ -68,6 +68,8 @@
 - Zapisy trafiają do endpointów `/admin/ctip/ivr-map` (POST), `/admin/ctip/ivr-map/{ext}` (PUT/DELETE); backend loguje operacje w `admin_audit_log` razem z identyfikatorem użytkownika i adresem IP.
 - Formularz wspiera szybkie włączanie/wyłączanie reguł (`enabled`), podpowiada znormalizowany numer oraz prezentuje hint o skutkach (jedna wiadomość SMS na połączenie, źródło `ivr`).
 - Domyślna migracja `15989372b89d` tworzy wpis dla cyfry `9` kierujący na wewnętrzny `500` z komunikatem „Instrukcja instalacji aplikacji Ksero Partner znajdziesz na stronie https://www.ksero-partner.com.pl/appkp/.” – po usunięciu lub wyłączeniu reguły kolektor przestaje automatycznie wysyłać SMS dla tego numeru.
+- Strumień CTIP nie zwraca ramki z cyfrą IVR – wykrycie mapowania następuje na podstawie pierwszego `RING` skierowanego na dany numer wewnętrzny. Panel prezentuje cyfrę z definicji mapowania, a logi kolektora dopisują `IVR_MAP_HIT`/`IVR_MAP_MISS` dla celów diagnostycznych.
+- Dashboard udostępnia osobny kafelek „Automatyczne SMS (IVR)” (źródło `/admin/status/ivr`) z licznikami błędów i oczekujących wysyłek oraz skrótem do konfiguracji/historii IVR.
 - Widok wykorzystuje lightweight bundle (`app/static/admin/ctipIvrMap.js`) i HTMX do odświeżania listy po każdej operacji, aby nie przeładowywać całego panelu.
 
 ### 5. SerwerSMS

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Index, Integer, Text
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -32,9 +32,9 @@ class Call(Base):
     number: Mapped[str | None] = mapped_column(Text)
     direction: Mapped[str] = mapped_column(Text, nullable=False)
     answered_by: Mapped[str | None] = mapped_column(Text)
-    started_at: Mapped[datetime] = mapped_column()
-    connected_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    ended_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_s: Mapped[int | None] = mapped_column(Integer)
     disposition: Mapped[str] = mapped_column(Text, default="UNKNOWN", nullable=False)
     last_state: Mapped[str | None] = mapped_column(Text)

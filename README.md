@@ -218,6 +218,8 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 4. Uruchom usługę: `python collector_service.py start`.
 5. Monitoruj logi: `C:\LOG\smspg\collector_stdout.log` i `collector_stderr.log`.
 
+Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znaków), dzięki czemu Windows PowerShell 5.1 z domyślnym kodowaniem nie zgłasza błędów parsowania. Skrypty instalacyjne znajdują się w repozytorium w `scripts/windows` (także w pakiecie `docs/instal/ctip_windows_service_package.zip`) i domyślnie wymuszają `py -3.11`; na hostach z domyślnym Pythonem 3.13 uruchamiaj `install_service.ps1` z parametrem `-PythonVersion "3.11"`.
+
 Zmiana konfiguracji wymaga zatrzymania usługi, aktualizacji plików i ponownego startu.
 
 Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -21,7 +21,7 @@ class CallEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     call_id: Mapped[int | None] = mapped_column(ForeignKey("ctip.calls.id", ondelete="CASCADE"))
-    ts: Mapped[datetime] = mapped_column()
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     typ: Mapped[str] = mapped_column(Text)
     ext: Mapped[str | None] = mapped_column(Text)
     number: Mapped[str | None] = mapped_column(Text)

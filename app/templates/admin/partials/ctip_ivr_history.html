@@ -1,0 +1,146 @@
+{% set query = '?limit=' ~ limit %}
+{% if status %}
+  {% set query = query ~ '&status=' ~ status %}
+{% endif %}
+{% if ext %}
+  {% set query = query ~ '&ext=' ~ ext %}
+{% endif %}
+{% set status_label = {
+  None: 'Wszystkie statusy',
+  '': 'Wszystkie statusy',
+  'NEW': 'Nowe (NEW)',
+  'RETRY': 'Ponowne (RETRY)',
+  'SENT': 'Wysłane (SENT)',
+  'ERROR': 'Błędne (ERROR)',
+  'SIMULATED': 'Symulowane (SIMULATED)'
+}[status or ''] %}
+<div
+  id="ctip-ivr-history-card"
+  class="monitor-card"
+  hx-get="/admin/partials/ctip/ivr-history{{ query }}"
+  hx-trigger="load delay:300ms, every 15s"
+  hx-target="this"
+  hx-swap="outerHTML"
+  hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+>
+  <header class="monitor-card-header history-header">
+    <div>
+      <h3>Historia SMS IVR</h3>
+      <p>
+        Limit: {{ limit }} &bull; {{ status_label }} &bull;
+        Numer: {{ ext or 'wszystkie' }} &bull;
+        Odświeżono: {{ generated_at }}
+      </p>
+    </div>
+    <form
+      id="ctip-ivr-history-filter"
+      class="history-filter"
+      hx-get="/admin/partials/ctip/ivr-history"
+      hx-target="#ctip-ivr-history-card"
+      hx-swap="outerHTML"
+      hx-trigger="change delay:200ms, submit"
+    >
+      <label for="ivr-history-limit">Limit</label>
+      <select id="ivr-history-limit" name="limit">
+        {% for option in [10, 25, 50, 100, 200] %}
+        <option value="{{ option }}" {% if option == limit %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+      <label for="ivr-history-status">Status</label>
+      <select id="ivr-history-status" name="status">
+        <option value="" {% if not status %}selected{% endif %}>Wszystkie</option>
+        <option value="NEW" {% if status == "NEW" %}selected{% endif %}>Nowe (NEW)</option>
+        <option value="RETRY" {% if status == "RETRY" %}selected{% endif %}>Ponowne (RETRY)</option>
+        <option value="SENT" {% if status == "SENT" %}selected{% endif %}>Wysłane (SENT)</option>
+        <option value="ERROR" {% if status == "ERROR" %}selected{% endif %}>Błędne (ERROR)</option>
+        <option value="SIMULATED" {% if status == "SIMULATED" %}selected{% endif %}>Symulowane (SIMULATED)</option>
+      </select>
+      <label for="ivr-history-ext">Numer wewnętrzny</label>
+      <input
+        id="ivr-history-ext"
+        type="text"
+        name="ext"
+        value="{{ ext or '' }}"
+        placeholder="np. 500"
+        maxlength="16"
+      >
+      <button type="submit" class="btn-secondary">Zastosuj</button>
+    </form>
+  </header>
+  <div class="sms-history-table">
+    {% if items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Numer wewnętrzny</th>
+          <th>Cyfra</th>
+          <th>Numer docelowy</th>
+          <th>Status</th>
+          <th>Treść</th>
+          <th>Błąd</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>
+            {% if item.created_at.tzinfo %}
+              {{ item.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z") }}
+            {% else %}
+              {{ item.created_at.strftime("%Y-%m-%d %H:%M:%S") }}
+            {% endif %}
+          </td>
+          <td>
+            {% if item.internal_ext %}
+              {{ item.internal_ext }}
+              {% if item.call_id %}
+              <div class="muted">Połączenie #{{ item.call_id }}</div>
+              {% endif %}
+            {% elif item.call_id %}
+              <span class="muted">Połączenie #{{ item.call_id }}</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if item.digit is not none %}
+              {{ item.digit }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>{{ item.dest }}</td>
+          <td>
+            {% set status_class = "success" if item.status == "SENT" else ("warning" if item.status == "ERROR" else "info") %}
+            <span class="status-chip {{ status_class }}">{{ item.status }}</span>
+            {% if item.provider_status or item.provider_message_id %}
+              <div class="muted">
+                {{ item.provider_status or '—' }}
+                {% if item.provider_message_id %}
+                  <span>#{{ item.provider_message_id }}</span>
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td>
+            {% set body = item.text or "" %}
+            {% set preview = body[:80] %}
+            {{ preview }}{% if body|length > 80 %}…{% endif %}
+          </td>
+          <td>
+            {% if item.error_msg %}
+              <span class="error-text">{{ item.error_msg }}</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="sms-history-empty">Brak wpisów spełniających warunki filtra.</p>
+    {% endif %}
+  </div>
+</div>

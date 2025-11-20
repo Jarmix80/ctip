@@ -57,3 +57,15 @@
 >
   <p class="sms-history-empty">Ładowanie konfiguracji automatycznych SMS…</p>
 </div>
+
+<div
+  id="ctip-ivr-history-wrapper"
+  hx-get="/admin/partials/ctip/ivr-history"
+  hx-trigger="load delay:300ms"
+  hx-target="this"
+  hx-swap="outerHTML"
+  hx-headers='{"X-Admin-Session": {{ admin_token | tojson }} }'
+  style="margin-top: 24px;"
+>
+  <p class="sms-history-empty">Ładowanie historii automatycznych SMS…</p>
+</div>

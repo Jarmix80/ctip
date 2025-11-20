@@ -64,6 +64,10 @@
             <span class="icon">📞</span>
             CTIP Live
           </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'ctip-config' }" @click.prevent="openSection('ctip-config')">
+            <span class="icon">🤖</span>
+            Automatyczne SMS
+          </button>
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'email' }" @click.prevent="openSection('email')">
             <span class="icon">📧</span>
             E-mail

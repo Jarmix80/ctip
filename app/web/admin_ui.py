@@ -16,7 +16,11 @@ from app.api.routes.admin_config import (
     load_email_config,
     load_sms_config,
 )
-from app.api.routes.admin_ctip import load_ctip_events
+from app.api.routes.admin_ctip import (
+    IVR_HISTORY_STATUS_PATTERN,
+    load_ctip_events,
+    load_ivr_sms_history,
+)
 from app.api.routes.admin_sms import (
     HISTORY_STATUS_PATTERN,
     collect_sms_log_entries,
@@ -132,6 +136,33 @@ async def admin_ctip_ivr_map_partial(
         {
             "request": request,
             "entries": serialized,
+            "admin_token": admin_token,
+        },
+    )
+
+
+@router.get("/admin/partials/ctip/ivr-history", response_class=HTMLResponse)
+async def admin_ctip_ivr_history_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    limit: int = Query(default=25, ge=5, le=200),
+    status: str | None = Query(default=None, pattern=IVR_HISTORY_STATUS_PATTERN),
+    ext: str | None = Query(default=None, min_length=1, max_length=16),
+) -> HTMLResponse:
+    """Fragment HTML przedstawiający historię wysyłek IVR."""
+    items = await load_ivr_sms_history(session, limit, status_filter=status, ext_filter=ext)
+    generated_at = datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    admin_token = request.headers.get("x-admin-session", "")
+    return templates.TemplateResponse(
+        "admin/partials/ctip_ivr_history.html",
+        {
+            "request": request,
+            "items": items,
+            "limit": limit,
+            "status": status,
+            "ext": ext,
+            "generated_at": generated_at,
             "admin_token": admin_token,
         },
     )

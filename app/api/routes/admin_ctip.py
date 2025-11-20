@@ -25,12 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
 from app.db.session import AsyncSessionLocal
-from app.models import Call, CallEvent
+from app.models import Call, CallEvent, SmsOut
 from app.schemas.admin_ctip import (
     AdminIvrMapCreate,
     AdminIvrMapEntry,
     AdminIvrMapListResponse,
     AdminIvrMapUpdate,
+    AdminIvrSmsHistoryEntry,
+    AdminIvrSmsHistoryResponse,
 )
 from app.services import admin_ivr_map
 from app.services.audit import record_audit
@@ -41,6 +43,8 @@ router = APIRouter(prefix="/admin/ctip", tags=["admin-ctip"])
 
 # Ramki typu "T" (keep-alive) zaciemniają log – pomijamy je domyślnie
 TRANSIENT_TYPES = {"T"}
+IVR_HISTORY_ALLOWED_STATUSES = {"NEW", "RETRY", "SENT", "ERROR", "SIMULATED"}
+IVR_HISTORY_STATUS_PATTERN = f"^({'|'.join(sorted(IVR_HISTORY_ALLOWED_STATUSES))})$"
 
 
 class CtipEventEntry(BaseModel):
@@ -85,6 +89,94 @@ def _ensure_admin(role: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Wymagane uprawnienia administratora."
         )
+
+
+async def load_ivr_sms_history(
+    session: AsyncSession,
+    limit: int,
+    *,
+    status_filter: str | None = None,
+    ext_filter: str | None = None,
+) -> list[AdminIvrSmsHistoryEntry]:
+    """Zwraca historię wysyłek SMS wygenerowanych przez mapowanie IVR."""
+    fetch_limit = max(limit, 1)
+    if ext_filter:
+        fetch_limit = max(fetch_limit * 3, 50)
+
+    stmt = (
+        select(
+            SmsOut.id,
+            SmsOut.created_at,
+            SmsOut.dest,
+            SmsOut.text,
+            SmsOut.status,
+            SmsOut.provider_status,
+            SmsOut.provider_msg_id,
+            SmsOut.error_msg,
+            SmsOut.call_id,
+            Call.ext.label("call_ext"),
+            SmsOut.meta,
+        )
+        .join(Call, SmsOut.call_id == Call.id, isouter=True)
+        .where(SmsOut.source == "ivr")
+        .order_by(desc(SmsOut.created_at))
+        .limit(fetch_limit)
+    )
+    if status_filter:
+        stmt = stmt.where(SmsOut.status == status_filter)
+
+    rows = (await session.execute(stmt)).all()
+
+    items: list[AdminIvrSmsHistoryEntry] = []
+    for row in rows:
+        meta = row.meta if isinstance(row.meta, dict) else {}
+        meta_ext = None
+        meta_digit: int | None = None
+        if isinstance(meta, dict):
+            raw_ext = meta.get("ext")
+            if isinstance(raw_ext, str):
+                meta_ext = raw_ext.strip() or None
+            raw_digit = meta.get("digit")
+            if raw_digit is not None:
+                try:
+                    meta_digit = int(raw_digit)
+                except (TypeError, ValueError):
+                    meta_digit = None
+        call_ext = getattr(row, "call_ext", None)
+
+        if ext_filter:
+            matches = False
+            candidates = [meta_ext, call_ext]
+            for candidate in candidates:
+                if not candidate:
+                    continue
+                normalized = candidate.strip()
+                if normalized == ext_filter or normalized.startswith(f"{ext_filter}_"):
+                    matches = True
+                    break
+            if not matches:
+                continue
+
+        items.append(
+            AdminIvrSmsHistoryEntry(
+                id=row.id,
+                created_at=row.created_at,
+                dest=row.dest,
+                status=row.status,
+                text=row.text,
+                call_id=row.call_id,
+                internal_ext=meta_ext or call_ext,
+                digit=meta_digit,
+                provider_status=row.provider_status,
+                provider_message_id=row.provider_msg_id,
+                error_msg=row.error_msg,
+            )
+        )
+
+        if len(items) >= limit:
+            break
+
+    return items
 
 
 async def load_ctip_events(
@@ -166,6 +258,39 @@ async def admin_ivr_map_list(
         for entry in entries
     ]
     return AdminIvrMapListResponse(items=items)
+
+
+@router.get(
+    "/ivr-history",
+    response_model=AdminIvrSmsHistoryResponse,
+    summary="Historia wysyłek SMS z automatyzacji IVR",
+)
+async def admin_ivr_history(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    limit: int = Query(default=25, ge=5, le=200),
+    status: str | None = Query(default=None, pattern=IVR_HISTORY_STATUS_PATTERN),
+    ext: str | None = Query(default=None, min_length=1, max_length=16),
+) -> AdminIvrSmsHistoryResponse:
+    admin_session, admin_user = admin_context
+    _ensure_admin(admin_user.role)
+    items = await load_ivr_sms_history(session, limit, status_filter=status, ext_filter=ext)
+    generated_at = datetime.now(UTC)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="ivr_history_view",
+        client_ip=admin_session.client_ip,
+        payload={"limit": limit, "status": status, "ext": ext},
+    )
+    await session.commit()
+    return AdminIvrSmsHistoryResponse(
+        generated_at=generated_at,
+        limit=limit,
+        status=status,
+        ext=ext,
+        items=items,
+    )
 
 
 @router.post(

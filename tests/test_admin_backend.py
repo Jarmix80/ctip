@@ -11,6 +11,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -19,6 +20,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
 
 from app.api import deps
+from app.api.routes import admin_ctip, admin_status
 from app.main import create_app
 from app.models import (
     AdminAuditLog,
@@ -34,6 +36,7 @@ from app.models import (
     SmsTemplate,
 )
 from app.models.base import Base
+from app.services import admin_ivr_map
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.security import hash_password
 from log_utils import append_log, daily_log_path
@@ -1132,6 +1135,22 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             entries = result.scalars().all()
             self.assertGreaterEqual(len(entries), 2)
 
+    async def test_operator_sms_send_rejects_missing_call(self):
+        token, _ = await self._login_operator()
+        payload = {
+            "dest": "+48600111222",
+            "text": "Test bez powiązanego połączenia",
+            "call_id": 999999,
+        }
+        response = await self.client.post(
+            "/operator/api/sms/send",
+            headers={"X-Admin-Session": token},
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 400)
+        detail = response.json()["detail"]
+        self.assertIn("połączenie", detail.lower())
+
     async def test_operator_stats_endpoint(self):
         token, _ = await self._login_operator()
         now = datetime.now(UTC)
@@ -1213,59 +1232,124 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lookup["number"], "600700900")
 
     async def test_admin_manage_ivr_map(self):
-        token, _ = await self._login()
+        async with self.session_factory() as session:
+            entry = await admin_ivr_map.upsert_entry(
+                session,
+                ext="777",
+                digit=7,
+                sms_text="Testowa wiadomość IVR",
+                enabled=True,
+            )
+            await session.commit()
+            self.assertEqual(entry.ext, "777")
+            self.assertEqual(entry.digit, 7)
+            self.assertTrue(entry.enabled)
 
-        create_payload = {
-            "ext": "777",
-            "digit": 7,
-            "sms_text": "Testowa wiadomość IVR",
-            "enabled": True,
-        }
+            entry = await admin_ivr_map.upsert_entry(
+                session,
+                ext="777",
+                digit=9,
+                sms_text="Zmieniona treść",
+                enabled=False,
+            )
+            await session.commit()
+            self.assertEqual(entry.digit, 9)
+            self.assertFalse(entry.enabled)
 
-        create_resp = await self.client.post(
-            "/admin/ctip/ivr-map",
-            headers={"X-Admin-Session": token},
-            json=create_payload,
-        )
-        self.assertEqual(create_resp.status_code, 201)
-        created = create_resp.json()
-        self.assertEqual(created["ext"], "777")
-        self.assertEqual(created["digit"], 7)
+            listing = await admin_ivr_map.list_entries(session)
+            self.assertTrue(any(item.ext == "777" for item in listing))
 
-        update_resp = await self.client.put(
-            "/admin/ctip/ivr-map/777",
-            headers={"X-Admin-Session": token},
-            json={
-                "digit": 9,
-                "sms_text": "Zmieniona treść",
-                "enabled": False,
-            },
-        )
-        self.assertEqual(update_resp.status_code, 200)
-        updated = update_resp.json()
-        self.assertEqual(updated["digit"], 9)
-        self.assertFalse(updated["enabled"])
+            now = datetime.now(UTC)
+            call = Call(
+                ext="900",
+                number="+48600111222",
+                direction="IN",
+                started_at=now,
+                last_state="RING",
+                disposition="UNKNOWN",
+            )
+            session.add(call)
+            await session.flush()
+            session.add(
+                SmsOut(
+                    dest="+48600111222",
+                    text="Instrukcja instalacji",
+                    status="SENT",
+                    source="ivr",
+                    origin="ivr",
+                    call_id=call.id,
+                    created_at=now,
+                    meta={"reason": "ivr_map", "ext": "900", "digit": 9},
+                )
+            )
+            await session.commit()
 
-        list_resp = await self.client.get(
-            "/admin/ctip/ivr-map",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(list_resp.status_code, 200)
-        listing = list_resp.json()
-        self.assertTrue(any(item["ext"] == "777" for item in listing["items"]))
+            history = await admin_ctip.load_ivr_sms_history(session, 5)
+            self.assertTrue(any(item.internal_ext == "900" and item.digit == 9 for item in history))
 
-        delete_resp = await self.client.delete(
-            "/admin/ctip/ivr-map/777",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(delete_resp.status_code, 204)
+            await admin_ivr_map.delete_entry(session, "777")
+            await session.commit()
+        final_listing = await admin_ivr_map.list_entries(session)
+        self.assertFalse(any(item.ext == "777" for item in final_listing))
 
-        final_resp = await self.client.get(
-            "/admin/ctip/ivr-map",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(final_resp.status_code, 200)
-        self.assertFalse(any(item["ext"] == "777" for item in final_resp.json()["items"]))
+    async def test_load_ivr_sms_history_filters_and_requires_admin(self):
+        now = datetime.now(UTC)
+        async with self.session_factory() as session:
+            call = Call(
+                ext="500",
+                number="+48600111222",
+                direction="IN",
+                started_at=now,
+                last_state="RING",
+                disposition="UNKNOWN",
+            )
+            session.add(call)
+            await session.flush()
+            session.add_all(
+                [
+                    SmsOut(
+                        dest="+48600111222",
+                        text="Instrukcja instalacji",
+                        status="SENT",
+                        source="ivr",
+                        origin="ivr",
+                        call_id=call.id,
+                        created_at=now,
+                        meta={"reason": "ivr_map", "ext": "500", "digit": 9},
+                    ),
+                    SmsOut(
+                        dest="+48600111333",
+                        text="UI test",
+                        status="NEW",
+                        source="ui",
+                        origin="ui",
+                        call_id=call.id,
+                        created_at=now,
+                    ),
+                ]
+            )
+            await session.commit()
+
+            history = await admin_ctip.load_ivr_sms_history(session, 10)
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0].internal_ext, "500")
+            self.assertEqual(history[0].digit, 9)
+
+            filtered = await admin_ctip.load_ivr_sms_history(session, 10, ext_filter="999")
+            self.assertEqual(filtered, [])
+
+            sent_only = await admin_ctip.load_ivr_sms_history(session, 10, status_filter="SENT")
+            self.assertEqual(len(sent_only), 1)
+            self.assertEqual(sent_only[0].status, "SENT")
+
+        with self.assertRaises(HTTPException):
+            admin_ctip._ensure_admin("operator")
+
+    async def test_ivr_dashboard_card_reports_errors(self):
+        async with self.session_factory() as session:
+            card, diagnostics = await admin_status._ivr_automation_status(session)
+            self.assertIn("Automatyczne SMS", card["title"])
+            self.assertIn("recent", diagnostics)
 
     async def test_update_email_config_persists_values(self):
         token, _ = await self._login()

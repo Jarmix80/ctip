@@ -17,9 +17,11 @@ from app.api.routes.admin_config import (
     load_sms_config,
     settings_store,
 )
+from app.api.routes.admin_ctip import load_ivr_sms_history
 from app.api.routes.admin_sms import load_sms_history
 from app.core.config import settings
 from app.models import CallEvent, SmsOut
+from app.schemas.admin_ctip import AdminIvrSmsHistoryEntry
 
 router = APIRouter(prefix="/admin/status", tags=["admin-status"])
 
@@ -221,6 +223,67 @@ async def _sms_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[str,
     return card, diagnostics
 
 
+async def _ivr_automation_status(session: AsyncSession) -> tuple[dict[str, Any], dict[str, Any]]:
+    pending_q = await session.execute(
+        select(func.count(SmsOut.id)).where(SmsOut.source == "ivr", SmsOut.status == "NEW")
+    )
+    error_q = await session.execute(
+        select(func.count(SmsOut.id)).where(SmsOut.source == "ivr", SmsOut.status == "ERROR")
+    )
+    sent_q = await session.execute(
+        select(func.count(SmsOut.id)).where(SmsOut.source == "ivr", SmsOut.status == "SENT")
+    )
+    pending = int(pending_q.scalar() or 0)
+    errors = int(error_q.scalar() or 0)
+    sent = int(sent_q.scalar() or 0)
+
+    last_entry: AdminIvrSmsHistoryEntry | None = None
+    history: list[AdminIvrSmsHistoryEntry] = await load_ivr_sms_history(session, limit=5)
+    if history:
+        last_entry = history[0]
+
+    if errors > 0:
+        state = "warning"
+        variant = "warning"
+        status = f"Błędy: {errors}, w kolejce: {pending}"
+    else:
+        state = "ok"
+        variant = "success" if pending == 0 else "info"
+        status = f"W kolejce: {pending}, wysłane: {sent}"
+
+    details = "Brak ostatnich wysyłek IVR"
+    if last_entry:
+        ts = (
+            last_entry.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            if last_entry.created_at.tzinfo
+            else last_entry.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        details = f"Ostatnia wysyłka: {ts} → {last_entry.dest} ({last_entry.status})"
+
+    card = {
+        "state": state,
+        "title": "Automatyczne SMS (IVR)",
+        "status": status,
+        "details": details,
+        "variant": variant,
+        "cta": {"label": "Konfiguracja", "action": "open-section:ctip-config"},
+        "secondary_cta": {
+            "label": "Historia IVR",
+            "action": "open-section:ctip-config",
+        },
+        "diagnostics_endpoint": "/admin/status/ivr",
+    }
+
+    diagnostics = {
+        "pending": pending,
+        "errors": errors,
+        "sent": sent,
+        "recent": [item.model_dump() for item in history],
+        "last_entry": last_entry.model_dump() if last_entry else None,
+    }
+    return card, diagnostics
+
+
 async def _email_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[str, Any]]:
     config = await load_email_config(session)
     stored = await settings_store.get_namespace(session, "email")
@@ -285,11 +348,13 @@ async def _backups_status(session: AsyncSession) -> dict[str, Any]:  # noqa: ARG
 async def compute_status_summary(session: AsyncSession) -> list[dict[str, Any]]:
     """Zwraca listę kart statusowych do wyświetlenia w Dashboardzie."""
     ctip_card, _ = await _ctip_metrics(session)
+    ivr_card, _ = await _ivr_automation_status(session)
     sms_card, _ = await _sms_metrics(session)
     email_card, _ = await _email_metrics(session)
     return [
         await _check_database(session),
         ctip_card,
+        ivr_card,
         sms_card,
         email_card,
         await _backups_status(session),
@@ -331,6 +396,17 @@ async def sms_status(
 ) -> dict[str, Any]:
     """Zwraca szczegółową diagnostykę konfiguracji SerwerSMS."""
     card, diagnostics = await _sms_metrics(session)
+    diagnostics_with_card = {**diagnostics, "card": card}
+    return diagnostics_with_card
+
+
+@router.get("/ivr")
+async def ivr_status(
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict[str, Any]:
+    """Diagnostyka automatycznych SMS IVR."""
+    card, diagnostics = await _ivr_automation_status(session)
     diagnostics_with_card = {**diagnostics, "card": card}
     return diagnostics_with_card
 
