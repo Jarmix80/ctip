@@ -110,6 +110,13 @@ Write-Host "Aktualizacja pip i instalacja zaleznosci"
 & $pythonExe -m pip install --upgrade pip
 & $pythonExe -m pip install -r requirements.txt
 
+Write-Host "Rejestracja komponentow pywin32 (servicemanager)"
+try {
+    & $pythonExe -m pywin32_postinstall -install
+} catch {
+    Write-Warning "Nie udalo sie uruchomic pywin32_postinstall. Jesli usluga nie startuje, odpal recznie: $pythonExe -m pywin32_postinstall -install"
+}
+
 $logDir = Join-Path $InstallDir "logs\\collector"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 

@@ -45,6 +45,7 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    ```
    Skrypt:
    - tworzy `.venv` (Python 3.11) i instaluję zależności (`requirements.txt` wraz z `pywin32`),
+   - uruchamia `pywin32_postinstall -install`, aby zarejestrować `servicemanager` wymagany do startu usługi,
    - generuje `collector_service_config.json` (ścieżki `.venv`, `collector_full.py` i logi `D:\CTIP\logs\collector`),
    - rejestruje usługę Windows `CollectorService` oraz od razu ją uruchamia.
    Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znaków), aby Windows PowerShell 5.1 z domyślnym kodowaniem nie zgłaszał błędów parsowania.
