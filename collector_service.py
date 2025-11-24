@@ -7,20 +7,24 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from sysconfig import get_paths
 
 
 def _ensure_pywin32_paths():
-    base = Path(sys.executable).resolve().parent.parent
-    candidates = [
-        base / "Lib" / "site-packages" / "pywin32_system32",
-        base / "Lib" / "site-packages" / "win32",
-        base / "Lib" / "site-packages" / "pythonwin",
-    ]
-    for extra in candidates:
-        if extra.exists():
-            extra_str = str(extra)
-            if extra_str not in sys.path:
-                sys.path.insert(0, extra_str)
+    exe = Path(sys.executable).resolve()
+    bases = {exe.parent, exe.parent.parent}
+    platlib = get_paths().get("platlib")
+    if platlib:
+        bases.add(Path(platlib))
+
+    extras = ("pywin32_system32", "win32", "pythonwin")
+    for base in bases:
+        for extra in extras:
+            candidate = base / extra
+            if candidate.exists():
+                candidate_str = str(candidate)
+                if candidate_str not in sys.path:
+                    sys.path.insert(0, candidate_str)
 
 
 _ensure_pywin32_paths()

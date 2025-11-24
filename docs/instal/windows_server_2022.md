@@ -84,6 +84,10 @@ Jeśli serwer wymaga reinstalacji lub migracji, użyj w zależności od potrzeb:
    ```
    Bez przełącznika `-RemoveRepo` skrypt pozostawi repozytorium (kod źródłowy) i usunie jedynie artefakty uruchomieniowe.
 
+   Przełączniki pomocnicze:
+   - `-BackupEnv` – przed czyszczeniem tworzy kopię `D:\CTIP\.env` jako `D:\CTIP\.env.bak` (domyślnie wyłączone).
+   - `-RemoveEnv` – usuwa plik `.env` po wykonaniu kopii (jeśli aktywny `-BackupEnv`) lub bez kopii (jeżeli `-BackupEnv` pominięto).
+
 ## Pakiet do dystrybucji
 Gotowe skrypty i instrukcję spakowano w `docs/instal/ctip_windows_service_package.zip`. Po wypakowaniu pakiet zawiera:
 - `windows_server_2022.md` – niniejszy dokument,

@@ -1,7 +1,9 @@
 param(
     [string]$InstallDir = "D:\\CTIP",
     [string]$ServiceName = "CollectorService",
-    [switch]$RemoveRepo
+    [switch]$RemoveRepo,
+    [switch]$BackupEnv,
+    [switch]$RemoveEnv
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,13 +18,21 @@ function Assert-Admin {
 
 Assert-Admin
 
-if (-not (Test-Path $InstallDir)) {
+if (-not (Test-Path -LiteralPath $InstallDir)) {
     Write-Warning "Katalog $InstallDir nie istnieje - nie ma czego usuwac."
     return
 }
 
-$InstallDir = (Resolve-Path $InstallDir).Path
+$InstallDir = (Resolve-Path -LiteralPath $InstallDir | Select-Object -First 1).Path
+$InstallDir = [string]$InstallDir
 Set-Location $InstallDir
+
+$envPath = Join-Path $InstallDir ".env"
+if ($BackupEnv -and (Test-Path $envPath)) {
+    $envBackup = "$envPath.bak"
+    Write-Host "Kopia zapasowa .env -> $envBackup"
+    Copy-Item -Force -Path $envPath -Destination $envBackup
+}
 
 $pythonExe = Join-Path $InstallDir ".venv\\Scripts\\python.exe"
 if (-not (Test-Path $pythonExe)) {
@@ -51,9 +61,9 @@ if ($service) {
 }
 
 $pathsToRemove = @(
-    Join-Path $InstallDir ".venv",
-    Join-Path $InstallDir "logs",
-    Join-Path $InstallDir "collector_service_config.json"
+    "$InstallDir\\.venv",
+    "$InstallDir\\logs",
+    "$InstallDir\\collector_service_config.json"
 )
 
 foreach ($item in $pathsToRemove) {
@@ -63,10 +73,15 @@ foreach ($item in $pathsToRemove) {
     }
 }
 
+if ($RemoveEnv -and (Test-Path $envPath)) {
+    Write-Host "Usuwanie $envPath"
+    Remove-Item -Force -Path $envPath
+}
+
 if ($RemoveRepo) {
     Write-Host "Usuwanie calego katalogu $InstallDir"
     Set-Location -Path ([System.IO.Path]::GetPathRoot($InstallDir))
-    Remove-Item -Recurse -Force -Path $InstallDir
+    Remove-Item -Recurse -Force -LiteralPath $InstallDir
     Write-Host "Repozytorium zostalo usuniete."
 } else {
     Write-Host "Podstawowe artefakty zostaly usuniete. Jesli chcesz usunac cale repo, uruchom ponownie z parametrem -RemoveRepo."
