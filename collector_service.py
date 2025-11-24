@@ -9,8 +9,6 @@ import time
 from pathlib import Path
 from sysconfig import get_paths
 
-from dotenv import load_dotenv
-
 
 def _ensure_pywin32_paths():
     exe = Path(sys.executable).resolve()
@@ -48,10 +46,6 @@ DEFAULT_CONFIG_NAME = "collector_service_config.json"
 def _load_config():
     base_dir = Path(os.environ.get("CTIP_SERVICE_WORKDIR", DEFAULT_ROOT))
     config_path = Path(os.environ.get("CTIP_SERVICE_CONFIG", base_dir / DEFAULT_CONFIG_NAME))
-
-    # Wczytaj zmienne z .env, jeśli istnieje obok instalacji
-    env_path = base_dir / ".env"
-    load_dotenv(env_path, override=False)
 
     try:
         with config_path.open("r", encoding="utf-8") as fh:
