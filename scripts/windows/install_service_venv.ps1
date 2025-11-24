@@ -27,6 +27,16 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
     throw "Brak interpretera .venv ($pythonExe). Utworz .venv i zainstaluj zaleznosci przed uruchomieniem skryptu."
 }
 
+$platlib = & $pythonExe -c "import sysconfig, pathlib; print(pathlib.Path(sysconfig.get_paths()['platlib']))"
+$dllPaths = @(
+    "$platlib",
+    "$platlib\pywin32_system32",
+    "$platlib\win32",
+    "$platlib\pythonwin"
+) -join ";"
+$oldPath = $env:PATH
+$env:PATH = "$dllPaths;$env:PATH"
+
 $logDir = Join-Path $InstallDir "logs\\collector"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -71,5 +81,7 @@ if ($service) {
 
 Invoke-ServiceCommand -Command "install"
 Invoke-ServiceCommand -Command "start"
+
+$env:PATH = $oldPath
 
 Write-Host "Instalacja zakonczona. Monitoruj logi w $logDir."

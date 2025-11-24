@@ -84,7 +84,7 @@ Alternatywa: szybka rejestracja usługi wyłącznie na bazie `.venv` (bez pip/po
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\windows\install_service_venv.ps1 -InstallDir "D:\CTIP"
 ```
-Skrypt użyje `D:\CTIP\.venv\Scripts\python.exe`, zapisze konfigurację usługi i zarejestruje `CollectorService`, zakładając, że `.venv` jest w pełni gotowe.
+Skrypt użyje `D:\CTIP\.venv\Scripts\python.exe`, dopnie katalogi DLL pywin32 do `PATH`, zapisze konfigurację usługi i zarejestruje `CollectorService`, zakładając, że `.venv` jest w pełni gotowe.
 
 ## Odinstalowanie
 Jeśli serwer wymaga reinstalacji lub migracji, użyj w zależności od potrzeb:
