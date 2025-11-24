@@ -40,8 +40,8 @@ def main() -> int:
 
     print("Load DLLs via ctypes...")
     try:
-        ctypes.WinDLL(base / "pywin32_system32" / "pywintypes311.dll")
-        ctypes.WinDLL(base / "pywin32_system32" / "pythoncom311.dll")
+        ctypes.WinDLL(str(base / "pywin32_system32" / "pywintypes311.dll"))
+        ctypes.WinDLL(str(base / "pywin32_system32" / "pythoncom311.dll"))
         print("DLL load OK")
     except Exception as exc:  # pragma: no cover - diagnostyka
         print(f"DLL load FAILED: {exc}")
