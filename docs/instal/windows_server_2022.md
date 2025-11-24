@@ -79,6 +79,13 @@ Parametry:
 - `-SkipPywin32Postinstall` – nie uruchamia `pywin32_postinstall`.
 - `-PythonLauncher "python"` + `-PythonVersion ""` – używa aktualnego `python.exe` z PATH (np. 3.11), co jest wygodne gdy `py` launcher nie widzi właściwej wersji.
 
+Alternatywa: szybka rejestracja usługi wyłącznie na bazie `.venv` (bez pip/postinstall), z wymuszeniem interpretera `.venv`:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\scripts\windows\install_service_venv.ps1 -InstallDir "D:\CTIP"
+```
+Skrypt użyje `D:\CTIP\.venv\Scripts\python.exe`, zapisze konfigurację usługi i zarejestruje `CollectorService`, zakładając, że `.venv` jest w pełni gotowe.
+
 ## Odinstalowanie
 Jeśli serwer wymaga reinstalacji lub migracji, użyj w zależności od potrzeb:
 
