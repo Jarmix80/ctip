@@ -68,6 +68,17 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    Skrypt zatrzymuje usługę (jeżeli działa), pobiera zmiany `git fetch/pull`, aktualizuje zależności w `.venv`, a następnie ponownie startuje `CollectorService`. Przy błędzie aktualizacji zostaną zachowane logi i usługa nie zostanie ponownie uruchomiona dopóki administrator nie rozwiąże problemu.
 3. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
 
+### Wariant z gotowym .venv (pomijanie instalacji zależności)
+Jeżeli `.venv` oraz `pywin32_postinstall` zostały już wykonane ręcznie (np. jak w `docs/archiwum/install.txt`), możesz pominąć ponowną instalację zależności i rejestrację pywin32:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\scripts\windows\install_service.ps1 -InstallDir "D:\CTIP" -PythonLauncher "python" -PythonVersion "" -SkipDeps -SkipPywin32Postinstall
+```
+Parametry:
+- `-SkipDeps` – nie wykonuje `pip install`.
+- `-SkipPywin32Postinstall` – nie uruchamia `pywin32_postinstall`.
+- `-PythonLauncher "python"` + `-PythonVersion ""` – używa aktualnego `python.exe` z PATH (np. 3.11), co jest wygodne gdy `py` launcher nie widzi właściwej wersji.
+
 ## Odinstalowanie
 Jeśli serwer wymaga reinstalacji lub migracji, użyj w zależności od potrzeb:
 

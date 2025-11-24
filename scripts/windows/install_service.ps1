@@ -2,7 +2,9 @@ param(
     [string]$InstallDir = "D:\\CTIP",
     [string]$ServiceName = "CollectorService",
     [string]$PythonLauncher = "py",
-    [string]$PythonVersion = "3.11"
+    [string]$PythonVersion = "3.11",
+    [switch]$SkipDeps,
+    [switch]$SkipPywin32Postinstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,31 +108,39 @@ if (-not (Test-Path $pythonExe)) {
     throw "Nie udalo sie odnalezc $pythonExe. Sprawdz poprawnosc instalacji srodowiska wirtualnego."
 }
 
-Write-Host "Aktualizacja pip i instalacja zaleznosci"
-& $pythonExe -m pip install --upgrade pip
-& $pythonExe -m pip install -r requirements.txt
-
-Write-Host "Rejestracja komponentow pywin32 (servicemanager)"
-$postinstallRan = $false
-try {
-    & $pythonExe -m pywin32_postinstall -install
-    $postinstallRan = $true
-} catch {
-    $postScript = Join-Path $venvPath "Scripts\\pywin32_postinstall.py"
-    if (Test-Path $postScript) {
-        try {
-            & $pythonExe $postScript -install
-            $postinstallRan = $true
-        } catch {
-            Write-Warning "pywin32_postinstall.py wywolane jako skrypt zwrocilo blad: $_"
-        }
-    } else {
-        Write-Warning "Nie znaleziono pywin32_postinstall (brak modulu i skryptu w Scripts)."
-    }
+if ($SkipDeps) {
+    Write-Host "Pomijam instalacje zaleznosci (SkipDeps=true)"
+} else {
+    Write-Host "Aktualizacja pip i instalacja zaleznosci"
+    & $pythonExe -m pip install --upgrade pip
+    & $pythonExe -m pip install -r requirements.txt
 }
 
-if (-not $postinstallRan) {
-    Write-Warning "pywin32_postinstall nie zostal wykonany. Jesli usluga nie startuje, odpal recznie: $pythonExe -m pip install --force-reinstall pywin32 && $pythonExe -m pywin32_postinstall -install"
+if ($SkipPywin32Postinstall) {
+    Write-Host "Pomijam pywin32_postinstall (SkipPywin32Postinstall=true)"
+} else {
+    Write-Host "Rejestracja komponentow pywin32 (servicemanager)"
+    $postinstallRan = $false
+    try {
+        & $pythonExe -m pywin32_postinstall -install
+        $postinstallRan = $true
+    } catch {
+        $postScript = Join-Path $venvPath "Scripts\\pywin32_postinstall.py"
+        if (Test-Path $postScript) {
+            try {
+                & $pythonExe $postScript -install
+                $postinstallRan = $true
+            } catch {
+                Write-Warning "pywin32_postinstall.py wywolane jako skrypt zwrocilo blad: $_"
+            }
+        } else {
+            Write-Warning "Nie znaleziono pywin32_postinstall (brak modulu i skryptu w Scripts)."
+        }
+    }
+
+    if (-not $postinstallRan) {
+        Write-Warning "pywin32_postinstall nie zostal wykonany. Jesli usluga nie startuje, odpal recznie: $pythonExe -m pip install --force-reinstall pywin32 && $pythonExe -m pywin32_postinstall -install"
+    }
 }
 
 $logDir = Join-Path $InstallDir "logs\\collector"
