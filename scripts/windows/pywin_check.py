@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import ctypes
 import os
-import site
 import sys
+import sysconfig
 from pathlib import Path
 
 
 def main() -> int:
-    base = Path(site.getsitepackages()[0])
+    base = Path(sysconfig.get_paths()["platlib"]).resolve()
     paths = [
         base / "pywin32_system32",
         base / "win32",
@@ -25,7 +25,7 @@ def main() -> int:
     ]
 
     print(f"python: {sys.executable}")
-    print(f"site-packages: {base}")
+    print(f"platlib: {base}")
     print("paths:", paths)
 
     for p in paths:
