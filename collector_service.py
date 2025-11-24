@@ -25,6 +25,11 @@ def _ensure_pywin32_paths():
                 candidate_str = str(candidate)
                 if candidate_str not in sys.path:
                     sys.path.insert(0, candidate_str)
+                if hasattr(os, "add_dll_directory"):
+                    try:
+                        os.add_dll_directory(candidate_str)
+                    except FileNotFoundError:
+                        pass
 
 
 _ensure_pywin32_paths()
