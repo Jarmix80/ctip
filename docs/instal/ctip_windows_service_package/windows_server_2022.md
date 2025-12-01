@@ -57,6 +57,29 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    ```
 5. Po pierwszym starcie zweryfikuj w logu komunikaty `aWHO` oraz `aLOGA`, aby potwierdzić handshake z centralą.
 
+## Panel web i sms_sender jako usługi Windows (NSSM)
+Panel FastAPI (`uvicorn app.main:app`) i moduł SMS (`sms_sender.py`) można uruchomić jako dwie dodatkowe usługi Windows przy użyciu NSSM.
+
+1. Zainstaluj NSSM (https://nssm.cc/download) i upewnij się, że `nssm.exe` jest dostępne w `PATH` lub pod standardową ścieżką `C:\Program Files\nssm\nssm.exe`.
+2. Upewnij się, że w `D:\CTIP` istnieją: `.env`, gotowe `.venv` (utworzone przez `install_service.ps1`) oraz zaktualizowane repozytorium (`git pull`).
+3. Otwórz PowerShell jako Administrator w `D:\CTIP` i zezwól na skrypty w bieżącej sesji:
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+   ```
+4. Uruchom instalator usług web/SMS (domyślnie utworzy `CTIP-Web` i `CTIP-SMS`, port web: 8000):
+   ```powershell
+   .\scripts\windows\install_web_sms_nssm.ps1 -InstallDir "D:\CTIP" -ServicePrefix "CTIP" -UvicornPort 8000 -NssmPath "C:\Program Files\nssm\nssm.exe"
+   ```
+   Skrypt rejestruje i startuje obie usługi, ustawia katalog roboczy na `D:\CTIP`, logi w `logs\web` i `logs\sms`, rotację logów oraz uruchamianie automatyczne po restarcie serwera.
+5. Weryfikacja:
+   ```powershell
+   Get-Service CTIP-Web,CTIP-SMS
+   Get-Content -Tail 50 D:\CTIP\logs\web\web_stdout.log
+   Get-Content -Tail 50 D:\CTIP\logs\sms\sms_stdout.log
+   ```
+   Panel powinien odpowiadać pod `http://<adres_serwera>:8000/admin`, a `/health` pod tym samym portem.
+6. Aktualizacje kodu: zatrzymaj usługi (`Stop-Service CTIP-Web; Stop-Service CTIP-SMS`), wykonaj `git pull` + `D:\CTIP\.venv\Scripts\pip install -e .`, następnie `Start-Service CTIP-Web; Start-Service CTIP-SMS`. Kolektor aktualizujesz jak dotychczas przez `update_ctip.ps1`.
+
 ## Aktualizacje aplikacji
 1. Zachowaj konwencję pracy tylko w katalogu `D:\CTIP` (wiązanie z repozytorium git).
 2. Podczas wdrażania poprawek uruchom PowerShell jako Administrator i wykonaj:

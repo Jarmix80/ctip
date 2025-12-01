@@ -212,15 +212,14 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 - Dashboard panelu administracyjnego prezentuje kafelek „Automatyczne SMS (IVR)” zawierający licznik błędów/kolejki oraz skrót do historii wysyłek i diagnostyki `/admin/status/ivr`.
 
 ## Instalacja jako usługa Windows
-1. Zainstaluj Python oraz zależności (`pip install psycopg pywin32`).
-2. Skopiuj projekt do katalogu roboczego, skonfiguruj `collector_service.py` (ścieżki `work_dir`, `python`, `script`, katalog logów).
-3. Zarejestruj usługę: `python collector_service.py install`.
-4. Uruchom usługę: `python collector_service.py start`.
-5. Monitoruj logi: `C:\LOG\smspg\collector_stdout.log` i `collector_stderr.log`.
+1. Przygotuj `D:\CTIP` (git clone), Python 3.11 x64, plik `.env`.
+2. Uruchom PowerShell jako Administrator i skrypt `scripts/windows/install_service.ps1 -InstallDir "D:\CTIP" -PythonVersion "3.11"` – tworzy `.venv`, instaluje zależności, rejestruje i startuje usługę `CollectorService` (kolektor CTIP) z logami w `logs/collector`.
+3. Zainstaluj NSSM (https://nssm.cc/download), a następnie uruchom `scripts/windows/install_web_sms_nssm.ps1 -InstallDir "D:\CTIP" -ServicePrefix "CTIP" -UvicornPort 8000 -NssmPath "C:\Program Files\nssm\nssm.exe"`. Skrypt tworzy i włącza dwie usługi: `CTIP-Web` (uvicorn `app.main:app`) oraz `CTIP-SMS` (`sms_sender.py`) z logami w `logs/web` i `logs/sms`, uruchamiane automatycznie po restarcie.
+4. Sprawdzenie stanu: `Get-Service CollectorService,CTIP-Web,CTIP-SMS`; logi odpowiednio w `logs/collector`, `logs/web`, `logs/sms`. Panel jest dostępny pod `http://<host>:8000/admin`, endpoint `/health` pod tym samym portem.
 
 Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znaków), dzięki czemu Windows PowerShell 5.1 z domyślnym kodowaniem nie zgłasza błędów parsowania. Skrypty instalacyjne znajdują się w repozytorium w `scripts/windows` (także w pakiecie `docs/instal/ctip_windows_service_package.zip`) i domyślnie wymuszają `py -3.11`; na hostach z domyślnym Pythonem 3.13 uruchamiaj `install_service.ps1` z parametrem `-PythonVersion "3.11"`.
 
-Zmiana konfiguracji wymaga zatrzymania usługi, aktualizacji plików i ponownego startu.
+Zmiana konfiguracji wymaga zatrzymania usług, aktualizacji plików (`git pull`, `pip install -e .`) i ponownego startu.
 
 Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`.
 Dedykowana instrukcja środowiska testowego WSL (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`) dostępna jest w `docs/instal/test_env_wsl.md`, a pełna analiza ryzyk równoległej pracy środowisk produkcyjnego i testowego w `docs/projekt/dual_site_analysis.md`.
