@@ -77,7 +77,7 @@ function Install-NssmService {
     & $Nssm set $ServiceName Start SERVICE_AUTO_START | Out-Null
     & $Nssm set $ServiceName AppRotateFiles 1 | Out-Null
     & $Nssm set $ServiceName AppRotateBytes 10485760 | Out-Null
-    & $Nssm set $ServiceName AppRotateDelay 86400 | Out-Null
+    & $Nssm set $ServiceName AppRotateSeconds 86400 | Out-Null
 
     Write-Host "Start uslugi $ServiceName"
     & $Nssm start $ServiceName | Out-Null
