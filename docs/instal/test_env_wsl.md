@@ -53,6 +53,13 @@ Celem środowiska testowego jest równoległe uruchomienie wszystkich kluczowych
    - w oknie mocka `Ctrl+C`,
    - w tmux `Ctrl+b : kill-session -t ctip-stack-test`.
 
+### Uruchomienie jednym poleceniem
+Po wykonaniu powyższych kroków przygotowawczych możesz startować pełne środowisko testowe (mock CTIP + kolektor + uvicorn + sms_sender) poleceniem:
+```bash
+./ctiptest
+```
+Skrypt tworzy sesję tmux `ctip-stack-test` z czterema oknami (`mock-ctip`, `collector`, `uvicorn`, `sms-sender`) i wymusza zabezpieczenia: `.env.test` musi mieć `PBX_HOST` różny od produkcyjnego `192.168.0.11` oraz `SMS_TEST_MODE=true`.
+
 ## Krok 1 – środowisko Python i zależności
 ```bash
 cd ~/projects/ctip

@@ -221,6 +221,7 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
   - uruchomienie stosu w tmux: `./run_test_stack_tmux.sh` (okna `collector`, `uvicorn` na porcie 18000, `sms-sender` z `SMS_TEST_MODE`);
   - podgląd/zatrzymanie: `tmux attach -t ctip-stack-test`, zakończenie `kill-session -t ctip-stack-test` i `Ctrl+C` w oknie mocka.
 - Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
+- Start całości jednym poleceniem (mock + kolektor + uvicorn + sms_sender): `./ctiptest` – tworzy sesję tmux `ctip-stack-test` z czterema oknami i blokuje uruchomienie, jeśli `.env.test` wskazuje na produkcyjną centralę lub `SMS_TEST_MODE` ≠ `true`.
 
 ## Instalacja jako usługa Windows
 1. Przygotuj `D:\CTIP` (git clone), Python 3.11 x64, plik `.env`.
