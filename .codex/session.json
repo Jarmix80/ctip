@@ -1,15 +1,15 @@
 {
-  "timestamp": "2025-11-17T14:20:00+01:00",
+  "timestamp": "2025-12-03T12:35:00+01:00",
   "summary": [
-    "collector_service.py wczytuje konfigurację z pliku i domyślnie celuje w D:\\CTIP; requirements dodano warunkowe pywin32, a README odsyła do nowych instrukcji.",
-    "Do katalogu docs/instal trafiły szczegółowe materiały dla Windows Server 2022 (skrypty PowerShell install/update/uninstall/cleanup + pakiet ZIP).",
-    "Przygotowano pełne środowisko testowe WSL: .env.test(.example), skrypt run_test_stack_tmux.sh wymuszający mock CTIP i SMS_TEST_MODE oraz instrukcję test_env_wsl.md.",
-    "Dodano scripts/mock/mock_ctip_server.py i analizę ryzyk dual_site_analysis.md opisującą równoległą pracę produkcji i testów."
+    "Dodany skrypt ctiptest uruchamiający w tmux pełne środowisko testowe (mock CTIP, collector_full, uvicorn 18000, sms_sender) z kontrolą PBX_HOST i SMS_TEST_MODE; README i docs/instal/test_env_wsl.md uzupełnione o runbook i skrót uruchomienia.",
+    "Port PG w .env.test(.example) ustawiony na lokalny 5432, nazwę nadawcy e-mail ujęto w cudzysłów, a .gitignore poprawiono dla .env.*.",
+    "Testy naprawione: częściowy indeks SQLite na sms_out dla źródła ivr, stabilne statystyki operatora z datami w strefie Europe/Warsaw, zapisywanie tokenu SMS przez settings_store; pełny zestaw unittest przechodzi na .env.test.",
+    "Utworzono użytkownika admin w ctip_test: marcin@ksero-partner.com.pl z hasłem Wknpis1@# (rola admin, aktywny)."
   ],
   "follow_up": [
     "Na Windows 2022 wykonać rzeczywistą instalację z install_service.ps1 i potwierdzić logi + restart usługi.",
-    "W WSL uruchomić mock CTIP + run_test_stack_tmux.sh i zweryfikować pełny przepływ danych do bazy ctip_test.",
-    "Dodać automatyczny test integracyjny mock→collector→sms_sender na GitHub Actions (można użyć scripts/mock/mock_ctip_server.py).",
+    "W WSL uruchomić mock CTIP + ctiptest/run_test_stack_tmux.sh i zweryfikować pełny przepływ danych do bazy ctip_test (panel http://localhost:18000/admin).",
+    "Dodać automatyczny test integracyjny mock→collector→sms_sender na GitHub Actions (scripts/mock/mock_ctip_server.py).",
     "Rozbudować dokumentację o procedurę backup/restore dla katalogu D:\\CTIP i bazy produkcyjnej."
   ],
   "context": {
