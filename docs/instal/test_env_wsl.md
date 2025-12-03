@@ -8,6 +8,51 @@ Celem środowiska testowego jest równoległe uruchomienie wszystkich kluczowych
 - Połączenia CTIP nie są współdzielone: mock udostępnia dane tylko do testów.
 - Baza danych testowa `ctip_test` działa lokalnie (np. kontener Docker lub lokalny serwer PostgreSQL na WSL).
 
+## Szybki runbook – pełne uruchomienie wersji testowej
+1. Przygotuj zależności w WSL:
+   ```bash
+   cd ~/projects/ctip
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. Skopiuj i uzupełnij `.env.test` (oddzielne od produkcyjnego `.env`):
+   ```bash
+   cp .env.test.example .env.test
+   # ustaw PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD dla lokalnej bazy
+   # pozostaw PBX_HOST=127.0.0.1 i PBX_PORT=5525 (mock CTIP)
+   # wymagane: SMS_TEST_MODE=true, ADMIN_PANEL_URL=http://localhost:18000/admin
+   ```
+3. Załaduj zmienne środowiskowe do bieżącej powłoki:
+   ```bash
+   set -a && source .env.test && set +a
+   ```
+4. Zastosuj migracje na bazie testowej:
+   ```bash
+   alembic upgrade head
+   ```
+5. Uruchom mock CTIP na porcie 5525 (oddzielne okno/zakładka):
+   ```bash
+   source .venv/bin/activate
+   set -a && source .env.test && set +a
+   python scripts/mock/mock_ctip_server.py --port 5525 --loop --log-level INFO
+   ```
+6. W drugim oknie (z aktywnym `.venv` i `.env.test`) wystartuj stos testowy w tmux:
+   ```bash
+   ./run_test_stack_tmux.sh
+   ```
+   Skrypt przerwie start, jeśli `PBX_HOST=192.168.0.11` (produkcja) albo `SMS_TEST_MODE` nie jest `true`.
+7. Podgląd i weryfikacja:
+   ```bash
+   tmux attach -t ctip-stack-test
+   ```
+   - okno `collector`: logi `[CTIP]` z mocka,
+   - okno `uvicorn`: panel na `http://localhost:18000/admin`,
+   - okno `sms-sender`: wpisy `SMS_TEST_MODE`.
+8. Zatrzymanie środowiska:
+   - w oknie mocka `Ctrl+C`,
+   - w tmux `Ctrl+b : kill-session -t ctip-stack-test`.
+
 ## Krok 1 – środowisko Python i zależności
 ```bash
 cd ~/projects/ctip

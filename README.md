@@ -211,6 +211,17 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 - Historia CTIP (`call_events`) rejestruje zarówno trafienia (`IVR_MAP_HIT`), jak i brak dopasowania (`IVR_MAP_MISS`) wraz z numerem wewnętrznym, co ułatwia diagnostykę konfiguracji IVR.
 - Dashboard panelu administracyjnego prezentuje kafelek „Automatyczne SMS (IVR)” zawierający licznik błędów/kolejki oraz skrót do historii wysyłek i diagnostyki `/admin/status/ivr`.
 
+## Środowisko testowe WSL (mock CTIP + osobna baza)
+- Pełny runbook wraz z zabezpieczeniami przed podłączeniem do produkcji: `docs/instal/test_env_wsl.md` (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`).
+- Skrót procedury:
+  - przygotowanie zależności: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`;
+  - kopiowanie `.env.test.example` → `.env.test`, wypełnienie `PG*`, pozostawienie `PBX_HOST=127.0.0.1`, `PBX_PORT=5525`, `SMS_TEST_MODE=true`, `ADMIN_PANEL_URL=http://localhost:18000/admin`;
+  - załadowanie zmiennych i migracje: `set -a && source .env.test && set +a && alembic upgrade head`;
+  - start mocka CTIP: `python scripts/mock/mock_ctip_server.py --port 5525 --loop --log-level INFO`;
+  - uruchomienie stosu w tmux: `./run_test_stack_tmux.sh` (okna `collector`, `uvicorn` na porcie 18000, `sms-sender` z `SMS_TEST_MODE`);
+  - podgląd/zatrzymanie: `tmux attach -t ctip-stack-test`, zakończenie `kill-session -t ctip-stack-test` i `Ctrl+C` w oknie mocka.
+- Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
+
 ## Instalacja jako usługa Windows
 1. Przygotuj `D:\CTIP` (git clone), Python 3.11 x64, plik `.env`.
 2. Uruchom PowerShell jako Administrator i skrypt `scripts/windows/install_service.ps1 -InstallDir "D:\CTIP" -PythonVersion "3.11"` – tworzy `.venv`, instaluje zależności, rejestruje i startuje usługę `CollectorService` (kolektor CTIP) z logami w `logs/collector`.
@@ -222,7 +233,6 @@ Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znak
 Zmiana konfiguracji wymaga zatrzymania usług, aktualizacji plików (`git pull`, `pip install -e .`) i ponownego startu.
 
 Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`.
-Dedykowana instrukcja środowiska testowego WSL (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`) dostępna jest w `docs/instal/test_env_wsl.md`, a pełna analiza ryzyk równoległej pracy środowisk produkcyjnego i testowego w `docs/projekt/dual_site_analysis.md`.
 
 ## Integracja wysyłki SMS
 `sms_sender.py` uruchamia pętlę pobierającą z `ctip.sms_out` wiadomości w statusie `NEW` i przekazuje je do `HttpSmsProvider` (token lub login/hasło operatora SerwerSMS). Każda próba jest logowana przez `log_utils.append_log` do pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a wynik aktualizuje rekord (`SENT` z `provider_status` i `provider_msg_id`, albo `ERROR` z `error_msg`). Podgląd logu i najnowszej historii wysyłek jest dostępny bezpośrednio w panelu administratora (sekcja SerwerSMS). Dodatkowo `HttpSmsProvider` automatycznie generuje identyfikatory `unique_id` w formacie `CTIP-000000`, dzięki czemu operator nie zgłasza już błędu „Niepoprawne znaki w unique_id”. Szczegółowy manual HTTPS API v2 znajduje się w `docs/centralka/serwersms_https_api_v2_manual.md`, a przykładową bibliotekę kliencką udostępnia projekt SerwerSMS: ``https://github.com/SerwerSMSpl/serwersms-python-api``.

@@ -10,7 +10,8 @@ dist/
 .venv/
 venv/
 .env
-.env.*        # realne sekrety
+.env.*
+# realne sekrety
 *.log
 
 # Tools
