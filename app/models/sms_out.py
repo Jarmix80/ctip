@@ -54,4 +54,5 @@ Index(
     SmsOut.call_id,
     unique=True,
     postgresql_where=(SmsOut.source == "ivr"),
+    sqlite_where=(SmsOut.source == "ivr"),
 )

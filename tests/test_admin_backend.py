@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
@@ -21,6 +22,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api import deps
 from app.api.routes import admin_ctip, admin_status
+from app.api.routes.admin_config import settings_store
 from app.main import create_app
 from app.models import (
     AdminAuditLog,
@@ -39,6 +41,7 @@ from app.models.base import Base
 from app.services import admin_ivr_map
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.security import hash_password
+from app.services.settings_store import StoredValue
 from log_utils import append_log, daily_log_path
 
 
@@ -611,14 +614,11 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         token, _ = await self._login()
         async with self.session_factory() as session:
             now = datetime.now(UTC)
-            session.add(
-                AdminSetting(
-                    key="sms.api_token",
-                    value="sekret-token",
-                    is_secret=True,
-                    updated_at=now,
-                    updated_by=1,
-                )
+            await settings_store.set_namespace(
+                session,
+                "sms",
+                {"api_token": StoredValue(value="sekret-token", is_secret=True)},
+                user_id=1,
             )
             session.add(
                 SmsOut(
@@ -1153,7 +1153,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_operator_stats_endpoint(self):
         token, _ = await self._login_operator()
-        now = datetime.now(UTC)
+        local_now = datetime.now(UTC).astimezone(ZoneInfo("Europe/Warsaw"))
+        month_start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_start_utc = month_start.astimezone(UTC)
+        day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         async with self.session_factory() as session:
             session.add_all(
                 [
@@ -1163,7 +1166,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                         status="SENT",
                         origin="ui",
                         created_by=1,
-                        created_at=now,
+                        created_at=day_start + timedelta(hours=1),
                     ),
                     SmsOut(
                         dest="+48600200301",
@@ -1171,7 +1174,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                         status="SENT",
                         origin="ui",
                         created_by=1,
-                        created_at=now - timedelta(days=5),
+                        created_at=month_start_utc + timedelta(days=1, hours=1),
                     ),
                 ]
             )
