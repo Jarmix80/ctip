@@ -56,6 +56,30 @@ def _normalize_number(value: str | None) -> str | None:
     return digits
 
 
+def _sms_dest_candidates(number: str | None) -> set[str]:
+    """Buduje zestaw wariantów numeru do wyszukiwania historii SMS."""
+    candidates: set[str] = set()
+    if not number:
+        return candidates
+
+    candidates.add(number)
+    digits_only = re.sub(r"\D", "", number)
+    if digits_only:
+        candidates.add(digits_only)
+        if len(digits_only) == 9:
+            candidates.add(f"+48{digits_only}")
+        elif len(digits_only) > 9 and digits_only.startswith("48"):
+            candidates.add(f"+{digits_only}")
+
+    normalized = _normalize_number(number)
+    if normalized:
+        candidates.add(normalized)
+        if len(normalized) == 9:
+            candidates.add(f"+48{normalized}")
+
+    return {candidate for candidate in candidates if candidate}
+
+
 def _map_contact_summary(contact: Contact | None) -> OperatorContactSummary | None:
     if contact is None:
         return None
@@ -260,12 +284,17 @@ async def get_operator_call_detail(
     if call.number:
         contact = await admin_contacts.fetch_contact_by_number(session, call.number)
 
-    sms_stmt = (
-        select(SmsOut)
-        .where(SmsOut.dest == call.number)
-        .order_by(desc(SmsOut.created_at))
-        .limit(sms_limit)
-    )
+    sms_filters = [SmsOut.call_id == call.id]
+    dest_candidates = _sms_dest_candidates(call.number)
+    if dest_candidates:
+        sms_filters.append(SmsOut.dest.in_(dest_candidates))
+
+    sms_stmt = select(SmsOut).order_by(desc(SmsOut.created_at)).limit(sms_limit)
+    if len(sms_filters) == 1:
+        sms_stmt = sms_stmt.where(sms_filters[0])
+    else:
+        sms_stmt = sms_stmt.where(or_(*sms_filters))
+
     sms_result = await session.execute(sms_stmt)
     sms_history = sms_result.scalars().all()
 

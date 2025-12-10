@@ -182,6 +182,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Strona `/operator/settings` udostępnia formularze: edycję profilu operatora (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmianę hasła oraz zarządzanie własnymi szablonami SMS (dodawanie, edycja, usuwanie). Szablony globalne są widoczne w trybie tylko do odczytu.
 - Opcja „Zapamiętaj mnie” przechowuje token sesji w `localStorage` i wydłuża ważność sesji (`ADMIN_SESSION_REMEMBER_HOURS`), natomiast standardowe logowanie używa `sessionStorage`.
 - Operatorzy i administratorzy korzystają z tego samego logowania (`/admin/auth/login` lub `/operator/auth/login`). Po uwierzytelnieniu rola `operator` trafia do panelu operatora, natomiast rola `admin` zachowuje pełen dostęp do panelu administracyjnego.
+- Historia SMS w szczegółach połączenia bazuje na powiązaniu `call_id` oraz znormalizowanych wariantach numeru (+48, bez prefiksów), więc wpisy SerwerSMS są widoczne nawet wtedy, gdy rekord połączenia zawiera numer bez prefiksu międzynarodowego.
 - Dokument referencyjny: `docs/projekt/panel_operator_ui.md`.
 
 ### API operatora

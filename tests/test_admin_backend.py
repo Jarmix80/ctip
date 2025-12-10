@@ -1070,6 +1070,47 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(detail["events"]), 2)
         self.assertGreaterEqual(len(detail["sms_history"]), 1)
 
+    async def test_operator_call_detail_handles_normalized_sms_number(self):
+        token, _ = await self._login_operator()
+        async with self.session_factory() as session:
+            now = datetime.now(UTC)
+            call = Call(
+                ext="105",
+                number="600700800",
+                direction="IN",
+                answered_by="120",
+                started_at=now - timedelta(minutes=3),
+                connected_at=None,
+                ended_at=None,
+                duration_s=None,
+                disposition="NO_ANSWER",
+                last_state="END",
+            )
+            session.add(call)
+            await session.flush()
+            session.add(
+                SmsOut(
+                    dest="+48600700800",
+                    text="Brak prefiksu w numerze połączenia",
+                    status="SENT",
+                    origin="operator",
+                    call_id=call.id,
+                    created_by=1,
+                    created_at=now - timedelta(minutes=1),
+                )
+            )
+            await session.commit()
+
+        response = await self.client.get(
+            f"/operator/api/calls/{call.id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        detail = response.json()
+        self.assertEqual(detail["call"]["number"], "600700800")
+        sms_dests = [entry["dest"] for entry in detail["sms_history"]]
+        self.assertIn("+48600700800", sms_dests)
+
     async def test_operator_contact_lookup_by_number(self):
         token, _ = await self._login_operator()
         async with self.session_factory() as session:
