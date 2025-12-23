@@ -1,13 +1,13 @@
 {
-  "timestamp": "2025-12-23T11:33:43+01:00",
+  "timestamp": "2025-12-23T11:54:07+01:00",
   "summary": [
-    "Zaktualizowano normalizację numerów SMS (prefiks wyjścia 0 przed kodem kraju/00) w backendzie i panelu operatora.",
-    "Dodano stopkę z wersją i datą aktualizacji w panelu operatora (widok główny i ustawienia) oraz style CSS.",
-    "Rozszerzono testy o weryfikację obecności informacji o wersji w szablonach operatora i uzupełniono README."
+    "Rozbudowano skrypt aktualizacji Windows (`scripts/windows/update_ctip.ps1`) o .env, .venv, pre-commit i testy jednostkowe oraz obsluge wielu uslug.",
+    "Uaktualniono dokumentacje wdrozeniowa dla Windows Server 2022 o nowy przebieg aktualizacji i opcje awaryjne.",
+    "Doprecyzowano README o uzycie skryptu aktualizacyjnego na Windows."
   ],
   "follow_up": [
-    "Wdrożyć zmiany na serwerze i odświeżyć zasoby panelu operatora (twarde przeładowanie).",
-    "Uruchomić `pre-commit run --all-files`, a następnie testy jednostkowe."
+    "Wdrozyc zmiany na serwerze przez `scripts/windows/update_ctip.ps1` i potwierdzic wersje w panelu operatora.",
+    "Monitorowac logi uslug po aktualizacji."
   ],
   "context": {
     "branch": "main",

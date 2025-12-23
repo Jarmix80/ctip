@@ -78,7 +78,10 @@ Panel FastAPI (`uvicorn app.main:app`) i moduł SMS (`sms_sender.py`) można uru
    Get-Content -Tail 50 D:\CTIP\logs\sms\sms_stdout.log
    ```
    Panel powinien odpowiadać pod `http://<adres_serwera>:8000/admin`, a `/health` pod tym samym portem.
-6. Aktualizacje kodu: zatrzymaj usługi (`Stop-Service CTIP-Web; Stop-Service CTIP-SMS`), wykonaj `git pull` + `D:\CTIP\.venv\Scripts\pip install -e .`, następnie `Start-Service CTIP-Web; Start-Service CTIP-SMS`. Kolektor aktualizujesz jak dotychczas przez `update_ctip.ps1`.
+6. Aktualizacje kodu: użyj `update_ctip.ps1` z listą usług (aktualizuje kod, zależności, pre-commit i testy):
+   ```powershell
+   .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -ServiceNames "CollectorService","CTIP-Web","CTIP-SMS" -GitRemote origin -GitBranch main
+   ```
 
 ## Aktualizacje aplikacji
 1. Zachowaj konwencję pracy tylko w katalogu `D:\CTIP` (wiązanie z repozytorium git).
@@ -87,8 +90,12 @@ Panel FastAPI (`uvicorn app.main:app`) i moduł SMS (`sms_sender.py`) można uru
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
    .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -GitRemote origin -GitBranch main
    ```
-   Skrypt zatrzymuje usługę (jeżeli działa), pobiera zmiany `git fetch/pull`, aktualizuje zależności w `.venv`, a następnie ponownie startuje `CollectorService`. Przy błędzie aktualizacji zostaną zachowane logi i usługa nie zostanie ponownie uruchomiona dopóki administrator nie rozwiąże problemu.
-3. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
+   Skrypt zatrzymuje uslugi (jeżeli działaja), pobiera zmiany `git fetch/pull`, aktualizuje zależności w `.venv`, uruchamia `pre-commit run --all-files` oraz testy `python -m unittest discover -s tests`, a następnie ponownie startuje usługi. Przy błędzie aktualizacji uslugi pozostaja zatrzymane, chyba że użyjesz `-ForceStartOnFailure`.
+3. Opcje awaryjne:
+   - `-SkipPreCommit` – pomija lint/format.
+   - `-SkipTests` – pomija testy jednostkowe.
+   - `-ForceStartOnFailure` – uruchamia usługi nawet przy błędzie aktualizacji.
+4. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
 
 ## Odinstalowanie
 Jeśli serwer wymaga reinstalacji lub migracji, użyj w zależności od potrzeb:

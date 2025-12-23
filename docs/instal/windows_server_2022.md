@@ -65,8 +65,16 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
    .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -GitRemote origin -GitBranch main
    ```
-   Skrypt zatrzymuje usługę (jeżeli działa), pobiera zmiany `git fetch/pull`, aktualizuje zależności w `.venv`, a następnie ponownie startuje `CollectorService`. Przy błędzie aktualizacji zostaną zachowane logi i usługa nie zostanie ponownie uruchomiona dopóki administrator nie rozwiąże problemu.
-3. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
+   Skrypt zatrzymuje uslugi (jeżeli działaja), pobiera zmiany `git fetch/pull`, aktualizuje zależności w `.venv`, uruchamia `pre-commit run --all-files` oraz testy `python -m unittest discover -s tests`, a następnie ponownie startuje usługi. Przy błędzie aktualizacji uslugi pozostaja zatrzymane, chyba że użyjesz `-ForceStartOnFailure`.
+3. Dla konfiguracji NSSM (panel + sms_sender) dodaj nazwy usług:
+   ```powershell
+   .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -ServiceNames "CollectorService","CTIP-Web","CTIP-SMS" -GitRemote origin -GitBranch main
+   ```
+4. Opcje awaryjne:
+   - `-SkipPreCommit` – pomija lint/format.
+   - `-SkipTests` – pomija testy jednostkowe.
+   - `-ForceStartOnFailure` – uruchamia usługi nawet przy błędzie aktualizacji.
+5. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
 
 ### Wariant z gotowym .venv (pomijanie instalacji zależności)
 Jeżeli `.venv` oraz `pywin32_postinstall` zostały już wykonane ręcznie (np. jak w `docs/archiwum/install.txt`), możesz pominąć ponowną instalację zależności i rejestrację pywin32:
