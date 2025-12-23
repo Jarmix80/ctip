@@ -1,12 +1,12 @@
 {
-  "timestamp": "2025-12-22T15:47:27+01:00",
+  "timestamp": "2025-12-23T11:33:43+01:00",
   "summary": [
-    "Rozszerzono normalizację numerów SMS do E.164 o korektę prefiksu +0 (dodatkowo obsługa 0 przed +48).",
-    "Poprawiono normalizację numeru docelowego w panelu operatora, aby nie generował +0 po wyborze z listy.",
-    "Dodano test jednostkowy dla przypadku +0 oraz zaktualizowano README o nowy zakres normalizacji."
+    "Zaktualizowano normalizację numerów SMS (prefiks wyjścia 0 przed kodem kraju/00) w backendzie i panelu operatora.",
+    "Dodano stopkę z wersją i datą aktualizacji w panelu operatora (widok główny i ustawienia) oraz style CSS.",
+    "Rozszerzono testy o weryfikację obecności informacji o wersji w szablonach operatora i uzupełniono README."
   ],
   "follow_up": [
-    "Wdrożyć zmiany na serwerze produkcyjnym i potwierdzić wysyłkę z panelu operatora dla numerów z prefiksem 00/0.",
+    "Wdrożyć zmiany na serwerze i odświeżyć zasoby panelu operatora (twarde przeładowanie).",
     "Uruchomić `pre-commit run --all-files`, a następnie testy jednostkowe."
   ],
   "context": {

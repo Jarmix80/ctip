@@ -25,6 +25,20 @@ body {
   color: var(--text);
 }
 
+.op-build-info {
+  position: fixed;
+  right: 16px;
+  bottom: 14px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  z-index: 900;
+}
+
 .op-header {
   display: flex;
   align-items: center;

@@ -30,6 +30,10 @@ class SmsSchemaTests(unittest.TestCase):
         req = SmsSendRequest(dest="+0600700800", text="Hello")
         self.assertEqual(req.dest, "+48600700800")
 
+    def test_normalizes_outside_prefix_with_country_code(self):
+        req = SmsSendRequest(dest="049123456789", text="Hello")
+        self.assertEqual(req.dest, "+49123456789")
+
     def test_rejects_invalid_number(self):
         with self.assertRaises(ValidationError):
             SmsSendRequest(dest="123", text="Hello")

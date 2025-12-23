@@ -12,7 +12,7 @@ _SMS_E164_REGEX = re.compile(SMS_E164_PATTERN)
 
 
 def normalize_sms_destination(value: str | None) -> str:
-    """Normalizuje numer docelowy SMS do formatu E.164 (00/0/+0 -> +48)."""
+    """Normalizuje numer docelowy SMS do E.164 (00/0/+0 i prefiks wyjscia 0)."""
     if value is None:
         raise ValueError("Numer docelowy jest wymagany.")
     raw = value.strip() if isinstance(value, str) else str(value).strip()
@@ -21,12 +21,12 @@ def normalize_sms_destination(value: str | None) -> str:
     digits = re.sub(r"\D", "", raw)
     if not digits:
         raise ValueError("Numer docelowy jest nieprawidłowy.")
+    if digits.startswith("000"):
+        digits = digits[1:]
+    if digits.startswith("0") and not digits.startswith("00") and len(digits) >= 10:
+        digits = digits[1:]
     if digits.startswith("00"):
         digits = digits[2:]
-    if digits.startswith("0") and len(digits) == 12 and digits[1:3] == "48":
-        digits = digits[1:]
-    if digits.startswith("0") and len(digits) == 10:
-        digits = digits[1:]
     if len(digits) == 9:
         digits = f"48{digits}"
     normalized = f"+{digits}"

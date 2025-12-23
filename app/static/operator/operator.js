@@ -203,20 +203,17 @@
       return trimmed;
     }
     let digits = digitsOnly(trimmed);
-    if (digits.length === 9) {
-      return `+48${digits}`;
+    if (digits.startsWith("000")) {
+      digits = digits.slice(1);
+    }
+    if (digits.startsWith("0") && !digits.startsWith("00") && digits.length >= 10) {
+      digits = digits.slice(1);
     }
     if (digits.startsWith("00")) {
       digits = digits.slice(2);
     }
-    if (digits.length === 12 && digits.startsWith("048")) {
-      return `+${digits.slice(1)}`;
-    }
-    if (digits.length === 10 && digits.startsWith("0")) {
-      return `+48${digits.slice(1)}`;
-    }
-    if (digits.length === 11 && digits.startsWith("48")) {
-      return `+${digits}`;
+    if (digits.length === 9) {
+      digits = `48${digits}`;
     }
     if (digits.length >= 9) {
       return `+${digits}`;
