@@ -1,9 +1,10 @@
 {
-  "timestamp": "2025-12-23T11:54:07+01:00",
+  "timestamp": "2025-12-23T11:58:55+01:00",
   "summary": [
     "Rozbudowano skrypt aktualizacji Windows (`scripts/windows/update_ctip.ps1`) o .env, .venv, pre-commit i testy jednostkowe oraz obsluge wielu uslug.",
     "Uaktualniono dokumentacje wdrozeniowa dla Windows Server 2022 o nowy przebieg aktualizacji i opcje awaryjne.",
-    "Doprecyzowano README o uzycie skryptu aktualizacyjnego na Windows."
+    "Doprecyzowano README o uzycie skryptu aktualizacyjnego na Windows.",
+    "Ustalenie: przy prosbie o aktualizacje serwera kierowac do `scripts/windows/update_ctip.ps1` i instrukcji wdrozeniowej."
   ],
   "follow_up": [
     "Wdrozyc zmiany na serwerze przez `scripts/windows/update_ctip.ps1` i potwierdzic wersje w panelu operatora.",
