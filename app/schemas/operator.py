@@ -6,6 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.schemas.sms import SMS_E164_PATTERN, normalize_sms_destination
+
 
 class OperatorContactSummary(BaseModel):
     """Skrócona informacja o kontakcie powiązanym z numerem."""
@@ -87,12 +89,17 @@ class OperatorUserInfo(BaseModel):
 
 
 class OperatorSendSmsRequest(BaseModel):
-    """Żądanie wysyłki SMS w panelu operatora."""
+    """Żądanie wysyłki SMS w panelu operatora (normalizacja numeru do E.164)."""
 
-    dest: str = Field(..., pattern=r"^\+[1-9]\d{7,14}$")
+    dest: str = Field(..., pattern=SMS_E164_PATTERN)
     text: str = Field(..., min_length=1, max_length=480)
     call_id: int | None = None
     origin: str | None = Field(default="operator")
+
+    @field_validator("dest", mode="before")
+    @classmethod
+    def _normalize_dest(cls, value: str) -> str:
+        return normalize_sms_destination(value)
 
 
 class OperatorSendSmsResponse(BaseModel):

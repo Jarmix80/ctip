@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
 from app.api.routes.admin_config import load_sms_config, settings_store
 from app.models import SmsOut
+from app.schemas.sms import SMS_E164_PATTERN, normalize_sms_destination
 from app.services.sms_provider import HttpSmsProvider, SmsTransportError
 from log_utils import append_log, daily_log_path, read_log_tail
 
@@ -30,9 +31,16 @@ def _ensure_admin(role: str) -> None:
 
 class SmsTestRequest(BaseModel):
     dest: str = Field(
-        ..., pattern=r"^\+[1-9]\d{7,14}$", description="Docelowy numer telefonu w formacie E.164"
+        ...,
+        pattern=SMS_E164_PATTERN,
+        description="Docelowy numer telefonu w formacie E.164",
     )
     text: str = Field(..., min_length=1, max_length=480)
+
+    @field_validator("dest", mode="before")
+    @classmethod
+    def _normalize_dest(cls, value: str) -> str:
+        return normalize_sms_destination(value)
 
 
 class SmsTestResponse(BaseModel):

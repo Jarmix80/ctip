@@ -1140,6 +1140,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_operator_sms_history_and_send(self):
         token, _ = await self._login_operator()
         dest = "+48670111222"
+        raw_dest = "0048670111222"
         async with self.session_factory() as session:
             session.add(
                 SmsOut(
@@ -1163,7 +1164,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         send_resp = await self.client.post(
             "/operator/api/sms/send",
             headers={"X-Admin-Session": token},
-            json={"dest": dest, "text": "Nowa wiadomość"},
+            json={"dest": raw_dest, "text": "Nowa wiadomość"},
         )
         self.assertEqual(send_resp.status_code, 201)
         payload = send_resp.json()

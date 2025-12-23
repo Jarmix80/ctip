@@ -199,12 +199,21 @@
       return "";
     }
     const trimmed = value.trim();
-    if (trimmed.startsWith("+")) {
+    if (trimmed.startsWith("+") && !trimmed.startsWith("+0")) {
       return trimmed;
     }
-    const digits = digitsOnly(trimmed);
+    let digits = digitsOnly(trimmed);
     if (digits.length === 9) {
       return `+48${digits}`;
+    }
+    if (digits.startsWith("00")) {
+      digits = digits.slice(2);
+    }
+    if (digits.length === 12 && digits.startsWith("048")) {
+      return `+${digits.slice(1)}`;
+    }
+    if (digits.length === 10 && digits.startsWith("0")) {
+      return `+48${digits.slice(1)}`;
     }
     if (digits.length === 11 && digits.startsWith("48")) {
       return `+${digits}`;

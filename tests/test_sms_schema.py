@@ -18,6 +18,18 @@ class SmsSchemaTests(unittest.TestCase):
         req = SmsSendRequest(dest="+48123456789", template_id=5)
         self.assertEqual(req.template_id, 5)
 
+    def test_normalizes_international_prefix(self):
+        req = SmsSendRequest(dest="0048 123 456 789", text="Hello")
+        self.assertEqual(req.dest, "+48123456789")
+
+    def test_normalizes_leading_zero(self):
+        req = SmsSendRequest(dest="0600700800", text="Hello")
+        self.assertEqual(req.dest, "+48600700800")
+
+    def test_normalizes_plus_zero_prefix(self):
+        req = SmsSendRequest(dest="+0600700800", text="Hello")
+        self.assertEqual(req.dest, "+48600700800")
+
     def test_rejects_invalid_number(self):
         with self.assertRaises(ValidationError):
             SmsSendRequest(dest="123", text="Hello")
