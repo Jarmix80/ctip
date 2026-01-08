@@ -7,6 +7,7 @@ from app.api import deps
 from app.main import create_app
 from app.models import AdminUser
 from app.services import admin_users
+from app.services.backup_runner import BackupFileInfo
 
 
 async def _fake_admin_context():
@@ -95,6 +96,39 @@ def test_email_partial_requires_authentication():
     client = TestClient(app)
     response = client.get("/admin/partials/config/email")
     assert response.status_code == 401
+
+
+def test_backups_partial_requires_authentication():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/admin/partials/backups")
+    assert response.status_code == 401
+
+
+def test_backups_partial_renders_listing():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    client = TestClient(app)
+
+    now = datetime.now(UTC)
+    fake_entries = [
+        BackupFileInfo(
+            name="backup_2025-10-11.dump",
+            size_bytes=1024,
+            modified_at=now,
+            status="READY",
+        )
+    ]
+
+    with patch("app.web.admin_ui.list_backup_files", return_value=fake_entries):
+        response = client.get(
+            "/admin/partials/backups",
+            headers={"X-Admin-Session": "token"},
+        )
+
+    assert response.status_code == 200
+    assert "Kopie zapasowe" in response.text
+    assert "backup_2025-10-11.dump" in response.text
 
 
 def test_users_partial_renders_listing():

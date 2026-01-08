@@ -199,7 +199,7 @@ document.addEventListener("alpine:init", () => {
         case "database":
           return "/admin/partials/config/database";
         case "backups":
-          return buildUrl("Kopie zapasowe");
+          return "/admin/partials/backups";
         case "ctip":
         case "ctip-live":
           return "/admin/partials/ctip/live";

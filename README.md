@@ -153,6 +153,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Sekcja CTIP udostępnia podgląd na żywo (`/admin/partials/ctip/live`) z filtrowaniem po wewnętrznych numerach oraz wbudowanym formularzem konfiguracji; kafelek na dashboardzie oferuje zarówno edycję parametrów, jak i szybkie przejście do widoku live. Aktualizacje są dostarczane kanałem WebSocket (`/admin/ctip/ws`), który pomija ramki keep-alive typu `T`.
 - Sekcja Automatyzacje IVR (`/admin/partials/ctip/ivr-map`) pozwala zarządzać mapowaniami cyfr IVR na numery wewnętrzne, treścią automatycznych SMS i ich aktywnością. Każda operacja (utworzenie, aktualizacja, usunięcie) jest audytowana i natychmiast dostępna dla kolektora bez restartu.
 - Sekcja E-mail umożliwia konfigurację serwera SMTP (host, port, logowanie, nadawca), test połączenia oraz wysłanie wiadomości testowej na wskazany adres (`/admin/email/test`). Wynik jest prezentowany w UI i zapisywany w audycie.
+- Sekcja Kopie zapasowe (`/admin/partials/backups`) prezentuje podgląd plików z katalogu `backups/`; operacje tworzenia i przywracania są dostępne wyłącznie w trybie dry-run.
 - Sekcja Książka adresowa (`/admin/partials/contacts`) udostępnia CRUD kontaktów z wyszukiwarką po numerze, nazwisku, e-mailu i identyfikatorze Firebird; formularze pozwalają przypisać numer wewnętrzny, notatki operacyjne oraz pole `firebird_id` wykorzystywane do mapowania z bazą Firebird.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP oraz Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów). Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
 - W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
@@ -161,10 +162,12 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
   1. `source .venv/bin/activate`
   2. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
   3. Otwórz przeglądarkę na `http://localhost:8000/admin`
-- Implementacja kolejnych sekcji (konsola SQL, kopie zapasowe, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
+- Implementacja kolejnych sekcji (konsola SQL, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
 - `GET /admin/contacts`, `POST /admin/contacts`, `PUT /admin/contacts/{contact_id}`, `DELETE /admin/contacts/{contact_id}` – zarządzanie wpisami książki adresowej (wymaga nagłówka `X-Admin-Session` i roli `admin`); obsługa pola `firebird_id` umożliwia powiązanie z rekordami bazy Firebird.
 - `GET /admin/contacts/by-number/{number}` – wyszukaj kontakt po numerze MSISDN (wymagane `X-Admin-Session`; dostęp dla roli `admin` i `operator`).
+- `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
+- `POST /admin/backup/run`, `POST /admin/backup/restore` – inicjacja kopii/przywracania; tryb produkcyjny zablokowany, dostępny wyłącznie dry-run (wymaga roli `admin`).
 - `GET /sms/templates` – lista szablonów (globalnych i użytkownika).
 - `POST /sms/templates` – dodawanie szablonów (globalny tylko dla administratora).
 - `POST /sms/send` – zapis SMS do kolejki `ctip.sms_out` (treść lub szablon).

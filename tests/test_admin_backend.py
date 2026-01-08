@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.models.base import Base
 from app.services import admin_ivr_map
+from app.services.backup_runner import BackupFileInfo
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
@@ -430,6 +431,131 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         data = response.json()
         self.assertEqual(data["card"]["title"], "Centrala CTIP")
         self.assertIsNotNone(data["last_event_at"])
+
+    async def test_backup_history_returns_items(self):
+        token, _ = await self._login()
+        now = datetime.now(UTC)
+        fake_entries = [
+            BackupFileInfo(
+                name="backup_2025-10-11.dump",
+                size_bytes=1024,
+                modified_at=now,
+                status="READY",
+            ),
+            BackupFileInfo(
+                name="backup_2025-10-10.dump",
+                size_bytes=2048,
+                modified_at=now - timedelta(days=1),
+                status="READY",
+            ),
+        ]
+
+        with patch("app.api.routes.admin_backup.list_backup_files", return_value=fake_entries):
+            response = await self.client.get(
+                "/admin/backup/history",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["items"]), 2)
+        self.assertEqual(data["items"][0]["name"], "backup_2025-10-11.dump")
+        self.assertEqual(data["items"][0]["status"], "READY")
+
+    async def test_backup_history_requires_admin_role(self):
+        token, _ = await self._login_operator()
+        response = await self.client.get(
+            "/admin/backup/history",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    async def test_backup_run_dry_creates_audit_entry(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/backup/run",
+            headers={"X-Admin-Session": token},
+            json={"label": "nocny", "compress": True, "dry_run": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["accepted"])
+        self.assertTrue(data["dry_run"])
+        self.assertIsNone(data["backup_name"])
+
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_run_dry")
+            )
+            entry = result.scalars().first()
+            self.assertIsNotNone(entry)
+            self.assertIsNotNone(entry.payload)
+            self.assertEqual(entry.payload.get("label"), "nocny")
+            self.assertTrue(entry.payload.get("compress"))
+            self.assertTrue(entry.payload.get("dry_run"))
+
+    async def test_backup_run_blocked_records_audit(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/backup/run",
+            headers={"X-Admin-Session": token},
+            json={"label": "reczny", "compress": False, "dry_run": False},
+        )
+        self.assertEqual(response.status_code, 501)
+        data = response.json()
+        self.assertEqual(data["detail"], "Moduł kopii zapasowych nie jest jeszcze aktywny.")
+
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_run_blocked")
+            )
+            entry = result.scalars().first()
+            self.assertIsNotNone(entry)
+            self.assertIsNotNone(entry.payload)
+            self.assertEqual(entry.payload.get("label"), "reczny")
+            self.assertFalse(entry.payload.get("compress"))
+
+    async def test_backup_restore_dry_creates_audit_entry(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/backup/restore",
+            headers={"X-Admin-Session": token},
+            json={"backup_name": "backup_2025-10-11.dump", "dry_run": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["accepted"])
+        self.assertTrue(data["dry_run"])
+
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_restore_dry")
+            )
+            entry = result.scalars().first()
+            self.assertIsNotNone(entry)
+            self.assertIsNotNone(entry.payload)
+            self.assertEqual(entry.payload.get("backup_name"), "backup_2025-10-11.dump")
+            self.assertTrue(entry.payload.get("dry_run"))
+
+    async def test_backup_restore_blocked_records_audit(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/backup/restore",
+            headers={"X-Admin-Session": token},
+            json={"backup_name": "backup_2025-10-11.dump", "dry_run": False},
+        )
+        self.assertEqual(response.status_code, 501)
+        data = response.json()
+        self.assertEqual(data["detail"], "Przywracanie kopii zapasowych nie jest jeszcze aktywne.")
+
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_restore_blocked")
+            )
+            entry = result.scalars().first()
+            self.assertIsNotNone(entry)
+            self.assertIsNotNone(entry.payload)
+            self.assertEqual(entry.payload.get("backup_name"), "backup_2025-10-11.dump")
 
     async def test_contacts_crud_flow(self):
         token, _ = await self._login()

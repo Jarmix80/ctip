@@ -20,7 +20,7 @@
 2. **Warstwa usług**
    - `app/services/settings_store.py` – odczyt/zapis konfiguracji z cachem w pamięci i automatyczną walidacją przez pydantic.
    - `app/services/admin_auth.py` – logowanie, wygaszenie sesji, kontrola uprawnień.
-   - `app/services/backup_runner.py` – wrapper na `pg_dump`/`pg_restore`, generowanie plików w `backups/`, raport statusu.
+   - `app/services/backup_runner.py` – MVP: listowanie plików w `backups/` i metadanych; docelowo wrapper na `pg_dump`/`pg_restore` z raportem statusu.
    - `app/services/ctip_monitor.py` – pośrednik do komunikacji z istniejącym klientem CTIP (status loginu, restart, strumień zdarzeń).
    - `app/services/admin_contacts.py` – logika książki adresowej (walidacja i CRUD kontaktów, obsługa `firebird_id`).
 
@@ -48,7 +48,7 @@
 - Widoki modułowe:
   1. Panel ogólny – skróty stanu (DB, CTIP, SMS, ostatnia kopia, liczba aktywnych sesji).
   2. Konfiguracja – formularze z walidacją po stronie klienta oraz podgląd historii zmian.
-  3. Kopie zapasowe – lista kopii, przyciski uruchom/odtwórz, log przebiegu.
+  3. Kopie zapasowe – MVP: lista kopii i zablokowane akcje; docelowo przyciski uruchom/odtwórz i log przebiegu.
   4. CTI Live – strumień zdarzeń z możliwością filtrowania po numerze/nr wewnętrznym.
   5. Konfiguracja e-mail – formularz host/port/login, test połączenia, status na dashboardzie.
   6. Konsola SQL/Raporty – sandbox z zapisanymi zapytaniami, eksport CSV.
@@ -68,7 +68,7 @@
 ## Etapy wdrożenia
 1. **Fundamenty** – modele `admin_*`, migracje, serwis ustawień, autoryzacja, podstawowe trasy `/admin/config`.
 2. **Diagnostyka** – health-checki, test połączenia DB/SMS, API konsoli SQL (tylko odczyt), podstawowy widok „Status”.
-3. **Kopie zapasowe** – implementacja `backup_runner`, kolejka zadań, interfejs do tworzenia/odtwarzania.
+3. **Kopie zapasowe** – MVP podglądu i API dry-run; kolejka zadań oraz realne tworzenie/odtwarzanie w kolejnym etapie.
 4. **CTI Live** – WebSocket, publikacja zdarzeń, komponent UI.
 5. **Raporty i użytkownicy** – moduł raportów, zarządzanie kontami, integracja z historią SMS.
 6. **E-mail/automation** – integracja wysyłki e-mail, powiadomienia, harmonogramy (w toku).

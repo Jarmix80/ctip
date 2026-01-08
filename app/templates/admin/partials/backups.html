@@ -1,0 +1,46 @@
+<section class="monitor-card">
+  <header class="monitor-card-header">
+    <div>
+      <h3>Kopie zapasowe</h3>
+      <p>Podgląd plików kopii zapasowych z katalogu lokalnego.</p>
+    </div>
+    <div class="status-actions">
+      <button type="button" class="btn-secondary" disabled>Utwórz kopię</button>
+      <button type="button" class="btn-secondary" disabled>Przywróć</button>
+    </div>
+  </header>
+  <div class="monitor-card-meta">
+    <span class="muted">Katalog:</span>
+    <span class="path">{{ backup_dir }}</span>
+    <span class="muted">{{ note }}</span>
+  </div>
+
+  <div class="sms-history-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Plik</th>
+          <th>Rozmiar</th>
+          <th>Data</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if items %}
+          {% for item in items %}
+            <tr>
+              <td>{{ item.name }}</td>
+              <td>{{ item.size }}</td>
+              <td>{{ item.modified_at }}</td>
+              <td>{{ item.status }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="sms-history-empty">Brak zarejestrowanych kopii.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>

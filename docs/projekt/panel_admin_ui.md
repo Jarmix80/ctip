@@ -15,7 +15,7 @@
 |--------|------|-------------------|
 | Dashboard | Skróty operacyjne i statusy | Karty (`Status bazy`, `CTIP`, `SerwerSMS`, `Ostatnia kopia`, `Aktywne sesje`) |
 | Konfiguracja bazy | Edycja parametrów PostgreSQL, test połączenia | Formularz, przycisk „Testuj”, wyniki health-check |
-| Kopie zapasowe | Podgląd historii `pg_dump`, uruchamianie/odtwarzanie | Tabela z filtrami, modale potwierdzające, log przebiegu |
+| Kopie zapasowe | MVP: podgląd plików w `backups/` (bez uruchamiania) | Tabela z listą plików, przyciski akcji zablokowane |
 | CTIP Live | Monitor protokołu, restart klienta, status handshake | Panel z WebSocket (lista zdarzeń), karty statusu, przyciski akcji |
 | Automatyzacje IVR | Mapowanie cyfr IVR na SMS i numery wewnętrzne | Lista reguł, formularz CRUD, audyt operacji, walidacja unikalności |
 | SerwerSMS | Parametry operatora, tryb demo, wysyłka testowa | Formularz, przełącznik demo, moduł wysyłki testowej, saldo |
@@ -37,7 +37,7 @@
 - Karta `Baza danych`: efekt `SELECT 1`, prezentacja hosta i użytkownika, akcja „Testuj połączenie”.
 - Karta `Centrala CTIP`: informacja o host/porcie i stanie konfiguracji PIN, akcja „Edytuj konfigurację”.
 - Karta `SerwerSMS`: nadawca, tryb demo/produkcyjny, akcja „Ustaw parametry”.
-- Karta `Kopie`: placeholder do czasu integracji modułu backupów (akcja otwiera sekcję kopii).
+- Karta `Kopie`: podgląd ostatniej kopii i CTA do sekcji (tryb podglądu).
 
 ### 2. Konfiguracja bazy
 - Formularz HTMX/Alpine z polami `Host`, `Port`, `Baza`, `Użytkownik`, `Hasło`, `SSL` – wczytywany z `/admin/partials/config_database`.
@@ -47,13 +47,10 @@
 - Panel docelowo rozszerzymy o instrukcje migracji (link do `docs/baza/schema_ctip.sql`).
 
 ### 3. Kopie zapasowe
-- Główny widok: tabela (`Data`, `Rozmiar`, `Status`, `Operator`, `Plik`). Filtr dat i statusów.
-- Przyciski nad tabelą: `Utwórz kopię`, `Wgraj i przywróć`, `Odśwież`.
-- Modale:
-  - `Utwórz kopię` – wybór katalogu docelowego (predefiniowane profile), przełącznik kompresji.
-  - `Przywróć` – upload pliku `.dump`, ostrzeżenie o nadpisaniu danych.
-- Panel logów (prawej kolumnie) z `tail` przebiegu zadania.
-- API: `POST /admin/backup/run`, `POST /admin/backup/restore`, `GET /admin/backup/history`.
+- MVP: widok `/admin/partials/backups` prezentuje listę plików z katalogu `backups/` (nazwa, rozmiar, data, status).
+- Przyciski `Utwórz kopię` i `Przywróć` są zablokowane; API obsługuje wyłącznie dry-run.
+- Docelowo: filtr dat i statusów, modale potwierdzające, upload pliku `.dump` oraz panel logów przebiegu.
+- API: `POST /admin/backup/run`, `POST /admin/backup/restore`, `GET /admin/backup/history` (run/restore tylko dry-run).
 
 ### 4. CTIP Live
 - Layout 70/30: lewa kolumna – strumień zdarzeń, prawa – karty statusu.

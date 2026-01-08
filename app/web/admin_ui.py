@@ -36,6 +36,7 @@ from app.schemas.admin import (
 from app.schemas.admin_contacts import AdminContactSummary
 from app.schemas.admin_ctip import AdminIvrMapEntry
 from app.services import admin_contacts, admin_ivr_map, admin_users
+from app.services.backup_runner import BACKUP_DIR, format_backup_size, list_backup_files
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -76,6 +77,40 @@ async def admin_placeholder_partial(
             "request": request,
             "title": title,
             "description": description,
+        },
+    )
+
+
+@router.get("/admin/partials/backups", response_class=HTMLResponse)
+async def admin_backups_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+) -> HTMLResponse:
+    """Fragment HTML dla modułu kopii zapasowych."""
+    items = []
+    for entry in list_backup_files(limit=200):
+        formatted_ts = (
+            entry.modified_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            if entry.modified_at.tzinfo
+            else entry.modified_at.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        items.append(
+            {
+                "name": entry.name,
+                "size": format_backup_size(entry.size_bytes),
+                "size_bytes": entry.size_bytes,
+                "modified_at": formatted_ts,
+                "status": entry.status,
+                "checksum": entry.checksum,
+            }
+        )
+    return templates.TemplateResponse(
+        "admin/partials/backups.html",
+        {
+            "request": request,
+            "items": items,
+            "backup_dir": BACKUP_DIR.as_posix(),
+            "note": "Operacje kopii zapasowych i przywracania są obecnie zablokowane.",
         },
     )
 

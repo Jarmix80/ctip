@@ -22,6 +22,7 @@ from app.api.routes.admin_sms import load_sms_history
 from app.core.config import settings
 from app.models import CallEvent, SmsOut
 from app.schemas.admin_ctip import AdminIvrSmsHistoryEntry
+from app.services.backup_runner import BACKUP_DIR, format_backup_size, list_backup_files
 
 router = APIRouter(prefix="/admin/status", tags=["admin-status"])
 
@@ -334,14 +335,32 @@ async def _email_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[st
 
 
 async def _backups_status(session: AsyncSession) -> dict[str, Any]:  # noqa: ARG001
-    # Wersja MVP – brak tabeli metadanych, więc posługujemy się placeholderem.
+    """Buduje kartę statusu kopii zapasowych dla Dashboardu."""
+    items = list_backup_files(limit=1)
+    if not items:
+        return {
+            "state": "info",
+            "title": "Kopie zapasowe",
+            "status": "Brak danych o ostatniej kopii",
+            "details": "Moduł kopii zapasowych działa w trybie podglądu.",
+            "variant": "neutral",
+            "cta": {"label": "Przejdź do modułu kopii", "action": "open-section:backups"},
+        }
+
+    latest = items[0]
+    timestamp = (
+        latest.modified_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        if latest.modified_at.tzinfo
+        else latest.modified_at.strftime("%Y-%m-%d %H:%M:%S")
+    )
+    size_label = format_backup_size(latest.size_bytes)
     return {
-        "state": "info",
+        "state": "ok",
         "title": "Kopie zapasowe",
-        "status": "Brak danych o ostatniej kopii",
-        "details": "Moduł backupów zostanie zintegrowany w kolejnych iteracjach.",
-        "variant": "neutral",
-        "cta": {"label": "Przejdź do modułu kopii", "action": "open-section:backups"},
+        "status": f"Ostatnia kopia: {latest.name}",
+        "details": f"{timestamp} • {size_label} • {BACKUP_DIR.as_posix()}",
+        "variant": "success",
+        "cta": {"label": "Historia kopii", "action": "open-section:backups"},
     }
 
 
