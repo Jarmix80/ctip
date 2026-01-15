@@ -1,0 +1,194 @@
+<section
+  class="config-section"
+  x-data="callSmsConfig()"
+  x-init="init()"
+  data-initial='{{ config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Automatyczne SMS dla dzwoniacych</h2>
+      <p>Obsluga scenariuszy polaczen z filtracja numerow komorkowych (PL) i lista wykluczen.</p>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="call-sms-enabled">Automatyzacja</label>
+        <div class="toggle">
+          <input id="call-sms-enabled" type="checkbox" x-model="enabled">
+          <span>Wlacz wysylke SMS po zakonczeniu polaczen.</span>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-inbound">Polaczenia przychodzace</label>
+        <div class="toggle">
+          <input id="call-sms-inbound" type="checkbox" x-model="inboundEnabled">
+          <span>Wysylaj SMS po rozmowach przychodzacych.</span>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-outbound">Polaczenia wychodzace</label>
+        <div class="toggle">
+          <input id="call-sms-outbound" type="checkbox" x-model="outboundEnabled">
+          <span>Opcjonalnie wysylaj SMS po rozmowach wychodzacych.</span>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-cooldown-mode">Powtorne SMS</label>
+        <select id="call-sms-cooldown-mode" x-model="cooldownMode">
+          <option value="never">Nigdy (blokuj po pierwszym)</option>
+          <option value="after_days">Po X dniach</option>
+          <option value="always">Zawsze (bez blokady)</option>
+        </select>
+      </div>
+      <div class="form-field" x-show="cooldownMode === 'after_days'" x-cloak>
+        <label for="call-sms-cooldown-days">Odstep (dni)</label>
+        <input id="call-sms-cooldown-days" type="number" min="1" max="3650" x-model.number="cooldownDays">
+      </div>
+    </div>
+
+    <div class="form-field">
+      <label for="call-sms-opt-out">Numery z blokada wysylki</label>
+      <textarea id="call-sms-opt-out" rows="3" x-model="optOutNumbers"></textarea>
+      <p class="input-help">Jeden numer w linii (E.164 lub 9 cyfr). Numery sa normalizowane do +48.</p>
+    </div>
+
+    <h3 style="margin: 0;">Scenariusze przychodzace</h3>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="call-sms-inbound-answered">Odebrane</label>
+        <div class="toggle">
+          <input id="call-sms-inbound-answered" type="checkbox" x-model="inboundAnsweredEnabled">
+          <span>Wyslij SMS po odebraniu.</span>
+        </div>
+        <textarea id="call-sms-inbound-answered-text" rows="3" maxlength="480" x-model="inboundAnsweredText"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-inbound-missed">Nieodebrane</label>
+        <div class="toggle">
+          <input id="call-sms-inbound-missed" type="checkbox" x-model="inboundMissedEnabled">
+          <span>Wyslij SMS po nieodebranym.</span>
+        </div>
+        <textarea id="call-sms-inbound-missed-text" rows="3" maxlength="480" x-model="inboundMissedText"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-inbound-repeat-answered">Ponowne odebrane</label>
+        <div class="toggle">
+          <input id="call-sms-inbound-repeat-answered" type="checkbox" x-model="inboundRepeatAnsweredEnabled">
+          <span>Dodatkowy SMS dla kolejnych polaczen.</span>
+        </div>
+        <textarea id="call-sms-inbound-repeat-answered-text" rows="3" maxlength="480" x-model="inboundRepeatAnsweredText"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-inbound-repeat-missed">Ponowne nieodebrane</label>
+        <div class="toggle">
+          <input id="call-sms-inbound-repeat-missed" type="checkbox" x-model="inboundRepeatMissedEnabled">
+          <span>Dodatkowy SMS dla kolejnych polaczen.</span>
+        </div>
+        <textarea id="call-sms-inbound-repeat-missed-text" rows="3" maxlength="480" x-model="inboundRepeatMissedText"></textarea>
+      </div>
+    </div>
+
+    <h3 style="margin: 0;">Scenariusze wychodzace</h3>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="call-sms-outbound-answered">Odebrane</label>
+        <div class="toggle">
+          <input id="call-sms-outbound-answered" type="checkbox" x-model="outboundAnsweredEnabled">
+          <span>SMS po odebraniu polaczenia wychodzacego.</span>
+        </div>
+        <textarea id="call-sms-outbound-answered-text" rows="3" maxlength="480" x-model="outboundAnsweredText"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-outbound-missed">Nieodebrane</label>
+        <div class="toggle">
+          <input id="call-sms-outbound-missed" type="checkbox" x-model="outboundMissedEnabled">
+          <span>SMS po nieodebranym polaczeniu wychodzacym.</span>
+        </div>
+        <textarea id="call-sms-outbound-missed-text" rows="3" maxlength="480" x-model="outboundMissedText"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-outbound-repeat-answered">Ponowne odebrane</label>
+        <div class="toggle">
+          <input id="call-sms-outbound-repeat-answered" type="checkbox" x-model="outboundRepeatAnsweredEnabled">
+          <span>Dodatkowy SMS przy ponownym polaczeniu.</span>
+        </div>
+        <textarea id="call-sms-outbound-repeat-answered-text" rows="3" maxlength="480" x-model="outboundRepeatAnsweredText"></textarea>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-outbound-repeat-missed">Ponowne nieodebrane</label>
+        <div class="toggle">
+          <input id="call-sms-outbound-repeat-missed" type="checkbox" x-model="outboundRepeatMissedEnabled">
+          <span>Dodatkowy SMS przy ponownym polaczeniu.</span>
+        </div>
+        <textarea id="call-sms-outbound-repeat-missed-text" rows="3" maxlength="480" x-model="outboundRepeatMissedText"></textarea>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <template x-if="!saving">Zapisz konfiguracje</template>
+        <template x-if="saving">Trwa zapisywanie...</template>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>
+
+<div class="sms-test-card">
+  <div class="sms-test-header">
+    <h3>Masowa wysylka</h3>
+    <p>Wyslij jedna wiadomosc do wszystkich unikalnych numerow z historii polaczen.</p>
+  </div>
+  <form class="sms-test-form" @submit.prevent="sendBulk">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="bulk-direction">Kierunek</label>
+        <select id="bulk-direction" x-model="bulkDirection">
+          <option value="IN">Przychodzace</option>
+          <option value="OUT">Wychodzace</option>
+          <option value="ALL">Wszystkie</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="bulk-days">Tylko z ostatnich dni</label>
+        <input id="bulk-days" type="number" min="1" max="3650" x-model="bulkDays" placeholder="np. 365">
+      </div>
+      <div class="form-field" style="grid-column: span 2;">
+        <label for="bulk-text">Tresc wiadomosci</label>
+        <textarea id="bulk-text" rows="3" x-model="bulkText" maxlength="480" required></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" :disabled="bulkSending">
+        <template x-if="!bulkSending">Dodaj do kolejki</template>
+        <template x-if="bulkSending">Przetwarzanie...</template>
+      </button>
+    </div>
+    <template x-if="bulkError">
+      <div class="form-message error" x-text="bulkError"></div>
+    </template>
+    <template x-if="bulkSuccess">
+      <div class="form-message success" x-text="bulkSuccess"></div>
+    </template>
+  </form>
+</div>
+
+<div
+  id="call-sms-history-card"
+  class="monitor-card"
+  hx-get="/admin/partials/call-sms/history"
+  hx-trigger="load delay:200ms, every 15s"
+  hx-target="this"
+  hx-swap="outerHTML"
+  hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+>
+  <p class="sms-history-empty">Ladowanie historii SMS dla polaczen...</p>
+</div>

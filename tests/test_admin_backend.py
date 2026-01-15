@@ -1544,6 +1544,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["host"], payload["host"])
         self.assertEqual(body["port"], payload["port"])
         self.assertEqual(body["username"], payload["username"])
+        self.assertEqual(body["sender_address"], payload["sender_address"])
+        self.assertTrue(body["password_set"])
+        self.assertEqual(body["username"], payload["username"])
         self.assertEqual(body["sender_name"], payload["sender_name"])
         self.assertEqual(body["sender_address"], payload["sender_address"])
         self.assertTrue(body["use_tls"])
@@ -1558,9 +1561,106 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["host"], payload["host"])
         self.assertEqual(body["port"], payload["port"])
-        self.assertEqual(body["username"], payload["username"])
-        self.assertEqual(body["sender_address"], payload["sender_address"])
-        self.assertTrue(body["password_set"])
+
+    async def test_update_call_sms_config_persists_values(self):
+        token, _ = await self._login()
+        payload = {
+            "enabled": True,
+            "inbound_enabled": True,
+            "outbound_enabled": False,
+            "inbound_answered_enabled": True,
+            "inbound_answered_text": "Dziekujemy za rozmowe",
+            "inbound_missed_enabled": True,
+            "inbound_missed_text": "Oddzwonimy najszybciej jak to mozliwe",
+            "inbound_repeat_answered_enabled": False,
+            "inbound_repeat_answered_text": "",
+            "inbound_repeat_missed_enabled": False,
+            "inbound_repeat_missed_text": "",
+            "outbound_answered_enabled": False,
+            "outbound_answered_text": "",
+            "outbound_missed_enabled": False,
+            "outbound_missed_text": "",
+            "outbound_repeat_answered_enabled": False,
+            "outbound_repeat_answered_text": "",
+            "outbound_repeat_missed_enabled": False,
+            "outbound_repeat_missed_text": "",
+            "cooldown_mode": "after_days",
+            "cooldown_days": 7,
+            "opt_out_numbers": "+48600111222",
+        }
+        response = await self.client.put(
+            "/admin/call-sms/config",
+            json=payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["enabled"])
+        self.assertEqual(body["cooldown_mode"], "after_days")
+        self.assertEqual(body["cooldown_days"], 7)
+
+        response = await self.client.get(
+            "/admin/call-sms/config",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["inbound_answered_text"], payload["inbound_answered_text"])
+        self.assertEqual(body["opt_out_numbers"], payload["opt_out_numbers"])
+
+    async def test_bulk_call_sms_creates_queue_entries(self):
+        token, _ = await self._login()
+        now = datetime.now(UTC)
+        async with self.session_factory() as session:
+            session.add_all(
+                [
+                    Call(
+                        ext="500",
+                        number="600111222",
+                        direction="IN",
+                        started_at=now,
+                        disposition="NO_ANSWER",
+                    ),
+                    Call(
+                        ext="500",
+                        number="600111222",
+                        direction="IN",
+                        started_at=now,
+                        disposition="NO_ANSWER",
+                    ),
+                    Call(
+                        ext="500",
+                        number="221234567",
+                        direction="IN",
+                        started_at=now,
+                        disposition="NO_ANSWER",
+                    ),
+                    Call(
+                        ext="500",
+                        number="0049301234567",
+                        direction="IN",
+                        started_at=now,
+                        disposition="NO_ANSWER",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        response = await self.client.post(
+            "/admin/call-sms/bulk",
+            json={"text": "Test masowej wysylki", "direction": "IN"},
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["total_unique"], 1)
+
+        async with self.session_factory() as session:
+            result = await session.execute(select(SmsOut).where(SmsOut.source == "call_sms"))
+            rows = result.scalars().all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].dest, "+48600111222")
 
     async def test_update_email_config_rejects_conflicting_encryption(self):
         token, _ = await self._login()

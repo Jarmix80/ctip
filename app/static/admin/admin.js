@@ -209,6 +209,8 @@ document.addEventListener("alpine:init", () => {
           return "/admin/partials/config/email";
         case "sms":
           return "/admin/partials/config/sms";
+        case "call-sms":
+          return "/admin/partials/call-sms";
         case "sms-history":
           return "/admin/partials/sms/history";
         case "contacts":
@@ -2444,6 +2446,242 @@ document.addEventListener("alpine:init", () => {
     },
   });
 
+  const callSmsConfig = () => ({
+    enabled: false,
+    inboundEnabled: true,
+    outboundEnabled: false,
+    inboundAnsweredEnabled: false,
+    inboundAnsweredText: "",
+    inboundMissedEnabled: false,
+    inboundMissedText: "",
+    inboundRepeatAnsweredEnabled: false,
+    inboundRepeatAnsweredText: "",
+    inboundRepeatMissedEnabled: false,
+    inboundRepeatMissedText: "",
+    outboundAnsweredEnabled: false,
+    outboundAnsweredText: "",
+    outboundMissedEnabled: false,
+    outboundMissedText: "",
+    outboundRepeatAnsweredEnabled: false,
+    outboundRepeatAnsweredText: "",
+    outboundRepeatMissedEnabled: false,
+    outboundRepeatMissedText: "",
+    cooldownMode: "after_days",
+    cooldownDays: 30,
+    optOutNumbers: "",
+    saving: false,
+    error: null,
+    success: null,
+    bulkText: "",
+    bulkDays: "",
+    bulkDirection: "IN",
+    bulkSending: false,
+    bulkError: null,
+    bulkSuccess: null,
+
+    init() {
+      const initial = this._readInitial();
+      this.enabled = Boolean(initial.enabled);
+      this.inboundEnabled = Boolean(initial.inbound_enabled);
+      this.outboundEnabled = Boolean(initial.outbound_enabled);
+      this.inboundAnsweredEnabled = Boolean(initial.inbound_answered_enabled);
+      this.inboundAnsweredText = initial.inbound_answered_text || "";
+      this.inboundMissedEnabled = Boolean(initial.inbound_missed_enabled);
+      this.inboundMissedText = initial.inbound_missed_text || "";
+      this.inboundRepeatAnsweredEnabled = Boolean(initial.inbound_repeat_answered_enabled);
+      this.inboundRepeatAnsweredText = initial.inbound_repeat_answered_text || "";
+      this.inboundRepeatMissedEnabled = Boolean(initial.inbound_repeat_missed_enabled);
+      this.inboundRepeatMissedText = initial.inbound_repeat_missed_text || "";
+      this.outboundAnsweredEnabled = Boolean(initial.outbound_answered_enabled);
+      this.outboundAnsweredText = initial.outbound_answered_text || "";
+      this.outboundMissedEnabled = Boolean(initial.outbound_missed_enabled);
+      this.outboundMissedText = initial.outbound_missed_text || "";
+      this.outboundRepeatAnsweredEnabled = Boolean(initial.outbound_repeat_answered_enabled);
+      this.outboundRepeatAnsweredText = initial.outbound_repeat_answered_text || "";
+      this.outboundRepeatMissedEnabled = Boolean(initial.outbound_repeat_missed_enabled);
+      this.outboundRepeatMissedText = initial.outbound_repeat_missed_text || "";
+      this.cooldownMode = initial.cooldown_mode || "after_days";
+      this.cooldownDays = Number(initial.cooldown_days || 30);
+      this.optOutNumbers = initial.opt_out_numbers || "";
+    },
+
+    _readInitial() {
+      try {
+        return JSON.parse(this.$el.dataset.initial || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji SMS połączeń", err);
+        return {};
+      }
+    },
+
+    get headers() {
+      const token = localStorage.getItem("admin-session-token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Admin-Session"] = token;
+      }
+      return headers;
+    },
+
+    resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    validate() {
+      if (!this.enabled) {
+        return null;
+      }
+      const ensureText = (isEnabled, text, label) => {
+        if (isEnabled && !text.trim()) {
+          return `Uzupełnij treść dla scenariusza: ${label}.`;
+        }
+        return null;
+      };
+      if (this.inboundEnabled) {
+        const inboundError =
+          ensureText(this.inboundAnsweredEnabled, this.inboundAnsweredText, "przychodzące odebrane")
+          || ensureText(this.inboundMissedEnabled, this.inboundMissedText, "przychodzące nieodebrane")
+          || ensureText(this.inboundRepeatAnsweredEnabled, this.inboundRepeatAnsweredText, "przychodzące ponowne (odebrane)")
+          || ensureText(this.inboundRepeatMissedEnabled, this.inboundRepeatMissedText, "przychodzące ponowne (nieodebrane)");
+        if (inboundError) {
+          return inboundError;
+        }
+      }
+      if (this.outboundEnabled) {
+        const outboundError =
+          ensureText(this.outboundAnsweredEnabled, this.outboundAnsweredText, "wychodzące odebrane")
+          || ensureText(this.outboundMissedEnabled, this.outboundMissedText, "wychodzące nieodebrane")
+          || ensureText(this.outboundRepeatAnsweredEnabled, this.outboundRepeatAnsweredText, "wychodzące ponowne (odebrane)")
+          || ensureText(this.outboundRepeatMissedEnabled, this.outboundRepeatMissedText, "wychodzące ponowne (nieodebrane)");
+        if (outboundError) {
+          return outboundError;
+        }
+      }
+      return null;
+    },
+
+    async save() {
+      if (this.saving) {
+        return;
+      }
+      this.resetMessages();
+      const validationError = this.validate();
+      if (validationError) {
+        this.error = validationError;
+        showToast(validationError, "warning");
+        return;
+      }
+      this.saving = true;
+      try {
+        const payload = {
+          enabled: Boolean(this.enabled),
+          inbound_enabled: Boolean(this.inboundEnabled),
+          outbound_enabled: Boolean(this.outboundEnabled),
+          inbound_answered_enabled: Boolean(this.inboundAnsweredEnabled),
+          inbound_answered_text: this.inboundAnsweredText || "",
+          inbound_missed_enabled: Boolean(this.inboundMissedEnabled),
+          inbound_missed_text: this.inboundMissedText || "",
+          inbound_repeat_answered_enabled: Boolean(this.inboundRepeatAnsweredEnabled),
+          inbound_repeat_answered_text: this.inboundRepeatAnsweredText || "",
+          inbound_repeat_missed_enabled: Boolean(this.inboundRepeatMissedEnabled),
+          inbound_repeat_missed_text: this.inboundRepeatMissedText || "",
+          outbound_answered_enabled: Boolean(this.outboundAnsweredEnabled),
+          outbound_answered_text: this.outboundAnsweredText || "",
+          outbound_missed_enabled: Boolean(this.outboundMissedEnabled),
+          outbound_missed_text: this.outboundMissedText || "",
+          outbound_repeat_answered_enabled: Boolean(this.outboundRepeatAnsweredEnabled),
+          outbound_repeat_answered_text: this.outboundRepeatAnsweredText || "",
+          outbound_repeat_missed_enabled: Boolean(this.outboundRepeatMissedEnabled),
+          outbound_repeat_missed_text: this.outboundRepeatMissedText || "",
+          cooldown_mode: this.cooldownMode || "after_days",
+          cooldown_days: Number(this.cooldownDays || 30),
+          opt_out_numbers: this.optOutNumbers || "",
+        };
+        const response = await fetch("/admin/call-sms/config", {
+          method: "PUT",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się zapisać konfiguracji.");
+        }
+        this.enabled = Boolean(data.enabled);
+        this.inboundEnabled = Boolean(data.inbound_enabled);
+        this.outboundEnabled = Boolean(data.outbound_enabled);
+        this.inboundAnsweredEnabled = Boolean(data.inbound_answered_enabled);
+        this.inboundAnsweredText = data.inbound_answered_text || "";
+        this.inboundMissedEnabled = Boolean(data.inbound_missed_enabled);
+        this.inboundMissedText = data.inbound_missed_text || "";
+        this.inboundRepeatAnsweredEnabled = Boolean(data.inbound_repeat_answered_enabled);
+        this.inboundRepeatAnsweredText = data.inbound_repeat_answered_text || "";
+        this.inboundRepeatMissedEnabled = Boolean(data.inbound_repeat_missed_enabled);
+        this.inboundRepeatMissedText = data.inbound_repeat_missed_text || "";
+        this.outboundAnsweredEnabled = Boolean(data.outbound_answered_enabled);
+        this.outboundAnsweredText = data.outbound_answered_text || "";
+        this.outboundMissedEnabled = Boolean(data.outbound_missed_enabled);
+        this.outboundMissedText = data.outbound_missed_text || "";
+        this.outboundRepeatAnsweredEnabled = Boolean(data.outbound_repeat_answered_enabled);
+        this.outboundRepeatAnsweredText = data.outbound_repeat_answered_text || "";
+        this.outboundRepeatMissedEnabled = Boolean(data.outbound_repeat_missed_enabled);
+        this.outboundRepeatMissedText = data.outbound_repeat_missed_text || "";
+        this.cooldownMode = data.cooldown_mode || "after_days";
+        this.cooldownDays = Number(data.cooldown_days || 30);
+        this.optOutNumbers = data.opt_out_numbers || "";
+        this.success = "Konfiguracja została zapisana.";
+        showToast(this.success, "success");
+        this.$el.dataset.initial = JSON.stringify(data);
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "Błąd zapisu";
+        showToast(this.error, "error");
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async sendBulk() {
+      if (this.bulkSending) {
+        return;
+      }
+      this.bulkError = null;
+      this.bulkSuccess = null;
+      const message = (this.bulkText || "").trim();
+      if (!message) {
+        this.bulkError = "Podaj treść wiadomości do wysyłki masowej.";
+        showToast(this.bulkError, "warning");
+        return;
+      }
+      this.bulkSending = true;
+      try {
+        const payload = {
+          text: message,
+          direction: this.bulkDirection || "IN",
+        };
+        const days = Number(this.bulkDays || 0);
+        if (days > 0) {
+          payload.days_back = days;
+        }
+        const response = await fetch("/admin/call-sms/bulk", {
+          method: "POST",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się uruchomić wysyłki masowej.");
+        }
+        this.bulkSuccess = `Dodano do kolejki: ${data.created} (unikalne: ${data.total_unique}).`;
+        showToast(this.bulkSuccess, "success");
+      } catch (err) {
+        this.bulkError = err instanceof Error ? err.message : "Błąd wysyłki";
+        showToast(this.bulkError, "error");
+      } finally {
+        this.bulkSending = false;
+      }
+    },
+  });
+
   const emailConfig = () => ({
     host: "",
     port: "587",
@@ -2700,6 +2938,7 @@ Alpine.data("databaseConfig", databaseConfig);
 Alpine.data("ctipConfig", ctipConfig);
 Alpine.data("ctipIvrMap", ctipIvrMap);
 Alpine.data("smsConfig", smsConfig);
+Alpine.data("callSmsConfig", callSmsConfig);
 Alpine.data("emailConfig", emailConfig);
 
   window.adminApp = adminApp;
@@ -2708,6 +2947,7 @@ Alpine.data("emailConfig", emailConfig);
 window.ctipConfig = ctipConfig;
 window.ctipIvrMap = ctipIvrMap;
 window.smsConfig = smsConfig;
+window.callSmsConfig = callSmsConfig;
 window.emailConfig = emailConfig;
 });
 

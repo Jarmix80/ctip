@@ -10,6 +10,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
+from app.api.routes.admin_call_sms import (
+    CALL_SMS_SCENARIO_PATTERN,
+    CALL_SMS_STATUS_PATTERN,
+    load_call_sms_config,
+    load_call_sms_history,
+)
 from app.api.routes.admin_config import (
     load_ctip_config,
     load_database_config,
@@ -37,6 +43,7 @@ from app.schemas.admin_contacts import AdminContactSummary
 from app.schemas.admin_ctip import AdminIvrMapEntry
 from app.services import admin_contacts, admin_ivr_map, admin_users
 from app.services.backup_runner import BACKUP_DIR, format_backup_size, list_backup_files
+from app.services.call_sms_rules import CALL_SMS_SCENARIO_LABELS
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -217,6 +224,55 @@ async def admin_sms_config_partial(
         {
             "request": request,
             "config": config.model_dump(),
+            "admin_token": admin_token,
+        },
+    )
+
+
+@router.get("/admin/partials/call-sms", response_class=HTMLResponse)
+async def admin_call_sms_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> HTMLResponse:
+    """Formularz konfiguracji SMS wysyłanych po połączeniach."""
+    config = await load_call_sms_config(session)
+    admin_token = request.headers.get("x-admin-session", "")
+    return templates.TemplateResponse(
+        "admin/partials/call_sms.html",
+        {
+            "request": request,
+            "config": config.model_dump(),
+            "admin_token": admin_token,
+        },
+    )
+
+
+@router.get("/admin/partials/call-sms/history", response_class=HTMLResponse)
+async def admin_call_sms_history_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    limit: int = Query(default=25, ge=5, le=200),
+    status: str | None = Query(default=None, pattern=CALL_SMS_STATUS_PATTERN),
+    scenario: str | None = Query(default=None, pattern=CALL_SMS_SCENARIO_PATTERN),
+) -> HTMLResponse:
+    """Fragment HTML z historią SMS generowanych po połączeniach."""
+    items = await load_call_sms_history(
+        session, limit, status_filter=status, scenario_filter=scenario
+    )
+    generated_at = datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    admin_token = request.headers.get("x-admin-session", "")
+    return templates.TemplateResponse(
+        "admin/partials/call_sms_history.html",
+        {
+            "request": request,
+            "items": items,
+            "limit": limit,
+            "status": status,
+            "scenario": scenario,
+            "scenario_labels": CALL_SMS_SCENARIO_LABELS,
+            "generated_at": generated_at,
             "admin_token": admin_token,
         },
     )

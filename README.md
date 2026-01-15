@@ -153,6 +153,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Sekcja SerwerSMS zawiera monitor pracy `sms_sender`: widok logu (`/admin/partials/sms/logs`) prezentuje końcówkę pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a tabela historii (`/admin/partials/sms/history`) odświeża ostatnie wysyłki z `ctip.sms_out` i pozwala filtrować je po statusach (`NEW`, `RETRY`, `SENT`, `ERROR`, `SIMULATED`). Formularz wysyłki testowej normalizuje numer do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`), a poprawna próba (w trybie testowym lub produkcyjnym) natychmiast pojawia się w logu i historii.
 - Sekcja CTIP udostępnia podgląd na żywo (`/admin/partials/ctip/live`) z filtrowaniem po wewnętrznych numerach oraz wbudowanym formularzem konfiguracji; kafelek na dashboardzie oferuje zarówno edycję parametrów, jak i szybkie przejście do widoku live. Aktualizacje są dostarczane kanałem WebSocket (`/admin/ctip/ws`), który pomija ramki keep-alive typu `T`.
 - Sekcja Automatyzacje IVR (`/admin/partials/ctip/ivr-map`) pozwala zarządzać mapowaniami cyfr IVR na numery wewnętrzne, treścią automatycznych SMS i ich aktywnością. Każda operacja (utworzenie, aktualizacja, usunięcie) jest audytowana i natychmiast dostępna dla kolektora bez restartu.
+- Sekcja SMS dla dzwoniących (`/admin/partials/call-sms`) udostępnia konfigurację scenariuszy przychodzących/wychodzących (odebrane, nieodebrane, ponowne), tryb ograniczeń „Nigdy / Po X dniach / Zawsze”, listę numerów wykluczonych oraz masową wysyłkę do unikalnych numerów z historii połączeń.
 - Sekcja E-mail umożliwia konfigurację serwera SMTP (host, port, logowanie, nadawca), test połączenia oraz wysłanie wiadomości testowej na wskazany adres (`/admin/email/test`). Wynik jest prezentowany w UI i zapisywany w audycie.
 - Sekcja Kopie zapasowe (`/admin/partials/backups`) prezentuje podgląd plików z katalogu `backups/`; operacje tworzenia i przywracania są dostępne wyłącznie w trybie dry-run.
 - Sekcja Książka adresowa (`/admin/partials/contacts`) udostępnia CRUD kontaktów z wyszukiwarką po numerze, nazwisku, e-mailu i identyfikatorze Firebird; formularze pozwalają przypisać numer wewnętrzny, notatki operacyjne oraz pole `firebird_id` wykorzystywane do mapowania z bazą Firebird.
@@ -183,7 +184,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Szybka wysyłka SMS oferuje przyciski aktywnych szablonów (globalnych i operatora), dwa predefiniowane komunikaty znane z prototypu („Aplikacja”, „Liczniki”) oraz tryb własnej wiadomości. Przed wysyłką można wymusić potwierdzenie, a dowolny tekst zapisać od razu jako nowy szablon operatora.
 - Moduł szybkich SMS normalizuje numer docelowy do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`) przed zapisaniem w kolejce `sms_out`.
 - Panel nagłówka prezentuje liczbę wysłanych SMS w bieżącym dniu i miesiącu (`GET /operator/api/stats`).
-- W prawym dolnym rogu panelu operatora wyświetlana jest wersja oraz data ostatniej aktualizacji interfejsu.
+- W prawym dolnym rogu panelu operatora widnieje wersja i data aktualizacji interfejsu (obecnie: 0.2.0 - Aktualizacja 2026-01-15).
 - Operator może dodać lub edytować kontakt bezpośrednio z widoku połączenia (`POST/PUT /operator/api/contacts`), a dane logowania wysłane w wiadomościach SMS są ukrywane w historii dla bezpieczeństwa.
 - Strona `/operator/settings` udostępnia formularze: edycję profilu operatora (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmianę hasła oraz zarządzanie własnymi szablonami SMS (dodawanie, edycja, usuwanie). Szablony globalne są widoczne w trybie tylko do odczytu.
 - Opcja „Zapamiętaj mnie” przechowuje token sesji w `localStorage` i wydłuża ważność sesji (`ADMIN_SESSION_REMEMBER_HOURS`), natomiast standardowe logowanie używa `sessionStorage`.
@@ -218,6 +219,14 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 - Strumień CTIP nie zawiera informacji o wciśniętych cyfrach IVR – centrala wysyła jedynie pierwszy `RING` na skonfigurowany numer wewnętrzny. Kolektor wnioskuje cyfrę na podstawie trafionego numeru wewnętrznego (`ctip.ivr_map`) i loguje to jako `IVR_MAP_HIT digit=<...>`.
 - Historia CTIP (`call_events`) rejestruje zarówno trafienia (`IVR_MAP_HIT`), jak i brak dopasowania (`IVR_MAP_MISS`) wraz z numerem wewnętrznym, co ułatwia diagnostykę konfiguracji IVR.
 - Dashboard panelu administracyjnego prezentuje kafelek „Automatyczne SMS (IVR)” zawierający licznik błędów/kolejki oraz skrót do historii wysyłek i diagnostyki `/admin/status/ivr`.
+
+## Automatyczne SMS dla dzwoniących
+- Konfiguracja jest przechowywana w `ctip.admin_setting` (prefiks `call_sms.*`) i ładowana przez kolektor w momencie zdarzenia `REL`.
+- Scenariusze obejmują połączenia przychodzące i wychodzące: odebrane, nieodebrane oraz ponowne (oddzielne treści, opcjonalne przełączniki).
+- Powtórne połączenie jest rozpoznawane po wcześniejszym wpisie `sms_out` o źródle `call_sms`; jeśli scenariusz „ponowny” jest aktywny, generowany jest dodatkowy SMS.
+- Mechanizm ograniczeń częstotliwości działa w trybach „Nigdy / Po X dniach / Zawsze” i bazuje na czasie ostatniego wpisu `sms_out` z `source='call_sms'`.
+- Wysyłka jest ograniczona do polskich numerów komórkowych (+48) i ignoruje numery stacjonarne, premium oraz zagraniczne (lista prefiksów komórkowych znajduje się w `app/services/call_sms_rules.py`).
+- Lista numerów z blokadą (opt-out) jest edytowana w panelu, a masowa wysyłka dodaje pojedynczy SMS do każdego unikalnego numeru z historii połączeń, z zachowaniem filtrów i ograniczeń.
 
 ## Środowisko testowe WSL (mock CTIP + osobna baza)
 - Pełny runbook wraz z zabezpieczeniami przed podłączeniem do produkcji: `docs/instal/test_env_wsl.md` (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`).

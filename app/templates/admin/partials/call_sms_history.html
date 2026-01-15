@@ -1,0 +1,144 @@
+{% set query = '?limit=' ~ limit %}
+{% if status %}
+  {% set query = query ~ '&status=' ~ status %}
+{% endif %}
+{% if scenario %}
+  {% set query = query ~ '&scenario=' ~ scenario %}
+{% endif %}
+{% set status_label = {
+  None: 'Wszystkie statusy',
+  '': 'Wszystkie statusy',
+  'NEW': 'Nowe (NEW)',
+  'RETRY': 'Ponowne (RETRY)',
+  'SENT': 'Wyslane (SENT)',
+  'ERROR': 'Bledne (ERROR)',
+  'SIMULATED': 'Symulowane (SIMULATED)'
+}[status or ''] %}
+{% set scenario_label = scenario_labels.get(scenario, 'Wszystkie scenariusze') %}
+<div
+  id="call-sms-history-card"
+  class="monitor-card"
+  hx-get="/admin/partials/call-sms/history{{ query }}"
+  hx-trigger="load delay:200ms, every 15s"
+  hx-target="this"
+  hx-swap="outerHTML"
+  hx-headers='{"X-Admin-Session": {{ admin_token|tojson }} }'
+>
+  <header class="monitor-card-header history-header">
+    <div>
+      <h3>Historia SMS dla polaczen</h3>
+      <p>Limit: {{ limit }} &bull; {{ status_label }} &bull; {{ scenario_label }} &bull; Odswiezono: {{ generated_at }}</p>
+    </div>
+    <form
+      class="history-filter"
+      hx-get="/admin/partials/call-sms/history"
+      hx-target="#call-sms-history-card"
+      hx-swap="outerHTML"
+      hx-trigger="change delay:200ms, submit"
+    >
+      <label for="call-sms-history-limit">Limit</label>
+      <select id="call-sms-history-limit" name="limit">
+        {% for option in [10, 25, 50, 100, 200] %}
+        <option value="{{ option }}" {% if option == limit %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+      <label for="call-sms-history-status">Status</label>
+      <select id="call-sms-history-status" name="status">
+        <option value="" {% if not status %}selected{% endif %}>Wszystkie</option>
+        <option value="NEW" {% if status == "NEW" %}selected{% endif %}>Nowe (NEW)</option>
+        <option value="RETRY" {% if status == "RETRY" %}selected{% endif %}>Ponowne (RETRY)</option>
+        <option value="SENT" {% if status == "SENT" %}selected{% endif %}>Wyslane (SENT)</option>
+        <option value="ERROR" {% if status == "ERROR" %}selected{% endif %}>Bledne (ERROR)</option>
+        <option value="SIMULATED" {% if status == "SIMULATED" %}selected{% endif %}>Symulowane (SIMULATED)</option>
+      </select>
+      <label for="call-sms-history-scenario">Scenariusz</label>
+      <select id="call-sms-history-scenario" name="scenario">
+        <option value="" {% if not scenario %}selected{% endif %}>Wszystkie</option>
+        {% for code, label in scenario_labels.items() %}
+        <option value="{{ code }}" {% if scenario == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-secondary">Zastosuj</button>
+    </form>
+  </header>
+  <div class="sms-history-table">
+    {% if items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Scenariusz</th>
+          <th>Numer docelowy</th>
+          <th>Status</th>
+          <th>Tresc</th>
+          <th>Szczegoly</th>
+          <th>Blad</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>
+            {% if item.created_at.tzinfo %}
+              {{ item.created_at.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z") }}
+            {% else %}
+              {{ item.created_at.strftime("%Y-%m-%d %H:%M:%S") }}
+            {% endif %}
+          </td>
+          <td>
+            {{ scenario_labels.get(item.scenario, item.scenario or '-') }}
+            {% if item.repeat %}
+              <div class="muted">Powtorne</div>
+            {% endif %}
+          </td>
+          <td>{{ item.dest }}</td>
+          <td>
+            {% set status_class = "success" if item.status == "SENT" else ("warning" if item.status == "ERROR" else "info") %}
+            <span class="status-chip {{ status_class }}">{{ item.status }}</span>
+            {% if item.provider_status or item.provider_message_id %}
+              <div class="muted">
+                {{ item.provider_status or '-' }}
+                {% if item.provider_message_id %}
+                  <span>#{{ item.provider_message_id }}</span>
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
+          <td>
+            {% set body = item.text or "" %}
+            {% set preview = body[:80] %}
+            {{ preview }}{% if body|length > 80 %}...{% endif %}
+          </td>
+          <td>
+            {% if item.call_id %}
+              Polaczenie #{{ item.call_id }}
+              {% if item.internal_ext %}
+                <div class="muted">Wewnetrzny: {{ item.internal_ext }}</div>
+              {% endif %}
+              {% if item.direction or item.disposition %}
+                <div class="muted">
+                  {{ item.direction or '-' }} / {{ item.disposition or '-' }}
+                </div>
+              {% endif %}
+            {% elif item.bulk_id %}
+              Masowa #{{ item.bulk_id }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if item.error_msg %}
+              <span class="error-text">{{ item.error_msg }}</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="sms-history-empty">Brak wpisow spelniajacych warunki filtra.</p>
+    {% endif %}
+  </div>
+</div>

@@ -68,6 +68,10 @@
             <span class="icon">🤖</span>
             Automatyczne SMS
           </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'call-sms' }" @click.prevent="openSection('call-sms')">
+            <span class="icon">💬</span>
+            SMS dla dzwoniących
+          </button>
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'email' }" @click.prevent="openSection('email')">
             <span class="icon">📧</span>
             E-mail

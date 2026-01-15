@@ -1,8 +1,8 @@
 # collector_full.py
-# Slican CTIP -> PostgreSQL (tables: calls, call_events) + IVR mapping (ext -> SMS queue)
-# - No DTMF parsing from IVR (CTIP does not emit it)
-# - Infers IVR selection by first RING to mapped internal (ctip.ivr_map)
-# - Enqueues SMS into ctip.sms_out (status NEW); external poller sends SMS
+# Slican CTIP -> PostgreSQL (tabele: calls, call_events) + automatyzacje SMS (IVR i połączenia)
+# - Brak dekodowania DTMF z IVR (CTIP nie emituje cyfr)
+# - Wnioskowanie IVR po pierwszym RING na numer wewnętrzny z ctip.ivr_map
+# - Kolejka SMS trafia do ctip.sms_out (status NEW), a wysyłkę realizuje sms_sender
 
 import os
 import socket
@@ -10,10 +10,17 @@ import threading
 import time
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import psycopg
 
+from app.services.call_sms_config import CallSmsConfig, normalize_call_sms_config
+from app.services.call_sms_rules import (
+    is_polish_mobile,
+    normalize_destination,
+    parse_opt_out_numbers,
+    pick_call_sms_scenarios,
+)
 from log_utils import append_log
 
 
@@ -345,6 +352,128 @@ def enqueue_sms(
         )
 
 
+def load_call_sms_config(conn) -> CallSmsConfig:
+    """Wczytuje konfigurację SMS dla połączeń z tabeli admin_setting."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT key, value
+                  FROM admin_setting
+                 WHERE key LIKE 'call_sms.%'
+            """
+            )
+            rows = cur.fetchall()
+    except Exception as exc:
+        log_db(f"[CALL_SMS] Nie można odczytać konfiguracji: {exc}")
+        return CallSmsConfig()
+
+    stored = {}
+    for key, value in rows:
+        if key.startswith("call_sms."):
+            stored[key.removeprefix("call_sms.")] = value
+    return normalize_call_sms_config(stored)
+
+
+def fetch_call_snapshot(conn, call_id: int) -> dict[str, str | None] | None:
+    """Pobiera podstawowe informacje o połączeniu potrzebne do SMS."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT ext, number, direction, disposition
+              FROM calls
+             WHERE id = %s
+        """,
+            (call_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    ext, number, direction, disposition = row
+    return {
+        "ext": ext,
+        "number": number,
+        "direction": direction,
+        "disposition": disposition,
+    }
+
+
+def fetch_last_call_sms_time(conn, dest: str) -> datetime | None:
+    """Zwraca czas ostatniego SMS wygenerowanego przez automatyzację połączeń."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT created_at
+              FROM sms_out
+             WHERE dest = %s
+               AND source = 'call_sms'
+             ORDER BY created_at DESC
+             LIMIT 1
+        """,
+            (dest,),
+        )
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+def call_sms_already_enqueued(conn, call_id: int, scenario: str) -> bool:
+    """Sprawdza, czy dla połączenia zapisano już SMS danego scenariusza."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1
+              FROM sms_out
+             WHERE call_id = %s
+               AND source = 'call_sms'
+               AND meta->>'scenario' = %s
+             LIMIT 1
+        """,
+            (call_id, scenario),
+        )
+        return cur.fetchone() is not None
+
+
+def enqueue_call_sms(
+    conn,
+    call_id: int,
+    dest: str,
+    text: str,
+    *,
+    scenario: str,
+    direction: str | None,
+    disposition: str | None,
+    repeat: bool,
+    ext: str | None = None,
+):
+    """Dodaje SMS dla połączeń do kolejki wraz z metadanymi scenariusza."""
+    if not dest or not text:
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sms_out(dest, text, source, status, call_id, meta, origin)
+            VALUES (
+                %s,
+                %s,
+                'call_sms',
+                'NEW',
+                %s,
+                jsonb_strip_nulls(
+                    jsonb_build_object(
+                        'scenario', %s::text,
+                        'direction', %s::text,
+                        'disposition', %s::text,
+                        'repeat', %s::boolean,
+                        'ext', %s::text
+                    )
+                ),
+                'call_sms'
+            )
+        """,
+            (dest, text, call_id, scenario, direction, disposition, repeat, ext),
+        )
+
+
 # -------------------- CTIP Client --------------------
 class CTIPClient(threading.Thread):
     def __init__(self):
@@ -488,6 +617,60 @@ class CTIPClient(threading.Thread):
             )
             row = cur.fetchone()
         return (row[0], row[1]) if row else (None, None)
+
+    def handle_call_sms(self, ctx: CallContext):
+        """Wysyła SMS dla połączenia zgodnie z konfiguracją automatyzacji."""
+        config = load_call_sms_config(self.conn)
+        if not config.enabled:
+            return
+
+        snapshot = fetch_call_snapshot(self.conn, ctx.call_id)
+        if snapshot is None:
+            return
+        direction = snapshot.get("direction") or ctx.direction
+        disposition = snapshot.get("disposition")
+        raw_number = snapshot.get("number") or ctx.number
+        dest = normalize_destination(raw_number)
+        if not dest:
+            return
+        if not is_polish_mobile(dest):
+            return
+
+        opt_out = parse_opt_out_numbers(config.opt_out_numbers)
+        if dest in opt_out:
+            return
+
+        last_sms_time = fetch_last_call_sms_time(self.conn, dest)
+        if last_sms_time:
+            if last_sms_time.tzinfo is None:
+                last_sms_time = last_sms_time.replace(tzinfo=UTC)
+            if config.cooldown_mode == "never":
+                return
+            if config.cooldown_mode == "after_days":
+                now = datetime.now(UTC)
+                if now - last_sms_time < timedelta(days=config.cooldown_days):
+                    return
+
+        is_repeat = last_sms_time is not None
+        scenarios = pick_call_sms_scenarios(config, direction, disposition, is_repeat)
+        if not scenarios:
+            return
+
+        ext_meta = ctx.ext_norm or snapshot.get("ext") or ctx.ext_raw
+        for scenario in scenarios:
+            if call_sms_already_enqueued(self.conn, ctx.call_id, scenario.code):
+                continue
+            enqueue_call_sms(
+                self.conn,
+                ctx.call_id,
+                dest,
+                scenario.text,
+                scenario=scenario.code,
+                direction=scenario.direction,
+                disposition=scenario.disposition,
+                repeat=scenario.repeat,
+                ext=ext_meta,
+            )
 
     def start_handshake(self):
         """Rozpoczyna sekwencję WHO/LOGA po zestawieniu gniazda TCP."""
@@ -730,6 +913,7 @@ class CTIPClient(threading.Thread):
 
             call_update_ended(self.conn, ctx.call_id)
             ev_insert(self.conn, ctx.call_id, typ, ext_txt, reason, raw)
+            self.handle_call_sms(ctx)
             self._unregister_context(ctx)
             return
 
