@@ -1,11 +1,13 @@
 {
-  "timestamp": "2026-01-15T22:10:15+01:00",
+  "timestamp": "2026-01-15T23:01:50+01:00",
   "summary": [
     "HttpSmsProvider wymusza FULL i utf dla dlugich lub nie-ASCII tresci SMS.",
     "Dodano testy wymuszenia FULL/UTF i zaktualizowano README z opisem zachowania.",
     "Pre-commit i python -m unittest discover -s tests zakonczone OK (ostrzezenia CALL_SMS w testach).",
     "Testy kontekstu kolektora uzywaja atrapy polaczenia DB z cursor() aby uniknac szumu CALL_SMS.",
-    "python -m unittest discover -s tests zakonczone OK bez ostrzezen CALL_SMS."
+    "python -m unittest discover -s tests zakonczone OK bez ostrzezen CALL_SMS.",
+    "Dodano skrypt diagnostyczny Windows dla CTIP-SMS i wpis w README.",
+    "Poprawiono ustawianie zmiennych srodowiskowych w skrypcie diagnostycznym."
   ],
   "follow_up": [
     "Zweryfikuj wysylke dlugich SMS na srodowisku produkcyjnym."
