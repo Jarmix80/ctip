@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-01-08T11:50:01+01:00",
+  "timestamp": "2026-01-15T14:15:51+01:00",
   "summary": [
-    "Dodano MVP modułu kopii zapasowych: serwis backup_runner, schematy, API /admin/backup/*, widok HTMX i karta statusu na dashboardzie.",
-    "Podłączono sekcję kopii w panelu (admin.js) oraz dodano testy backend/UI dla historii, dry-run i uprawnień.",
-    "Zaktualizowano dokumentację: README.md, docs/projekt/panel_admin_ui.md, docs/projekt/panel_admin_architektura.md."
+    "Dodano jawne rzutowanie metadanych IVR (ext/digit) przy zapisie do sms_out, aby usunac blad typu parametru w PostgreSQL.",
+    "Dodano testy jednostkowe dla enqueue_sms oraz potwierdzono warunek pomijania pustego celu.",
+    "Uaktualniono README o informacje o typowaniu metadanych IVR w JSONB."
   ],
   "follow_up": [
-    "Uruchomić pre-commit run --all-files, a następnie testy (pytest).",
-    "Rozszerzyć moduł kopii o realny pg_dump/pg_restore oraz metadane w ctip.admin_backup."
+    "Wdrozyc zaktualizowany collector_full.py na hoście 192.168.0.8 i zrestartowac proces.",
+    "Po wybraniu 500 potwierdzic nowy wpis w ctip.sms_out (source=ivr) i brak bledow w logu kolektora."
   ],
   "context": {
     "branch": "main",

@@ -318,6 +318,7 @@ def enqueue_sms(
     ext: str | None = None,
     digit: int | None = None,
 ):
+    """Dodaje SMS do kolejki i zapisuje metadane IVR z wymuszonym typowaniem JSONB."""
     if not dest:
         return
     with conn.cursor() as cur:
@@ -333,8 +334,8 @@ def enqueue_sms(
                 jsonb_strip_nulls(
                     jsonb_build_object(
                         'reason','ivr_map',
-                        'ext', %s,
-                        'digit', %s
+                        'ext', %s::text,
+                        'digit', %s::int
                     )
                 )
             )
