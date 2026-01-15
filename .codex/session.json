@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-01-15T19:40:12+01:00",
+  "timestamp": "2026-01-15T19:48:30+01:00",
   "summary": [
-    "Dodano scenariusz SMS po godzinach pracy (wyzwalany numerem wewnetrznym, domyslnie 500) z priorytetem nad innymi scenariuszami.",
-    "Uzupelniono domyslne tresci SMS dla wszystkich scenariuszy call_sms o link do aplikacji.",
-    "Rozszerzono UI/API/testy o nowe pola (after_hours_enabled/text/exts) oraz zaktualizowano README."
+    "Zaktualizowano wersje panelu operatora do 0.2.1 w stopkach, app_version i README.",
+    "Zaktualizowano testy operatora do nowej wersji.",
+    "Zachowano date aktualizacji 2026-01-15."
   ],
   "follow_up": [
-    "W panelu ustaw po godzinach numer 500 i zapisz konfiguracje, a nastepnie wykonaj testowe polaczenie.",
-    "Jesli potrzeba, zmien tresci SMS w sekcji SMS dla dzwoniacych i aktywuj dodatkowe scenariusze."
+    "Po wdrozeniu sprawdz stopke panelu operatora i wersje w README.",
+    "Jesli potrzeba, zrestartuj uslugi po aktualizacji."
   ],
   "context": {
     "branch": "main",
