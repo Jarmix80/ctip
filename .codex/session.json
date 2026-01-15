@@ -1,13 +1,14 @@
 {
-  "timestamp": "2026-01-15T20:53:28+01:00",
+  "timestamp": "2026-01-15T22:10:15+01:00",
   "summary": [
-    "Zaktualizowano domyslne tresci SMS dla wszystkich scenariuszy call_sms o link do aplikacji.",
-    "Dodano testy domyslnej konfiguracji SMS i zaktualizowano README.",
-    "Pre-commit i python -m unittest discover -s tests zakonczone OK."
+    "HttpSmsProvider wymusza FULL i utf dla dlugich lub nie-ASCII tresci SMS.",
+    "Dodano testy wymuszenia FULL/UTF i zaktualizowano README z opisem zachowania.",
+    "Pre-commit i python -m unittest discover -s tests zakonczone OK (ostrzezenia CALL_SMS w testach).",
+    "Testy kontekstu kolektora uzywaja atrapy polaczenia DB z cursor() aby uniknac szumu CALL_SMS.",
+    "python -m unittest discover -s tests zakonczone OK bez ostrzezen CALL_SMS."
   ],
   "follow_up": [
-    "W panelu zapisz konfiguracje SMS dla dzwoniacych, aby zastosowac nowe tresci.",
-    "Po wdrozeniu sprawdz stopke panelu operatora i wersje w README."
+    "Zweryfikuj wysylke dlugich SMS na srodowisku produkcyjnym."
   ],
   "context": {
     "branch": "main",

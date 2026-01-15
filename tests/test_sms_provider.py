@@ -62,6 +62,40 @@ class SmsProviderTests(unittest.TestCase):
         self.assertIn("unique_id", client.last_payload)
         self.assertEqual(client.last_payload["unique_id"], ["CTIP-000042"])
 
+    def test_send_sms_sets_utf_for_non_ascii(self) -> None:
+        client = DummyClient({"success": True, "items": [{"status": "queued", "id": "MSG"}]})
+        provider = HttpSmsProvider(
+            "https://api.example.com",
+            None,
+            "Sender",
+            username="user",
+            password="pass",
+            sms_type="eco+",
+            test_mode=False,
+        )
+        provider._client = lambda: client  # type: ignore[assignment]
+        provider.send_sms("+48123123123", "Test \u0105")
+        assert client.last_payload is not None
+        self.assertTrue(client.last_payload.get("utf"))
+        self.assertEqual(client.last_payload.get("type"), "full")
+
+    def test_send_sms_forces_full_for_long_gsm_text(self) -> None:
+        client = DummyClient({"success": True, "items": [{"status": "queued", "id": "MSG"}]})
+        provider = HttpSmsProvider(
+            "https://api.example.com",
+            None,
+            "Sender",
+            username="user",
+            password="pass",
+            sms_type="eco+",
+            test_mode=False,
+        )
+        provider._client = lambda: client  # type: ignore[assignment]
+        provider.send_sms("+48123123123", "A" * 161)
+        assert client.last_payload is not None
+        self.assertEqual(client.last_payload.get("type"), "full")
+        self.assertNotIn("utf", client.last_payload)
+
 
 if __name__ == "__main__":
     unittest.main()

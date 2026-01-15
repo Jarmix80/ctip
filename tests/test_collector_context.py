@@ -3,12 +3,42 @@ import unittest
 import collector_full
 
 
+class _FakeCursor:
+    """Minimalny kursor testowy zwracajacy puste wyniki zapytan."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return None
+
+    def execute(self, _query, _params=None):
+        return None
+
+    def fetchall(self):
+        return []
+
+    def fetchone(self):
+        return None
+
+
+class _FakeConn:
+    """Atrapa polaczenia DB, aby testy nie logowaly bledow CALL_SMS.
+
+    Gdy potrzebne beda testy integracyjne z baza, podmien to na prawdziwe
+    polaczenie psycopg lub kontrolowana atrape zwracajaca dane testowe.
+    """
+
+    def cursor(self):
+        return _FakeCursor()
+
+
 class CollectorContextTests(unittest.TestCase):
     """Sprawdza, czy kolektor poprawnie rozdziela równoległe połączenia."""
 
     def setUp(self):
         self.client = collector_full.CTIPClient()
-        self.client.conn = object()
+        self.client.conn = _FakeConn()
         self.client.logged_in = True
         self.client.lookup_ivr_map = lambda ext: (None, None)
 

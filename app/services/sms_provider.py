@@ -28,6 +28,8 @@ class HttpSmsProvider:
     UNIQUE_ID_PREFIX = "CTIP-"
     UNIQUE_ID_MIN_LEN = 6
     UNIQUE_ID_MAX_LEN = 24
+    GSM_SINGLE_LIMIT = 160
+    UCS2_SINGLE_LIMIT = 70
 
     def __init__(
         self,
@@ -49,6 +51,20 @@ class HttpSmsProvider:
         self.sms_type = sms_type or None
         self.test_mode = test_mode
         self.timeout = timeout
+
+    @staticmethod
+    def _needs_utf(text: str) -> bool:
+        """Sprawdza, czy tresc zawiera znaki spoza ASCII i wymaga parametru utf."""
+        return not text.isascii()
+
+    def _resolve_sms_type(self, text: str, use_utf: bool) -> str | None:
+        """Dobiera typ SMS dla tresci dlugich lub wymagajacych UTF."""
+        sms_type = (self.sms_type or "").strip()
+        limit = self.UCS2_SINGLE_LIMIT if use_utf else self.GSM_SINGLE_LIMIT
+        needs_full = use_utf or len(text) > limit
+        if needs_full and not sms_type.lower().startswith("full"):
+            return "full"
+        return sms_type or None
 
     # ------------------------------------------------------------------
     def _is_configured(self) -> bool:
@@ -121,11 +137,16 @@ class HttpSmsProvider:
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> SmsSendResult:
-        """Wysyła SMS – przy braku konfiguracji zwraca wynik symulowany."""
+        """Wysyła SMS – przy braku konfiguracji zwraca wynik symulowany.
+
+        Dla dlugich tresci lub znakow spoza ASCII wymusza typ FULL i ustawia utf.
+        """
         if not self._is_configured():
             return SmsSendResult(True, "SIMULATED", None, None)
 
         unique_id = self._resolve_unique_id(metadata)
+        use_utf = self._needs_utf(text)
+        sms_type = self._resolve_sms_type(text, use_utf)
 
         payload: dict[str, Any] = {
             "phone": [dest],
@@ -134,8 +155,10 @@ class HttpSmsProvider:
         }
         if self.sender:
             payload["sender"] = self.sender
-        if self.sms_type:
-            payload["type"] = self.sms_type
+        if sms_type:
+            payload["type"] = sms_type
+        if use_utf:
+            payload["utf"] = True
         if self.test_mode:
             payload["test"] = True
         if unique_id:
