@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-01-15T19:48:30+01:00",
+  "timestamp": "2026-01-15T20:53:28+01:00",
   "summary": [
-    "Zaktualizowano wersje panelu operatora do 0.2.1 w stopkach, app_version i README.",
-    "Zaktualizowano testy operatora do nowej wersji.",
-    "Zachowano date aktualizacji 2026-01-15."
+    "Zaktualizowano domyslne tresci SMS dla wszystkich scenariuszy call_sms o link do aplikacji.",
+    "Dodano testy domyslnej konfiguracji SMS i zaktualizowano README.",
+    "Pre-commit i python -m unittest discover -s tests zakonczone OK."
   ],
   "follow_up": [
-    "Po wdrozeniu sprawdz stopke panelu operatora i wersje w README.",
-    "Jesli potrzeba, zrestartuj uslugi po aktualizacji."
+    "W panelu zapisz konfiguracje SMS dla dzwoniacych, aby zastosowac nowe tresci.",
+    "Po wdrozeniu sprawdz stopke panelu operatora i wersje w README."
   ],
   "context": {
     "branch": "main",

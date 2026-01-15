@@ -1,4 +1,7 @@
-"""Domyslna konfiguracja i normalizacja ustawien SMS dla dzwoniacych."""
+"""Domyslna konfiguracja i normalizacja ustawien SMS dla dzwoniacych.
+
+Domyslne tresci zawieraja link do aplikacji i sluza jako wartosci startowe.
+"""
 
 from __future__ import annotations
 
@@ -8,23 +11,36 @@ from dataclasses import asdict, dataclass
 CALL_SMS_COOLDOWN_MODES = {"never", "after_days", "always"}
 
 APP_LINK = "https://www.ksero-partner.com.pl/app/"
-DEFAULT_INBOUND_ANSWERED_TEXT = f"Dziekujemy za rozmowe. Pobierz aplikacje: {APP_LINK}"
-DEFAULT_INBOUND_MISSED_TEXT = f"Nie udalo sie polaczyc. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_INBOUND_ANSWERED_TEXT = (
+    "Dziekujemy za rozmowe. Aby szybciej zglaszac zlecenia, polecamy "
+    f"bezplatna aplikacje: {APP_LINK}"
+)
+DEFAULT_INBOUND_MISSED_TEXT = (
+    "Nie udalo sie polaczyc. Dla szybkiego zgloszenia sprawy polecamy "
+    f"bezplatna aplikacje: {APP_LINK}"
+)
 DEFAULT_INBOUND_REPEAT_ANSWERED_TEXT = (
-    f"Dziekujemy za ponowne polaczenie. Pobierz aplikacje: {APP_LINK}"
+    "Dziekujemy za ponowna rozmowe. Dla wygody polecamy bezplatna aplikacje: " f"{APP_LINK}"
 )
 DEFAULT_INBOUND_REPEAT_MISSED_TEXT = (
-    f"Ponowne polaczenie nieodebrane. Pobierz aplikacje: {APP_LINK}"
+    "Ponowne polaczenie nieudane. Zgloszenia szybciej zrealizujesz w "
+    f"bezplatnej aplikacji: {APP_LINK}"
 )
-DEFAULT_OUTBOUND_ANSWERED_TEXT = f"Dziekujemy za rozmowe. Pobierz aplikacje: {APP_LINK}"
-DEFAULT_OUTBOUND_MISSED_TEXT = f"Nie udalo sie skontaktowac. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_OUTBOUND_ANSWERED_TEXT = (
+    "Dziekujemy za rozmowe. Dla szybszej obslugi polecamy bezplatna aplikacje: " f"{APP_LINK}"
+)
+DEFAULT_OUTBOUND_MISSED_TEXT = (
+    "Nie udalo sie skontaktowac. Sprawy szybko zglosisz w bezplatnej aplikacji: " f"{APP_LINK}"
+)
 DEFAULT_OUTBOUND_REPEAT_ANSWERED_TEXT = (
-    f"Ponowne polaczenie odebrane. Pobierz aplikacje: {APP_LINK}"
+    "Dziekujemy za ponowny kontakt. Polecamy bezplatna aplikacje: " f"{APP_LINK}"
 )
 DEFAULT_OUTBOUND_REPEAT_MISSED_TEXT = (
-    f"Ponowne polaczenie nieodebrane. Pobierz aplikacje: {APP_LINK}"
+    "Ponowna proba kontaktu nieudana. Zgloszenia przyspieszy bezplatna " f"aplikacja: {APP_LINK}"
 )
-DEFAULT_AFTER_HOURS_TEXT = f"Jestesmy poza godzinami pracy. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_AFTER_HOURS_TEXT = (
+    "Jestesmy poza godzinami pracy. Sprawy szybko zglosisz w bezplatnej " f"aplikacji: {APP_LINK}"
+)
 
 
 @dataclass

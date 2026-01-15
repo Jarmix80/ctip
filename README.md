@@ -222,6 +222,7 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 
 ## Automatyczne SMS dla dzwoniących
 - Konfiguracja jest przechowywana w `ctip.admin_setting` (prefiks `call_sms.*`) i ładowana przez kolektor w momencie zdarzenia `REL`.
+- Domyslne tresci SMS zawieraja link do aplikacji `https://www.ksero-partner.com.pl/app/` i moga byc edytowane w panelu.
 - Scenariusz po godzinach pracy uruchamia sie po wykryciu wskazanego numeru wewnetrznego (np. 500) i ma priorytet nad pozostalymi scenariuszami.
 - Scenariusze obejmują połączenia przychodzące i wychodzące: odebrane, nieodebrane oraz ponowne (oddzielne treści, opcjonalne przełączniki).
 - Powtórne połączenie jest rozpoznawane po wcześniejszym wpisie `sms_out` o źródle `call_sms`; jeśli scenariusz „ponowny” jest aktywny, generowany jest dodatkowy SMS.
