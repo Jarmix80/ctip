@@ -2466,6 +2466,9 @@ document.addEventListener("alpine:init", () => {
     outboundRepeatAnsweredText: "",
     outboundRepeatMissedEnabled: false,
     outboundRepeatMissedText: "",
+    afterHoursEnabled: false,
+    afterHoursText: "",
+    afterHoursExts: "",
     cooldownMode: "after_days",
     cooldownDays: 30,
     optOutNumbers: "",
@@ -2500,6 +2503,9 @@ document.addEventListener("alpine:init", () => {
       this.outboundRepeatAnsweredText = initial.outbound_repeat_answered_text || "";
       this.outboundRepeatMissedEnabled = Boolean(initial.outbound_repeat_missed_enabled);
       this.outboundRepeatMissedText = initial.outbound_repeat_missed_text || "";
+      this.afterHoursEnabled = Boolean(initial.after_hours_enabled);
+      this.afterHoursText = initial.after_hours_text || "";
+      this.afterHoursExts = initial.after_hours_exts || "";
       this.cooldownMode = initial.cooldown_mode || "after_days";
       this.cooldownDays = Number(initial.cooldown_days || 30);
       this.optOutNumbers = initial.opt_out_numbers || "";
@@ -2558,6 +2564,15 @@ document.addEventListener("alpine:init", () => {
           return outboundError;
         }
       }
+      if (this.afterHoursEnabled) {
+        const afterHoursError = ensureText(true, this.afterHoursText, "po godzinach pracy");
+        if (afterHoursError) {
+          return afterHoursError;
+        }
+        if (!String(this.afterHoursExts || "").trim()) {
+          return "Podaj numery wewnetrzne dla scenariusza po godzinach pracy.";
+        }
+      }
       return null;
     },
 
@@ -2594,6 +2609,9 @@ document.addEventListener("alpine:init", () => {
           outbound_repeat_answered_text: this.outboundRepeatAnsweredText || "",
           outbound_repeat_missed_enabled: Boolean(this.outboundRepeatMissedEnabled),
           outbound_repeat_missed_text: this.outboundRepeatMissedText || "",
+          after_hours_enabled: Boolean(this.afterHoursEnabled),
+          after_hours_text: this.afterHoursText || "",
+          after_hours_exts: this.afterHoursExts || "",
           cooldown_mode: this.cooldownMode || "after_days",
           cooldown_days: Number(this.cooldownDays || 30),
           opt_out_numbers: this.optOutNumbers || "",
@@ -2626,6 +2644,9 @@ document.addEventListener("alpine:init", () => {
         this.outboundRepeatAnsweredText = data.outbound_repeat_answered_text || "";
         this.outboundRepeatMissedEnabled = Boolean(data.outbound_repeat_missed_enabled);
         this.outboundRepeatMissedText = data.outbound_repeat_missed_text || "";
+        this.afterHoursEnabled = Boolean(data.after_hours_enabled);
+        this.afterHoursText = data.after_hours_text || "";
+        this.afterHoursExts = data.after_hours_exts || "";
         this.cooldownMode = data.cooldown_mode || "after_days";
         this.cooldownDays = Number(data.cooldown_days || 30);
         this.optOutNumbers = data.opt_out_numbers || "";

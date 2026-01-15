@@ -114,6 +114,14 @@ def _validate_config(payload: CallSmsConfigUpdate) -> None:
             "wychodzace ponowne (nieodebrane)",
         )
 
+    if payload.enabled and payload.after_hours_enabled:
+        ensure_text(True, payload.after_hours_text, "po godzinach pracy")
+        if not payload.after_hours_exts.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Lista numerow dla scenariusza po godzinach nie moze byc pusta.",
+            )
+
 
 async def load_call_sms_history(
     session: AsyncSession,
@@ -252,6 +260,9 @@ async def update_call_sms_config(
             _bool_flag(payload.outbound_repeat_missed_enabled), False
         ),
         "outbound_repeat_missed_text": StoredValue(payload.outbound_repeat_missed_text, False),
+        "after_hours_enabled": StoredValue(_bool_flag(payload.after_hours_enabled), False),
+        "after_hours_text": StoredValue(payload.after_hours_text, False),
+        "after_hours_exts": StoredValue(payload.after_hours_exts, False),
         "cooldown_mode": StoredValue(payload.cooldown_mode, False),
         "cooldown_days": StoredValue(str(payload.cooldown_days), False),
         "opt_out_numbers": StoredValue(payload.opt_out_numbers or "", False),

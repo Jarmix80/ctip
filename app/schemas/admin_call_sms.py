@@ -30,6 +30,9 @@ class CallSmsConfigResponse(BaseModel):
     outbound_repeat_answered_text: str
     outbound_repeat_missed_enabled: bool
     outbound_repeat_missed_text: str
+    after_hours_enabled: bool
+    after_hours_text: str
+    after_hours_exts: str
     cooldown_mode: Literal["never", "after_days", "always"]
     cooldown_days: int = Field(ge=1, le=3650)
     opt_out_numbers: str

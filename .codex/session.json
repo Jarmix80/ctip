@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-01-15T17:20:32+01:00",
+  "timestamp": "2026-01-15T19:40:12+01:00",
   "summary": [
-    "Dodano konfiguracje i API SMS dla dzwoniacych (call_sms) z historia i wysylka masowa.",
-    "Rozszerzono collector_full.py o reguly SMS po REL (filtry numerow, cooldown, scenariusze) i zapisy do sms_out.",
-    "Zaktualizowano panel admina i operatora, w tym wersje 0.2.0 w stopce oraz app_version."
+    "Dodano scenariusz SMS po godzinach pracy (wyzwalany numerem wewnetrznym, domyslnie 500) z priorytetem nad innymi scenariuszami.",
+    "Uzupelniono domyslne tresci SMS dla wszystkich scenariuszy call_sms o link do aplikacji.",
+    "Rozszerzono UI/API/testy o nowe pola (after_hours_enabled/text/exts) oraz zaktualizowano README."
   ],
   "follow_up": [
-    "Uruchom pre-commit run --all-files, a nastepnie python -m unittest w .venv.",
-    "Po wdrozeniu sprawdz sekcje SMS dla dzwoniacych i log sms_sender."
+    "W panelu ustaw po godzinach numer 500 i zapisz konfiguracje, a nastepnie wykonaj testowe polaczenie.",
+    "Jesli potrzeba, zmien tresci SMS w sekcji SMS dla dzwoniacych i aktywuj dodatkowe scenariusze."
   ],
   "context": {
     "branch": "main",

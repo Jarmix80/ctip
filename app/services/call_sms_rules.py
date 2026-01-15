@@ -25,6 +25,7 @@ POLISH_MOBILE_PREFIXES = {
 }
 
 CALL_SMS_SCENARIO_LABELS = {
+    "after_hours": "Po godzinach pracy",
     "inbound_answered": "Przychodzace odebrane",
     "inbound_missed": "Przychodzace nieodebrane",
     "inbound_repeat_answered": "Przychodzace ponowne (odebrane)",
@@ -73,6 +74,23 @@ def parse_opt_out_numbers(raw: str | None) -> set[str]:
         normalized = normalize_destination(cleaned)
         if normalized:
             results.add(normalized)
+    return results
+
+
+def parse_after_hours_exts(raw: str | None) -> set[str]:
+    """Zwraca zbior numerow wewnetrznych (cyfry) dla scenariusza po godzinach."""
+    if not raw:
+        return set()
+    tokens = re.split(r"[,\n;\s]+", raw)
+    results: set[str] = set()
+    for token in tokens:
+        cleaned = token.strip()
+        if not cleaned:
+            continue
+        parts = re.findall(r"\d+", cleaned)
+        if not parts:
+            continue
+        results.add(parts[0])
     return results
 
 
@@ -153,6 +171,7 @@ __all__ = [
     "CallSmsScenario",
     "is_polish_mobile",
     "normalize_destination",
+    "parse_after_hours_exts",
     "parse_opt_out_numbers",
     "pick_call_sms_scenarios",
 ]

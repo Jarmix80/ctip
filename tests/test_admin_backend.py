@@ -1584,6 +1584,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "outbound_repeat_answered_text": "",
             "outbound_repeat_missed_enabled": False,
             "outbound_repeat_missed_text": "",
+            "after_hours_enabled": True,
+            "after_hours_text": "Po godzinach prosimy o kontakt przez aplikacje: https://www.ksero-partner.com.pl/app/",
+            "after_hours_exts": "500",
             "cooldown_mode": "after_days",
             "cooldown_days": 7,
             "opt_out_numbers": "+48600111222",
@@ -1607,6 +1610,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["inbound_answered_text"], payload["inbound_answered_text"])
         self.assertEqual(body["opt_out_numbers"], payload["opt_out_numbers"])
+        self.assertEqual(body["after_hours_text"], payload["after_hours_text"])
 
     async def test_bulk_call_sms_creates_queue_entries(self):
         token, _ = await self._login()

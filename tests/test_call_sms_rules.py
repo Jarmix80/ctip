@@ -3,6 +3,7 @@ import unittest
 from app.services.call_sms_config import CallSmsConfig
 from app.services.call_sms_rules import (
     is_polish_mobile,
+    parse_after_hours_exts,
     parse_opt_out_numbers,
     pick_call_sms_scenarios,
 )
@@ -20,6 +21,11 @@ class CallSmsRulesTests(unittest.TestCase):
         raw = "+48 600 111 222\n600333444\ninvalid"
         expected = {"+48600111222", "+48600333444"}
         self.assertEqual(parse_opt_out_numbers(raw), expected)
+
+    def test_parse_after_hours_exts_normalizes_values(self):
+        raw = "500\n501_, 502"
+        expected = {"500", "501", "502"}
+        self.assertEqual(parse_after_hours_exts(raw), expected)
 
     def test_pick_call_sms_scenarios_inbound_repeat(self):
         config = CallSmsConfig(

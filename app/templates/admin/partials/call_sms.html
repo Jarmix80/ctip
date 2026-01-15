@@ -54,6 +54,27 @@
       <p class="input-help">Jeden numer w linii (E.164 lub 9 cyfr). Numery sa normalizowane do +48.</p>
     </div>
 
+    <h3 style="margin: 0;">Scenariusz po godzinach pracy</h3>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="call-sms-after-hours">Po godzinach pracy</label>
+        <div class="toggle">
+          <input id="call-sms-after-hours" type="checkbox" x-model="afterHoursEnabled">
+          <span>Nadrzedny scenariusz uruchamiany po wejsciu na wskazany numer.</span>
+        </div>
+        <p class="input-help">Gdy aktywny, inne scenariusze nie sa wykonywane.</p>
+      </div>
+      <div class="form-field">
+        <label for="call-sms-after-hours-exts">Sygnalowe numery wewnetrzne</label>
+        <input id="call-sms-after-hours-exts" type="text" x-model="afterHoursExts" placeholder="np. 500">
+        <p class="input-help">Lista numerow oddzielona przecinkami lub enterem.</p>
+      </div>
+      <div class="form-field" style="grid-column: span 2;">
+        <label for="call-sms-after-hours-text">Tresc SMS po godzinach</label>
+        <textarea id="call-sms-after-hours-text" rows="3" maxlength="480" x-model="afterHoursText"></textarea>
+      </div>
+    </div>
+
     <h3 style="margin: 0;">Scenariusze przychodzace</h3>
     <div class="form-grid">
       <div class="form-field">

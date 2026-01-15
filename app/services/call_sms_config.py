@@ -7,6 +7,25 @@ from dataclasses import asdict, dataclass
 
 CALL_SMS_COOLDOWN_MODES = {"never", "after_days", "always"}
 
+APP_LINK = "https://www.ksero-partner.com.pl/app/"
+DEFAULT_INBOUND_ANSWERED_TEXT = f"Dziekujemy za rozmowe. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_INBOUND_MISSED_TEXT = f"Nie udalo sie polaczyc. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_INBOUND_REPEAT_ANSWERED_TEXT = (
+    f"Dziekujemy za ponowne polaczenie. Pobierz aplikacje: {APP_LINK}"
+)
+DEFAULT_INBOUND_REPEAT_MISSED_TEXT = (
+    f"Ponowne polaczenie nieodebrane. Pobierz aplikacje: {APP_LINK}"
+)
+DEFAULT_OUTBOUND_ANSWERED_TEXT = f"Dziekujemy za rozmowe. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_OUTBOUND_MISSED_TEXT = f"Nie udalo sie skontaktowac. Pobierz aplikacje: {APP_LINK}"
+DEFAULT_OUTBOUND_REPEAT_ANSWERED_TEXT = (
+    f"Ponowne polaczenie odebrane. Pobierz aplikacje: {APP_LINK}"
+)
+DEFAULT_OUTBOUND_REPEAT_MISSED_TEXT = (
+    f"Ponowne polaczenie nieodebrane. Pobierz aplikacje: {APP_LINK}"
+)
+DEFAULT_AFTER_HOURS_TEXT = f"Jestesmy poza godzinami pracy. Pobierz aplikacje: {APP_LINK}"
+
 
 @dataclass
 class CallSmsConfig:
@@ -16,21 +35,24 @@ class CallSmsConfig:
     inbound_enabled: bool = True
     outbound_enabled: bool = False
     inbound_answered_enabled: bool = False
-    inbound_answered_text: str = ""
+    inbound_answered_text: str = DEFAULT_INBOUND_ANSWERED_TEXT
     inbound_missed_enabled: bool = False
-    inbound_missed_text: str = ""
+    inbound_missed_text: str = DEFAULT_INBOUND_MISSED_TEXT
     inbound_repeat_answered_enabled: bool = False
-    inbound_repeat_answered_text: str = ""
+    inbound_repeat_answered_text: str = DEFAULT_INBOUND_REPEAT_ANSWERED_TEXT
     inbound_repeat_missed_enabled: bool = False
-    inbound_repeat_missed_text: str = ""
+    inbound_repeat_missed_text: str = DEFAULT_INBOUND_REPEAT_MISSED_TEXT
     outbound_answered_enabled: bool = False
-    outbound_answered_text: str = ""
+    outbound_answered_text: str = DEFAULT_OUTBOUND_ANSWERED_TEXT
     outbound_missed_enabled: bool = False
-    outbound_missed_text: str = ""
+    outbound_missed_text: str = DEFAULT_OUTBOUND_MISSED_TEXT
     outbound_repeat_answered_enabled: bool = False
-    outbound_repeat_answered_text: str = ""
+    outbound_repeat_answered_text: str = DEFAULT_OUTBOUND_REPEAT_ANSWERED_TEXT
     outbound_repeat_missed_enabled: bool = False
-    outbound_repeat_missed_text: str = ""
+    outbound_repeat_missed_text: str = DEFAULT_OUTBOUND_REPEAT_MISSED_TEXT
+    after_hours_enabled: bool = False
+    after_hours_text: str = DEFAULT_AFTER_HOURS_TEXT
+    after_hours_exts: str = "500"
     cooldown_mode: str = "after_days"
     cooldown_days: int = 30
     opt_out_numbers: str = ""
@@ -80,39 +102,56 @@ def normalize_call_sms_config(stored: Mapping[str, str]) -> CallSmsConfig:
     config.inbound_answered_enabled = _to_bool(
         stored.get("inbound_answered_enabled"), config.inbound_answered_enabled
     )
-    config.inbound_answered_text = stored.get("inbound_answered_text") or ""
+    config.inbound_answered_text = (
+        stored.get("inbound_answered_text") or config.inbound_answered_text
+    )
     config.inbound_missed_enabled = _to_bool(
         stored.get("inbound_missed_enabled"), config.inbound_missed_enabled
     )
-    config.inbound_missed_text = stored.get("inbound_missed_text") or ""
+    config.inbound_missed_text = stored.get("inbound_missed_text") or config.inbound_missed_text
     config.inbound_repeat_answered_enabled = _to_bool(
         stored.get("inbound_repeat_answered_enabled"),
         config.inbound_repeat_answered_enabled,
     )
-    config.inbound_repeat_answered_text = stored.get("inbound_repeat_answered_text") or ""
+    config.inbound_repeat_answered_text = (
+        stored.get("inbound_repeat_answered_text") or config.inbound_repeat_answered_text
+    )
     config.inbound_repeat_missed_enabled = _to_bool(
         stored.get("inbound_repeat_missed_enabled"),
         config.inbound_repeat_missed_enabled,
     )
-    config.inbound_repeat_missed_text = stored.get("inbound_repeat_missed_text") or ""
+    config.inbound_repeat_missed_text = (
+        stored.get("inbound_repeat_missed_text") or config.inbound_repeat_missed_text
+    )
     config.outbound_answered_enabled = _to_bool(
         stored.get("outbound_answered_enabled"), config.outbound_answered_enabled
     )
-    config.outbound_answered_text = stored.get("outbound_answered_text") or ""
+    config.outbound_answered_text = (
+        stored.get("outbound_answered_text") or config.outbound_answered_text
+    )
     config.outbound_missed_enabled = _to_bool(
         stored.get("outbound_missed_enabled"), config.outbound_missed_enabled
     )
-    config.outbound_missed_text = stored.get("outbound_missed_text") or ""
+    config.outbound_missed_text = stored.get("outbound_missed_text") or config.outbound_missed_text
     config.outbound_repeat_answered_enabled = _to_bool(
         stored.get("outbound_repeat_answered_enabled"),
         config.outbound_repeat_answered_enabled,
     )
-    config.outbound_repeat_answered_text = stored.get("outbound_repeat_answered_text") or ""
+    config.outbound_repeat_answered_text = (
+        stored.get("outbound_repeat_answered_text") or config.outbound_repeat_answered_text
+    )
     config.outbound_repeat_missed_enabled = _to_bool(
         stored.get("outbound_repeat_missed_enabled"),
         config.outbound_repeat_missed_enabled,
     )
-    config.outbound_repeat_missed_text = stored.get("outbound_repeat_missed_text") or ""
+    config.outbound_repeat_missed_text = (
+        stored.get("outbound_repeat_missed_text") or config.outbound_repeat_missed_text
+    )
+    config.after_hours_enabled = _to_bool(
+        stored.get("after_hours_enabled"), config.after_hours_enabled
+    )
+    config.after_hours_text = stored.get("after_hours_text") or config.after_hours_text
+    config.after_hours_exts = stored.get("after_hours_exts") or config.after_hours_exts
 
     raw_mode = (stored.get("cooldown_mode") or "").strip().lower()
     if raw_mode in CALL_SMS_COOLDOWN_MODES:

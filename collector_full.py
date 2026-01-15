@@ -18,6 +18,7 @@ from app.services.call_sms_config import CallSmsConfig, normalize_call_sms_confi
 from app.services.call_sms_rules import (
     is_polish_mobile,
     normalize_destination,
+    parse_after_hours_exts,
     parse_opt_out_numbers,
     pick_call_sms_scenarios,
 )
@@ -652,11 +653,37 @@ class CTIPClient(threading.Thread):
                     return
 
         is_repeat = last_sms_time is not None
+        ext_meta = ctx.ext_norm or snapshot.get("ext") or ctx.ext_raw
+        ext_norm = norm_ext(ext_meta) if ext_meta else None
+        direction_value = (direction or "").strip().upper()
+        after_hours_exts = parse_after_hours_exts(config.after_hours_exts)
+        if (
+            config.after_hours_enabled
+            and direction_value == "IN"
+            and ext_norm
+            and ext_norm in after_hours_exts
+        ):
+            if not config.after_hours_text.strip():
+                return
+            if call_sms_already_enqueued(self.conn, ctx.call_id, "after_hours"):
+                return
+            enqueue_call_sms(
+                self.conn,
+                ctx.call_id,
+                dest,
+                config.after_hours_text,
+                scenario="after_hours",
+                direction=direction_value or direction,
+                disposition=disposition,
+                repeat=is_repeat,
+                ext=ext_meta,
+            )
+            return
+
         scenarios = pick_call_sms_scenarios(config, direction, disposition, is_repeat)
         if not scenarios:
             return
 
-        ext_meta = ctx.ext_norm or snapshot.get("ext") or ctx.ext_raw
         for scenario in scenarios:
             if call_sms_already_enqueued(self.conn, ctx.call_id, scenario.code):
                 continue
