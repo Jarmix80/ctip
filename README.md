@@ -22,6 +22,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - System Linux lub Windows (dla usługi Windows wymagane uprawnienia administratora).
 
 ## Konfiguracja środowiskowa
+Ustawienia lokalnych narzędzi automatyzacji (np. dostęp SMB dla Codex) są zapisywane w `.codex/smb_settings.json`, a sekrety w `.env`; oba pliki pozostają poza wersjonowaniem.
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|

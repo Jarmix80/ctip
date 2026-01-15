@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-01-15T14:15:51+01:00",
+  "timestamp": "2026-01-15T15:44:32+01:00",
   "summary": [
-    "Dodano jawne rzutowanie metadanych IVR (ext/digit) przy zapisie do sms_out, aby usunac blad typu parametru w PostgreSQL.",
-    "Dodano testy jednostkowe dla enqueue_sms oraz potwierdzono warunek pomijania pustego celu.",
-    "Uaktualniono README o informacje o typowaniu metadanych IVR w JSONB."
+    "Zweryfikowano zapis/odczyt/usuniecie na udziale SMB \\\\192.168.0.8\\ctip.",
+    "Zapisano lokalne ustawienia SMB w .env (sekrety) oraz .codex/smb_settings.json (bez hasla).",
+    "Dodano ignorowanie pliku ustawien Codex oraz uzupelniono README o notke dot. lokalnych ustawien."
   ],
   "follow_up": [
-    "Wdrozyc zaktualizowany collector_full.py na hoście 192.168.0.8 i zrestartowac proces.",
-    "Po wybraniu 500 potwierdzic nowy wpis w ctip.sms_out (source=ivr) i brak bledow w logu kolektora."
+    "Jesli potrzebujesz kolejnego testu SMB bez podawania hasla, upewnij sie, ze .env zawiera CTIP_SMB_PASSWORD.",
+    "Po restarcie uslug zweryfikuj logi i potwierdz czas wysylki SMS w docs/LOG/sms."
   ],
   "context": {
     "branch": "main",
     "python": "3.12",
     "venv": ".venv",
-    "commit": "05ef31e"
+    "commit": "39fea69"
   }
 }

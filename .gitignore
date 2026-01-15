@@ -22,6 +22,9 @@ venv/
 htmlcov/
 .pre-commit-cache/
 
+# Ustawienia Codex (lokalne)
+.codex/smb_settings.json
+
 # VS Code
 .vscode/
 .code-workspace
