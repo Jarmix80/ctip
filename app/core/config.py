@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     """Parametry działania backendu."""
 
     app_title: str = "CTIP API"
-    app_version: str = "0.2.1"
+    app_version: str = "0.2.2"
 
     pbx_host: str = Field(default="192.168.0.11", alias="PBX_HOST")
     pbx_port: int = Field(default=5524, alias="PBX_PORT")

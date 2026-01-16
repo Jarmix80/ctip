@@ -82,6 +82,12 @@ if ($nssmPath) {
     Write-Log ("NSSM: {0}" -f $nssmPath)
     foreach ($param in @("Application","AppDirectory","AppParameters","AppEnvironmentExtra")) {
         $value = & $nssmPath get CTIP-SMS $param 2>&1
+        if ($null -ne $value) {
+            if ($value -is [System.Array]) {
+                $value = ($value -join "`n")
+            }
+            $value = $value -replace "`0", ""
+        }
         if ($param -eq "AppEnvironmentExtra") {
             $lines = ($value -split "`r?`n")
             $masked = Mask-EnvLines -Lines $lines
