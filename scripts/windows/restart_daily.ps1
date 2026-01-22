@@ -95,8 +95,9 @@ function Test-CtipPort {
 }
 
 function Test-DbConnection {
-    if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
-        return "Brak psql w PATH - pomijam test bazy."
+    $psqlPath = Resolve-PsqlPath
+    if (-not $psqlPath) {
+        return "Brak psql (ustaw PSQL_BIN lub dodaj do PATH)."
     }
     if (-not $env:PGHOST -or -not $env:PGPORT -or -not $env:PGDATABASE -or -not $env:PGUSER) {
         return "Brak danych PGHOST/PGPORT/PGDATABASE/PGUSER w .env."
@@ -105,9 +106,20 @@ function Test-DbConnection {
     if ($env:PGSSLMODE) {
         $conn = "$conn sslmode=$($env:PGSSLMODE)"
     }
-    & psql "$conn" -v ON_ERROR_STOP=1 -Atc "select 1;" | Out-Null
+    & $psqlPath "$conn" -v ON_ERROR_STOP=1 -Atc "select 1;" | Out-Null
     if ($LASTEXITCODE -ne 0) {
         return "Test polaczenia z PostgreSQL nie powiodl sie."
+    }
+    return $null
+}
+
+function Resolve-PsqlPath {
+    if ($env:PSQL_BIN -and (Test-Path $env:PSQL_BIN)) {
+        return $env:PSQL_BIN
+    }
+    $cmd = Get-Command psql -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
     }
     return $null
 }
@@ -122,8 +134,9 @@ function Send-SmsAlert {
         Write-Log "Brak ALERT_SMS_DEST - SMS alert pominiety." "WARN"
         return
     }
-    if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
-        Write-Log "Brak psql w PATH - SMS alert pominiety." "WARN"
+    $psqlPath = Resolve-PsqlPath
+    if (-not $psqlPath) {
+        Write-Log "Brak psql (PSQL_BIN/PATH) - SMS alert pominiety." "WARN"
         return
     }
     if (-not $env:PGHOST -or -not $env:PGPORT -or -not $env:PGDATABASE -or -not $env:PGUSER) {
@@ -138,7 +151,7 @@ function Send-SmsAlert {
     }
     $sql = "set search_path=ctip; insert into sms_out(dest, text, source, status, origin, meta) " +
         "values ('$destEsc', '$msgEsc', 'system', 'NEW', 'system', jsonb_build_object('reason','daily_restart'));"
-    & psql "$conn" -v ON_ERROR_STOP=1 -Atc $sql | Out-Null
+    & $psqlPath "$conn" -v ON_ERROR_STOP=1 -Atc $sql | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Log "Nie udalo sie zapisac alertu SMS do kolejki." "WARN"
     } else {

@@ -265,7 +265,7 @@ Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypt
 - `sms_sender.py` tworzy dzienny log `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`; ten sam plik prezentowany jest na żywo w panelu (SerwerSMS → Log sms_sender).
 - Tabela `sms_out` powinna być monitorowana pod kątem wpisów w statusie `ERROR`.
 - Szybka diagnostyka uslugi SMS na Windows: `scripts/windows/collect_sms_sender_diag.ps1` zapisuje raport do katalogu, z ktorego zostal uruchomiony (np. `\\<host>\CTIP\temp`).
-- Dobowy restart i testy uslug (Windows): `scripts/windows/restart_daily.ps1` restartuje `CollectorService`, `CTIP-Web`, `CTIP-SMS`, a nastepnie testuje TCP do centrali i polaczenie z PostgreSQL (psql). Logi trafiaja do `logs/maintenance/daily_restart_<YYYY-MM-DD>.log`. Skrypt korzysta z `.env` i opcjonalnie wysyla alerty SMS/e-mail, jesli ustawisz `ALERT_SMS_DEST` i `ALERT_EMAIL_TO` wraz z `EMAIL_*`.
+- Dobowy restart i testy uslug (Windows): `scripts/windows/restart_daily.ps1` restartuje `CollectorService`, `CTIP-Web`, `CTIP-SMS`, a nastepnie testuje TCP do centrali i polaczenie z PostgreSQL (psql). Logi trafiaja do `logs/maintenance/daily_restart_<YYYY-MM-DD>.log`. Skrypt korzysta z `.env` i opcjonalnie wysyla alerty SMS/e-mail, jesli ustawisz `ALERT_SMS_DEST` i `ALERT_EMAIL_TO` wraz z `EMAIL_*`. Dla testu bazy i alertow SMS wymagany jest `psql` w PATH albo wskazany w `PSQL_BIN`.
 - Harmonogram 00:00 (Task Scheduler):
   ```bat
   schtasks /Create /TN "CTIP-Daily-Restart" /TR "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File D:\\CTIP\\scripts\\windows\\restart_daily.ps1" /SC DAILY /ST 00:00 /RU SYSTEM /RL HIGHEST /F
