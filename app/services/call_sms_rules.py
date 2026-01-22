@@ -117,7 +117,11 @@ def pick_call_sms_scenarios(
     disposition: str | None,
     is_repeat: bool,
 ) -> list[CallSmsScenario]:
-    """Wybiera aktywne scenariusze SMS na podstawie kierunku i statusu polaczenia."""
+    """Wybiera aktywne scenariusze SMS na podstawie kierunku i statusu polaczenia.
+
+    Dla polaczen oznaczonych jako powtorne wybiera tylko scenariusz "repeat",
+    aby uniknac kilku SMS dla tego samego polaczenia.
+    """
     if not config.enabled:
         return []
     direction_value = (direction or "").strip().upper()
@@ -140,27 +144,48 @@ def pick_call_sms_scenarios(
             )
         )
 
+    def repeat_has_text(text: str) -> bool:
+        return bool(text and text.strip())
+
     if direction_value == "IN" and config.inbound_enabled:
-        if answered and config.inbound_answered_enabled:
-            add_scenario("inbound_answered", config.inbound_answered_text, False)
-        if not answered and config.inbound_missed_enabled:
-            add_scenario("inbound_missed", config.inbound_missed_text, False)
-        if is_repeat:
-            if answered and config.inbound_repeat_answered_enabled:
+        if answered:
+            if (
+                is_repeat
+                and config.inbound_repeat_answered_enabled
+                and repeat_has_text(config.inbound_repeat_answered_text)
+            ):
                 add_scenario("inbound_repeat_answered", config.inbound_repeat_answered_text, True)
-            if not answered and config.inbound_repeat_missed_enabled:
+            elif config.inbound_answered_enabled:
+                add_scenario("inbound_answered", config.inbound_answered_text, False)
+        else:
+            if (
+                is_repeat
+                and config.inbound_repeat_missed_enabled
+                and repeat_has_text(config.inbound_repeat_missed_text)
+            ):
                 add_scenario("inbound_repeat_missed", config.inbound_repeat_missed_text, True)
+            elif config.inbound_missed_enabled:
+                add_scenario("inbound_missed", config.inbound_missed_text, False)
 
     if direction_value == "OUT" and config.outbound_enabled:
-        if answered and config.outbound_answered_enabled:
-            add_scenario("outbound_answered", config.outbound_answered_text, False)
-        if not answered and config.outbound_missed_enabled:
-            add_scenario("outbound_missed", config.outbound_missed_text, False)
-        if is_repeat:
-            if answered and config.outbound_repeat_answered_enabled:
+        if answered:
+            if (
+                is_repeat
+                and config.outbound_repeat_answered_enabled
+                and repeat_has_text(config.outbound_repeat_answered_text)
+            ):
                 add_scenario("outbound_repeat_answered", config.outbound_repeat_answered_text, True)
-            if not answered and config.outbound_repeat_missed_enabled:
+            elif config.outbound_answered_enabled:
+                add_scenario("outbound_answered", config.outbound_answered_text, False)
+        else:
+            if (
+                is_repeat
+                and config.outbound_repeat_missed_enabled
+                and repeat_has_text(config.outbound_repeat_missed_text)
+            ):
                 add_scenario("outbound_repeat_missed", config.outbound_repeat_missed_text, True)
+            elif config.outbound_missed_enabled:
+                add_scenario("outbound_missed", config.outbound_missed_text, False)
 
     return scenarios
 

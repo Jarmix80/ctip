@@ -38,7 +38,20 @@ class CallSmsRulesTests(unittest.TestCase):
         )
         scenarios = pick_call_sms_scenarios(config, "IN", "ANSWERED", True)
         codes = [scenario.code for scenario in scenarios]
-        self.assertEqual(codes, ["inbound_answered", "inbound_repeat_answered"])
+        self.assertEqual(codes, ["inbound_repeat_answered"])
+
+    def test_pick_call_sms_scenarios_repeat_fallback_to_base(self):
+        config = CallSmsConfig(
+            enabled=True,
+            inbound_enabled=True,
+            inbound_answered_enabled=True,
+            inbound_answered_text="Dziekujemy",
+            inbound_repeat_answered_enabled=False,
+            inbound_repeat_answered_text="Ponowne polaczenie",
+        )
+        scenarios = pick_call_sms_scenarios(config, "IN", "ANSWERED", True)
+        codes = [scenario.code for scenario in scenarios]
+        self.assertEqual(codes, ["inbound_answered"])
 
 
 if __name__ == "__main__":
