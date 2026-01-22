@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-22T16:47:27+01:00",
+  "timestamp": "2026-01-22T16:52:59+01:00",
   "summary": [
     "HttpSmsProvider wymusza FULL i utf dla dlugich lub nie-ASCII tresci SMS.",
     "Dodano testy wymuszenia FULL/UTF i zaktualizowano README z opisem zachowania.",
@@ -18,14 +18,16 @@
     "README uzupelniono o harmonogram restartu 00:00 oraz opis skryptu.",
     "Zidentyfikowano duplikaty SMS w scenariuszach call_sms (repeat + bazowy) i zmieniono logike wyboru.",
     "Testy call_sms zaktualizowano pod wybor tylko jednego scenariusza dla powtornego polaczenia.",
-    "Skrypt restartu dziennego obsluguje teraz PSQL_BIN oraz jasny komunikat o braku psql."
+    "Skrypt restartu dziennego obsluguje teraz PSQL_BIN oraz jasny komunikat o braku psql.",
+    "Dodano update_ctip_easy.ps1 do szybkiej aktualizacji bez testow i zaleznosci."
   ],
   "follow_up": [
     "Zweryfikuj wysylke dlugich SMS na srodowisku produkcyjnym.",
     "Wdrozyc zmiany sms_sender w produkcji i zrestartowac CTIP-SMS, a nastepnie potwierdzic naplyw call_events oraz sms_out.",
     "Skonfigurowac zadanie harmonogramu 00:00 dla restart_daily.ps1 i potwierdzic logi.",
     "Wdrozyc poprawke call_sms i sprawdzic, czy dla jednego call_id pojawia sie jeden SMS.",
-    "Ustawic PSQL_BIN lub PATH na serwerze dla restart_daily.ps1."
+    "Ustawic PSQL_BIN lub PATH na serwerze dla restart_daily.ps1.",
+    "W razie potrzeby wdrozyc update_ctip_easy.ps1 na serwer."
   ],
   "context": {
     "branch": "main",

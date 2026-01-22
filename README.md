@@ -250,7 +250,8 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 
 Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znaków), dzięki czemu Windows PowerShell 5.1 z domyślnym kodowaniem nie zgłasza błędów parsowania. Skrypty instalacyjne znajdują się w repozytorium w `scripts/windows` (także w pakiecie `docs/instal/ctip_windows_service_package.zip`) i domyślnie wymuszają `py -3.11`; na hostach z domyślnym Pythonem 3.13 uruchamiaj `install_service.ps1` z parametrem `-PythonVersion "3.11"`.
 
-Aktualizacje kodu na Windows wykonuj przez `scripts/windows/update_ctip.ps1` (zatrzymuje uslugi, `git fetch/pull`, aktualizacja zależności, `pre-commit run --all-files`, testy `python -m unittest discover -s tests`, a następnie restart usług). Dla środowisk z NSSM użyj `-ServiceNames "CollectorService","CTIP-Web","CTIP-SMS"`.
+Aktualizacje kodu na Windows wykonuj przez `scripts/windows/update_ctip.ps1` (zatrzymuje uslugi, `git fetch/pull`, aktualizacja zaleznosci, `pre-commit run --all-files`, testy `python -m unittest discover -s tests`, a nastepnie restart uslug). Dla srodowisk z NSSM uzyj `-ServiceNames "CollectorService","CTIP-Web","CTIP-SMS"`.
+Szybka aktualizacja bez testow i instalacji zaleznosci: `scripts/windows/update_ctip_easy.ps1` (wykonuje `git fetch/pull --ff-only` i restartuje tylko uruchomione uslugi, a gdy brak nowych commitow - nie restartuje nic). Opcjonalnie wymusisz restart parametrem `-ForceRestart`.
 
 Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`.
 
