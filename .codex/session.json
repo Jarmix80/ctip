@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-16T01:23:18+01:00",
+  "timestamp": "2026-01-22T13:14:21+01:00",
   "summary": [
     "HttpSmsProvider wymusza FULL i utf dla dlugich lub nie-ASCII tresci SMS.",
     "Dodano testy wymuszenia FULL/UTF i zaktualizowano README z opisem zachowania.",
@@ -10,9 +10,14 @@
     "Poprawiono ustawianie zmiennych srodowiskowych w skrypcie diagnostycznym.",
     "Zaktualizowano wersje panelu operatora do 0.2.2 i odswiezono wpis w README.",
     "Skrypt diagnostyczny NSSM scala wyjscie parametrow, aby uniknac System.Object[]."
+    ,
+    "Zdiagnozowano produkcje przez \\192.168.0.8\\ctip: sms_sender ma bledy polaczenia z PostgreSQL i brak nowych SMS.",
+    "Dodano automatyczne odnawianie polaczenia w sms_sender oraz test jednostkowy reconnect.",
+    "README uzupelniono o informacje o ponownym laczeniu z PostgreSQL w sms_sender."
   ],
   "follow_up": [
-    "Zweryfikuj wysylke dlugich SMS na srodowisku produkcyjnym."
+    "Zweryfikuj wysylke dlugich SMS na srodowisku produkcyjnym.",
+    "Wdrozyc zmiany sms_sender w produkcji i zrestartowac CTIP-SMS, a nastepnie potwierdzic naplyw call_events oraz sms_out."
   ],
   "context": {
     "branch": "main",
