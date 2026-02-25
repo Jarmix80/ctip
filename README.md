@@ -23,6 +23,15 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 
 ## Konfiguracja środowiskowa
 Ustawienia lokalnych narzędzi automatyzacji (np. dostęp SMB dla Codex) są zapisywane w `.codex/smb_settings.json`, a sekrety w `.env`; oba pliki pozostają poza wersjonowaniem.
+
+### Uruchomienie Codex
+Skrypt `scripts/run_codex.sh` uruchamia Codex w kontekście repozytorium i automatyzuje kroki wymagane przez `AGENTS.md`:
+- ustawia katalog roboczy na root projektu i weryfikuje obecność `AGENTS.md`,
+- wczytuje `.env` z eksportem zmiennych,
+- tworzy (jeśli brak) i aktywuje `.venv`,
+- ustawia `CODEX_HOME` na `.codex` i uruchamia `codex` lub `openai codex`.
+
+Przykład: `./scripts/run_codex.sh` (opcjonalnie z parametrami, np. `./scripts/run_codex.sh --help`).
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
