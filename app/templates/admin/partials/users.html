@@ -13,8 +13,7 @@
     </div>
     <div class="dashboard-actions" x-show="canManage" x-cloak>
       <button type="button" class="btn-secondary" @click.prevent="reload()" :disabled="loading">
-        <template x-if="!loading">Odśwież</template>
-        <template x-if="loading">Wczytywanie…</template>
+        <span x-text="loading ? 'Wczytywanie…' : 'Odśwież'">Odśwież</span>
       </button>
     </div>
   </header>
@@ -53,8 +52,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" :disabled="saving">
-          <template x-if="!saving">Utwórz</template>
-          <template x-if="saving">Trwa zapisywanie…</template>
+          <span x-text="saving ? 'Trwa zapisywanie…' : 'Utwórz'">Utwórz</span>
         </button>
       </div>
       <template x-if="formPassword">
@@ -246,8 +244,7 @@
             </div>
             <div class="form-actions">
               <button type="submit" :disabled="modalSaving">
-                <template x-if="!modalSaving">Zapisz</template>
-                <template x-if="modalSaving">Zapisywanie…</template>
+                <span x-text="modalSaving ? 'Zapisywanie…' : 'Zapisz'">Zapisz</span>
               </button>
               <button
                 type="button"

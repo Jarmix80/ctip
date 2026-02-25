@@ -51,8 +51,7 @@
 
     <div class="form-actions">
       <button type="submit" :disabled="saving">
-        <template x-if="!saving">Zapisz konfigurację</template>
-        <template x-if="saving">Trwa zapisywanie…</template>
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
       </button>
     </div>
 
@@ -90,8 +89,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" :disabled="testing">
-          <template x-if="!testing">Wyślij test</template>
-          <template x-if="testing">Wysyłanie…</template>
+          <span x-text="testing ? 'Wysyłanie…' : 'Wyślij test'">Wyślij test</span>
         </button>
       </div>
       <template x-if="testError">

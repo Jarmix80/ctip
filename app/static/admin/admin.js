@@ -2993,8 +2993,14 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 window.addEventListener("error", (event) => {
-  if (!event?.message) {
+  const message = event?.message?.trim();
+  if (!message) {
     return;
   }
-  showToast(event.message, "error");
+  // Przeglądarka zwraca ogólny "Script error." dla błędów bez stacktrace (np. cross-origin).
+  // Nie pokazujemy takiego komunikatu jako toast, bo zaciemnia diagnostykę.
+  if (message === "Script error." || message === "Script error") {
+    return;
+  }
+  showToast(message, "error");
 });

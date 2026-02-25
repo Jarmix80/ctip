@@ -72,8 +72,7 @@
     </div>
     <div class="form-actions" style="gap: 10px;">
       <button type="submit" :disabled="saving">
-        <template x-if="!saving">Zapisz</template>
-        <template x-if="saving">Zapisywanie…</template>
+        <span x-text="saving ? 'Zapisywanie…' : 'Zapisz'">Zapisz</span>
       </button>
       <button type="button" class="btn-secondary" @click.prevent="resetForm" :disabled="saving">Wyczyść</button>
     </div>

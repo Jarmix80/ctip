@@ -37,3 +37,8 @@ logs/
 .cache/
 docs/archiwum/
 docs/raport/
+
+# Katalog wymiany plikow Windows -> serwer
+inbox/*
+!inbox/.gitkeep
+!inbox/README.md

@@ -13,8 +13,7 @@
     </div>
     <div class="dashboard-actions">
       <button type="button" class="btn-secondary" @click.prevent="fetchContacts(true)" :disabled="loading">
-        <template x-if="!loading">Odśwież</template>
-        <template x-if="loading">Wczytywanie…</template>
+        <span x-text="loading ? 'Wczytywanie…' : 'Odśwież'">Odśwież</span>
       </button>
     </div>
   </header>
@@ -82,8 +81,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" :disabled="saving">
-          <template x-if="!saving">Zapisz kontakt</template>
-          <template x-if="saving">Zapisywanie…</template>
+          <span x-text="saving ? 'Zapisywanie…' : 'Zapisz kontakt'">Zapisz kontakt</span>
         </button>
       </div>
       <template x-if="success">
@@ -282,8 +280,7 @@
             </div>
             <div class="form-actions">
               <button type="submit" :disabled="modalSaving">
-                <template x-if="!modalSaving">Zapisz zmiany</template>
-                <template x-if="modalSaving">Zapisywanie…</template>
+                <span x-text="modalSaving ? 'Zapisywanie…' : 'Zapisz zmiany'">Zapisz zmiany</span>
               </button>
             </div>
           </form>

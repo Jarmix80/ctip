@@ -70,6 +70,42 @@ def test_database_partial_requires_authentication():
     assert response.status_code == 401
 
 
+def test_database_partial_uses_span_labels_in_action_buttons():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    app.dependency_overrides[deps.get_db_session] = _fake_db_session
+    client = TestClient(app)
+
+    class DummyConfig:
+        def model_dump(self) -> dict:
+            return {
+                "host": "127.0.0.1",
+                "port": 5432,
+                "database": "ctip",
+                "user": "appuser",
+                "sslmode": "disable",
+                "password_set": True,
+            }
+
+    with patch(
+        "app.web.admin_ui.load_database_config",
+        AsyncMock(return_value=DummyConfig()),
+    ):
+        response = client.get(
+            "/admin/partials/config/database",
+            headers={"X-Admin-Session": "token"},
+        )
+
+    assert response.status_code == 200
+    html = response.text
+    assert '<template x-if="!saving">' not in html
+    assert '<template x-if="saving">' not in html
+    assert '<template x-if="!testing">' not in html
+    assert '<template x-if="testing">' not in html
+    assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
+    assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
+
+
 def test_ctip_partial_requires_authentication():
     app = create_app()
     client = TestClient(app)
@@ -89,6 +125,35 @@ def test_ctip_live_partial_requires_authentication():
     client = TestClient(app)
     response = client.get("/admin/partials/ctip/live")
     assert response.status_code == 401
+
+
+def test_call_sms_partial_keeps_bulk_form_inside_call_sms_scope():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    app.dependency_overrides[deps.get_db_session] = _fake_db_session
+    client = TestClient(app)
+
+    class DummyConfig:
+        def model_dump(self) -> dict:
+            return {}
+
+    with patch(
+        "app.web.admin_ui.load_call_sms_config",
+        AsyncMock(return_value=DummyConfig()),
+    ):
+        response = client.get(
+            "/admin/partials/call-sms",
+            headers={"X-Admin-Session": "token"},
+        )
+
+    assert response.status_code == 200
+    html = response.text
+    section_start = html.index('x-data="callSmsConfig()"')
+    section_end = html.index("</section>")
+    bulk_field = html.index('id="bulk-direction"')
+    assert section_start < bulk_field < section_end
+    assert '<template x-if="!bulkSending">' not in html
+    assert '<template x-if="bulkSending">' not in html
 
 
 def test_email_partial_requires_authentication():

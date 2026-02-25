@@ -14,6 +14,8 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_*` – moduł API panelu administratora (logowanie, konfiguracja PostgreSQL/CTIP/SerwerSMS, audyt zmian oraz health-checki `/admin/status/summary`, `/admin/status/database`, `/admin/status/ctip`, `/admin/status/sms`).
 - `app/web/admin_ui.py` + `app/templates/admin/` – interfejs administracyjny w technologii HTMX + Alpine (adres `/admin`).
 - `app/api/routes/admin_contacts.py` + `app/services/admin_contacts.py` – warstwa API i logika książki adresowej z obsługą pola `firebird_id`.
+- `inbox/` – katalog wymiany plików z Windows (dropzone), przeznaczony na pliki robocze poza wersjonowaniem Git.
+- `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
 
 ## Wymagania systemowe
 - Python 3.11 lub nowszy (z bibliotekami `psycopg` oraz – opcjonalnie dla Windows – `pywin32`; `uvloop` instalowane tylko na Linux dzięki warunkowi w `requirements.txt`).
@@ -32,6 +34,29 @@ Skrypt `scripts/run_codex.sh` uruchamia Codex w kontekście repozytorium i autom
 - ustawia `CODEX_HOME` na `.codex` i uruchamia `codex` lub `openai codex`.
 
 Przykład: `./scripts/run_codex.sh` (opcjonalnie z parametrami, np. `./scripts/run_codex.sh --help`).
+
+### Katalog wymiany plikow (mapowany dysk Windows)
+Do wygodnego wrzucania plikow bez komend po stronie Windows przygotowany jest katalog `inbox/` oraz udział SMB.
+
+Start/stop/uslugi SMB na serwerze:
+- start: `./scripts/inbox_samba.sh start`
+- status: `./scripts/inbox_samba.sh status`
+- logi: `./scripts/inbox_samba.sh logs`
+- stop: `./scripts/inbox_samba.sh stop`
+
+Po starcie skrypt wypisze dane dostepowe i sciezke udzialu, domyslnie:
+- udzial: `\\192.168.0.9\ctip-inbox`
+- konto: `ctipdrop`
+- haslo: generowane automatycznie i zapisywane lokalnie w `inbox/.smb_credentials`
+
+Mapowanie dysku w Windows (GUI):
+1. Otworz `Ten komputer` -> `Mapuj dysk sieciowy`.
+2. W polu folder wpisz `\\192.168.0.9\ctip-inbox`.
+3. Zaznacz `Polacz przy uzyciu innych poswiadczen` i podaj konto/haslo SMB.
+4. Po mapowaniu kopiujesz pliki metoda drag&drop bez zadnych komend.
+
+Uwaga: jeśli zapora UFW jest aktywna, otworz porty SMB: `sudo ufw allow 139/tcp` oraz `sudo ufw allow 445/tcp`.
+
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
