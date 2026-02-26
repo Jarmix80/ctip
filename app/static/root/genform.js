@@ -469,14 +469,60 @@ function initializeGenForm() {
     }
   }
 
+  function copyTextWithExecCommand(value) {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "readonly");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-1000px";
+    textarea.style.left = "-1000px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch (err) {
+      copied = false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+    return copied;
+  }
+
+  async function copyTextToClipboard(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return false;
+    }
+
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (err) {
+        // Fallback dla środowisk, w których Clipboard API jest blokowane.
+      }
+    }
+    return copyTextWithExecCommand(text);
+  }
+
   async function handleCopyLink() {
     if (!generatedLink || !generatedLink.textContent) {
       return;
     }
+    const value = generatedLink.textContent.trim();
+    if (!value) {
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(generatedLink.textContent);
+      const copied = await copyTextToClipboard(value);
       clearMessages();
-      showSuccess("Skopiowano link do schowka.");
+      if (copied) {
+        showSuccess("Skopiowano link do schowka.");
+      } else {
+        showError("Nie udało się skopiować automatycznie. Skopiuj link ręcznie z pola.");
+      }
     } catch (err) {
       clearMessages();
       showError("Nie udało się skopiować linku.");

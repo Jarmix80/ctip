@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
@@ -326,3 +327,10 @@ def test_genform_page_renders_layout():
     assert "genform-password-toggle" in response.text
     assert "genform-detail-modal" in response.text
     assert "Utworzone przez" in response.text
+
+
+def test_genform_js_has_copy_fallback_for_non_secure_context():
+    js_path = Path("app/static/root/genform.js")
+    content = js_path.read_text(encoding="utf-8")
+    assert 'document.execCommand("copy")' in content
+    assert "window.isSecureContext" in content
