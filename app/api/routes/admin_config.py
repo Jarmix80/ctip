@@ -14,6 +14,8 @@ from app.schemas.admin import (
     DatabaseConfigUpdate,
     EmailConfigResponse,
     EmailConfigUpdate,
+    FirebirdConfigResponse,
+    FirebirdConfigUpdate,
     SmsConfigResponse,
     SmsConfigUpdate,
 )
@@ -49,6 +51,17 @@ def _to_bool(value: str | bool) -> bool:
     return value.lower() in {"1", "true", "t", "yes", "on"}
 
 
+def _normalize_firebird_mode(value: str | None) -> str:
+    """Normalizuje tryb połączenia Firebird."""
+    mode = (value or "").strip().lower() or settings.fb_mode.lower()
+    if mode not in {"network", "local"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tryb Firebird musi mieć wartość: network albo local.",
+        )
+    return mode
+
+
 async def load_database_config(session: AsyncSession) -> DatabaseConfigResponse:
     stored = await settings_store.get_namespace(session, "database")
     host = stored.get("host") or settings.pg_host
@@ -64,6 +77,35 @@ async def load_database_config(session: AsyncSession) -> DatabaseConfigResponse:
         database=database,
         user=user,
         sslmode=sslmode,
+        password_set=password_set,
+    )
+
+
+async def load_firebird_config(session: AsyncSession) -> FirebirdConfigResponse:
+    stored = await settings_store.get_namespace(session, "firebird")
+    mode = _normalize_firebird_mode(stored.get("mode") or settings.fb_mode)
+    host = stored.get("host") or settings.fb_host
+    port = _to_int(stored.get("port") or settings.fb_port)
+    database = stored.get("database") or settings.fb_database
+    user = stored.get("user") or settings.fb_user
+    charset = stored.get("charset") or settings.fb_charset
+    local_copy_path = stored.get("local_copy_path") or settings.fb_local_copy_path
+    raw_role = stored.get("role")
+    if raw_role is None:
+        role = settings.fb_role
+    else:
+        role = raw_role.strip() or None
+    password_set = bool(stored.get("password") or settings.fb_password)
+
+    return FirebirdConfigResponse(
+        mode=mode,
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        charset=charset,
+        role=role,
+        local_copy_path=local_copy_path,
         password_set=password_set,
     )
 
@@ -155,6 +197,19 @@ async def get_database_config(
     return await load_database_config(session)
 
 
+@router.get(
+    "/firebird", response_model=FirebirdConfigResponse, summary="Aktualna konfiguracja Firebird"
+)
+async def get_firebird_config(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FirebirdConfigResponse:
+    """Zwraca aktywną konfigurację połączenia z bazą Firebird."""
+    _, admin_user = admin_context
+    _assert_admin(admin_user.role)
+    return await load_firebird_config(session)
+
+
 @router.put(
     "/database",
     response_model=DatabaseConfigResponse,
@@ -197,6 +252,76 @@ async def update_database_config(
     await session.commit()
 
     return await load_database_config(session)
+
+
+@router.put(
+    "/firebird",
+    response_model=FirebirdConfigResponse,
+    summary="Aktualizacja konfiguracji Firebird",
+)
+async def update_firebird_config(
+    payload: FirebirdConfigUpdate,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FirebirdConfigResponse:
+    """Zapisuje parametry połączenia z bazą Firebird."""
+    admin_session, admin_user = admin_context
+    _assert_admin(admin_user.role)
+
+    mode = _normalize_firebird_mode(payload.mode)
+    requested_host = payload.host.strip()
+    host = "127.0.0.1" if mode == "local" else requested_host
+    database = payload.database.strip()
+    user = payload.user.strip()
+    charset = payload.charset.strip() or settings.fb_charset
+    role = (payload.role or "").strip()
+    local_copy_path = payload.local_copy_path.strip()
+    if mode == "network" and not host:
+        raise HTTPException(status_code=400, detail="Host Firebird nie może być pusty.")
+    if not database:
+        raise HTTPException(status_code=400, detail="Ścieżka bazy Firebird nie może być pusta.")
+    if not user:
+        raise HTTPException(status_code=400, detail="Użytkownik Firebird nie może być pusty.")
+    if not local_copy_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Ścieżka lokalnej kopii Firebird nie może być pusta.",
+        )
+
+    values: dict[str, StoredValue] = {
+        "mode": StoredValue(mode, False),
+        "host": StoredValue(host, False),
+        "port": StoredValue(str(payload.port), False),
+        "database": StoredValue(database, False),
+        "user": StoredValue(user, False),
+        "charset": StoredValue(charset, False),
+        "role": StoredValue(role, False),
+        "local_copy_path": StoredValue(local_copy_path, False),
+    }
+    if payload.password is not None:
+        values["password"] = StoredValue(payload.password, True)
+
+    await settings_store.set_namespace(session, "firebird", values, user_id=admin_user.id)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="config_firebird_update",
+        client_ip=admin_session.client_ip,
+        payload={
+            "mode": mode,
+            "host": host,
+            "port": payload.port,
+            "database": database,
+            "user": user,
+            "charset": charset,
+            "role": role or None,
+            "local_copy_path": local_copy_path,
+            "password_changed": payload.password is not None,
+        },
+    )
+    await session.commit()
+
+    return await load_firebird_config(session)
 
 
 @router.get("/ctip", response_model=CtipConfigResponse, summary="Aktualna konfiguracja CTIP")

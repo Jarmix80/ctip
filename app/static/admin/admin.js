@@ -198,6 +198,8 @@ document.addEventListener("alpine:init", () => {
           return "/admin/partials/dashboard";
         case "database":
           return "/admin/partials/config/database";
+        case "firebird":
+          return "/admin/partials/config/firebird";
         case "backups":
           return "/admin/partials/backups";
         case "ctip":
@@ -2021,6 +2023,182 @@ document.addEventListener("alpine:init", () => {
     },
   });
 
+  const firebirdConfig = () => ({
+    mode: "network",
+    host: "",
+    networkHostCache: "",
+    port: "",
+    database: "",
+    user: "",
+    password: "",
+    charset: "WIN1250",
+    role: "",
+    localCopyPath: "",
+    passwordSet: false,
+    saving: false,
+    testing: false,
+    error: null,
+    success: null,
+    testStatus: "neutral",
+    testMessage: "",
+
+    init() {
+      const initial = this._readInitial();
+      this.mode = initial.mode || "network";
+      this.host = initial.host || "";
+      this.networkHostCache = initial.host || "";
+      this.port = String(initial.port || "");
+      this.database = initial.database || "";
+      this.user = initial.user || "";
+      this.charset = initial.charset || "WIN1250";
+      this.role = initial.role || "";
+      this.localCopyPath = initial.local_copy_path || "";
+      this.password = "";
+      this.passwordSet = Boolean(initial.password_set);
+
+      this.$watch("mode", (mode, prevMode) => {
+        if (mode === prevMode) {
+          return;
+        }
+        if (mode === "local") {
+          if (this.host) {
+            this.networkHostCache = this.host;
+          }
+          this.host = "";
+        } else if (!this.host) {
+          this.host = this.networkHostCache || "";
+        }
+      });
+
+      if (this.mode === "local") {
+        this.host = "";
+      }
+    },
+
+    _readInitial() {
+      try {
+        return JSON.parse(this.$el.dataset.initial || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji Firebird", err);
+        return {};
+      }
+    },
+
+    get headers() {
+      const token = localStorage.getItem("admin-session-token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Admin-Session"] = token;
+      }
+      return headers;
+    },
+
+    resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    async save() {
+      if (this.saving) {
+        return;
+      }
+      this.resetMessages();
+      this.saving = true;
+      try {
+        const payload = {
+          mode: this.mode,
+          host: this.mode === "local" ? "" : this.host,
+          port: Number(this.port),
+          database: this.database,
+          user: this.user,
+          charset: this.charset,
+          role: this.role || null,
+          local_copy_path: this.localCopyPath,
+        };
+        if (this.password) {
+          payload.password = this.password;
+        }
+        const response = await fetch("/admin/config/firebird", {
+          method: "PUT",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się zapisać konfiguracji Firebird");
+        }
+        this.host = data.host || "";
+        this.mode = data.mode || "network";
+        if (this.mode === "network") {
+          this.networkHostCache = this.host;
+        } else {
+          this.host = "";
+        }
+        this.port = String(data.port || "");
+        this.database = data.database || "";
+        this.user = data.user || "";
+        this.charset = data.charset || "WIN1250";
+        this.role = data.role || "";
+        this.localCopyPath = data.local_copy_path || "";
+        this.password = "";
+        this.passwordSet = Boolean(data.password_set);
+        this.success = "Konfiguracja Firebird została zapisana.";
+        showToast(this.success, "success");
+        this.$el.dataset.initial = JSON.stringify(data);
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "Błąd zapisu";
+        showToast(this.error, "error");
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async testConnection() {
+      if (this.testing) {
+        return;
+      }
+      this.testing = true;
+      this.testStatus = "info";
+      this.testMessage = "Testowanie połączenia…";
+      try {
+        const token = localStorage.getItem("admin-session-token");
+        if (!token) {
+          throw new Error("Brak aktywnej sesji administratora.");
+        }
+        const payload = {
+          mode: this.mode || "network",
+          host: this.mode === "local" ? null : this.host || null,
+          port: Number(this.port || 3050),
+          database: this.database || null,
+          local_copy_path: this.localCopyPath || null,
+          user: this.user || null,
+          password: this.password || null,
+          charset: this.charset || null,
+          role: this.role || null,
+        };
+        const response = await fetch("/admin/firebird/test", {
+          method: "POST",
+          headers: { "X-Admin-Session": token, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Błąd testu Firebird");
+        }
+        this.testStatus = data.success ? "success" : "warning";
+        this.testMessage = data.message || (data.success ? "Połączenie zakończone sukcesem." : "Serwer zwrócił błąd.");
+        showToast(this.testMessage, data.success ? "success" : "warning");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd testu Firebird";
+        this.testStatus = "error";
+        this.testMessage = message;
+        showToast(message, "error");
+      } finally {
+        this.testing = false;
+      }
+    },
+  });
+
   const ctipConfig = () => ({
     host: "",
     port: "",
@@ -2956,6 +3134,7 @@ document.addEventListener("alpine:init", () => {
 Alpine.data("adminApp", adminApp);
 Alpine.data("adminUsers", adminUsers);
 Alpine.data("databaseConfig", databaseConfig);
+Alpine.data("firebirdConfig", firebirdConfig);
 Alpine.data("ctipConfig", ctipConfig);
 Alpine.data("ctipIvrMap", ctipIvrMap);
 Alpine.data("smsConfig", smsConfig);
@@ -2965,6 +3144,7 @@ Alpine.data("emailConfig", emailConfig);
   window.adminApp = adminApp;
   window.adminUsers = adminUsers;
   window.databaseConfig = databaseConfig;
+  window.firebirdConfig = firebirdConfig;
 window.ctipConfig = ctipConfig;
 window.ctipIvrMap = ctipIvrMap;
 window.smsConfig = smsConfig;

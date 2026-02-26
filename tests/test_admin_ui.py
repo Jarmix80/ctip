@@ -106,6 +106,55 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
 
 
+def test_firebird_partial_requires_authentication():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/admin/partials/config/firebird")
+    assert response.status_code == 401
+
+
+def test_firebird_partial_uses_span_labels_in_action_buttons():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    app.dependency_overrides[deps.get_db_session] = _fake_db_session
+    client = TestClient(app)
+
+    class DummyConfig:
+        def model_dump(self) -> dict:
+            return {
+                "mode": "network",
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "C:/MS/BAZA/MS.FDB",
+                "user": "SYSDBA",
+                "charset": "UTF8",
+                "role": None,
+                "local_copy_path": "inbox/firebird/ms_local.fdb",
+                "password_set": True,
+            }
+
+    with patch(
+        "app.web.admin_ui.load_firebird_config",
+        AsyncMock(return_value=DummyConfig()),
+    ):
+        response = client.get(
+            "/admin/partials/config/firebird",
+            headers={"X-Admin-Session": "token"},
+        )
+
+    assert response.status_code == 200
+    html = response.text
+    assert '<template x-if="!saving">' not in html
+    assert '<template x-if="saving">' not in html
+    assert '<template x-if="!testing">' not in html
+    assert '<template x-if="testing">' not in html
+    assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
+    assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
+    assert '<option value="network">Baza sieciowa</option>' in html
+    assert '<option value="local">Baza lokalna</option>' in html
+    assert ":disabled=\"mode === 'local'\"" in html
+
+
 def test_ctip_partial_requires_authentication():
     app = create_app()
     client = TestClient(app)

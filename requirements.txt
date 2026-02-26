@@ -12,6 +12,8 @@ dnspython==2.8.0
 email-validator==2.3.0
 fastapi==0.111.1
 fastapi-cli==0.0.13
+fdb==2.0.4
+firebirdsql==1.4.2
 filelock==3.20.0
 greenlet==3.2.4
 h11==0.16.0
@@ -36,9 +38,11 @@ psycopg-binary==3.2.10
 pydantic==2.12.0
 pydantic-settings==2.2.1
 pydantic_core==2.41.1
+passlib==1.7.4
 Pygments==2.19.2
 python-dotenv==1.0.1
 python-multipart==0.0.20
+pypdf==6.7.3
 pytokens==0.1.10
 PyYAML==6.0.3
 pywin32==306; sys_platform == "win32"

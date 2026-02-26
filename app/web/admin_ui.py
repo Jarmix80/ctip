@@ -20,6 +20,7 @@ from app.api.routes.admin_config import (
     load_ctip_config,
     load_database_config,
     load_email_config,
+    load_firebird_config,
     load_sms_config,
 )
 from app.api.routes.admin_ctip import (
@@ -37,6 +38,7 @@ from app.schemas.admin import (
     AdminUserSummary,
     CtipConfigResponse,
     DatabaseConfigResponse,
+    FirebirdConfigResponse,
     SmsConfigResponse,
 )
 from app.schemas.admin_contacts import AdminContactSummary
@@ -132,6 +134,23 @@ async def admin_database_config_partial(
     config: DatabaseConfigResponse = await load_database_config(session)
     return templates.TemplateResponse(
         "admin/partials/config_database.html",
+        {
+            "request": request,
+            "config": config.model_dump(),
+        },
+    )
+
+
+@router.get("/admin/partials/config/firebird", response_class=HTMLResponse)
+async def admin_firebird_config_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> HTMLResponse:
+    """Formularz konfiguracji połączenia Firebird."""
+    config: FirebirdConfigResponse = await load_firebird_config(session)
+    return templates.TemplateResponse(
+        "admin/partials/config_firebird.html",
         {
             "request": request,
             "config": config.model_dump(),

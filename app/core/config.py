@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     pg_password: str = Field(default="change_me", alias="PGPASSWORD")
     pg_sslmode: str = Field(default="disable", alias="PGSSLMODE")
 
+    fb_host: str = Field(default="127.0.0.1", alias="FB_HOST")
+    fb_port: int = Field(default=3050, alias="FB_PORT")
+    fb_mode: str = Field(default="network", alias="FB_MODE")
+    fb_database: str = Field(default="D:/BAZA_MS_KP/BAZAMS.FDB", alias="FB_DATABASE")
+    fb_user: str = Field(default="SYSDBA", alias="FB_USER")
+    fb_password: str = Field(default="masterkey", alias="FB_PASSWORD")
+    fb_charset: str = Field(default="WIN1250", alias="FB_CHARSET")
+    fb_role: str | None = Field(default=None, alias="FB_ROLE")
+    fb_local_copy_path: str = Field(
+        default="inbox/firebird/menadzer_serwisu.fdb", alias="FB_LOCAL_COPY_PATH"
+    )
+
     sms_default_sender: str = Field(default="KseroPartner", alias="SMS_DEFAULT_SENDER")
     sms_type: str = Field(default="eco+", alias="SMS_TYPE")
     sms_api_url: str = Field(default="https://api2.serwersms.pl", alias="SMS_API_URL")

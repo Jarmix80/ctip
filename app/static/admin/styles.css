@@ -318,6 +318,12 @@ a {
   resize: vertical;
 }
 
+.form-field .input-disabled {
+  background: #f4f6f8;
+  color: #8a97a8;
+  border-color: #d8dee6;
+}
+
 .input-help {
   margin: 0;
   font-size: 12px;

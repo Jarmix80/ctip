@@ -15,6 +15,7 @@
 |--------|------|-------------------|
 | Dashboard | Skróty operacyjne i statusy | Karty (`Status bazy`, `CTIP`, `SerwerSMS`, `Ostatnia kopia`, `Aktywne sesje`) |
 | Konfiguracja bazy | Edycja parametrów PostgreSQL, test połączenia | Formularz, przycisk „Testuj”, wyniki health-check |
+| Baza Firebird | Parametry połączenia Menadżera Serwisu i test logowania | Formularz z wyborem trybu `sieciowa`/`lokalna`, test `/admin/firebird/test`, ścieżki bazy sieciowej i lokalnej |
 | Kopie zapasowe | MVP: podgląd plików w `backups/` (bez uruchamiania) | Tabela z listą plików, przyciski akcji zablokowane |
 | CTIP Live | Monitor protokołu, restart klienta, status handshake | Panel z WebSocket (lista zdarzeń), karty statusu, przyciski akcji |
 | Automatyzacje IVR | Mapowanie cyfr IVR na SMS i numery wewnętrzne | Lista reguł, formularz CRUD, audyt operacji, walidacja unikalności |
@@ -51,6 +52,12 @@
 - Przyciski `Utwórz kopię` i `Przywróć` są zablokowane; API obsługuje wyłącznie dry-run.
 - Docelowo: filtr dat i statusów, modale potwierdzające, upload pliku `.dump` oraz panel logów przebiegu.
 - API: `POST /admin/backup/run`, `POST /admin/backup/restore`, `GET /admin/backup/history` (run/restore tylko dry-run).
+
+### 3a. Baza Firebird (Menadżer Serwisu)
+- Formularz HTMX/Alpine z polami `Aktywna baza` (`sieciowa` / `lokalna`), `Host`, `Port`, `Ścieżka bazy sieciowej`, `Użytkownik`, `Hasło`, `Kodowanie`, `Rola`, `Ścieżka bazy lokalnej`.
+- Odczyt i zapis konfiguracji: `GET/PUT /admin/config/firebird`.
+- Test logowania: `POST /admin/firebird/test` (wynik prezentowany w sekcji statusowej formularza i zapisywany w audycie); endpoint testuje ścieżkę lokalną lub sieciową zgodnie z wybranym trybem, a dla trybu lokalnego wymusza host `127.0.0.1`.
+- Konfiguracja jest przechowywana w `admin_setting` pod namespace `firebird` z szyfrowaniem hasła analogicznie do SMTP/SerwerSMS.
 
 ### 4. CTIP Live
 - Layout 70/30: lewa kolumna – strumień zdarzeń, prawa – karty statusu.
@@ -128,7 +135,7 @@
 | Widok | Endpointy (obecne/planowane) |
 |-------|------------------------------|
 | Dashboard | `/admin/status/summary`, `/admin/status/database`, `/admin/auth/me` |
-| Konfiguracja | `/admin/partials/config_database`, `/admin/config/database`, `/admin/partials/config_ctip`, `/admin/config/ctip`, `/admin/partials/config_sms`, `/admin/config/sms`, `/admin/status/database` |
+| Konfiguracja | `/admin/partials/config/database`, `/admin/config/database`, `/admin/partials/config/firebird`, `/admin/config/firebird`, `/admin/firebird/test`, `/admin/partials/config/ctip`, `/admin/config/ctip`, `/admin/partials/config/sms`, `/admin/config/sms`, `/admin/status/database` |
 | Kopie | `/admin/backup/history`, `/admin/backup/run`, `/admin/backup/restore` |
 | CTIP Live | `/admin/partials/ctip/live`, `/admin/partials/ctip/events`, `/admin/ctip/events`, `/admin/ctip/ws`, `/admin/config/ctip`, `POST /admin/ctip/restart` (plan) |
 | SerwerSMS | `/admin/partials/config_sms`, `/admin/config/sms`, `/admin/sms/test`, `/sms/account`, `/sms/history?status=SENT&limit=20` |

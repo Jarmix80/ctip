@@ -3,7 +3,7 @@
 ## Założenia ogólne
 - Panel ma rozszerzyć istniejący prototyp UI (`prototype/index.html`) o sekcje administracyjne działające w tym samym stylu.
 - Autoryzacja będzie oparta o lokalną bazę użytkowników z rolami (na potrzeby panelu wystarczy rozróżnienie `admin` / `operator`). Brak uwierzytelniania dwuskładnikowego.
-- Konfiguracja środowiskowa (PostgreSQL, CTIP, SerwerSMS) musi być dostępna do podglądu i modyfikacji z poziomu panelu. Zmiany wchodzą w życie po walidacji i zapisie w magazynie ustawień.
+- Konfiguracja środowiskowa (PostgreSQL, Firebird, CTIP, SerwerSMS) musi być dostępna do podglądu i modyfikacji z poziomu panelu. Zmiany wchodzą w życie po walidacji i zapisie w magazynie ustawień.
 - Wszystkie operacje administracyjne wymagają audytu (kto, kiedy, co zmienił) oraz logowania w formacie kompatybilnym z `docs/LOG`.
 - Backend FastAPI pozostaje źródłem prawdy: panel korzysta z nowych tras pod `/admin/**`. WebSockety zapewnią podgląd CTI w czasie rzeczywistym.
 - Rola `operator` ma dostęp do ograniczonych widoków (Dashboard, CTIP Live, Książka adresowa) i może edytować kontakty, natomiast operacje konfiguracyjne są zarezerwowane dla `admin`.
@@ -62,7 +62,7 @@
 - **CTIP** – klient `collector_full.CTIPClient` otrzyma wstrzyknięcie konfiguracji i webhook do aktualizacji statusu dla panelu.
 - **SerwerSMS** – ustawienia zsynchronizowane z `app/core/config.py`; zmiana trybu demo natychmiast aktualizuje `HttpSmsProvider`.
 - **SMTP** – konfiguracja (host/port/SSL/STARTTLS) jest przechowywana w `admin_setting` i testowana na żądanie z poziomu panelu.
-- **Firebird** – kolumna `ctip.contact.firebird_id` przechowuje identyfikatory rekordów z zewnętrznej bazy Firebird; panel umożliwia ich edycję i raportowanie, ale połączenie z Firebird pozostaje w gestii usług integracyjnych.
+- **Firebird** – kolumna `ctip.contact.firebird_id` przechowuje identyfikatory rekordów z zewnętrznej bazy Firebird; panel umożliwia edycję pól mapowania kontaktów oraz posiada dedykowaną konfigurację/test połączenia (`/admin/config/firebird`, `/admin/firebird/test`) z wyborem aktywnego trybu `network`/`local`.
 - **Scheduler** – planowane zadania (cykliczny backup, test połączenia) obsłużymy przez `asyncio` + `APScheduler` w kolejnym etapie.
 
 ## Etapy wdrożenia

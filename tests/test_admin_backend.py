@@ -41,6 +41,7 @@ from app.models.base import Base
 from app.services import admin_ivr_map
 from app.services.backup_runner import BackupFileInfo
 from app.services.email_client import EmailSendResult, EmailTestResult
+from app.services.firebird_client import FirebirdTestResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
 from log_utils import append_log, daily_log_path
@@ -408,6 +409,137 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(setting)
             self.assertEqual(setting.value, "10.0.0.5")
 
+    async def test_update_firebird_config_persists_values(self):
+        token, _ = await self._login()
+        update_payload = {
+            "mode": "network",
+            "host": "192.168.0.8",
+            "port": 3050,
+            "database": "C:/MS/BAZA/MS.FDB",
+            "user": "SYSDBA",
+            "password": "masterkey",
+            "charset": "UTF8",
+            "role": "RDB$ADMIN",
+            "local_copy_path": "inbox/firebird/ms_local.fdb",
+        }
+        response = await self.client.put(
+            "/admin/config/firebird",
+            json=update_payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["mode"], "network")
+        self.assertEqual(body["host"], update_payload["host"])
+        self.assertEqual(body["database"], update_payload["database"])
+        self.assertEqual(body["charset"], "UTF8")
+        self.assertEqual(body["role"], "RDB$ADMIN")
+        self.assertEqual(body["local_copy_path"], update_payload["local_copy_path"])
+        self.assertTrue(body["password_set"])
+
+        response = await self.client.get(
+            "/admin/config/firebird",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["user"], update_payload["user"])
+        self.assertEqual(body["port"], update_payload["port"])
+
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "firebird.host")
+            self.assertIsNotNone(setting)
+            self.assertEqual(setting.value, update_payload["host"])
+
+    @patch("app.api.routes.admin_firebird.test_firebird_connection")
+    async def test_firebird_test_endpoint_uses_current_configuration(self, mock_test):
+        mock_test.return_value = FirebirdTestResult(
+            success=True,
+            message="Połączenie z Firebird zakończone sukcesem.",
+            engine_version="4.0.4",
+        )
+        token, _ = await self._login()
+        await self.client.put(
+            "/admin/config/firebird",
+            json={
+                "mode": "network",
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "C:/MS/BAZA/MS.FDB",
+                "user": "SYSDBA",
+                "password": "masterkey",
+                "charset": "UTF8",
+                "role": None,
+                "local_copy_path": "inbox/firebird/ms_local.fdb",
+            },
+            headers={"X-Admin-Session": token},
+        )
+
+        response = await self.client.post(
+            "/admin/firebird/test",
+            json={
+                "mode": "network",
+                "host": "192.168.0.9",
+                "port": 3051,
+                "database": "D:/SERWIS/BAZA.FDB",
+                "user": "TESTER",
+                "password": "Sekret!",
+                "charset": "WIN1250",
+                "role": "RDB$ADMIN",
+            },
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["engine_version"], "4.0.4")
+        mock_test.assert_called_once()
+        kwargs = mock_test.call_args.kwargs
+        self.assertEqual(kwargs["host"], "192.168.0.9")
+        self.assertEqual(kwargs["port"], 3051)
+        self.assertEqual(kwargs["database"], "D:/SERWIS/BAZA.FDB")
+        self.assertEqual(kwargs["user"], "TESTER")
+        self.assertEqual(kwargs["password"], "Sekret!")
+        self.assertEqual(kwargs["charset"], "WIN1250")
+        self.assertEqual(kwargs["role"], "RDB$ADMIN")
+
+    @patch("app.api.routes.admin_firebird.test_firebird_connection")
+    async def test_firebird_test_endpoint_uses_local_database_in_local_mode(self, mock_test):
+        mock_test.return_value = FirebirdTestResult(
+            success=True,
+            message="Połączenie z lokalną bazą Firebird zakończone sukcesem.",
+            engine_version="2.5.9",
+        )
+        token, _ = await self._login()
+        await self.client.put(
+            "/admin/config/firebird",
+            json={
+                "mode": "local",
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "D:/PROD/BAZAMS.FDB",
+                "user": "SYSDBA",
+                "password": "masterkey",
+                "charset": "WIN1250",
+                "role": None,
+                "local_copy_path": "/srv/firebird/local/BAZAMS_LOCAL.FDB",
+            },
+            headers={"X-Admin-Session": token},
+        )
+
+        response = await self.client.post(
+            "/admin/firebird/test",
+            json={"mode": "local"},
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["engine_version"], "2.5.9")
+        kwargs = mock_test.call_args.kwargs
+        self.assertEqual(kwargs["host"], "127.0.0.1")
+        self.assertEqual(kwargs["database"], "/srv/firebird/local/BAZAMS_LOCAL.FDB")
+
     async def test_ctip_status_endpoint_returns_diagnostics(self):
         token, _ = await self._login()
         async with self.session_factory() as session:
@@ -733,6 +865,35 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "sslmode": "disable",
                 "password": "secret",
             },
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = await self.client.get(
+            "/admin/config/firebird",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = await self.client.put(
+            "/admin/config/firebird",
+            headers={"X-Admin-Session": token},
+            json={
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "C:/MS/BAZA/MS.FDB",
+                "user": "SYSDBA",
+                "charset": "UTF8",
+                "role": None,
+                "local_copy_path": "inbox/firebird/ms_local.fdb",
+                "password": "secret",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+
+        response = await self.client.post(
+            "/admin/firebird/test",
+            headers={"X-Admin-Session": token},
+            json={},
         )
         self.assertEqual(response.status_code, 403)
 

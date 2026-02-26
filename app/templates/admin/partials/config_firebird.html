@@ -1,0 +1,98 @@
+<section
+  class="config-section"
+  x-data="firebirdConfig()"
+  x-init="init()"
+  x-on:admin:firebird-test.window="testConnection()"
+  data-initial='{{ config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja Firebird (Menadżer Serwisu)</h2>
+      <p>Parametry połączenia do bazy programu Menadżer Serwisu oraz ścieżka lokalnej kopii roboczej.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="testStatus"></span>
+      <span class="config-meta-text" x-text="testMessage || 'Brak testu połączenia'">Brak testu połączenia</span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="fb-mode">Aktywna baza</label>
+        <select id="fb-mode" x-model="mode" required>
+          <option value="network">Baza sieciowa</option>
+          <option value="local">Baza lokalna</option>
+        </select>
+        <p class="input-help" x-text="mode === 'local' ? 'Test połączenia użyje ścieżki lokalnej.' : 'Test połączenia użyje ścieżki sieciowej.'"></p>
+      </div>
+      <div class="form-field">
+        <label for="fb-host">Host</label>
+        <input
+          id="fb-host"
+          type="text"
+          x-model="host"
+          :required="mode === 'network'"
+          :disabled="mode === 'local'"
+          :class="{ 'input-disabled': mode === 'local' }"
+          placeholder="np. 192.168.0.8"
+        >
+        <p class="input-help" x-show="mode === 'local'">W trybie lokalnym host jest ustawiany automatycznie na 127.0.0.1.</p>
+      </div>
+      <div class="form-field">
+        <label for="fb-port">Port</label>
+        <input id="fb-port" type="number" min="1" max="65535" x-model="port" required>
+      </div>
+      <div class="form-field">
+        <label for="fb-database">Ścieżka bazy sieciowej</label>
+        <input
+          id="fb-database"
+          type="text"
+          x-model="database"
+          required
+          :disabled="mode === 'local'"
+          :class="{ 'input-disabled': mode === 'local' }"
+          placeholder="np. C:/MS/BAZA/MS.FDB"
+        >
+        <p class="input-help" x-show="mode === 'local'">Pole nie bierze udziału w teście lokalnym, ale pozostaje zapisane dla trybu sieciowego.</p>
+      </div>
+      <div class="form-field">
+        <label for="fb-user">Użytkownik</label>
+        <input id="fb-user" type="text" x-model="user" required>
+      </div>
+      <div class="form-field">
+        <label for="fb-password">Hasło</label>
+        <input id="fb-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
+      </div>
+      <div class="form-field">
+        <label for="fb-charset">Kodowanie</label>
+        <input id="fb-charset" type="text" x-model="charset" required placeholder="WIN1250">
+      </div>
+      <div class="form-field">
+        <label for="fb-role">Rola (opcjonalnie)</label>
+        <input id="fb-role" type="text" x-model="role" placeholder="np. RDB$ADMIN">
+      </div>
+      <div class="form-field">
+        <label for="fb-local-copy">Ścieżka bazy lokalnej</label>
+        <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
+        <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>

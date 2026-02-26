@@ -42,3 +42,9 @@ docs/raport/
 inbox/*
 !inbox/.gitkeep
 !inbox/README.md
+!inbox/firebird/
+inbox/firebird/*
+!inbox/firebird/README.md
+
+# Lokalne klony/artefakty zewnetrznych repozytoriow
+docs/firebird/external/

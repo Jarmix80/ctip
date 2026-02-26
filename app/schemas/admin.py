@@ -57,6 +57,56 @@ class DatabaseConfigUpdate(BaseModel):
     password: str | None = None
 
 
+class FirebirdConfigResponse(BaseModel):
+    """Widok konfiguracji połączenia z bazą Firebird."""
+
+    mode: Literal["network", "local"] = "network"
+    host: str
+    port: int
+    database: str
+    user: str
+    charset: str
+    role: str | None
+    local_copy_path: str
+    password_set: bool
+
+
+class FirebirdConfigUpdate(BaseModel):
+    """Żądanie aktualizacji konfiguracji Firebird."""
+
+    mode: Literal["network", "local"] = "network"
+    host: str
+    port: int
+    database: str
+    user: str
+    charset: str = "WIN1250"
+    role: str | None = None
+    local_copy_path: str
+    password: str | None = None
+
+
+class FirebirdTestRequest(BaseModel):
+    """Parametry testu Firebird (opcjonalne nadpisania)."""
+
+    mode: Literal["network", "local"] | None = None
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    local_copy_path: str | None = None
+    user: str | None = None
+    password: str | None = None
+    charset: str | None = None
+    role: str | None = None
+
+
+class FirebirdTestResponse(BaseModel):
+    """Rezultat testu połączenia Firebird."""
+
+    success: bool
+    message: str
+    engine_version: str | None = None
+
+
 class CtipConfigResponse(BaseModel):
     """Widok konfiguracji centrali CTIP."""
 

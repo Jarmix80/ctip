@@ -11,11 +11,13 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `ctip_sniff.py` – narzędzie diagnostyczne zapisujące surowy strumień CTIP do pliku w celu analizy protokołu.
 - `conect_sli.py` – lekki monitor CTIP uruchamiany w trybie interaktywnym, wykonujący `aWHO`/`aLOGA` i wypisujący zdarzenia na STDOUT.
 - `collector_fullwork.py` oraz katalog `docs/` – materiały warsztatowe i referencyjne, niezalecane do użycia w produkcji.
-- `app/api/routes/admin_*` – moduł API panelu administratora (logowanie, konfiguracja PostgreSQL/CTIP/SerwerSMS, audyt zmian oraz health-checki `/admin/status/summary`, `/admin/status/database`, `/admin/status/ctip`, `/admin/status/sms`).
+- `app/api/routes/admin_*` – moduł API panelu administratora (logowanie, konfiguracja PostgreSQL/Firebird/CTIP/SerwerSMS/SMTP, audyt zmian oraz health-checki `/admin/status/summary`, `/admin/status/database`, `/admin/status/ctip`, `/admin/status/sms`).
 - `app/web/admin_ui.py` + `app/templates/admin/` – interfejs administracyjny w technologii HTMX + Alpine (adres `/admin`).
 - `app/api/routes/admin_contacts.py` + `app/services/admin_contacts.py` – warstwa API i logika książki adresowej z obsługą pola `firebird_id`.
+- `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
 - `inbox/` – katalog wymiany plików z Windows (dropzone), przeznaczony na pliki robocze poza wersjonowaniem Git.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
+- `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
 
 ## Wymagania systemowe
 - Python 3.11 lub nowszy (z bibliotekami `psycopg` oraz – opcjonalnie dla Windows – `pywin32`; `uvloop` instalowane tylko na Linux dzięki warunkowi w `requirements.txt`).
@@ -57,6 +59,28 @@ Mapowanie dysku w Windows (GUI):
 
 Uwaga: jeśli zapora UFW jest aktywna, otworz porty SMB: `sudo ufw allow 139/tcp` oraz `sudo ufw allow 445/tcp`.
 
+### Automat odczytu NIP i numeru umowy z PDF
+W repo dostepny jest automat `scripts/inbox_contract_watcher.py`, ktory przetwarza pliki `*.pdf` z katalogu `inbox/` i zapisuje wynik do plikow `*.pdf.parsed.json` (w tym samym katalogu co PDF).
+
+Uruchomienie jednorazowe:
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+python scripts/inbox_contract_watcher.py --inbox-dir inbox
+```
+
+Tryb ciagly (nasluch nowych/zmienionych PDF):
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+python scripts/inbox_contract_watcher.py --inbox-dir inbox --watch
+```
+
+Uwagi operacyjne:
+- parser wykorzystuje `pypdf` i najpierw probuje odczytu warstwy tekstowej PDF (bez OCR),
+- jezeli dokument jest pustym wzorem (bez wypelnionych pol), wynik moze nie zawierac `nip` i/lub `contract_number`,
+- lista wszystkich wykrytych kandydatow jest zapisywana w polach `nips_found` i `contract_number_candidates`.
+
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -86,6 +110,21 @@ Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej same
 | `SMS_API_USERNAME`, `SMS_API_PASSWORD` | *(puste)* | Login i hasło do HTTPS API (jeśli nie używamy tokenu). |
 | `SMS_TEST_MODE` | `true` | Umożliwia wysyłkę w trybie testowym bez naliczania kosztów. |
 
+### Zmienne środowiskowe modułu Firebird (Menadżer Serwisu)
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `FB_HOST` | `192.168.0.8` | Host serwera Firebird dla Menadżera Serwisu. |
+| `FB_PORT` | `3050` | Port usługi Firebird. |
+| `FB_MODE` | `network` | Aktywny tryb pracy Firebird: `network` (baza sieciowa) lub `local` (baza lokalna). |
+| `FB_DATABASE` | `D:/BAZA_MS_KP/BAZAMS.FDB` | Ścieżka bazy Firebird (po stronie hosta Firebird). |
+| `FB_USER`, `FB_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania Firebird. |
+| `FB_CHARSET` | `WIN1250` | Kodowanie sesji Firebird. |
+| `FB_ROLE` | *(puste)* | Rola Firebird (opcjonalnie). |
+| `FB_LOCAL_COPY_PATH` | `inbox/firebird/menadzer_serwisu.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
+
+Kopię lokalną (po podmontowaniu źródłowego pliku `.fdb`) można wykonać skryptem:
+`python scripts/firebird_clone_local.py --force`.
+
 ### Zmienne środowiskowe modułu e-mail (panel administratora)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -108,7 +147,7 @@ Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej same
 
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
-2. Uzupełnij plik `.env` wszystkimi parametrami (PostgreSQL, CTIP, SerwerSMS) oraz wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
+2. Uzupełnij plik `.env` wszystkimi parametrami (PostgreSQL, Firebird, CTIP, SerwerSMS) oraz wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
 3. Wykonaj migracje: `alembic upgrade head` (dodaje również tabele panelu administracyjnego i nowe sekwencje).
 4. Dodaj pierwszego administratora, np. w SQL: `INSERT INTO ctip.admin_user (email, role, password_hash, is_active) VALUES (...)`; skrót hasła wygeneruj funkcją `hash_password` z `app.services.security`.
 5. Zweryfikuj instalację: `source .venv/bin/activate && python -m unittest` oraz testowe logowanie do `/admin/auth/login` (nagłówek `X-Admin-Session`).
@@ -179,16 +218,18 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 
 ## Panel administracyjny (HTMX + Alpine)
 - Strona startowa znajduje się pod `/admin`; serwuje ją moduł `app/web/admin_ui.py`, korzystając z szablonów w `app/templates/admin/` oraz statycznych zasobów `app/static/admin/`.
- - Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację bazy/CTIP/SerwerSMS/E-mail oraz pełny widok „Użytkownicy”.
+ - Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację PostgreSQL/Firebird/CTIP/SerwerSMS/E-mail oraz pełny widok „Użytkownicy”.
 - Logowanie odbywa się przez `/admin/auth/login` (formularz na stronie głównej). Token sesji (`X-Admin-Session`) zapisywany jest w `localStorage`, a kolejne żądania HTMX/fetch automatycznie go dołączają.
 - W razie odpowiedzi 401/403 podczas ładowania sekcji panel samoczynnie czyści token, wylogowuje użytkownika i sygnalizuje wygaśnięcie sesji.
 - Dashboard udostępnia aktywne akcje dla kafelków statusu: `Testuj połączenie` (baza danych), `Edytuj konfigurację` oraz `Diagnostyka` (CTIP i SerwerSMS). Diagnostyka pobiera dane z `/admin/status/<moduł>` i wyświetla je w panelu bocznym.
-- Formularze konfiguracji: baza (`/admin/partials/config_database`), CTIP (`/admin/partials/config_ctip`) oraz SerwerSMS (`/admin/partials/config_sms`) zapisują dane przez `/admin/config/...` i zapewniają testy połączeń (`/admin/status/database`, `/admin/sms/test`).
+- Formularze konfiguracji: PostgreSQL (`/admin/partials/config/database`), Firebird (`/admin/partials/config/firebird`), CTIP (`/admin/partials/config/ctip`) oraz SerwerSMS (`/admin/partials/config/sms`) zapisują dane przez `/admin/config/...` i zapewniają testy połączeń (`/admin/status/database`, `/admin/firebird/test`, `/admin/sms/test`).
 - Sekcja SerwerSMS zawiera monitor pracy `sms_sender`: widok logu (`/admin/partials/sms/logs`) prezentuje końcówkę pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a tabela historii (`/admin/partials/sms/history`) odświeża ostatnie wysyłki z `ctip.sms_out` i pozwala filtrować je po statusach (`NEW`, `RETRY`, `SENT`, `ERROR`, `SIMULATED`). Formularz wysyłki testowej normalizuje numer do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`), a poprawna próba (w trybie testowym lub produkcyjnym) natychmiast pojawia się w logu i historii.
 - Sekcja CTIP udostępnia podgląd na żywo (`/admin/partials/ctip/live`) z filtrowaniem po wewnętrznych numerach oraz wbudowanym formularzem konfiguracji; kafelek na dashboardzie oferuje zarówno edycję parametrów, jak i szybkie przejście do widoku live. Aktualizacje są dostarczane kanałem WebSocket (`/admin/ctip/ws`), który pomija ramki keep-alive typu `T`.
 - Sekcja Automatyzacje IVR (`/admin/partials/ctip/ivr-map`) pozwala zarządzać mapowaniami cyfr IVR na numery wewnętrzne, treścią automatycznych SMS i ich aktywnością. Każda operacja (utworzenie, aktualizacja, usunięcie) jest audytowana i natychmiast dostępna dla kolektora bez restartu.
 - Sekcja SMS dla dzwoniacych (`/admin/partials/call-sms`) udostepnia konfiguracje scenariuszy przychodzacych/wychodzacych (odebrane, nieodebrane, ponowne), tryb ograniczen „Nigdy / Po X dniach / Zawsze”, liste numerow wykluczonych, scenariusz po godzinach pracy wyzwalany numerem wewnetrznym (np. 500) oraz masowa wysylke do unikalnych numerow z historii polaczen.
 - Sekcja E-mail umożliwia konfigurację serwera SMTP (host, port, logowanie, nadawca), test połączenia oraz wysłanie wiadomości testowej na wskazany adres (`/admin/email/test`). Wynik jest prezentowany w UI i zapisywany w audycie.
+- Sekcja Baza Firebird (Menadżer Serwisu) umożliwia zapis połączenia (`/admin/config/firebird`) i test logowania (`/admin/firebird/test`) z użyciem aktualnych danych środowiskowych lub nadpisania z formularza; panel pozwala przełączać aktywną bazę `sieciowa`/`lokalna`.
+- W trybie `lokalna` panel automatycznie testuje połączenie pod `127.0.0.1` i wykorzystuje ścieżkę `FB_LOCAL_COPY_PATH`; pola hosta i ścieżki bazy sieciowej są wyszarzone.
 - Sekcja Kopie zapasowe (`/admin/partials/backups`) prezentuje podgląd plików z katalogu `backups/`; operacje tworzenia i przywracania są dostępne wyłącznie w trybie dry-run.
 - Sekcja Książka adresowa (`/admin/partials/contacts`) udostępnia CRUD kontaktów z wyszukiwarką po numerze, nazwisku, e-mailu i identyfikatorze Firebird; formularze pozwalają przypisać numer wewnętrzny, notatki operacyjne oraz pole `firebird_id` wykorzystywane do mapowania z bazą Firebird.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP oraz Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów). Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
@@ -200,6 +241,8 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
   3. Otwórz przeglądarkę na `http://localhost:8000/admin`
 - Implementacja kolejnych sekcji (konsola SQL, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
+- `GET /admin/config/firebird`, `PUT /admin/config/firebird` – odczyt i zapis konfiguracji połączenia Firebird (wymaga roli `admin`).
+- `POST /admin/firebird/test` – test logowania do bazy Firebird z audytem (`config_firebird_test`, wymaga roli `admin`).
 - `GET /admin/contacts`, `POST /admin/contacts`, `PUT /admin/contacts/{contact_id}`, `DELETE /admin/contacts/{contact_id}` – zarządzanie wpisami książki adresowej (wymaga nagłówka `X-Admin-Session` i roli `admin`); obsługa pola `firebird_id` umożliwia powiązanie z rekordami bazy Firebird.
 - `GET /admin/contacts/by-number/{number}` – wyszukaj kontakt po numerze MSISDN (wymagane `X-Admin-Session`; dostęp dla roli `admin` i `operator`).
 - `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
@@ -311,6 +354,7 @@ Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypt
 ## Zasoby w katalogu `docs/`
 - `docs/centralka` – instrukcje centrali Slican (m.in. „CTIP” oraz „instrukcja programowania NCP v1.21”) ułatwiające konfigurację warstwy telekomunikacyjnej i protokołu CTIP.
 - `docs/baza` – aktualny schemat `schema_ctip.sql`; plik `ctip_plain` pozostawiono jako nieaktualny zrzut archiwalny (do wglądu historycznego, nie do odtwarzania).
+- `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu) oraz `panel_admin_ui.md` (plan interfejsu administratora).

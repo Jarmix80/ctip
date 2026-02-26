@@ -56,6 +56,10 @@
             <span class="icon">🗄️</span>
             Konfiguracja bazy
           </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'firebird' }" @click.prevent="openSection('firebird')">
+            <span class="icon">🔥</span>
+            Baza Firebird
+          </button>
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'backups' }" @click.prevent="openSection('backups')">
             <span class="icon">💾</span>
             Kopie zapasowe
