@@ -1,0 +1,364 @@
+:root {
+  --bg: #f4f6f8;
+  --primary: #1f3f69;
+  --text: #1a1a1a;
+  --muted: #6b6f76;
+  --border: #d6dbe2;
+  --error: #c62828;
+  --success: #2e7d32;
+  font-family: "Open Sans", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(140deg, rgba(31, 63, 105, 0.1), rgba(198, 40, 40, 0.08));
+  min-height: 100vh;
+  color: var(--text);
+}
+
+.genform-shell {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+}
+
+.genform-shell.is-auth {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+}
+
+.genform-shell.is-auth #genform-login {
+  width: min(520px, 100%);
+  margin: 0 auto;
+}
+
+.genform-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 16px 36px rgba(18, 32, 56, 0.12);
+}
+
+.genform-card h1 {
+  margin: 0;
+  color: var(--primary);
+  font-size: 24px;
+}
+
+.genform-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.genform-form {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.genform-form label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.genform-form input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.genform-password-wrap {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.genform-password-toggle {
+  border: 1px solid rgba(31, 63, 105, 0.25);
+  border-radius: 10px;
+  background: rgba(31, 63, 105, 0.08);
+  color: var(--primary);
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.genform-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.genform-form button {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.genform-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.genform-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.genform-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.genform-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.genform-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(31, 63, 105, 0.25);
+  border-radius: 10px;
+  background: rgba(31, 63, 105, 0.08);
+  color: var(--primary);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.genform-generated {
+  margin-top: 16px;
+  border: 1px solid rgba(31, 63, 105, 0.2);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(31, 63, 105, 0.05);
+  display: grid;
+  gap: 10px;
+}
+
+.genform-generated code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(31, 63, 105, 0.12);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.genform-error,
+.genform-success {
+  margin-top: 12px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.genform-error {
+  color: var(--error);
+  border: 1px solid rgba(198, 40, 40, 0.25);
+  background: rgba(198, 40, 40, 0.09);
+}
+
+.genform-success {
+  color: var(--success);
+  border: 1px solid rgba(46, 125, 50, 0.25);
+  background: rgba(46, 125, 50, 0.09);
+}
+
+.genform-table-wrap {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.genform-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.genform-table th,
+.genform-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.genform-table th {
+  background: rgba(31, 63, 105, 0.08);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+
+.genform-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.genform-row-action {
+  border: 1px solid rgba(31, 63, 105, 0.22);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--primary);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.genform-row-action.danger {
+  border-color: rgba(198, 40, 40, 0.28);
+  color: var(--error);
+}
+
+.genform-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 20, 35, 0.42);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 20;
+}
+
+.genform-modal[hidden] {
+  display: none !important;
+}
+
+.genform-modal-card {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 44px rgba(18, 32, 56, 0.16);
+  padding: 20px;
+}
+
+.genform-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.genform-modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--primary);
+}
+
+.genform-detail-meta {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.genform-detail-meta div {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f7f9fc;
+}
+
+.genform-detail-meta dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.genform-detail-meta dd {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+
+.genform-detail-payload {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f7f9fc;
+}
+
+.genform-detail-payload pre {
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid rgba(31, 63, 105, 0.14);
+  max-height: 250px;
+  overflow: auto;
+}
+
+.genform-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.genform-status.info {
+  background: rgba(31, 63, 105, 0.12);
+  color: var(--primary);
+}
+
+.genform-status.success {
+  background: rgba(46, 125, 50, 0.12);
+  color: var(--success);
+}
+
+.genform-status.warning {
+  background: rgba(198, 40, 40, 0.12);
+  color: var(--error);
+}
+
+@media (max-width: 700px) {
+  .genform-header {
+    flex-direction: column;
+  }
+
+  .genform-shell.is-auth {
+    align-content: start;
+    padding-top: 40px;
+  }
+}

@@ -14,6 +14,10 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_*` – moduł API panelu administratora (logowanie, konfiguracja PostgreSQL/Firebird/CTIP/SerwerSMS/SMTP, audyt zmian oraz health-checki `/admin/status/summary`, `/admin/status/database`, `/admin/status/ctip`, `/admin/status/sms`).
 - `app/web/admin_ui.py` + `app/templates/admin/` – interfejs administracyjny w technologii HTMX + Alpine (adres `/admin`).
 - `app/api/routes/admin_contacts.py` + `app/services/admin_contacts.py` – warstwa API i logika książki adresowej z obsługą pola `firebird_id`.
+- `app/api/routes/admin_forms.py` + `app/services/form_generator.py` – generator jednorazowych formularzy klienta (token haszowany, zapis danych zaszyfrowanych).
+- `app/web/genform_ui.py` + `app/templates/genform/` – osobny flow handlowca pod adresem `/genform` (logowanie, generowanie linku, lista statusów).
+- `app/web/form_ui.py` + `app/templates/public/` – publiczny, jednorazowy formularz klienta pod adresem `/formularz/{token}`.
+- `app/api/routes/portal_auth.py` + `app/static/root/root.js` – centralne logowanie na stronie głównej (`/`) oraz wybór sekcji na osobnym widoku `/choice`.
 - `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
 - `inbox/` – katalog wymiany plików z Windows (dropzone), przeznaczony na pliki robocze poza wersjonowaniem Git.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
@@ -144,6 +148,8 @@ Kopię lokalną (po podmontowaniu źródłowego pliku `.fdb`) można wykonać sk
 | `ADMIN_SESSION_TTL_MINUTES` | `60` | Czas życia tokenu sesji administratora (w minutach). |
 | `ADMIN_SESSION_REMEMBER_HOURS` | `72` | Czas życia sesji, gdy użytkownik wybierze opcję „Zapamiętaj mnie” (w godzinach). |
 | `ADMIN_PANEL_URL` | `http://localhost:8000/admin` | Publiczny adres logowania używany w e-mailach i SMS z danymi kont. |
+| `FORM_PUBLIC_BASE_URL` | `http://localhost:8000` | Publiczny adres bazowy używany do budowy linków `/formularz/{token}`. |
+| `FORM_LINK_TTL_HOURS` | `72` | Czas ważności jednorazowego linku formularza (w godzinach). |
 
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
@@ -259,7 +265,10 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 
 ## Panel administracyjny (HTMX + Alpine)
 - Strona startowa znajduje się pod `/admin`; serwuje ją moduł `app/web/admin_ui.py`, korzystając z szablonów w `app/templates/admin/` oraz statycznych zasobów `app/static/admin/`.
- - Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację PostgreSQL/Firebird/CTIP/SerwerSMS/E-mail oraz pełny widok „Użytkownicy”.
+- Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację PostgreSQL/Firebird/CTIP/SerwerSMS/E-mail oraz pełny widok „Użytkownicy”.
+- Strona główna (`/`) działa jako centralny punkt logowania: formularz używa API `/auth/login`, a po poprawnym logowaniu przekierowuje na `/choice`.
+- Widok `/choice` pokazuje wyłącznie sekcje przypisane do konta (`admin`, `operator`, `generator`) i obsługuje wylogowanie (`/auth/logout`).
+- Każdy panel roboczy (`/admin`, `/operator`, `/genform`) zawiera listę rozwijaną „Sekcja”, która pozwala szybko przełączyć się do innego modułu lub wrócić do `/choice`.
 - Logowanie odbywa się przez `/admin/auth/login` (formularz na stronie głównej). Token sesji (`X-Admin-Session`) zapisywany jest w `localStorage`, a kolejne żądania HTMX/fetch automatycznie go dołączają.
 - W razie odpowiedzi 401/403 podczas ładowania sekcji panel samoczynnie czyści token, wylogowuje użytkownika i sygnalizuje wygaśnięcie sesji.
 - Dashboard udostępnia aktywne akcje dla kafelków statusu: `Testuj połączenie` (baza danych), `Edytuj konfigurację` oraz `Diagnostyka` (CTIP i SerwerSMS). Diagnostyka pobiera dane z `/admin/status/<moduł>` i wyświetla je w panelu bocznym.
@@ -273,7 +282,14 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - W trybie `lokalna` panel automatycznie testuje połączenie pod `127.0.0.1` i wykorzystuje ścieżkę `FB_LOCAL_COPY_PATH`; pola hosta i ścieżki bazy sieciowej są wyszarzone.
 - Sekcja Kopie zapasowe (`/admin/partials/backups`) prezentuje podgląd plików z katalogu `backups/`; operacje tworzenia i przywracania są dostępne wyłącznie w trybie dry-run.
 - Sekcja Książka adresowa (`/admin/partials/contacts`) udostępnia CRUD kontaktów z wyszukiwarką po numerze, nazwisku, e-mailu i identyfikatorze Firebird; formularze pozwalają przypisać numer wewnętrzny, notatki operacyjne oraz pole `firebird_id` wykorzystywane do mapowania z bazą Firebird.
-- Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP oraz Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów). Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
+- Generator formularzy działa jako osobny flow pod adresem `/genform` (poza panelem `/admin`) i jest dostępny po zalogowaniu kontem `operator` albo `admin`. Moduł korzysta z API `/admin/forms`, generuje jednorazowe linki `/formularz/{token}`, zapisuje w bazie wyłącznie hash tokenu i przechowuje dane klienta w postaci zaszyfrowanej (Fernet, `ADMIN_SECRET_KEY`).
+- Publiczny formularz `/formularz/{token}` działa etapowo: krok 1 (dane firmy), krok 2 (jeden lub wielu reprezentantów), krok 3 (podsumowanie i końcowe potwierdzenie). Dane trafiają do systemu dopiero po kliknięciu `Potwierdź i wyślij`.
+- Po zatwierdzeniu formularza system wysyła e-mail potwierdzający do klienta oraz dodaje do kolejki SMS powiadomienie dla użytkownika, który wygenerował link.
+- Ekran `/genform` udostępnia akcje `Wyświetl`/`Usuń` dla każdego wniosku oraz okno szczegółów: dla statusu `SUBMITTED` prezentowane są odszyfrowane dane klienta, a dla pozostałych statusów czytelna informacja operacyjna (np. „formularz został wysłany, ale nie został jeszcze wypełniony”).
+- Tabela generatora zawiera kolumnę `Utworzone przez`, dzięki czemu od razu widać operatora/administratora, który wygenerował formularz.
+- Sekcja Użytkownicy umożliwia przypisanie dostępu do sekcji (`admin`, `operator`, `generator`) niezależnie od roli konta; strona główna i API respektują te uprawnienia przy prezentacji i autoryzacji modułów.
+- Treści SMS zawierające link jednorazowy lub potwierdzenie wypełnienia formularza są maskowane w historii panelu (`Treść ukryta`), aby nie ujawniać danych wrażliwych.
+- Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP, Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów) oraz Generatora formularzy. Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
 - W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
 - Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta automatycznie wysyłany jest e-mail i SMS z danymi logowania. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
 - Aby uruchomić panel lokalnie:
@@ -286,6 +302,10 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `POST /admin/firebird/test` – test logowania do bazy Firebird z audytem (`config_firebird_test`, wymaga roli `admin`).
 - `GET /admin/contacts`, `POST /admin/contacts`, `PUT /admin/contacts/{contact_id}`, `DELETE /admin/contacts/{contact_id}` – zarządzanie wpisami książki adresowej (wymaga nagłówka `X-Admin-Session` i roli `admin`); obsługa pola `firebird_id` umożliwia powiązanie z rekordami bazy Firebird.
 - `GET /admin/contacts/by-number/{number}` – wyszukaj kontakt po numerze MSISDN (wymagane `X-Admin-Session`; dostęp dla roli `admin` i `operator`).
+- `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` – centralne logowanie strony głównej i wybór sekcji na podstawie przypisanych uprawnień.
+- `GET /admin/forms`, `POST /admin/forms`, `GET /admin/forms/{id}`, `DELETE /admin/forms/{id}` – lista/generowanie/podgląd/usuwanie jednorazowych formularzy (wymagane uprawnienie sekcji `generator`).
+- `GET /genform` – osobny ekran handlowca do generowania i podglądu formularzy.
+- `GET /formularz/{token}`, `POST /formularz/{token}` – publiczny formularz klienta oparty o jednorazowy token.
 - `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
 - `POST /admin/backup/run`, `POST /admin/backup/restore` – inicjacja kopii/przywracania; tryb produkcyjny zablokowany, dostępny wyłącznie dry-run (wymaga roli `admin`).
 - `GET /sms/templates` – lista szablonów (globalnych i użytkownika).
@@ -306,7 +326,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Operator może dodać lub edytować kontakt bezpośrednio z widoku połączenia (`POST/PUT /operator/api/contacts`), a dane logowania wysłane w wiadomościach SMS są ukrywane w historii dla bezpieczeństwa.
 - Strona `/operator/settings` udostępnia formularze: edycję profilu operatora (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmianę hasła oraz zarządzanie własnymi szablonami SMS (dodawanie, edycja, usuwanie). Szablony globalne są widoczne w trybie tylko do odczytu.
 - Opcja „Zapamiętaj mnie” przechowuje token sesji w `localStorage` i wydłuża ważność sesji (`ADMIN_SESSION_REMEMBER_HOURS`), natomiast standardowe logowanie używa `sessionStorage`.
-- Operatorzy i administratorzy korzystają z tego samego logowania (`/admin/auth/login` lub `/operator/auth/login`). Po uwierzytelnieniu rola `operator` trafia do panelu operatora, natomiast rola `admin` zachowuje pełen dostęp do panelu administracyjnego.
+- Operatorzy i administratorzy mogą logować się centralnie przez `/auth/login` (strona `/`) lub bezpośrednio przez dedykowane formularze (`/admin/auth/login`, `/operator/auth/login`). Dostępne moduły zależą od przypisanych sekcji konta.
 - Historia SMS w szczegółach połączenia bazuje na powiązaniu `call_id` oraz znormalizowanych wariantach numeru (+48, bez prefiksów), więc wpisy SerwerSMS są widoczne nawet wtedy, gdy rekord połączenia zawiera numer bez prefiksu międzynarodowego.
 - Dokument referencyjny: `docs/projekt/panel_operator_ui.md`.
 

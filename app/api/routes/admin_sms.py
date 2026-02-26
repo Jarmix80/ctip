@@ -20,6 +20,11 @@ router = APIRouter(prefix="/admin/sms", tags=["admin-sms"])
 
 ALLOWED_HISTORY_STATUSES = {"NEW", "RETRY", "SENT", "ERROR", "SIMULATED"}
 HISTORY_STATUS_PATTERN = f"^({'|'.join(sorted(ALLOWED_HISTORY_STATUSES))})$"
+SENSITIVE_SMS_ORIGINS = {
+    "admin_user_credentials",
+    "form_link_generated",
+    "form_submission_completed",
+}
 
 
 def _ensure_admin(role: str) -> None:
@@ -218,7 +223,7 @@ async def load_sms_history(
             id=row.id,
             created_at=row.created_at,
             dest=row.dest,
-            text=row.text,
+            text=_sanitize_history_text(row.text, row.origin),
             status=row.status,
             origin=row.origin,
             provider_status=row.provider_status,
@@ -227,6 +232,19 @@ async def load_sms_history(
         )
         for row in rows
     ]
+
+
+def _sanitize_history_text(text: str | None, origin: str | None) -> str:
+    if not text:
+        return ""
+    if origin in SENSITIVE_SMS_ORIGINS:
+        return "Treść ukryta (dane wrażliwe)."
+    lowered = text.lower()
+    if "/formularz/" in lowered and "http" in lowered:
+        return "Treść ukryta (link jednorazowy formularza)."
+    if "hasło:" in lowered and "login:" in lowered:
+        return "Treść ukryta (dane logowania administratora)."
+    return text
 
 
 async def _record_admin_test_event(

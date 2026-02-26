@@ -5,6 +5,7 @@ from .admin import (  # noqa: F401
     AdminSession,
     AdminSetting,
     AdminUser,
+    FormRequest,
 )
 from .base import Base  # noqa: F401
 from .call import Call  # noqa: F401

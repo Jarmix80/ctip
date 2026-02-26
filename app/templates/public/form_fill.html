@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>Bezpieczny formularz CTIP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f3f5f8;
+        --card: #ffffff;
+        --text: #122038;
+        --muted: #617085;
+        --accent: #1f3f69;
+        --accent-soft: rgba(31, 63, 105, 0.1);
+        --border: #d5dce6;
+        --error: #b12424;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #e6edf8 0%, var(--bg) 48%, #eef2f7 100%);
+        color: var(--text);
+        font-family: "Open Sans", Arial, sans-serif;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+      }
+      .card {
+        width: min(860px, 100%);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: 0 20px 45px rgba(18, 32, 56, 0.12);
+        padding: 26px;
+      }
+      h1 {
+        margin: 0;
+        color: var(--accent);
+        font-size: 24px;
+      }
+      p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .steps {
+        margin: 18px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .steps li {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 13px;
+        color: var(--muted);
+        background: #fff;
+      }
+      .steps li.is-active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .step-pane {
+        margin-top: 20px;
+      }
+      .step-title {
+        margin: 0;
+        font-size: 18px;
+        color: var(--accent);
+      }
+      .grid {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+      .full {
+        grid-column: 1 / -1;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+      }
+      input, textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 11px 12px;
+        font-size: 14px;
+        background: #fff;
+      }
+      textarea {
+        min-height: 86px;
+        resize: vertical;
+      }
+      .error {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--error);
+      }
+      .alert {
+        margin-top: 14px;
+        border: 1px solid rgba(177, 36, 36, 0.25);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: rgba(177, 36, 36, 0.08);
+        color: var(--error);
+      }
+      .representatives {
+        margin-top: 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        background: #fbfcfe;
+      }
+      .representatives h3 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        color: var(--accent);
+      }
+      .rep-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .rep-dot {
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--text);
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .rep-dot.is-active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .rep-empty {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .rep-actions {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .summary {
+        margin-top: 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #fbfcfe;
+        padding: 14px;
+      }
+      .summary h3 {
+        margin: 0 0 10px;
+        font-size: 15px;
+        color: var(--accent);
+      }
+      .summary dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: minmax(180px, 240px) 1fr;
+        gap: 8px 14px;
+      }
+      .summary dt {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .summary dd {
+        margin: 0;
+        font-size: 14px;
+        word-break: break-word;
+      }
+      .consent {
+        margin-top: 16px;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 14px;
+      }
+      .consent input {
+        margin-top: 3px;
+        width: 16px;
+        height: 16px;
+      }
+      .step-actions {
+        margin-top: 18px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: none;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+        padding: 11px 16px;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #e4eaf2;
+        color: #203047;
+      }
+      button:disabled {
+        opacity: 0.7;
+        cursor: default;
+      }
+      .footnote {
+        margin-top: 16px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .honeypot {
+        position: absolute !important;
+        left: -9999px !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+      }
+      @media (max-width: 720px) {
+        .steps {
+          grid-template-columns: 1fr;
+        }
+        .summary dl {
+          grid-template-columns: 1fr;
+        }
+      }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <header>
+        <h1>Bezpieczny formularz klienta</h1>
+        <p>
+          Wypełnij kolejne etapy formularza. Dane zostaną wysłane dopiero po końcowym potwierdzeniu.
+        </p>
+      </header>
+
+      {% if errors.get("general") %}
+        <div class="alert">{{ errors.get("general") }}</div>
+      {% endif %}
+
+      <ol class="steps" aria-label="Etapy formularza">
+        <li data-step-indicator="1">1. Dane firmy</li>
+        <li data-step-indicator="2">2. Reprezentanci</li>
+        <li data-step-indicator="3">3. Podsumowanie</li>
+      </ol>
+
+      <form method="post" id="public-form" autocomplete="off" novalidate>
+        <input type="hidden" id="representatives_json" name="representatives_json" value="">
+
+        <section class="step-pane" data-step="1">
+          <h2 class="step-title">Dane firmy, która będzie dzierżawić sprzęt biurowy</h2>
+          <div class="grid">
+            <div>
+              <label for="company_name">Nazwa firmy</label>
+              <input id="company_name" name="company_name" type="text" required value="{{ values.get('company_name', '') }}">
+              {% if errors.get("company_name") %}<div class="error">{{ errors.get("company_name") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="company_nip">NIP</label>
+              <input id="company_nip" name="company_nip" type="text" required value="{{ values.get('company_nip', '') }}">
+              {% if errors.get("company_nip") %}<div class="error">{{ errors.get("company_nip") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="company_phone">Nr telefonu</label>
+              <input id="company_phone" name="company_phone" type="tel" required value="{{ values.get('company_phone', '') }}">
+              {% if errors.get("company_phone") %}<div class="error">{{ errors.get("company_phone") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="company_email">E-mail</label>
+              <input id="company_email" name="company_email" type="email" required value="{{ values.get('company_email', '') }}">
+              {% if errors.get("company_email") %}<div class="error">{{ errors.get("company_email") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="billing_email">E-mail do przesłania faktur za dzierżawę</label>
+              <input id="billing_email" name="billing_email" type="email" value="{{ values.get('billing_email', '') }}">
+              {% if errors.get("billing_email") %}<div class="error">{{ errors.get("billing_email") }}</div>{% endif %}
+            </div>
+            <div class="full">
+              <label for="registered_address">Adres siedziby</label>
+              <textarea id="registered_address" name="registered_address" required>{{ values.get('registered_address', '') }}</textarea>
+              {% if errors.get("registered_address") %}<div class="error">{{ errors.get("registered_address") }}</div>{% endif %}
+            </div>
+            <div class="full">
+              <label for="correspondence_address">Adres do korespondencji (jeśli inny niż siedziby)</label>
+              <textarea id="correspondence_address" name="correspondence_address">{{ values.get('correspondence_address', '') }}</textarea>
+              {% if errors.get("correspondence_address") %}<div class="error">{{ errors.get("correspondence_address") }}</div>{% endif %}
+            </div>
+          </div>
+          <div class="step-actions">
+            <button type="button" id="go-step-2">Następny</button>
+          </div>
+        </section>
+
+        <section class="step-pane" data-step="2" hidden>
+          <h2 class="step-title">
+            Dane osobowe reprezentanta firmy (osoba, która będzie podpisywać wniosko-umowę)
+          </h2>
+          <div class="grid">
+            <div>
+              <label for="rep_first_name">Imię</label>
+              <input id="rep_first_name" type="text">
+            </div>
+            <div>
+              <label for="rep_last_name">Nazwisko</label>
+              <input id="rep_last_name" type="text">
+            </div>
+            <div>
+              <label for="rep_personal_id">PESEL / data urodzenia</label>
+              <input id="rep_personal_id" type="text">
+            </div>
+            <div>
+              <label for="rep_document_type">Rodzaj dokumentu tożsamości</label>
+              <input id="rep_document_type" type="text">
+            </div>
+            <div>
+              <label for="rep_document_number">Nr dokumentu tożsamości</label>
+              <input id="rep_document_number" type="text">
+            </div>
+            <div class="full">
+              <label for="rep_document_issue_validity">Data wydania i ważności dokumentu tożsamości</label>
+              <input id="rep_document_issue_validity" type="text">
+            </div>
+          </div>
+
+          <div class="rep-actions">
+            <button type="button" class="secondary" id="save-representative">Zapisz reprezentanta</button>
+            <button type="button" class="secondary" id="add-representative">Dodaj kolejnego</button>
+          </div>
+
+          <div class="representatives">
+            <h3>Lista reprezentantów</h3>
+            <ul class="rep-list" id="representatives-list"></ul>
+            <p class="rep-empty" id="representatives-empty">Brak zapisanych reprezentantów.</p>
+          </div>
+
+          {% set rep_error = namespace(message=errors.get("representatives")) %}
+          {% for key, message in errors.items() %}
+            {% if rep_error.message is none and key.startswith("representatives.") %}
+              {% set rep_error.message = message %}
+            {% endif %}
+          {% endfor %}
+          <div id="representatives-error" class="error" {% if not rep_error.message %}hidden{% endif %}>{{ rep_error.message or '' }}</div>
+
+          <div class="step-actions">
+            <button type="button" class="secondary" id="back-step-1">Wstecz</button>
+            <button type="button" id="go-step-3">Wyślij formularz</button>
+          </div>
+        </section>
+
+        <section class="step-pane" data-step="3" hidden>
+          <h2 class="step-title">Podsumowanie danych do potwierdzenia</h2>
+          <div class="summary" id="summary-box"></div>
+
+          <div class="consent">
+            <input id="consent" name="consent" type="checkbox" value="true" {% if values.get("consent") in ("true", "on", "1", True) %}checked{% endif %} required>
+            <label for="consent" style="margin: 0; text-transform: none; letter-spacing: normal;">
+              Potwierdzam poprawność danych i wyrażam zgodę na przetwarzanie danych w celu obsługi zgłoszenia.
+            </label>
+          </div>
+          {% if errors.get("consent") %}<div class="error">{{ errors.get("consent") }}</div>{% endif %}
+
+          <label class="honeypot" for="website">Pole techniczne</label>
+          <input class="honeypot" id="website" name="website" type="text" tabindex="-1" autocomplete="off" value="{{ values.get('website', '') }}">
+          {% if errors.get("website") %}<div class="error">{{ errors.get("website") }}</div>{% endif %}
+
+          <div class="step-actions">
+            <button type="button" class="secondary" id="back-step-2">Wstecz</button>
+            <button type="submit" id="confirm-submit">Potwierdź i wyślij</button>
+          </div>
+        </section>
+      </form>
+      <p class="footnote">CTIP zapisuje dane w bazie wewnętrznej. Nie przekazuj linku osobom trzecim.</p>
+    </main>
+
+    <script>
+      (function () {
+        const values = {{ values | tojson }};
+        const errors = {{ errors | tojson }};
+        const steps = Array.from(document.querySelectorAll("[data-step]"));
+        const indicators = Array.from(document.querySelectorAll("[data-step-indicator]"));
+        const form = document.getElementById("public-form");
+        const summaryBox = document.getElementById("summary-box");
+        const representativesJsonInput = document.getElementById("representatives_json");
+        const representativesList = document.getElementById("representatives-list");
+        const representativesEmpty = document.getElementById("representatives-empty");
+        const representativesError = document.getElementById("representatives-error");
+
+        const repFields = {
+          first_name: document.getElementById("rep_first_name"),
+          last_name: document.getElementById("rep_last_name"),
+          personal_id: document.getElementById("rep_personal_id"),
+          document_type: document.getElementById("rep_document_type"),
+          document_number: document.getElementById("rep_document_number"),
+          document_issue_validity: document.getElementById("rep_document_issue_validity"),
+        };
+
+        const companyRequiredFields = [
+          document.getElementById("company_name"),
+          document.getElementById("company_nip"),
+          document.getElementById("company_phone"),
+          document.getElementById("company_email"),
+          document.getElementById("registered_address"),
+        ];
+
+        const repLabels = {
+          first_name: "Imię",
+          last_name: "Nazwisko",
+          personal_id: "PESEL / data urodzenia",
+          document_type: "Rodzaj dokumentu tożsamości",
+          document_number: "Nr dokumentu tożsamości",
+          document_issue_validity: "Data wydania i ważności dokumentu tożsamości",
+        };
+
+        let currentStep = 1;
+        let activeRepresentativeIndex = -1;
+        let representatives = normalizeRepresentatives(values.representatives);
+
+        if (!representatives.length) {
+          setRepresentativeEditor(emptyRepresentative());
+        } else {
+          activeRepresentativeIndex = 0;
+          setRepresentativeEditor(representatives[0]);
+        }
+
+        function emptyRepresentative() {
+          return {
+            first_name: "",
+            last_name: "",
+            personal_id: "",
+            document_type: "",
+            document_number: "",
+            document_issue_validity: "",
+          };
+        }
+
+        function normalizeText(value) {
+          if (value === null || value === undefined) {
+            return "";
+          }
+          return String(value).trim();
+        }
+
+        function escapeHtml(value) {
+          return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        function normalizeRepresentative(item) {
+          const normalized = emptyRepresentative();
+          Object.keys(normalized).forEach((key) => {
+            normalized[key] = normalizeText(item?.[key]);
+          });
+          return normalized;
+        }
+
+        function hasRepresentativeValues(item) {
+          return Object.values(item).some((value) => normalizeText(value) !== "");
+        }
+
+        function normalizeRepresentatives(rawItems) {
+          if (!Array.isArray(rawItems)) {
+            return [];
+          }
+          const normalized = rawItems
+            .map((item) => normalizeRepresentative(item))
+            .filter((item) => hasRepresentativeValues(item));
+          return normalized;
+        }
+
+        function setRepresentativeEditor(item) {
+          const normalized = normalizeRepresentative(item);
+          Object.entries(repFields).forEach(([key, input]) => {
+            input.value = normalized[key] || "";
+          });
+        }
+
+        function readRepresentativeFromEditor() {
+          const data = emptyRepresentative();
+          Object.entries(repFields).forEach(([key, input]) => {
+            data[key] = normalizeText(input.value);
+          });
+          return data;
+        }
+
+        function setRepresentativesError(message) {
+          if (!representativesError) {
+            return;
+          }
+          if (message) {
+            representativesError.textContent = message;
+            representativesError.hidden = false;
+          } else {
+            representativesError.textContent = "";
+            representativesError.hidden = true;
+          }
+        }
+
+        function validateRepresentative(data) {
+          for (const key of Object.keys(repFields)) {
+            if (!normalizeText(data[key])) {
+              return `Pole „${repLabels[key]}” jest wymagane.`;
+            }
+          }
+          return "";
+        }
+
+        function renderRepresentatives() {
+          const hasItems = representatives.length > 0;
+          representativesList.innerHTML = "";
+          representativesEmpty.hidden = hasItems;
+          if (!hasItems) {
+            return;
+          }
+          representatives.forEach((item, index) => {
+            const li = document.createElement("li");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "rep-dot";
+            if (index === activeRepresentativeIndex) {
+              button.classList.add("is-active");
+            }
+            const label =
+              `${item.first_name} ${item.last_name}`.trim() || `Reprezentant ${index + 1}`;
+            button.textContent = `${index + 1}. ${label}`;
+            button.dataset.repIndex = String(index);
+            li.appendChild(button);
+            representativesList.appendChild(li);
+          });
+        }
+
+        function persistRepresentatives() {
+          representativesJsonInput.value = JSON.stringify(representatives);
+        }
+
+        function saveRepresentative() {
+          const candidate = readRepresentativeFromEditor();
+          const error = validateRepresentative(candidate);
+          if (error) {
+            setRepresentativesError(error);
+            return false;
+          }
+          if (activeRepresentativeIndex >= 0 && representatives[activeRepresentativeIndex]) {
+            representatives[activeRepresentativeIndex] = candidate;
+          } else {
+            representatives.push(candidate);
+            activeRepresentativeIndex = representatives.length - 1;
+          }
+          setRepresentativesError("");
+          renderRepresentatives();
+          persistRepresentatives();
+          return true;
+        }
+
+        function addNextRepresentative() {
+          const current = readRepresentativeFromEditor();
+          if (hasRepresentativeValues(current)) {
+            if (!saveRepresentative()) {
+              return;
+            }
+          }
+          activeRepresentativeIndex = -1;
+          setRepresentativeEditor(emptyRepresentative());
+          renderRepresentatives();
+          setRepresentativesError("");
+        }
+
+        function openRepresentative(index) {
+          const candidate = representatives[index];
+          if (!candidate) {
+            return;
+          }
+          activeRepresentativeIndex = index;
+          setRepresentativeEditor(candidate);
+          renderRepresentatives();
+          setRepresentativesError("");
+        }
+
+        function showStep(stepNumber) {
+          currentStep = stepNumber;
+          steps.forEach((stepNode) => {
+            stepNode.hidden = Number(stepNode.dataset.step) !== stepNumber;
+          });
+          indicators.forEach((node) => {
+            node.classList.toggle("is-active", Number(node.dataset.stepIndicator) === stepNumber);
+          });
+        }
+
+        function validateCompanyStep() {
+          for (const input of companyRequiredFields) {
+            if (!input.checkValidity()) {
+              input.reportValidity();
+              return false;
+            }
+          }
+          return true;
+        }
+
+        function composeSummaryHtml() {
+          const fields = [
+            ["Nazwa firmy", document.getElementById("company_name").value],
+            ["NIP", document.getElementById("company_nip").value],
+            ["Nr telefonu", document.getElementById("company_phone").value],
+            ["E-mail", document.getElementById("company_email").value],
+            ["E-mail do faktur", document.getElementById("billing_email").value || "—"],
+            ["Adres siedziby", document.getElementById("registered_address").value],
+            [
+              "Adres korespondencyjny",
+              document.getElementById("correspondence_address").value || "—",
+            ],
+          ];
+
+          let details = "<h3>Dane firmy</h3><dl>";
+          fields.forEach(([label, value]) => {
+            details += `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || "—")}</dd>`;
+          });
+          details += "</dl>";
+
+          details += "<h3 style='margin-top: 16px;'>Reprezentanci</h3>";
+          representatives.forEach((item, index) => {
+            const headline = `${index + 1}. ${item.first_name} ${item.last_name}`.trim();
+            details += "<dl>";
+            details += `<dt>Osoba</dt><dd>${escapeHtml(headline)}</dd>`;
+            details += `<dt>PESEL / data urodzenia</dt><dd>${escapeHtml(item.personal_id)}</dd>`;
+            details += `<dt>Dokument</dt><dd>${escapeHtml(item.document_type)}</dd>`;
+            details += `<dt>Nr dokumentu</dt><dd>${escapeHtml(item.document_number)}</dd>`;
+            details += `<dt>Wydanie i ważność</dt><dd>${escapeHtml(item.document_issue_validity)}</dd>`;
+            details += "</dl>";
+          });
+          return details;
+        }
+
+        function moveToSummary() {
+          if (!saveRepresentative()) {
+            return;
+          }
+          if (!representatives.length) {
+            setRepresentativesError("Dodaj co najmniej jednego reprezentanta.");
+            return;
+          }
+          summaryBox.innerHTML = composeSummaryHtml();
+          persistRepresentatives();
+          showStep(3);
+        }
+
+        document.getElementById("go-step-2").addEventListener("click", () => {
+          if (!validateCompanyStep()) {
+            return;
+          }
+          showStep(2);
+        });
+        document.getElementById("back-step-1").addEventListener("click", () => showStep(1));
+        document.getElementById("go-step-3").addEventListener("click", moveToSummary);
+        document.getElementById("back-step-2").addEventListener("click", () => showStep(2));
+        document.getElementById("save-representative").addEventListener("click", saveRepresentative);
+        document.getElementById("add-representative").addEventListener("click", addNextRepresentative);
+
+        representativesList.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+          const button = target.closest("button[data-rep-index]");
+          if (!button) {
+            return;
+          }
+          const index = Number(button.dataset.repIndex);
+          if (!Number.isInteger(index)) {
+            return;
+          }
+          openRepresentative(index);
+        });
+
+        form.addEventListener("submit", (event) => {
+          if (currentStep !== 3) {
+            event.preventDefault();
+            return;
+          }
+          if (!representatives.length) {
+            event.preventDefault();
+            showStep(2);
+            setRepresentativesError("Dodaj co najmniej jednego reprezentanta.");
+            return;
+          }
+          persistRepresentatives();
+        });
+
+        persistRepresentatives();
+        renderRepresentatives();
+
+        const errorKeys = Object.keys(errors || {});
+        if (errorKeys.some((key) => key === "consent" || key === "website" || key === "general")) {
+          summaryBox.innerHTML = composeSummaryHtml();
+          showStep(3);
+        } else if (errorKeys.some((key) => key === "representatives" || key.startsWith("representatives."))) {
+          showStep(2);
+        } else {
+          showStep(1);
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -20,7 +20,7 @@ from app.schemas.admin import (
     AdminUserSummary,
     AdminUserUpdate,
 )
-from app.services import admin_users
+from app.services import admin_users, section_permissions
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
@@ -33,7 +33,7 @@ def _ensure_admin(role: str) -> None:
         )
 
 
-def _map_summary(row: admin_users.UserRow) -> AdminUserSummary:
+def _map_summary(row: admin_users.UserRow, sections: list[str]) -> AdminUserSummary:
     user = row.user
     return AdminUserSummary(
         id=user.id,
@@ -43,6 +43,7 @@ def _map_summary(row: admin_users.UserRow) -> AdminUserSummary:
         last_name=user.last_name,
         internal_ext=user.internal_ext,
         role=user.role,
+        sections=sections,
         is_active=user.is_active,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -61,6 +62,7 @@ async def _load_detail(session: AsyncSession, user_id: int) -> AdminUserDetail:
     summary_row = next((row for row in rows if row.user.id == user_id), None)
     if not summary_row:
         summary_row = admin_users.UserRow(user=user, sessions_active=0, last_login_at=None)
+    user_sections = await section_permissions.get_user_sections(session, user)
     sessions = await admin_users.list_sessions(session, user_id)
     session_items = [
         AdminUserSessionInfo(
@@ -74,7 +76,7 @@ async def _load_detail(session: AsyncSession, user_id: int) -> AdminUserDetail:
         for item in sessions
     ]
     return AdminUserDetail(
-        **_map_summary(summary_row).model_dump(),
+        **_map_summary(summary_row, user_sections).model_dump(),
         sessions=session_items,
     )
 
@@ -87,7 +89,8 @@ async def list_admin_users(
     _, admin_user = admin_context
     _ensure_admin(admin_user.role)
     rows = await admin_users.list_users(session)
-    items = [_map_summary(row) for row in rows]
+    sections_map = await section_permissions.list_user_sections(session, [row.user for row in rows])
+    items = [_map_summary(row, sections_map.get(row.user.id, [])) for row in rows]
     return AdminUserListResponse(items=items)
 
 
@@ -116,10 +119,17 @@ async def create_admin_user(
             password=payload.password,
             mobile_phone=payload.mobile_phone,
         )
+        normalized_sections = await section_permissions.set_user_sections(
+            session,
+            user_id=user.id,
+            role=user.role,
+            sections=payload.sections,
+            updated_by=admin_user.id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    login_url_default = urljoin(str(request.base_url), "admin")
+    login_url_default = urljoin(str(request.base_url), "")
     panel_url_config = getattr(settings, "admin_panel_url", None)
     login_url = (panel_url_config or "").strip() or login_url_default
     email_delivery = await admin_users.resolve_email_delivery_settings(session)
@@ -136,13 +146,21 @@ async def create_admin_user(
         user_id=admin_user.id,
         action="user_create",
         client_ip=admin_session.client_ip,
-        payload={"user_id": user.id, "email": user.email, "role": user.role},
+        payload={
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "sections": normalized_sections,
+        },
     )
     await session.commit()
 
     summary_row = admin_users.UserRow(user=user, sessions_active=0, last_login_at=None)
     await admin_users.send_credentials_email(email_delivery, user, password, login_url)
-    return AdminUserCreateResponse(user=_map_summary(summary_row), password=password)
+    return AdminUserCreateResponse(
+        user=_map_summary(summary_row, normalized_sections),
+        password=password,
+    )
 
 
 @router.get("/{user_id}", response_model=AdminUserDetail, summary="Szczegóły użytkownika")
@@ -181,6 +199,13 @@ async def update_admin_user(
             role=payload.role,
             mobile_phone=payload.mobile_phone,
         )
+        normalized_sections = await section_permissions.set_user_sections(
+            session,
+            user_id=user.id,
+            role=payload.role,
+            sections=payload.sections,
+            updated_by=admin_user.id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -189,7 +214,12 @@ async def update_admin_user(
         user_id=admin_user.id,
         action="user_update",
         client_ip=admin_session.client_ip,
-        payload={"user_id": user.id, "email": user.email, "role": user.role},
+        payload={
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "sections": normalized_sections,
+        },
     )
     await session.commit()
 
@@ -252,11 +282,15 @@ async def update_admin_status(
     )
     await session.commit()
     rows = await admin_users.list_users(session)
+    sections_map = await section_permissions.list_user_sections(session, [row.user for row in rows])
     summary_row = next(
         (row for row in rows if row.user.id == user_id),
         admin_users.UserRow(user=user, sessions_active=0, last_login_at=None),
     )
-    return _map_summary(summary_row)
+    user_sections = sections_map.get(user_id) or await section_permissions.get_user_sections(
+        session, user
+    )
+    return _map_summary(summary_row, user_sections)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Usuń użytkownika")
@@ -287,6 +321,7 @@ async def delete_admin_user(
             )
 
     await admin_users.delete_user(session, user)
+    await section_permissions.delete_user_sections(session, user.id)
     await record_audit(
         session,
         user_id=admin_user.id,

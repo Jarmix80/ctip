@@ -101,7 +101,8 @@
 - API: `POST /admin/database/query` (ograniczone do `SELECT`), `GET /admin/reports/sms-summary` (do wykonania).
 
 ### 7. Użytkownicy
-- Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Szczegóły`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
+- Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
+- Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli i przypisanych sekcji (`admin`, `operator`, `generator`).
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
 - Modal szczegółów prezentuje dane profilu, listę sesji (z informacją o unieważnieniu) oraz umożliwia edycję.
 - Usuwanie blokuje własne konto administratora oraz ostatnie aktywne konto w roli `admin`.
@@ -116,6 +117,26 @@
 - Edycja odbywa się w modalnym oknie: szczegóły prezentują metadane (`created_at`, `updated_at`), administratorzy i operatorzy mogą modyfikować dane; przy czym tylko rola `admin` widzi akcję „Usuń”. Każda operacja trafia do `admin_audit_log`.
 - Usunięcie wymaga potwierdzenia i jest dostępne wyłącznie dla administratorów; po wykonaniu lista odświeża się bez przeładowania strony.
 - Interfejs wykorzystuje Alpine.js do lokalnej walidacji oraz funkcję fetch z tokenem `X-Admin-Session` zapisanym w `localStorage`.
+
+### 8a. Logowanie centralne i sekcje
+- Strona główna (`/`) zawiera wyłącznie formularz logowania (`/auth/login`).
+- Po poprawnym logowaniu użytkownik trafia na `/choice`, gdzie widzi sekcje przypisane do konta.
+- Lista sekcji jest przechowywana per użytkownik jako zestaw `admin`, `operator`, `generator` i zwracana przez `/auth/me`.
+- Wylogowanie strony głównej realizuje endpoint `/auth/logout`.
+- Sekcja Użytkownicy w panelu administratora zawiera checkboxy przypisania sekcji podczas tworzenia i edycji konta.
+
+### 8b. Generator formularzy (osobny flow)
+- Generator formularzy został wydzielony poza panel administratora i działa pod adresem `/genform`.
+- API pozostaje w module administracyjnym (`/admin/forms`), ale ekran operacyjny jest niezależny od `/admin`.
+- Publiczny formularz działa pod trasą `/formularz/{token}` i ma tryb etapowy:
+  - krok 1: dane firmy dzierżawiącej sprzęt,
+  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób,
+  - krok 3: podsumowanie i końcowe potwierdzenie.
+- Po wysyłce (dopiero po końcowym `Potwierdź`) dane są zapisywane jako szyfrowany payload (Fernet, klucz `ADMIN_SECRET_KEY`) i status zmieniany na `SUBMITTED`.
+- Po zapisie system wysyła e-mail potwierdzający do klienta oraz tworzy SMS do użytkownika, który wygenerował link formularza.
+- Lista formularzy zawiera akcje `Wyświetl` i `Usuń`.
+- Modal pokazuje pełne dane klienta po statusie `SUBMITTED`, a dla statusów `GENERATED`/`DISPATCHED`/`EXPIRED` zwraca komunikat operacyjny („formularz został wysłany, ale nie został jeszcze wypełniony” itp.).
+- Lista generatora zawiera kolumnę `Utworzone przez`.
 
 ## Komponenty wspólne
 - **Karty**: kontenery z ikoną, wartością i opisem. Wersje `success`, `warning`, `danger`.
@@ -140,6 +161,8 @@
 | CTIP Live | `/admin/partials/ctip/live`, `/admin/partials/ctip/events`, `/admin/ctip/events`, `/admin/ctip/ws`, `/admin/config/ctip`, `POST /admin/ctip/restart` (plan) |
 | SerwerSMS | `/admin/partials/config_sms`, `/admin/config/sms`, `/admin/sms/test`, `/sms/account`, `/sms/history?status=SENT&limit=20` |
 | Książka adresowa | `/admin/partials/contacts`, `/admin/contacts`, `/admin/contacts/{id}`, `/admin/contacts/by-number/{number}` |
+| Logowanie centralne | `/`, `/choice`, `/auth/login`, `/auth/me`, `/auth/logout` |
+| Generator formularzy | `/genform`, `/admin/forms`, `/admin/forms/{id}`, `/formularz/{token}` |
 | E-mail | `/admin/partials/config_email`, `/admin/config/email`, `/admin/email/test` |
 | Konsola SQL | `POST /admin/database/query`, `/admin/reports/*` |
 | Użytkownicy | `/admin/users`, `/admin/users/{id}`, `/admin/users/{id}/reset-password`, `/admin/reports/sms-summary` |

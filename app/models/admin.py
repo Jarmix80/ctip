@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -98,4 +108,45 @@ class AdminAuditLog(Base):
     user: Mapped[AdminUser | None] = relationship(back_populates="audit_entries")
 
 
-__all__ = ["AdminUser", "AdminSession", "AdminSetting", "AdminAuditLog"]
+class FormRequest(Base):
+    """Wniosek o wygenerowanie jednorazowego formularza dla klienta."""
+
+    __tablename__ = "form_request"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('GENERATED','DISPATCHED','SUBMITTED','EXPIRED')",
+            name="form_request_status_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_name: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_email: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_phone: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="GENERATED")
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    token_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sms_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_by_user: Mapped[AdminUser | None] = relationship()
+
+
+Index("idx_form_request_status_created", FormRequest.status, FormRequest.created_at.desc())
+Index("idx_form_request_created_by", FormRequest.created_by, FormRequest.created_at.desc())
+
+
+__all__ = ["AdminUser", "AdminSession", "AdminSetting", "AdminAuditLog", "FormRequest"]

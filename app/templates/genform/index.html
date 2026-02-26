@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – Generator formularzy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/root/section_switcher.css">
+    <link rel="stylesheet" href="/static/root/genform.css">
+    <script defer src="/static/root/section_switcher.js"></script>
+    <script defer src="/static/root/genform.js"></script>
+  </head>
+  <body>
+    <main class="genform-shell">
+      <section id="genform-login" class="genform-card">
+        <h1>Generator formularzy</h1>
+        <p>Zaloguj się kontem z uprawnieniem „Generator”, aby wygenerować bezpieczny link dla klienta.</p>
+
+        <form id="genform-login-form" class="genform-form" autocomplete="on">
+          <label for="genform-email">E-mail</label>
+          <input id="genform-email" name="email" type="email" required autocomplete="username">
+
+          <label for="genform-password">Hasło</label>
+          <div class="genform-password-wrap">
+            <input id="genform-password" name="password" type="password" required autocomplete="current-password">
+            <button id="genform-password-toggle" type="button" class="genform-password-toggle" aria-label="Pokaż hasło">Pokaż</button>
+          </div>
+
+          <label class="genform-checkbox">
+            <input id="genform-remember" name="remember" type="checkbox" checked>
+            Zapamiętaj sesję
+          </label>
+
+          <button type="submit">Zaloguj</button>
+        </form>
+        <p id="genform-login-error" class="genform-error" hidden></p>
+      </section>
+
+      <section id="genform-app" class="genform-card" hidden>
+        <header class="genform-header">
+          <div>
+            <h1>Generator formularzy</h1>
+            <p id="genform-user-line"></p>
+          </div>
+          <div class="genform-actions">
+            <div class="section-switcher" data-section-switcher hidden>
+              <span class="section-switcher-label">Sekcja</span>
+              <select class="section-switcher-select" data-role="section-select" aria-label="Przełącz sekcję"></select>
+            </div>
+            <button id="genform-refresh" type="button" class="genform-btn-secondary">Odśwież listę</button>
+            <button id="genform-logout" type="button" class="genform-btn-secondary">Wyloguj</button>
+          </div>
+        </header>
+
+        <form id="genform-create-form" class="genform-form">
+          <div class="genform-grid">
+            <div>
+              <label for="gf-customer-name">Nazwa własna</label>
+              <input id="gf-customer-name" name="customer_name" type="text" required placeholder="np. Jan Kowalski / Firma X">
+            </div>
+            <div>
+              <label for="gf-customer-email">E-mail</label>
+              <input id="gf-customer-email" name="customer_email" type="email" required placeholder="klient@example.com">
+            </div>
+            <div>
+              <label for="gf-customer-phone">Telefon</label>
+              <input id="gf-customer-phone" name="customer_phone" type="tel" required placeholder="+48 600 700 800">
+            </div>
+          </div>
+          <button id="genform-generate" type="submit">Generuj formularz</button>
+        </form>
+
+        <div id="genform-generated-box" class="genform-generated" hidden>
+          <strong>Wygenerowany link:</strong>
+          <code id="genform-generated-link"></code>
+          <div class="genform-actions">
+            <button id="genform-copy-link" type="button" class="genform-btn-secondary">Kopiuj link</button>
+            <a id="genform-open-link" class="genform-btn-secondary" href="#" target="_blank" rel="noopener">Otwórz</a>
+          </div>
+        </div>
+
+        <p id="genform-success" class="genform-success" hidden></p>
+        <p id="genform-error" class="genform-error" hidden></p>
+
+        <div class="genform-table-wrap">
+          <table class="genform-table">
+            <thead>
+              <tr>
+                <th>Nazwa</th>
+                <th>E-mail</th>
+                <th>Telefon</th>
+                <th>Utworzone przez</th>
+                <th>Status</th>
+                <th>Ważny do</th>
+                <th>Utworzono</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody id="genform-table-body">
+              <tr>
+                <td colspan="8">Brak wygenerowanych formularzy.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="genform-detail-modal" class="genform-modal" hidden>
+        <div class="genform-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-detail-title">
+          <header class="genform-modal-header">
+            <h2 id="genform-detail-title">Szczegóły formularza</h2>
+            <button id="genform-detail-close" type="button" class="genform-btn-secondary">Zamknij</button>
+          </header>
+          <p id="genform-detail-status"></p>
+          <dl class="genform-detail-meta">
+            <div><dt>Nazwa</dt><dd id="genform-detail-name">—</dd></div>
+            <div><dt>E-mail</dt><dd id="genform-detail-email">—</dd></div>
+            <div><dt>Telefon</dt><dd id="genform-detail-phone">—</dd></div>
+            <div><dt>Status</dt><dd id="genform-detail-stage">—</dd></div>
+            <div><dt>Utworzono</dt><dd id="genform-detail-created">—</dd></div>
+            <div><dt>Wysłano</dt><dd id="genform-detail-submitted-at">—</dd></div>
+          </dl>
+          <div id="genform-detail-payload-box" class="genform-detail-payload" hidden>
+            <strong>Dane z formularza klienta</strong>
+            <pre id="genform-detail-payload"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

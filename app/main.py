@@ -7,6 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.core.config import settings
 from app.web.admin_ui import router as admin_ui_router
+from app.web.form_ui import router as form_ui_router
+from app.web.genform_ui import router as genform_ui_router
 from app.web.operator_ui import router as operator_ui_router
 from app.web.root_ui import router as root_ui_router
 
@@ -26,6 +28,8 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
     app.include_router(admin_ui_router)
+    app.include_router(form_ui_router)
+    app.include_router(genform_ui_router)
     app.include_router(operator_ui_router)
     app.include_router(root_ui_router)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")

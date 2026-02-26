@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.models import Call, CallEvent, Contact, SmsOut, SmsTemplate
+from app.models import AdminUser, Call, CallEvent, Contact, SmsOut, SmsTemplate
 from app.schemas.operator import (
     OperatorCallDetail,
     OperatorCallEvent,
@@ -33,15 +33,20 @@ from app.schemas.operator import (
     OperatorStats,
     OperatorUserInfo,
 )
-from app.services import admin_contacts, operator_settings
+from app.services import admin_contacts, operator_settings, section_permissions
 
 router = APIRouter(prefix="/operator/api", tags=["operator"])
 
 
-def _ensure_operator(role: str) -> None:
-    if role not in {"admin", "operator"}:
+async def _ensure_operator(session: AsyncSession, user: AdminUser) -> None:
+    if user.role not in {"admin", "operator"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień operatora."
+        )
+    if not await section_permissions.user_has_section(session, user, "operator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnień do sekcji operatora.",
         )
 
 
@@ -139,10 +144,16 @@ def _map_events(events: Iterable[CallEvent]) -> list[OperatorCallEvent]:
 def _sanitize_sms_text(text: str | None, origin: str | None) -> str | None:
     if not text:
         return text
-    sensitive_origins = {"admin_user_credentials"}
+    sensitive_origins = {
+        "admin_user_credentials",
+        "form_link_generated",
+        "form_submission_completed",
+    }
     if origin in sensitive_origins:
-        return "Treść ukryta (dane logowania administratora)."
+        return "Treść ukryta (dane wrażliwe)."
     lowered = text.lower()
+    if "/formularz/" in lowered and "http" in lowered:
+        return "Treść ukryta (link jednorazowy formularza)."
     if "hasło:" in lowered and "login:" in lowered:
         return "Treść ukryta (dane logowania administratora)."
     return text
@@ -184,15 +195,18 @@ def _map_template(template: SmsTemplate, current_user_id: int) -> OperatorSmsTem
 @router.get("/me", response_model=OperatorUserInfo, summary="Informacje o zalogowanym operatorze")
 async def operator_me(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorUserInfo:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
+    sections = await section_permissions.get_user_sections(session, admin_user)
     return OperatorUserInfo(
         id=admin_user.id,
         email=admin_user.email,
         first_name=admin_user.first_name,
         last_name=admin_user.last_name,
         role=admin_user.role,
+        sections=sections,
     )
 
 
@@ -205,7 +219,7 @@ async def list_operator_calls(
     direction: str | None = Query(default=None, pattern=r"^(IN|OUT)$"),
 ) -> list[OperatorCallListItem]:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
 
     stmt = (
         select(Call).options(selectinload(Call.events)).order_by(desc(Call.started_at)).limit(limit)
@@ -270,7 +284,7 @@ async def get_operator_call_detail(
     sms_limit: int = Query(default=20, ge=1, le=100),
 ) -> OperatorCallDetail:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
 
     stmt = select(Call).where(Call.id == call_id).options(selectinload(Call.events))
     result = await session.execute(stmt)
@@ -317,7 +331,7 @@ async def get_operator_contact(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorContactDetail:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     contact = await admin_contacts.fetch_contact_by_number(session, number)
     if contact is None:
         normalized = _normalize_number(number)
@@ -340,7 +354,7 @@ async def create_operator_contact(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorContactDetail:
     admin_session, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     normalized_number = _normalize_number(payload.number)
     if not normalized_number:
         raise HTTPException(
@@ -386,7 +400,7 @@ async def update_operator_contact(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorContactDetail:
     admin_session, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     contact = await admin_contacts.fetch_contact(session, contact_id)
     if contact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kontakt nie istnieje.")
@@ -436,7 +450,7 @@ async def operator_sms_history(
     limit: int = Query(default=20, ge=1, le=200),
 ) -> list[OperatorSmsItem]:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
 
     stmt = (
         select(SmsOut).where(SmsOut.dest == number).order_by(desc(SmsOut.created_at)).limit(limit)
@@ -457,7 +471,7 @@ async def operator_send_sms(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorSendSmsResponse:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
 
     call_id: int | None = payload.call_id
     if call_id is not None:
@@ -503,7 +517,7 @@ async def operator_stats(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorStats:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
 
     now = datetime.now(UTC)
     try:  # pragma: no branch
@@ -533,9 +547,10 @@ async def operator_stats(
 @router.get("/profile", response_model=OperatorProfile, summary="Profil operatora")
 async def get_operator_profile(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorProfile:
-    admin_session, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    _, admin_user = admin_context
+    await _ensure_operator(session, admin_user)
     return OperatorProfile(
         email=admin_user.email,
         first_name=admin_user.first_name,
@@ -553,7 +568,7 @@ async def update_operator_profile(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorProfile:
     admin_session, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     try:
         await operator_settings.update_profile(
             session,
@@ -590,7 +605,7 @@ async def change_operator_password(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
     admin_session, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     try:
         await operator_settings.change_password(
             session,
@@ -616,7 +631,7 @@ async def list_operator_templates(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> list[OperatorSmsTemplateRead]:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     templates = await operator_settings.list_templates(session, admin_user.id)
     return [_map_template(template, admin_user.id) for template in templates]
 
@@ -633,7 +648,7 @@ async def create_operator_template(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorSmsTemplateRead:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     template = await operator_settings.create_template(
         session,
         user_id=admin_user.id,
@@ -658,7 +673,7 @@ async def update_operator_template(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> OperatorSmsTemplateRead:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     template = await operator_settings.fetch_template(session, template_id)
     if template is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Szablon nie istnieje.")
@@ -691,7 +706,7 @@ async def delete_operator_template(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
     _, admin_user = admin_context
-    _ensure_operator(admin_user.role)
+    await _ensure_operator(session, admin_user)
     template = await operator_settings.fetch_template(session, template_id)
     if template is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Szablon nie istnieje.")

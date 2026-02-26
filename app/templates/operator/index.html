@@ -5,7 +5,9 @@
     <title>Panel operatora CTIP</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/root/section_switcher.css">
     <link rel="stylesheet" href="/static/operator/operator.css">
+    <script defer src="/static/root/section_switcher.js"></script>
     <script defer src="/static/operator/operator.js"></script>
   </head>
   <body>
@@ -58,6 +60,10 @@
         <div class="op-user-info">
           <div id="op-user-name">Operator</div>
           <div id="op-user-email">—</div>
+        </div>
+        <div class="section-switcher" data-section-switcher hidden>
+          <span class="section-switcher-label">Sekcja</span>
+          <select class="section-switcher-select" data-role="section-select" aria-label="Przełącz sekcję"></select>
         </div>
         <button type="button" class="op-ghost" id="op-open-settings">Ustawienia</button>
         <button type="button" class="op-primary" id="op-logout">Wyloguj</button>

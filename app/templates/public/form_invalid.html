@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>Link nieaktywny</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        --bg: #f3f5f8;
+        --card: #ffffff;
+        --text: #122038;
+        --muted: #617085;
+        --accent: #1f3f69;
+        --warn: #b12424;
+        --border: #d5dce6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: radial-gradient(circle at top, #e6edf8 0%, var(--bg) 50%, #eef2f7 100%);
+        font-family: "Open Sans", Arial, sans-serif;
+        color: var(--text);
+      }
+      .card {
+        width: min(560px, 100%);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--card);
+        box-shadow: 0 20px 45px rgba(18, 32, 56, 0.12);
+        padding: 28px;
+      }
+      h1 {
+        margin: 0;
+        color: var(--accent);
+        font-size: 24px;
+      }
+      p {
+        margin: 10px 0 0;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .warn {
+        margin-top: 16px;
+        display: inline-block;
+        border: 1px solid rgba(177, 36, 36, 0.35);
+        color: var(--warn);
+        background: rgba(177, 36, 36, 0.1);
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Link formularza jest nieaktywny</h1>
+      <span class="warn">Wymagany nowy link</span>
+      <p>Link jest nieprawidłowy, wygasł albo został już użyty. Poproś handlowca o wygenerowanie nowego formularza.</p>
+    </main>
+  </body>
+</html>

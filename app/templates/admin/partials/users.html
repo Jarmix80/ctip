@@ -44,10 +44,27 @@
         </div>
         <div class="form-field">
           <label for="user-role">Rola</label>
-          <select id="user-role" x-model="form.role">
+          <select id="user-role" x-model="form.role" @change="onCreateRoleChange()">
             <option value="operator">Operator</option>
             <option value="admin">Administrator</option>
           </select>
+        </div>
+        <div class="form-field form-field-wide">
+          <label>Dostępne sekcje</label>
+          <div class="users-sections-grid">
+            <label class="users-section-option">
+              <input type="checkbox" value="admin" x-model="form.sections" :disabled="form.role !== 'admin'">
+              Sekcja Admin
+            </label>
+            <label class="users-section-option">
+              <input type="checkbox" value="operator" x-model="form.sections">
+              Sekcja Operator
+            </label>
+            <label class="users-section-option">
+              <input type="checkbox" value="generator" x-model="form.sections">
+              Sekcja Generator
+            </label>
+          </div>
         </div>
       </div>
       <div class="form-actions">
@@ -72,6 +89,7 @@
           <th>Wewnętrzny</th>
           <th>Telefon</th>
           <th>Rola</th>
+          <th>Sekcje</th>
           <th>Status</th>
           <th>Ostatnie logowanie</th>
           <th>Aktywne sesje</th>
@@ -81,7 +99,7 @@
       <tbody>
         <template x-if="users.length === 0">
           <tr>
-            <td colspan="9" class="sms-history-empty">Brak użytkowników.</td>
+            <td colspan="10" class="sms-history-empty">Brak użytkowników.</td>
           </tr>
         </template>
         <template x-for="user in users" :key="user.id">
@@ -98,6 +116,7 @@
             <td>
               <span class="badge" :class="user.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="user.role"></span>
             </td>
+            <td x-text="formatSections(user.sections, user.role)"></td>
             <td>
               <span class="status-chip" :class="user.is_active ? 'success' : 'warning'" x-text="user.is_active ? 'Aktywny' : 'Zablokowany'"></span>
             </td>
@@ -107,7 +126,7 @@
               <template x-if="canManage">
                 <div class="user-actions-group">
                   <button type="button" class="btn-secondary" @click.prevent="openModal(user.id)">
-                    Szczegóły
+                    Edytuj
                   </button>
                   <button type="button" class="btn-secondary" @click.prevent="resetPassword(user)" :disabled="loading || actionUserId === user.id">
                     Reset hasła
@@ -154,8 +173,8 @@
     <div class="users-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="users-modal-title">
       <header class="users-modal-header">
         <div>
-          <h4 id="users-modal-title" x-text="modalDetail?.email || 'Szczegóły użytkownika'"></h4>
-          <p x-text="modalDetail ? formatName(modalDetail) : 'Wczytywanie szczegółów konta.'"></p>
+          <h4 id="users-modal-title" x-text="modalDetail?.email || 'Edycja użytkownika'"></h4>
+          <p x-text="modalDetail ? formatName(modalDetail) : 'Wczytywanie formularza edycji konta.'"></p>
         </div>
         <button type="button" class="users-modal-close" @click.prevent="closeModal">×</button>
       </header>
@@ -190,6 +209,10 @@
                 <div>
                   <dt>Numer wewnętrzny</dt>
                   <dd x-text="modalDetail.internal_ext || '—'"></dd>
+                </div>
+                <div>
+                  <dt>Sekcje</dt>
+                  <dd x-text="formatSections(modalDetail.sections, modalDetail.role)"></dd>
                 </div>
               </dl>
             </div>
@@ -236,10 +259,27 @@
               </div>
               <div class="form-field">
                 <label for="modal-user-role">Rola</label>
-                <select id="modal-user-role" x-model="modalEdit.role">
+                <select id="modal-user-role" x-model="modalEdit.role" @change="onModalRoleChange()">
                   <option value="operator">Operator</option>
                   <option value="admin">Administrator</option>
                 </select>
+              </div>
+              <div class="form-field form-field-wide">
+                <label>Dostępne sekcje</label>
+                <div class="users-sections-grid">
+                  <label class="users-section-option">
+                    <input type="checkbox" value="admin" x-model="modalEdit.sections" :disabled="modalEdit.role !== 'admin'">
+                    Sekcja Admin
+                  </label>
+                  <label class="users-section-option">
+                    <input type="checkbox" value="operator" x-model="modalEdit.sections">
+                    Sekcja Operator
+                  </label>
+                  <label class="users-section-option">
+                    <input type="checkbox" value="generator" x-model="modalEdit.sections">
+                    Sekcja Generator
+                  </label>
+                </div>
               </div>
             </div>
             <div class="form-actions">

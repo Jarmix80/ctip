@@ -1164,6 +1164,32 @@ a {
   gap: 24px;
 }
 
+.form-field-wide {
+  grid-column: 1 / -1;
+}
+
+.users-sections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 12px;
+  margin-top: 4px;
+}
+
+.users-section-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  color: var(--text);
+}
+
+.users-section-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
 .users-table-wrapper {
   border: 1px solid var(--border);
   border-radius: 12px;

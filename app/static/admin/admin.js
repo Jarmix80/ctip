@@ -20,6 +20,7 @@ function storeAdminToken(token, remember) {
     } else {
       window.sessionStorage?.setItem(ADMIN_TOKEN_KEY, token);
     }
+    window.dispatchEvent(new Event("ctip:session-changed"));
   } catch (err) {
     console.error("Nie udało się zapisać tokenu", err);
   }
@@ -1427,6 +1428,7 @@ document.addEventListener("alpine:init", () => {
       internalExt: "",
       role: "operator",
       mobilePhone: "",
+      sections: ["operator", "generator"],
     },
     modalOpen: false,
     modalLoading: false,
@@ -1442,6 +1444,7 @@ document.addEventListener("alpine:init", () => {
       internalExt: "",
       role: "operator",
       mobilePhone: "",
+      sections: ["operator", "generator"],
     },
 
     init() {
@@ -1480,7 +1483,11 @@ document.addEventListener("alpine:init", () => {
     },
 
     _getToken() {
-      return localStorage.getItem("admin-session-token");
+      return (
+        window.localStorage?.getItem("admin-session-token") ||
+        window.sessionStorage?.getItem("admin-session-token") ||
+        null
+      );
     },
 
     _headers(includeJson = true) {
@@ -1532,6 +1539,48 @@ document.addEventListener("alpine:init", () => {
       return value;
     },
 
+    defaultSectionsForRole(role) {
+      if (role === "admin") {
+        return ["admin", "operator", "generator"];
+      }
+      return ["operator", "generator"];
+    },
+
+    normalizeSectionsForRole(sections, role) {
+      const defaults = this.defaultSectionsForRole(role);
+      const input = Array.isArray(sections) ? sections : defaults;
+      const seen = new Set();
+      const normalized = [];
+      input.forEach((item) => {
+        const value = String(item || "").trim().toLowerCase();
+        if (!value || !["admin", "operator", "generator"].includes(value)) {
+          return;
+        }
+        if (value === "admin" && role !== "admin") {
+          return;
+        }
+        if (seen.has(value)) {
+          return;
+        }
+        seen.add(value);
+        normalized.push(value);
+      });
+      if (!normalized.length) {
+        return defaults;
+      }
+      return normalized;
+    },
+
+    formatSections(sections, role = "operator") {
+      const normalized = this.normalizeSectionsForRole(sections, role);
+      const labels = {
+        admin: "Admin",
+        operator: "Operator",
+        generator: "Generator",
+      };
+      return normalized.map((item) => labels[item] || item).join(", ");
+    },
+
     resetMessages() {
       this.error = null;
       this.success = null;
@@ -1544,6 +1593,18 @@ document.addEventListener("alpine:init", () => {
       this.form.internalExt = "";
       this.form.role = "operator";
       this.form.mobilePhone = "";
+      this.form.sections = this.defaultSectionsForRole("operator");
+    },
+
+    onCreateRoleChange() {
+      this.form.sections = this.normalizeSectionsForRole(this.form.sections, this.form.role);
+    },
+
+    onModalRoleChange() {
+      this.modalEdit.sections = this.normalizeSectionsForRole(
+        this.modalEdit.sections,
+        this.modalEdit.role,
+      );
     },
 
     async reload() {
@@ -1599,6 +1660,7 @@ document.addEventListener("alpine:init", () => {
         internal_ext: normalize(source.internalExt) || null,
         role: source.role || "operator",
         mobile_phone: mobile || null,
+        sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
       };
     },
 
@@ -1741,6 +1803,10 @@ document.addEventListener("alpine:init", () => {
         if (this.modalOpen && this.modalDetail && this.modalDetail.id === user.id) {
           this.modalDetail.is_active = data.is_active;
           this.modalEdit.role = data.role;
+          this.modalEdit.sections = this.normalizeSectionsForRole(
+            data.sections,
+            data.role || this.modalEdit.role,
+          );
         }
         const statusText = data.is_active ? "aktywowano" : "zablokowano";
         this.success = `Konto użytkownika ${statusText}.`;
@@ -1814,6 +1880,7 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.internalExt = "";
       this.modalEdit.role = "operator";
       this.modalEdit.mobilePhone = "";
+      this.modalEdit.sections = this.defaultSectionsForRole("operator");
       this._loadModal(userId);
     },
 
@@ -1840,6 +1907,10 @@ document.addEventListener("alpine:init", () => {
         this.modalEdit.internalExt = data.internal_ext || "";
         this.modalEdit.role = data.role || "operator";
         this.modalEdit.mobilePhone = data.mobile_phone || "";
+        this.modalEdit.sections = this.normalizeSectionsForRole(
+          data.sections,
+          this.modalEdit.role,
+        );
       } catch (err) {
         this.modalError = err instanceof Error ? err.message : "Błąd wczytywania szczegółów.";
       } finally {

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     admin_panel_url: str | None = Field(
         default="http://localhost:8000/admin", alias="ADMIN_PANEL_URL"
     )
+    form_public_base_url: str | None = Field(default=None, alias="FORM_PUBLIC_BASE_URL")
+    form_link_ttl_hours: int = Field(default=72, alias="FORM_LINK_TTL_HOURS")
 
     email_host: str | None = Field(default=None, alias="EMAIL_HOST")
     email_port: int = Field(default=587, alias="EMAIL_PORT")

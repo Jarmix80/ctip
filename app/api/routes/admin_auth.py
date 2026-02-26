@@ -12,6 +12,7 @@ from app.api.deps import get_admin_session_context, get_db_session
 from app.core.config import settings
 from app.models import AdminSession, AdminUser
 from app.schemas.admin import AdminLoginRequest, AdminLoginResponse, AdminUserInfo
+from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.security import generate_session_token, verify_password
 
@@ -40,6 +41,11 @@ async def admin_login(
     if user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień do panelu administratora."
+        )
+    if not await section_permissions.user_has_section(session, user, "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnień do sekcji administratora.",
         )
 
     now = datetime.now(UTC)
@@ -94,12 +100,19 @@ async def admin_logout(
 @router.get("/me", response_model=AdminUserInfo, summary="Informacje o zalogowanym administratorze")
 async def admin_me(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> AdminUserInfo:
     """Zwraca podstawowe dane konta administratora."""
     _, admin_user = admin_context
     if admin_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień do panelu administratora."
+        )
+    sections = await section_permissions.get_user_sections(session, admin_user)
+    if "admin" not in sections:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnień do sekcji administratora.",
         )
     return AdminUserInfo(
         id=admin_user.id,
@@ -109,4 +122,5 @@ async def admin_me(
         internal_ext=admin_user.internal_ext,
         role=admin_user.role,
         mobile_phone=admin_user.mobile_phone,
+        sections=sections,
     )

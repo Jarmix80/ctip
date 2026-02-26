@@ -1,4 +1,4 @@
-"""Logowanie i sesje panelu operatora."""
+"""Centralne logowanie dla strony głównej i wyboru sekcji."""
 
 from __future__ import annotations
 
@@ -11,23 +11,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_admin_session_context, get_db_session
 from app.core.config import settings
 from app.models import AdminSession, AdminUser
-from app.schemas.operator import OperatorLoginRequest, OperatorUserInfo
+from app.schemas.admin import AdminLoginRequest, PortalLoginResponse, PortalUserInfo
 from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.security import generate_session_token, verify_password
 
-router = APIRouter(prefix="/operator/auth", tags=["operator-auth"])
+router = APIRouter(prefix="/auth", tags=["portal-auth"])
 
 
-@router.post("/login", summary="Logowanie operatora")
-async def operator_login(
-    payload: OperatorLoginRequest,
+@router.post("/login", response_model=PortalLoginResponse, summary="Logowanie do strony głównej")
+async def portal_login(
+    payload: AdminLoginRequest,
     request: Request,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-) -> dict:
+) -> PortalLoginResponse:
+    """Logowanie centralne i zwrot dostępnych sekcji interfejsu."""
     stmt = select(AdminUser).where(AdminUser.email == payload.email)
-    result = await session.execute(stmt)
-    user = result.scalar_one_or_none()
+    user = (await session.execute(stmt)).scalar_one_or_none()
     if (
         user is None
         or not user.is_active
@@ -35,16 +35,6 @@ async def operator_login(
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Nieprawidłowe dane logowania."
-        )
-
-    if user.role not in {"operator", "admin"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień operatora."
-        )
-    sections = await section_permissions.get_user_sections(session, user)
-    if "operator" not in sections:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Konto nie ma uprawnień operatora."
         )
 
     now = datetime.now(UTC)
@@ -63,39 +53,31 @@ async def operator_login(
         user_agent=request.headers.get("User-Agent"),
     )
     session.add(admin_session)
+
+    sections = await section_permissions.get_user_sections(session, user)
     await record_audit(
         session,
         user_id=user.id,
-        action="operator_login",
+        action="portal_login",
         client_ip=admin_session.client_ip,
-        payload={"user_id": user.id},
+        payload={"user_id": user.id, "sections": sections},
     )
     await session.commit()
+    return PortalLoginResponse(token=token, expires_at=expires_at, sections=sections)
 
-    return {"token": token, "expires_at": expires_at.isoformat(), "sections": sections}
 
-
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Wylogowanie operatora")
-async def operator_logout(
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Wylogowanie z portalu")
+async def portal_logout(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
+    """Unieważnia aktywną sesję użytkownika."""
     admin_session, admin_user = admin_context
-    if admin_user.role not in {"operator", "admin"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień operatora."
-        )
-    sections = await section_permissions.get_user_sections(session, admin_user)
-    if "operator" not in sections:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Konto nie ma uprawnień operatora."
-        )
-
     admin_session.revoked_at = datetime.now(UTC)
     await record_audit(
         session,
         user_id=admin_user.id,
-        action="operator_logout",
+        action="portal_logout",
         client_ip=admin_session.client_ip,
         payload={"user_id": admin_user.id},
     )
@@ -103,22 +85,15 @@ async def operator_logout(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/me", response_model=OperatorUserInfo, summary="Informacje o zalogowanym operatorze")
-async def operator_me(
+@router.get("/me", response_model=PortalUserInfo, summary="Informacje o zalogowanym użytkowniku")
+async def portal_me(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-) -> OperatorUserInfo:
+) -> PortalUserInfo:
+    """Zwraca dane konta i listę dostępnych sekcji."""
     _, admin_user = admin_context
-    if admin_user.role not in {"operator", "admin"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień operatora."
-        )
     sections = await section_permissions.get_user_sections(session, admin_user)
-    if "operator" not in sections:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Konto nie ma uprawnień operatora."
-        )
-    return OperatorUserInfo(
+    return PortalUserInfo(
         id=admin_user.id,
         email=admin_user.email,
         first_name=admin_user.first_name,
@@ -126,3 +101,6 @@ async def operator_me(
         role=admin_user.role,
         sections=sections,
     )
+
+
+__all__ = ["router"]

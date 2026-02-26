@@ -62,6 +62,7 @@
       } else {
         window.sessionStorage?.setItem(TOKEN_KEY, token);
       }
+      window.dispatchEvent(new Event("ctip:session-changed"));
     } catch (err) {
       console.error("Nie udało się zapisać tokenu operatora", err);
     }

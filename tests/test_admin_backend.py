@@ -1,5 +1,6 @@
 # ruff: noqa: E402
 
+import json
 import sys
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -12,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, select
@@ -23,6 +25,7 @@ from sqlalchemy.pool import StaticPool
 from app.api import deps
 from app.api.routes import admin_ctip, admin_status
 from app.api.routes.admin_config import settings_store
+from app.core.config import settings
 from app.main import create_app
 from app.models import (
     AdminAuditLog,
@@ -33,12 +36,14 @@ from app.models import (
     CallEvent,
     Contact,
     ContactDevice,
+    FormRequest,
     IvrMap,
     SmsOut,
     SmsTemplate,
 )
 from app.models.base import Base
-from app.services import admin_ivr_map
+from app.services import admin_ivr_map, section_permissions
+from app.services.admin_users import EmailDeliverySettings
 from app.services.backup_runner import BackupFileInfo
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
@@ -74,6 +79,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     AdminSession.__table__,
                     AdminSetting.__table__,
                     AdminAuditLog.__table__,
+                    FormRequest.__table__,
                     Call.__table__,
                     CallEvent.__table__,
                     Contact.__table__,
@@ -97,6 +103,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.client = AsyncClient(
             transport=ASGITransport(app=self.app), base_url="http://testserver"
         )
+        self._previous_admin_secret_key = settings.admin_secret_key
+        settings.admin_secret_key = Fernet.generate_key().decode("ascii")
 
         async with self.session_factory() as session:
             now = datetime.now(UTC)
@@ -133,6 +141,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         await self.client.aclose()
         self.app.dependency_overrides.clear()
         self._email_patch.stop()
+        settings.admin_secret_key = self._previous_admin_secret_key
         await self.engine.dispose()
 
     async def _login_as(self, email: str, password: str) -> tuple[str, dict]:
@@ -191,6 +200,69 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         data = response.json()
         self.assertEqual(data["email"], "operator@example.com")
         self.assertEqual(data["role"], "operator")
+        self.assertIn("operator", data["sections"])
+
+    async def test_portal_login_and_me_returns_sections(self):
+        response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": True,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        token = body["token"]
+        self.assertTrue(token)
+        self.assertIn("operator", body["sections"])
+        self.assertIn("generator", body["sections"])
+
+        me_response = await self.client.get(
+            "/auth/me",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(me_response.status_code, 200)
+        me = me_response.json()
+        self.assertEqual(me["email"], "operator@example.com")
+        self.assertEqual(me["role"], "operator")
+        self.assertIn("operator", me["sections"])
+
+    async def test_operator_login_requires_operator_section(self):
+        async with self.session_factory() as session:
+            user = (await session.execute(select(AdminUser).where(AdminUser.id == 2))).scalar_one()
+            await section_permissions.set_user_sections(
+                session,
+                user_id=user.id,
+                role=user.role,
+                sections=["generator"],
+                updated_by=1,
+            )
+            await session.commit()
+
+        response = await self.client.post(
+            "/operator/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": False,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        detail = response.json().get("detail", "")
+        self.assertIn("uprawnień operatora", detail)
+
+        portal_response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": False,
+            },
+        )
+        self.assertEqual(portal_response.status_code, 200)
+        sections = portal_response.json()["sections"]
+        self.assertEqual(sections, ["generator"])
 
     async def test_login_remember_me_extends_session(self):
         response_default = await self.client.post(
@@ -950,6 +1022,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "internal_ext": "205",
             "role": "operator",
             "mobile_phone": "+48600700800",
+            "sections": ["operator"],
         }
         response = await self.client.post(
             "/admin/users",
@@ -962,6 +1035,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         user_id = created_user["id"]
         self.assertEqual(created_user["email"], create_payload["email"])
         self.assertEqual(created_user["mobile_phone"], "+48600700800")
+        self.assertEqual(created_user["sections"], ["operator"])
         self.assertTrue(body["password"])
         self.send_email_mock.assert_awaited_once()
 
@@ -982,6 +1056,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["email"], create_payload["email"])
         self.assertEqual(detail["sessions_active"], 0)
         self.assertEqual(detail["mobile_phone"], "+48600700800")
+        self.assertEqual(detail["sections"], ["operator"])
 
         update_payload = {
             "email": "nowy.uzytkownik@example.com",
@@ -990,6 +1065,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "internal_ext": "305",
             "role": "admin",
             "mobile_phone": "+48600111222",
+            "sections": ["admin", "generator"],
         }
         response = await self.client.put(
             f"/admin/users/{user_id}",
@@ -1001,6 +1077,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["internal_ext"], "305")
         self.assertEqual(updated["role"], "admin")
         self.assertEqual(updated["mobile_phone"], "+48600111222")
+        self.assertEqual(updated["sections"], ["admin", "generator"])
 
         async with self.session_factory() as session:
             db_user = await session.get(AdminUser, user_id)
@@ -1082,6 +1159,299 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             headers={"X-Admin-Session": token},
         )
         self.assertEqual(response.status_code, 403)
+
+    async def test_operator_can_generate_form_link_and_list_requests(self):
+        token, _ = await self._login_operator()
+        payload = {
+            "customer_name": "Klient Testowy",
+            "customer_email": "klient.testowy@example.com",
+            "customer_phone": "+48 600 700 800",
+        }
+        response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertIn("/formularz/", body["form_url"])
+        self.assertEqual(body["item"]["status"], "DISPATCHED")
+        self.assertTrue(body["item"]["created_by_name"])
+        self.assertTrue(body["sms_queued"])
+        self.assertFalse(body["email_sent"])
+        self.assertGreaterEqual(len(body["warnings"]), 1)
+
+        response = await self.client.get(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertGreaterEqual(len(items), 1)
+        self.assertEqual(items[0]["customer_email"], "klient.testowy@example.com")
+        self.assertTrue(items[0]["created_by_name"])
+
+        async with self.session_factory() as session:
+            forms = (await session.execute(select(FormRequest))).scalars().all()
+            self.assertEqual(len(forms), 1)
+            self.assertTrue(forms[0].token_hash)
+            self.assertEqual(forms[0].status, "DISPATCHED")
+            sms_rows = (
+                (
+                    await session.execute(
+                        select(SmsOut).where(SmsOut.origin == "form_link_generated")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(sms_rows), 1)
+            self.assertEqual(sms_rows[0].dest, "+48600700800")
+
+    async def test_generator_api_requires_generator_section(self):
+        async with self.session_factory() as session:
+            user = (await session.execute(select(AdminUser).where(AdminUser.id == 2))).scalar_one()
+            await section_permissions.set_user_sections(
+                session,
+                user_id=user.id,
+                role=user.role,
+                sections=["operator"],
+                updated_by=1,
+            )
+            await session.commit()
+
+        token, _ = await self._login_operator()
+        response = await self.client.get(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 403)
+        detail = response.json().get("detail", "")
+        self.assertIn("generatora formularzy", detail)
+
+    async def test_operator_can_view_form_detail_before_submission(self):
+        token, _ = await self._login_operator()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Szczegoly",
+                "customer_email": "szczegoly@example.com",
+                "customer_phone": "+48 500 600 700",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+
+        detail_response = await self.client.get(
+            f"/admin/forms/{form_id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        body = detail_response.json()
+        self.assertEqual(body["item"]["id"], form_id)
+        self.assertEqual(body["item"]["status"], "DISPATCHED")
+        self.assertIsNone(body["submitted_payload"])
+        self.assertIn("nie został jeszcze wypełniony", body["status_message"])
+
+    async def test_operator_can_delete_form_request(self):
+        token, _ = await self._login_operator()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Usuniecie",
+                "customer_email": "usuniecie@example.com",
+                "customer_phone": "+48 510 610 710",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+
+        delete_response = await self.client.delete(
+            f"/admin/forms/{form_id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(delete_response.status_code, 204)
+
+        list_response = await self.client.get(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(list_response.status_code, 200)
+        ids = {item["id"] for item in list_response.json()["items"]}
+        self.assertNotIn(form_id, ids)
+
+        async with self.session_factory() as session:
+            self.assertIsNone(await session.get(FormRequest, form_id))
+            audit_entries = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(AdminAuditLog.action == "form_request_delete")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertTrue(
+                any(
+                    entry.payload and entry.payload.get("deleted_form_request_id") == form_id
+                    for entry in audit_entries
+                )
+            )
+
+    async def test_public_form_submission_updates_status_and_encrypts_payload(self):
+        token, _ = await self._login()
+        async with self.session_factory() as session:
+            admin = await session.get(AdminUser, 1)
+            self.assertIsNotNone(admin)
+            assert admin is not None
+            admin.mobile_phone = "+48600700800"
+            await session.commit()
+
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Publiczny",
+                "customer_email": "publiczny@example.com",
+                "customer_phone": "+48 601 602 603",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+        form_url = create_response.json()["form_url"]
+        link_token = form_url.rsplit("/formularz/", maxsplit=1)[-1]
+        self.assertTrue(link_token)
+
+        history_response = await self.client.get(
+            "/admin/sms/history?limit=10",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(history_response.status_code, 200)
+        history_items = history_response.json()["items"]
+        self.assertTrue(
+            any(
+                item["origin"] == "form_link_generated" and "Treść ukryta" in item["text"]
+                for item in history_items
+            )
+        )
+
+        page_response = await self.client.get(f"/formularz/{link_token}")
+        self.assertEqual(page_response.status_code, 200)
+        self.assertIn("Bezpieczny formularz klienta", page_response.text)
+
+        reps = [
+            {
+                "first_name": "Jan",
+                "last_name": "Kowalski",
+                "personal_id": "85010112345",
+                "document_type": "Dowód osobisty",
+                "document_number": "ABC123456",
+                "document_issue_validity": "2020-01-01 / 2030-01-01",
+            },
+            {
+                "first_name": "Anna",
+                "last_name": "Nowak",
+                "personal_id": "1979-04-12",
+                "document_type": "Paszport",
+                "document_number": "PZ998877",
+                "document_issue_validity": "2019-05-02 / 2029-05-01",
+            },
+        ]
+        email_settings = EmailDeliverySettings(
+            host="smtp.test.local",
+            port=587,
+            username="smtp-user",
+            password="smtp-pass",
+            sender_name="CTIP Test",
+            sender_address="noreply@test.local",
+            use_tls=True,
+            use_ssl=False,
+        )
+        with patch(
+            "app.services.form_generator.admin_users.resolve_email_delivery_settings",
+            AsyncMock(return_value=email_settings),
+        ):
+            with patch(
+                "app.services.form_generator.send_smtp_message",
+                AsyncMock(return_value=EmailSendResult(True, "Wysłano")),
+            ) as send_mock:
+                submit_response = await self.client.post(
+                    f"/formularz/{link_token}",
+                    data={
+                        "company_name": "Firma Publiczna Sp. z o.o.",
+                        "company_nip": "5250000000",
+                        "company_phone": "+48601602603",
+                        "company_email": "publiczny@example.com",
+                        "billing_email": "faktury@example.com",
+                        "registered_address": "Warszawa, ul. Testowa 1",
+                        "correspondence_address": "Warszawa, ul. Korespondencyjna 2",
+                        "representatives_json": json.dumps(reps),
+                        "consent": "true",
+                        "website": "",
+                    },
+                )
+                send_mock.assert_awaited_once()
+        self.assertEqual(submit_response.status_code, 200)
+        self.assertIn("formularz został zapisany", submit_response.text.lower())
+
+        list_response = await self.client.get(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(list_response.status_code, 200)
+        statuses = [item["status"] for item in list_response.json()["items"]]
+        self.assertIn("SUBMITTED", statuses)
+
+        detail_response = await self.client.get(
+            f"/admin/forms/{form_id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        detail = detail_response.json()
+        self.assertEqual(detail["item"]["status"], "SUBMITTED")
+        self.assertIn("wypełniony", detail["status_message"].lower())
+        self.assertEqual(detail["submitted_payload"]["company_name"], "Firma Publiczna Sp. z o.o.")
+        self.assertEqual(detail["submitted_payload"]["company_email"], "publiczny@example.com")
+        self.assertEqual(len(detail["submitted_payload"]["representatives"]), 2)
+
+        history_response = await self.client.get(
+            "/admin/sms/history?limit=20",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(history_response.status_code, 200)
+        history_items = history_response.json()["items"]
+        self.assertTrue(
+            any(
+                item["origin"] == "form_submission_completed" and "Treść ukryta" in item["text"]
+                for item in history_items
+            )
+        )
+
+        async with self.session_factory() as session:
+            form_row = (await session.execute(select(FormRequest))).scalars().first()
+            self.assertIsNotNone(form_row)
+            assert form_row is not None
+            self.assertEqual(form_row.status, "SUBMITTED")
+            self.assertIsNotNone(form_row.submitted_payload)
+            cipher = Fernet(settings.admin_secret_key.encode("utf-8"))
+            decrypted = cipher.decrypt(form_row.submitted_payload.encode("utf-8")).decode("utf-8")
+            payload = json.loads(decrypted)
+            self.assertEqual(payload["payload"]["company_name"], "Firma Publiczna Sp. z o.o.")
+            self.assertEqual(payload["payload"]["company_email"], "publiczny@example.com")
+            self.assertEqual(len(payload["payload"]["representatives"]), 2)
+            sms_rows = (
+                (
+                    await session.execute(
+                        select(SmsOut).where(SmsOut.origin == "form_submission_completed")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(sms_rows), 1)
+            self.assertEqual(sms_rows[0].dest, "+48600700800")
 
     async def test_admin_users_duplicate_email_returns_400(self):
         token, _ = await self._login()

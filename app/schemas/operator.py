@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.schemas.admin import PanelSection
 from app.schemas.sms import SMS_E164_PATTERN, normalize_sms_destination
 
 
@@ -86,6 +87,7 @@ class OperatorUserInfo(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: str
+    sections: list[PanelSection] = Field(default_factory=list)
 
 
 class OperatorSendSmsRequest(BaseModel):

@@ -23,7 +23,24 @@ async def _fake_admin_context():
 
 
 async def _fake_db_session():
-    yield None
+    class DummyDbSession:
+        async def commit(self) -> None:
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            class DummyResult:
+                def scalars(self):
+                    return self
+
+                def all(self):
+                    return []
+
+                def scalar_one_or_none(self):
+                    return None
+
+            return DummyResult()
+
+    yield DummyDbSession()
 
 
 def test_admin_index_renders_layout():
@@ -279,3 +296,33 @@ def test_users_partial_renders_listing():
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
     assert "+48600900900" in response.text
+
+
+def test_root_index_renders_portal_login():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "root-login-form" in response.text
+    assert "Dostępne sekcje" not in response.text
+
+
+def test_choice_page_renders_sections_view():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/choice")
+    assert response.status_code == 200
+    assert "Dostępne sekcje" in response.text
+    assert "root-sections-card" in response.text
+
+
+def test_genform_page_renders_layout():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/genform")
+    assert response.status_code == 200
+    assert "Generator formularzy" in response.text
+    assert "genform-login-form" in response.text
+    assert "genform-password-toggle" in response.text
+    assert "genform-detail-modal" in response.text
+    assert "Utworzone przez" in response.text

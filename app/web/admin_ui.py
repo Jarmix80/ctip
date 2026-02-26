@@ -43,7 +43,7 @@ from app.schemas.admin import (
 )
 from app.schemas.admin_contacts import AdminContactSummary
 from app.schemas.admin_ctip import AdminIvrMapEntry
-from app.services import admin_contacts, admin_ivr_map, admin_users
+from app.services import admin_contacts, admin_ivr_map, admin_users, section_permissions
 from app.services.backup_runner import BACKUP_DIR, format_backup_size, list_backup_files
 from app.services.call_sms_rules import CALL_SMS_SCENARIO_LABELS
 
@@ -453,7 +453,7 @@ async def admin_contacts_partial(
     )
 
 
-def _user_summary_from_row(row: admin_users.UserRow) -> AdminUserSummary:
+def _user_summary_from_row(row: admin_users.UserRow, sections: list[str]) -> AdminUserSummary:
     user = row.user
     return AdminUserSummary(
         id=user.id,
@@ -463,6 +463,7 @@ def _user_summary_from_row(row: admin_users.UserRow) -> AdminUserSummary:
         last_name=user.last_name,
         internal_ext=user.internal_ext,
         role=user.role,
+        sections=sections,
         is_active=user.is_active,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -480,7 +481,11 @@ async def admin_users_partial(
     """Widok listy użytkowników panelu."""
     _, admin_user = admin_context
     rows = await admin_users.list_users(session)
-    summaries = [_user_summary_from_row(row).model_dump(mode="json") for row in rows]
+    sections_map = await section_permissions.list_user_sections(session, [row.user for row in rows])
+    summaries = [
+        _user_summary_from_row(row, sections_map.get(row.user.id, [])).model_dump(mode="json")
+        for row in rows
+    ]
     admin_token = request.headers.get("x-admin-session", "")
     return templates.TemplateResponse(
         "admin/partials/users.html",

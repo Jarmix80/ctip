@@ -11,6 +11,7 @@ from app.api.routes import (
     admin_ctip,
     admin_email,
     admin_firebird,
+    admin_forms,
     admin_sms,
     admin_status,
     admin_users,
@@ -19,6 +20,7 @@ from app.api.routes import (
     health,
     operator_auth,
     operator_portal,
+    portal_auth,
     sms,
 )
 
@@ -30,6 +32,7 @@ api_router.include_router(admin_ctip.router)
 api_router.include_router(admin_config.router)
 api_router.include_router(admin_contacts.router)
 api_router.include_router(admin_email.router)
+api_router.include_router(admin_forms.router)
 api_router.include_router(admin_firebird.router)
 api_router.include_router(admin_status.router)
 api_router.include_router(admin_sms.router)
@@ -38,5 +41,6 @@ api_router.include_router(health.router)
 api_router.include_router(calls.router)
 api_router.include_router(contacts.router)
 api_router.include_router(operator_auth.router)
+api_router.include_router(portal_auth.router)
 api_router.include_router(operator_portal.router)
 api_router.include_router(sms.router)

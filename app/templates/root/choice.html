@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – wybór sekcji</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/root/root.css">
+    <script defer src="/static/root/root.js"></script>
+  </head>
+  <body>
+    <main class="root-hero">
+      <div id="root-sections-card" class="root-card">
+        <div class="root-logo">Ksero-Partner</div>
+        <h1>Dostępne sekcje</h1>
+        <p id="root-user-line">
+          Wybierz panel, do którego chcesz przejść.
+        </p>
+        <div class="root-actions">
+          <a class="root-btn" href="/admin" data-section="admin" hidden>Panel administracyjny</a>
+          <a class="root-btn secondary" href="/operator" data-section="operator" hidden>Panel operatora</a>
+          <a class="root-btn secondary" href="/genform" data-section="generator" hidden>Generator formularzy</a>
+        </div>
+        <p id="root-sections-empty" class="root-warning" hidden>
+          Twoje konto nie ma przypisanych sekcji. Skontaktuj się z administratorem systemu.
+        </p>
+        <button id="root-logout-btn" type="button" class="root-btn root-btn-ghost">Wyloguj</button>
+      </div>
+    </main>
+  </body>
+</html>

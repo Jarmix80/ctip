@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+PanelSection = Literal["admin", "operator", "generator"]
+
 
 class AdminLoginRequest(BaseModel):
     """Dane uwierzytelniające administratora."""
@@ -33,6 +35,7 @@ class AdminUserInfo(BaseModel):
     internal_ext: str | None
     role: str
     mobile_phone: str | None = None
+    sections: list[PanelSection] = Field(default_factory=list)
 
 
 class DatabaseConfigResponse(BaseModel):
@@ -218,6 +221,7 @@ class AdminUserSummary(BaseModel):
     last_name: str | None
     internal_ext: str | None
     role: Literal["admin", "operator"]
+    sections: list[PanelSection] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -260,6 +264,7 @@ class AdminUserCreate(BaseModel):
     last_name: str | None = None
     internal_ext: str | None = None
     role: Literal["admin", "operator"] = "operator"
+    sections: list[PanelSection] | None = None
     password: str | None = None
     mobile_phone: str = Field(min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$")
 
@@ -279,9 +284,29 @@ class AdminUserUpdate(BaseModel):
     last_name: str | None = None
     internal_ext: str | None = None
     role: Literal["admin", "operator"] = "operator"
+    sections: list[PanelSection] | None = None
     mobile_phone: str | None = Field(
         default=None, min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$"
     )
+
+
+class PortalLoginResponse(BaseModel):
+    """Odpowiedź logowania centralnego ze wskazaniem sekcji."""
+
+    token: str
+    expires_at: datetime
+    sections: list[PanelSection] = Field(default_factory=list)
+
+
+class PortalUserInfo(BaseModel):
+    """Dane zalogowanego użytkownika dla strony głównej."""
+
+    id: int
+    email: EmailStr
+    first_name: str | None = None
+    last_name: str | None = None
+    role: str
+    sections: list[PanelSection] = Field(default_factory=list)
 
 
 class AdminUserResetPasswordResponse(BaseModel):

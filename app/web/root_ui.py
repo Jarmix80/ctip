@@ -13,5 +13,11 @@ router = APIRouter(tags=["root-ui"])
 
 @router.get("/", response_class=HTMLResponse)
 async def landing_page(request: Request) -> HTMLResponse:
-    """Ekran powitalny z wyborem panelu."""
+    """Ekran logowania centralnego."""
     return templates.TemplateResponse("root/index.html", {"request": request})
+
+
+@router.get("/choice", response_class=HTMLResponse)
+async def choice_page(request: Request) -> HTMLResponse:
+    """Ekran wyboru sekcji po poprawnym logowaniu."""
+    return templates.TemplateResponse("root/choice.html", {"request": request})
