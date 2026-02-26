@@ -228,16 +228,21 @@ pip install -r requirements.txt
 # 2) Migracje bazy PostgreSQL
 alembic upgrade head
 
-# 3) Restart usług aplikacji (podstaw nazwy usług z Twojego serwera)
-Restart-Service ctip-api
-Restart-Service ctip-collector
-Restart-Service ctip-sms
+# 3) Restart usług aplikacji (produkcyjne nazwy usług)
+Restart-Service "CTIP-Web"
+Restart-Service "CollectorService"
+Restart-Service "CTIP-SMS"
 ```
 4. Weryfikacja po restarcie:
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty StatusCode
 ```
 5. W panelu administratora (`/admin`) przejdź do sekcji `Baza Firebird`, zapisz konfigurację i wykonaj `Testuj połączenie`.
+
+Aktualne nazwy usług produkcyjnych (Windows Server):
+- `CollectorService` – Collector Service (`collector_full.py`)
+- `CTIP-SMS` – moduł wysyłki SMS
+- `CTIP-Web` – backend/panel web
 
 ## Backend API (FastAPI)
 Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w katalogu `app/`. Do pracy wymaga zależności opisanych w `pyproject.toml` (`fastapi`, `uvicorn`, `sqlalchemy`, `asyncpg`, `pydantic-settings`).
