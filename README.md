@@ -203,6 +203,42 @@ ALTER SEQUENCE ctip.call_events_id_seq OWNER TO appuser;
 
 Rekomenduje się uruchomienie obu procesów pod nadzorem `systemd` lub innego menedżera usług. W przypadku `systemd` kontroluj usterki poprzez `Restart=always` oraz logowanie do `journalctl`.
 
+## Aktualizacja produkcji na Windows Server (PowerShell)
+Środowisko produkcyjne dla tego projektu działa na Windows Server.
+
+1. Aktualizacja kodu:
+```powershell
+cd C:\sciezka\do\ctip
+git checkout main
+git pull --ff-only origin main
+```
+2. Przygotowanie środowiska Python:
+```powershell
+if (-not (Test-Path .venv)) { python -m venv .venv }
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+3. Co dalej po `pip install -r requirements.txt`:
+```powershell
+# 1) Ustaw/zweryfikuj .env produkcyjne (szczególnie Firebird)
+# FB_MODE=network
+# FB_HOST, FB_PORT, FB_DATABASE, FB_USER, FB_PASSWORD, FB_CHARSET, FB_ROLE
+
+# 2) Migracje bazy PostgreSQL
+alembic upgrade head
+
+# 3) Restart usług aplikacji (podstaw nazwy usług z Twojego serwera)
+Restart-Service ctip-api
+Restart-Service ctip-collector
+Restart-Service ctip-sms
+```
+4. Weryfikacja po restarcie:
+```powershell
+Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty StatusCode
+```
+5. W panelu administratora (`/admin`) przejdź do sekcji `Baza Firebird`, zapisz konfigurację i wykonaj `Testuj połączenie`.
+
 ## Backend API (FastAPI)
 Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w katalogu `app/`. Do pracy wymaga zależności opisanych w `pyproject.toml` (`fastapi`, `uvicorn`, `sqlalchemy`, `asyncpg`, `pydantic-settings`).
 
