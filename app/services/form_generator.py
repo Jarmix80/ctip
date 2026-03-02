@@ -6,7 +6,7 @@ import hashlib
 import json
 import secrets
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import formataddr
 from urllib.parse import urlparse
@@ -385,13 +385,28 @@ async def create_form_request(
     customer_name: str,
     customer_email: str,
     customer_phone: str,
+    expires_on: date | None = None,
     request_base_url: str | None = None,
 ) -> tuple[FormRequest, str, FormNotificationResult]:
     """Tworzy wpis formularza, buduje bezpieczny link i uruchamia dystrybucję."""
     _build_cipher()
 
     now = datetime.now(UTC)
-    token_ttl_hours = max(int(settings.form_link_ttl_hours), 1)
+    if expires_on is not None:
+        if expires_on < now.date():
+            raise ValueError("Data ważności formularza nie może być z przeszłości.")
+        expires_at = datetime(
+            year=expires_on.year,
+            month=expires_on.month,
+            day=expires_on.day,
+            hour=23,
+            minute=59,
+            second=59,
+            tzinfo=UTC,
+        )
+    else:
+        expires_at = now + timedelta(days=7)
+
     token = secrets.token_urlsafe(32)
     form = FormRequest(
         created_by=created_by,
@@ -400,7 +415,7 @@ async def create_form_request(
         customer_phone=_normalize_phone(customer_phone),
         status="GENERATED",
         token_hash=_hash_token(token),
-        token_expires_at=now + timedelta(hours=token_ttl_hours),
+        token_expires_at=expires_at,
         sms_status=None,
         email_status=None,
         created_at=now,

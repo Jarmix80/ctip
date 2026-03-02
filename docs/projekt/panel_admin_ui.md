@@ -104,6 +104,7 @@
 - Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
 - Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli i przypisanych sekcji (`admin`, `operator`, `generator`).
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
+- Akcja `Reset hasła` generuje nowe hasło tymczasowe, unieważnia aktywne sesje użytkownika i automatycznie wysyła powiadomienie e-mail + SMS z nowymi danymi logowania.
 - Modal szczegółów prezentuje dane profilu, listę sesji (z informacją o unieważnieniu) oraz umożliwia edycję.
 - Usuwanie blokuje własne konto administratora oraz ostatnie aktywne konto w roli `admin`.
 - Panel boczny: statystyka liczby wysłanych SMS per użytkownik (wykres słupkowy), przyciski eksportu CSV.
@@ -122,6 +123,8 @@
 - Strona główna (`/`) zawiera wyłącznie formularz logowania (`/auth/login`).
 - Po poprawnym logowaniu użytkownik trafia na `/choice`, gdzie widzi sekcje przypisane do konta.
 - Lista sekcji jest przechowywana per użytkownik jako zestaw `admin`, `operator`, `generator` i zwracana przez `/auth/me`.
+- Widok `/choice` udostępnia dodatkowy formularz edycji własnego profilu (`/auth/profile`) z polami: imię, nazwisko, e-mail, numer wewnętrzny i telefon komórkowy.
+- Widok `/choice` udostępnia również formularz zmiany hasła (`/auth/profile/change-password`) z polityką: minimum 9 znaków, co najmniej jedna duża litera, jedna cyfra i jeden znak specjalny.
 - Wylogowanie strony głównej realizuje endpoint `/auth/logout`.
 - Sekcja Użytkownicy w panelu administratora zawiera checkboxy przypisania sekcji podczas tworzenia i edycji konta.
 
@@ -129,9 +132,10 @@
 - Generator formularzy został wydzielony poza panel administratora i działa pod adresem `/genform`.
 - API pozostaje w module administracyjnym (`/admin/forms`), ale ekran operacyjny jest niezależny od `/admin`.
 - Publiczny formularz działa pod trasą `/formularz/{token}` i ma tryb etapowy:
-  - krok 1: dane firmy dzierżawiącej sprzęt,
-  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób,
+  - krok 1: dane firmy dzierżawiącej sprzęt (adres siedziby i korespondencyjny rozbite na osobne pola, opcja „Taki sam jak adres siedziby”, obowiązkowe pole `E-mail do e-faktur` z opcją „Kopiuj e-mail”),
+  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób (PESEL + auto-uzupełnienie daty urodzenia, wybór rodzaju dokumentu z listy `Dowód osobisty`/`Paszport`, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub przez kalendarz),
   - krok 3: podsumowanie i końcowe potwierdzenie.
+- Ekran `/genform` podczas tworzenia linku umożliwia ustawienie daty ważności formularza; domyślnie ustawiane jest 7 dni od daty wygenerowania.
 - Po wysyłce (dopiero po końcowym `Potwierdź`) dane są zapisywane jako szyfrowany payload (Fernet, klucz `ADMIN_SECRET_KEY`) i status zmieniany na `SUBMITTED`.
 - Po zapisie system wysyła e-mail potwierdzający do klienta oraz tworzy SMS do użytkownika, który wygenerował link formularza.
 - Lista formularzy zawiera akcje `Wyświetl` i `Usuń`.
@@ -161,7 +165,7 @@
 | CTIP Live | `/admin/partials/ctip/live`, `/admin/partials/ctip/events`, `/admin/ctip/events`, `/admin/ctip/ws`, `/admin/config/ctip`, `POST /admin/ctip/restart` (plan) |
 | SerwerSMS | `/admin/partials/config_sms`, `/admin/config/sms`, `/admin/sms/test`, `/sms/account`, `/sms/history?status=SENT&limit=20` |
 | Książka adresowa | `/admin/partials/contacts`, `/admin/contacts`, `/admin/contacts/{id}`, `/admin/contacts/by-number/{number}` |
-| Logowanie centralne | `/`, `/choice`, `/auth/login`, `/auth/me`, `/auth/logout` |
+| Logowanie centralne | `/`, `/choice`, `/auth/login`, `/auth/me`, `/auth/profile`, `/auth/profile/change-password`, `/auth/logout` |
 | Generator formularzy | `/genform`, `/admin/forms`, `/admin/forms/{id}`, `/formularz/{token}` |
 | E-mail | `/admin/partials/config_email`, `/admin/config/email`, `/admin/email/test` |
 | Konsola SQL | `POST /admin/database/query`, `/admin/reports/*` |

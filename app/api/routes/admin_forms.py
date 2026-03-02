@@ -146,6 +146,7 @@ async def create_form(
             customer_name=payload.customer_name,
             customer_email=payload.customer_email,
             customer_phone=payload.customer_phone,
+            expires_on=payload.expires_on,
             request_base_url=str(request.base_url),
         )
     except RuntimeError as exc:

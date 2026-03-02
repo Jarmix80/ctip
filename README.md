@@ -149,7 +149,6 @@ Kopię lokalną (po podmontowaniu źródłowego pliku `.fdb`) można wykonać sk
 | `ADMIN_SESSION_REMEMBER_HOURS` | `72` | Czas życia sesji, gdy użytkownik wybierze opcję „Zapamiętaj mnie” (w godzinach). |
 | `ADMIN_PANEL_URL` | `http://localhost:8000/admin` | Publiczny adres logowania używany w e-mailach i SMS z danymi kont. |
 | `FORM_PUBLIC_BASE_URL` | `http://localhost:8000` | Publiczny adres bazowy używany do budowy linków `/formularz/{token}`. |
-| `FORM_LINK_TTL_HOURS` | `72` | Czas ważności jednorazowego linku formularza (w godzinach). |
 
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
@@ -282,8 +281,8 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - W trybie `lokalna` panel automatycznie testuje połączenie pod `127.0.0.1` i wykorzystuje ścieżkę `FB_LOCAL_COPY_PATH`; pola hosta i ścieżki bazy sieciowej są wyszarzone.
 - Sekcja Kopie zapasowe (`/admin/partials/backups`) prezentuje podgląd plików z katalogu `backups/`; operacje tworzenia i przywracania są dostępne wyłącznie w trybie dry-run.
 - Sekcja Książka adresowa (`/admin/partials/contacts`) udostępnia CRUD kontaktów z wyszukiwarką po numerze, nazwisku, e-mailu i identyfikatorze Firebird; formularze pozwalają przypisać numer wewnętrzny, notatki operacyjne oraz pole `firebird_id` wykorzystywane do mapowania z bazą Firebird.
-- Generator formularzy działa jako osobny flow pod adresem `/genform` (poza panelem `/admin`) i jest dostępny po zalogowaniu kontem `operator` albo `admin`. Moduł korzysta z API `/admin/forms`, generuje jednorazowe linki `/formularz/{token}`, zapisuje w bazie wyłącznie hash tokenu i przechowuje dane klienta w postaci zaszyfrowanej (Fernet, `ADMIN_SECRET_KEY`).
-- Publiczny formularz `/formularz/{token}` działa etapowo: krok 1 (dane firmy), krok 2 (jeden lub wielu reprezentantów), krok 3 (podsumowanie i końcowe potwierdzenie). Dane trafiają do systemu dopiero po kliknięciu `Potwierdź i wyślij`.
+- Generator formularzy działa jako osobny flow pod adresem `/genform` (poza panelem `/admin`) i jest dostępny po zalogowaniu kontem `operator` albo `admin`. Moduł korzysta z API `/admin/forms`, generuje jednorazowe linki `/formularz/{token}`, pozwala ustawić datę ważności formularza (domyślnie 7 dni), zapisuje w bazie wyłącznie hash tokenu i przechowuje dane klienta w postaci zaszyfrowanej (Fernet, `ADMIN_SECRET_KEY`).
+- Publiczny formularz `/formularz/{token}` działa etapowo: krok 1 (dane firmy z rozbiciem adresu siedziby i korespondencyjnego, obowiązkowym polem `E-mail do e-faktur` oraz opcją „taki sam jak adres siedziby” i „Kopiuj e-mail”), krok 2 (jeden lub wielu reprezentantów: PESEL, automatyczne uzupełnianie daty urodzenia, wybór rodzaju dokumentu z listy, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub kalendarzem), krok 3 (podsumowanie i końcowe potwierdzenie). Dane trafiają do systemu dopiero po kliknięciu `Potwierdź i wyślij`.
 - Po zatwierdzeniu formularza system wysyła e-mail potwierdzający do klienta oraz dodaje do kolejki SMS powiadomienie dla użytkownika, który wygenerował link.
 - Przycisk `Kopiuj link` w `/genform` korzysta z Clipboard API, a gdy środowisko blokuje kopiowanie (np. brak `https`), automatycznie przełącza się na fallback `execCommand("copy")`.
 - Ekran `/genform` udostępnia akcje `Wyświetl`/`Usuń` dla każdego wniosku oraz okno szczegółów: dla statusu `SUBMITTED` prezentowane są odszyfrowane dane klienta, a dla pozostałych statusów czytelna informacja operacyjna (np. „formularz został wysłany, ale nie został jeszcze wypełniony”).
@@ -292,7 +291,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Treści SMS zawierające link jednorazowy lub potwierdzenie wypełnienia formularza są maskowane w historii panelu (`Treść ukryta`), aby nie ujawniać danych wrażliwych.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP, Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów) oraz Generatora formularzy. Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
 - W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
-- Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta automatycznie wysyłany jest e-mail i SMS z danymi logowania. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
+- Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta oraz po resecie hasła automatycznie wysyłany jest e-mail i SMS z danymi logowania. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
 - Aby uruchomić panel lokalnie:
   1. `source .venv/bin/activate`
   2. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
@@ -304,6 +303,8 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /admin/contacts`, `POST /admin/contacts`, `PUT /admin/contacts/{contact_id}`, `DELETE /admin/contacts/{contact_id}` – zarządzanie wpisami książki adresowej (wymaga nagłówka `X-Admin-Session` i roli `admin`); obsługa pola `firebird_id` umożliwia powiązanie z rekordami bazy Firebird.
 - `GET /admin/contacts/by-number/{number}` – wyszukaj kontakt po numerze MSISDN (wymagane `X-Admin-Session`; dostęp dla roli `admin` i `operator`).
 - `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` – centralne logowanie strony głównej i wybór sekcji na podstawie przypisanych uprawnień.
+- `GET /auth/profile`, `PUT /auth/profile` – podgląd i edycja własnych danych użytkownika (imię, nazwisko, e-mail, numer wewnętrzny, telefon) z poziomu `/choice`.
+- `POST /auth/profile/change-password` – zmiana własnego hasła z poziomu `/choice` (wymagania: min. 9 znaków, duża litera, cyfra, znak specjalny).
 - `GET /admin/forms`, `POST /admin/forms`, `GET /admin/forms/{id}`, `DELETE /admin/forms/{id}` – lista/generowanie/podgląd/usuwanie jednorazowych formularzy (wymagane uprawnienie sekcji `generator`).
 - `GET /genform` – osobny ekran handlowca do generowania i podglądu formularzy.
 - `GET /formularz/{token}`, `POST /formularz/{token}` – publiczny formularz klienta oparty o jednorazowy token.
@@ -335,7 +336,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /operator/api/me` – dane zalogowanego operatora.
 - `GET /operator/api/profile` – odczyt danych profilu operatora (wraz z rolą).
 - `PUT /operator/api/profile` – aktualizacja danych kontaktowych operatora.
-- `POST /operator/api/profile/change-password` – zmiana hasła (wymaga podania obecnego hasła).
+- `POST /operator/api/profile/change-password` – zmiana hasła (wymaga podania obecnego hasła; polityka: min. 9 znaków, duża litera, cyfra, znak specjalny).
 - `GET /operator/api/calls` – lista połączeń (`limit`, `search`, `direction`).
 - `GET /operator/api/calls/{call_id}` – szczegóły połączenia (oś czasu CTIP, kontakt, historia SMS).
 - `GET /operator/api/contacts/by-number/{number}` – dane kontaktu na podstawie numeru MSISDN.

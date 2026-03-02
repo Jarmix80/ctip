@@ -99,6 +99,7 @@ function initializeGenForm() {
   const generatedLink = document.getElementById("genform-generated-link");
   const copyLinkBtn = document.getElementById("genform-copy-link");
   const openLink = document.getElementById("genform-open-link");
+  const expiresOnInput = document.getElementById("gf-expires-on");
   const detailModal = document.getElementById("genform-detail-modal");
   const detailCloseBtn = document.getElementById("genform-detail-close");
   const detailStatus = document.getElementById("genform-detail-status");
@@ -113,6 +114,7 @@ function initializeGenForm() {
 
   let token = readToken();
   let openedFormId = null;
+  setDefaultExpiresOn();
 
   function setBusy(element, busy, labelBusy, labelIdle) {
     if (!element) {
@@ -202,6 +204,18 @@ function initializeGenForm() {
       return;
     }
     node.textContent = value || "—";
+  }
+
+  function setDefaultExpiresOn() {
+    if (!expiresOnInput) {
+      return;
+    }
+    const target = new Date();
+    target.setDate(target.getDate() + 7);
+    const yyyy = target.getFullYear();
+    const mm = String(target.getMonth() + 1).padStart(2, "0");
+    const dd = String(target.getDate()).padStart(2, "0");
+    expiresOnInput.value = `${yyyy}-${mm}-${dd}`;
   }
 
   function renderItems(items) {
@@ -409,19 +423,24 @@ function initializeGenForm() {
     const nameInput = document.getElementById("gf-customer-name");
     const emailInput = document.getElementById("gf-customer-email");
     const phoneInput = document.getElementById("gf-customer-phone");
-    if (!submitButton || !nameInput || !emailInput || !phoneInput) {
+    if (!submitButton || !nameInput || !emailInput || !phoneInput || !expiresOnInput) {
       return;
     }
     setBusy(submitButton, true, "Generowanie…", "Generuj formularz");
     try {
+      const body = {
+        customer_name: nameInput.value.trim(),
+        customer_email: emailInput.value.trim(),
+        customer_phone: phoneInput.value.trim(),
+      };
+      const expiresOn = expiresOnInput.value.trim();
+      if (expiresOn) {
+        body.expires_on = expiresOn;
+      }
       const response = await fetch("/admin/forms", {
         method: "POST",
         headers: headers(true),
-        body: JSON.stringify({
-          customer_name: nameInput.value.trim(),
-          customer_email: emailInput.value.trim(),
-          customer_phone: phoneInput.value.trim(),
-        }),
+        body: JSON.stringify(body),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -439,6 +458,7 @@ function initializeGenForm() {
         showSuccess("Formularz został wygenerowany i wysłany.");
       }
       createForm.reset();
+      setDefaultExpiresOn();
       await loadItems(false);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Błąd generowania formularza.");

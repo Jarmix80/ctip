@@ -15,6 +15,8 @@
         --accent-soft: rgba(31, 63, 105, 0.1);
         --border: #d5dce6;
         --error: #b12424;
+        --filled-bg: #dbe6f8;
+        --empty-bg: #fff0f0;
       }
       * { box-sizing: border-box; }
       body {
@@ -92,17 +94,78 @@
         letter-spacing: 0.05em;
         color: var(--muted);
       }
-      input, textarea {
+      input, textarea, select {
         width: 100%;
         border: 1px solid var(--border);
         border-radius: 10px;
         padding: 11px 12px;
         font-size: 14px;
         background: #fff;
+        transition: background-color 0.2s ease, border-color 0.2s ease;
+      }
+      input.field-filled,
+      textarea.field-filled,
+      select.field-filled {
+        background: var(--filled-bg);
+        border-color: #bfd0ec;
+      }
+      input.field-empty,
+      textarea.field-empty,
+      select.field-empty {
+        background: var(--empty-bg);
+        border-color: rgba(177, 36, 36, 0.35);
+      }
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      textarea:-webkit-autofill,
+      textarea:-webkit-autofill:hover,
+      textarea:-webkit-autofill:focus {
+        -webkit-text-fill-color: var(--text);
+        -webkit-box-shadow: 0 0 0 1000px var(--filled-bg) inset;
+        box-shadow: 0 0 0 1000px var(--filled-bg) inset;
+        transition: background-color 9999s ease-out 0s;
+      }
+      input.field-empty:-webkit-autofill,
+      input.field-empty:-webkit-autofill:hover,
+      input.field-empty:-webkit-autofill:focus {
+        -webkit-box-shadow: 0 0 0 1000px var(--empty-bg) inset;
+        box-shadow: 0 0 0 1000px var(--empty-bg) inset;
       }
       textarea {
         min-height: 86px;
         resize: vertical;
+      }
+      .date-input-wrap {
+        position: relative;
+      }
+      .date-input-wrap input[type="text"] {
+        padding-right: 46px;
+      }
+      .date-input-button {
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #f2f5fa;
+        color: var(--accent);
+        padding: 0;
+        font-size: 16px;
+        line-height: 1;
+      }
+      .date-picker-native {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .copy-email-toggle {
+        margin-top: 20px;
       }
       .error {
         margin-top: 6px;
@@ -226,6 +289,15 @@
         opacity: 0.7;
         cursor: default;
       }
+      button.date-input-button {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #f2f5fa;
+        color: var(--accent);
+        padding: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
       .footnote {
         margin-top: 16px;
         font-size: 12px;
@@ -295,19 +367,82 @@
               {% if errors.get("company_email") %}<div class="error">{{ errors.get("company_email") }}</div>{% endif %}
             </div>
             <div>
-              <label for="billing_email">E-mail do przesłania faktur za dzierżawę</label>
-              <input id="billing_email" name="billing_email" type="email" value="{{ values.get('billing_email', '') }}">
+              <label for="billing_email">E-mail do e-faktur</label>
+              <input id="billing_email" name="billing_email" type="email" required value="{{ values.get('billing_email', '') }}">
               {% if errors.get("billing_email") %}<div class="error">{{ errors.get("billing_email") }}</div>{% endif %}
             </div>
-            <div class="full">
-              <label for="registered_address">Adres siedziby</label>
-              <textarea id="registered_address" name="registered_address" required>{{ values.get('registered_address', '') }}</textarea>
-              {% if errors.get("registered_address") %}<div class="error">{{ errors.get("registered_address") }}</div>{% endif %}
+            <div class="copy-email-toggle">
+              <label class="consent" style="margin-top: 8px;">
+                <input id="copy-company-email-to-billing" type="checkbox" value="true">
+                <span style="color: var(--muted);">Kopiuj e-mail</span>
+              </label>
             </div>
             <div class="full">
-              <label for="correspondence_address">Adres do korespondencji (jeśli inny niż siedziby)</label>
-              <textarea id="correspondence_address" name="correspondence_address">{{ values.get('correspondence_address', '') }}</textarea>
-              {% if errors.get("correspondence_address") %}<div class="error">{{ errors.get("correspondence_address") }}</div>{% endif %}
+              <h3 class="step-title" style="font-size: 16px;">Adres siedziby</h3>
+            </div>
+            <div>
+              <label for="registered_street">Ulica</label>
+              <input id="registered_street" name="registered_street" type="text" required value="{{ values.get('registered_street', '') }}">
+              {% if errors.get("registered_street") %}<div class="error">{{ errors.get("registered_street") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="registered_building_no">Nr budynku</label>
+              <input id="registered_building_no" name="registered_building_no" type="text" required value="{{ values.get('registered_building_no', '') }}">
+              {% if errors.get("registered_building_no") %}<div class="error">{{ errors.get("registered_building_no") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="registered_apartment_no">Nr lokalu</label>
+              <input id="registered_apartment_no" name="registered_apartment_no" type="text" value="{{ values.get('registered_apartment_no', '') }}">
+              {% if errors.get("registered_apartment_no") %}<div class="error">{{ errors.get("registered_apartment_no") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="registered_postal_code">Kod pocztowy</label>
+              <input id="registered_postal_code" name="registered_postal_code" type="text" required placeholder="00-000" value="{{ values.get('registered_postal_code', '') }}">
+              {% if errors.get("registered_postal_code") %}<div class="error">{{ errors.get("registered_postal_code") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="registered_city">Miejscowość</label>
+              <input id="registered_city" name="registered_city" type="text" required value="{{ values.get('registered_city', '') }}">
+              {% if errors.get("registered_city") %}<div class="error">{{ errors.get("registered_city") }}</div>{% endif %}
+            </div>
+
+            <div class="full">
+              <h3 class="step-title" style="font-size: 16px;">Adres do korespondencji</h3>
+              <label class="consent" style="margin-top: 8px;">
+                <input
+                  id="correspondence_same_as_registered"
+                  name="correspondence_same_as_registered"
+                  type="checkbox"
+                  value="true"
+                  {% if values.get("correspondence_same_as_registered") in ("true", "on", "1", True) %}checked{% endif %}
+                >
+                <span style="color: var(--muted);">Taki sam jak adres siedziby</span>
+              </label>
+            </div>
+            <div>
+              <label for="correspondence_street">Ulica</label>
+              <input id="correspondence_street" name="correspondence_street" type="text" required value="{{ values.get('correspondence_street', '') }}">
+              {% if errors.get("correspondence_street") %}<div class="error">{{ errors.get("correspondence_street") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="correspondence_building_no">Nr budynku</label>
+              <input id="correspondence_building_no" name="correspondence_building_no" type="text" required value="{{ values.get('correspondence_building_no', '') }}">
+              {% if errors.get("correspondence_building_no") %}<div class="error">{{ errors.get("correspondence_building_no") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="correspondence_apartment_no">Nr lokalu</label>
+              <input id="correspondence_apartment_no" name="correspondence_apartment_no" type="text" value="{{ values.get('correspondence_apartment_no', '') }}">
+              {% if errors.get("correspondence_apartment_no") %}<div class="error">{{ errors.get("correspondence_apartment_no") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="correspondence_postal_code">Kod pocztowy</label>
+              <input id="correspondence_postal_code" name="correspondence_postal_code" type="text" required placeholder="00-000" value="{{ values.get('correspondence_postal_code', '') }}">
+              {% if errors.get("correspondence_postal_code") %}<div class="error">{{ errors.get("correspondence_postal_code") }}</div>{% endif %}
+            </div>
+            <div>
+              <label for="correspondence_city">Miejscowość</label>
+              <input id="correspondence_city" name="correspondence_city" type="text" required value="{{ values.get('correspondence_city', '') }}">
+              {% if errors.get("correspondence_city") %}<div class="error">{{ errors.get("correspondence_city") }}</div>{% endif %}
             </div>
           </div>
           <div class="step-actions">
@@ -329,20 +464,44 @@
               <input id="rep_last_name" type="text">
             </div>
             <div>
-              <label for="rep_personal_id">PESEL / data urodzenia</label>
-              <input id="rep_personal_id" type="text">
+              <label for="rep_pesel">PESEL</label>
+              <input id="rep_pesel" type="text" inputmode="numeric" placeholder="11 cyfr">
+            </div>
+            <div>
+              <label for="rep_birth_date">Data urodzenia</label>
+              <div class="date-input-wrap">
+                <input id="rep_birth_date" type="text" placeholder="dd-mm-rrrr">
+                <button type="button" class="date-input-button" id="rep_birth_date_picker_btn" aria-label="Kalendarz daty urodzenia">📅</button>
+                <input id="rep_birth_date_picker" class="date-picker-native" type="date" tabindex="-1" aria-hidden="true">
+              </div>
             </div>
             <div>
               <label for="rep_document_type">Rodzaj dokumentu tożsamości</label>
-              <input id="rep_document_type" type="text">
+              <select id="rep_document_type">
+                <option value="">Wybierz rodzaj dokumentu</option>
+                <option value="Dowód osobisty">Dowód osobisty</option>
+                <option value="Paszport">Paszport</option>
+              </select>
             </div>
             <div>
               <label for="rep_document_number">Nr dokumentu tożsamości</label>
               <input id="rep_document_number" type="text">
             </div>
-            <div class="full">
-              <label for="rep_document_issue_validity">Data wydania i ważności dokumentu tożsamości</label>
-              <input id="rep_document_issue_validity" type="text">
+            <div>
+              <label for="rep_document_issue_date">Data wydania dokumentu</label>
+              <div class="date-input-wrap">
+                <input id="rep_document_issue_date" type="text" placeholder="dd-mm-rrrr">
+                <button type="button" class="date-input-button" id="rep_document_issue_date_picker_btn" aria-label="Kalendarz daty wydania">📅</button>
+                <input id="rep_document_issue_date_picker" class="date-picker-native" type="date" tabindex="-1" aria-hidden="true">
+              </div>
+            </div>
+            <div>
+              <label for="rep_document_expiry_date">Data ważności dokumentu</label>
+              <div class="date-input-wrap">
+                <input id="rep_document_expiry_date" type="text" placeholder="dd-mm-rrrr">
+                <button type="button" class="date-input-button" id="rep_document_expiry_date_picker_btn" aria-label="Kalendarz daty ważności">📅</button>
+                <input id="rep_document_expiry_date_picker" class="date-picker-native" type="date" tabindex="-1" aria-hidden="true">
+              </div>
             </div>
           </div>
 
@@ -412,27 +571,62 @@
         const repFields = {
           first_name: document.getElementById("rep_first_name"),
           last_name: document.getElementById("rep_last_name"),
-          personal_id: document.getElementById("rep_personal_id"),
+          pesel: document.getElementById("rep_pesel"),
+          birth_date: document.getElementById("rep_birth_date"),
           document_type: document.getElementById("rep_document_type"),
           document_number: document.getElementById("rep_document_number"),
-          document_issue_validity: document.getElementById("rep_document_issue_validity"),
+          document_issue_date: document.getElementById("rep_document_issue_date"),
+          document_expiry_date: document.getElementById("rep_document_expiry_date"),
         };
+
+        const datePickerLinks = [
+          {
+            textId: "rep_birth_date",
+            pickerId: "rep_birth_date_picker",
+            buttonId: "rep_birth_date_picker_btn",
+          },
+          {
+            textId: "rep_document_issue_date",
+            pickerId: "rep_document_issue_date_picker",
+            buttonId: "rep_document_issue_date_picker_btn",
+          },
+          {
+            textId: "rep_document_expiry_date",
+            pickerId: "rep_document_expiry_date_picker",
+            buttonId: "rep_document_expiry_date_picker_btn",
+          },
+        ];
 
         const companyRequiredFields = [
           document.getElementById("company_name"),
           document.getElementById("company_nip"),
           document.getElementById("company_phone"),
           document.getElementById("company_email"),
-          document.getElementById("registered_address"),
+          document.getElementById("billing_email"),
+          document.getElementById("registered_street"),
+          document.getElementById("registered_building_no"),
+          document.getElementById("registered_postal_code"),
+          document.getElementById("registered_city"),
+          document.getElementById("correspondence_street"),
+          document.getElementById("correspondence_building_no"),
+          document.getElementById("correspondence_postal_code"),
+          document.getElementById("correspondence_city"),
         ];
+        const representativeRequiredFields = Object.values(repFields);
+        const completionTrackedFields = [
+          ...companyRequiredFields,
+          ...representativeRequiredFields,
+        ].filter(Boolean);
 
         const repLabels = {
           first_name: "Imię",
           last_name: "Nazwisko",
-          personal_id: "PESEL / data urodzenia",
+          pesel: "PESEL",
+          birth_date: "Data urodzenia",
           document_type: "Rodzaj dokumentu tożsamości",
           document_number: "Nr dokumentu tożsamości",
-          document_issue_validity: "Data wydania i ważności dokumentu tożsamości",
+          document_issue_date: "Data wydania dokumentu",
+          document_expiry_date: "Data ważności dokumentu",
         };
 
         let currentStep = 1;
@@ -450,10 +644,12 @@
           return {
             first_name: "",
             last_name: "",
-            personal_id: "",
+            pesel: "",
+            birth_date: "",
             document_type: "",
             document_number: "",
-            document_issue_validity: "",
+            document_issue_date: "",
+            document_expiry_date: "",
           };
         }
 
@@ -462,6 +658,101 @@
             return "";
           }
           return String(value).trim();
+        }
+
+        function toDisplayDate(value) {
+          const normalized = normalizeText(value);
+          if (!normalized) {
+            return "";
+          }
+          const iso = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (iso) {
+            return `${iso[3]}-${iso[2]}-${iso[1]}`;
+          }
+          const display = normalized.match(/^(\d{2})[:.\-](\d{2})[:.\-](\d{4})$/);
+          if (display) {
+            return `${display[1]}-${display[2]}-${display[3]}`;
+          }
+          return normalized;
+        }
+
+        function parseDateInput(value) {
+          const normalized = normalizeText(value);
+          if (!normalized) {
+            return "";
+          }
+          let match = normalized.match(/^(\d{2})[:.\-](\d{2})[:.\-](\d{4})$/);
+          if (match) {
+            const day = Number(match[1]);
+            const month = Number(match[2]);
+            const year = Number(match[3]);
+            const date = new Date(Date.UTC(year, month - 1, day));
+            if (
+              date.getUTCFullYear() === year &&
+              date.getUTCMonth() === month - 1 &&
+              date.getUTCDate() === day
+            ) {
+              return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
+            }
+            return "";
+          }
+          match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (match) {
+            const year = Number(match[1]);
+            const month = Number(match[2]);
+            const day = Number(match[3]);
+            const date = new Date(Date.UTC(year, month - 1, day));
+            if (
+              date.getUTCFullYear() === year &&
+              date.getUTCMonth() === month - 1 &&
+              date.getUTCDate() === day
+            ) {
+              return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
+            }
+          }
+          return "";
+        }
+
+        function parsePeselBirthDate(value) {
+          const pesel = normalizeText(value).replace(/\D/g, "");
+          if (!/^\d{11}$/.test(pesel)) {
+            return "";
+          }
+
+          const year2 = Number(pesel.slice(0, 2));
+          const monthEncoded = Number(pesel.slice(2, 4));
+          const day = Number(pesel.slice(4, 6));
+
+          let yearPrefix = 1900;
+          let month = monthEncoded;
+          if (monthEncoded >= 1 && monthEncoded <= 12) {
+            yearPrefix = 1900;
+          } else if (monthEncoded >= 21 && monthEncoded <= 32) {
+            yearPrefix = 2000;
+            month = monthEncoded - 20;
+          } else if (monthEncoded >= 41 && monthEncoded <= 52) {
+            yearPrefix = 2100;
+            month = monthEncoded - 40;
+          } else if (monthEncoded >= 61 && monthEncoded <= 72) {
+            yearPrefix = 2200;
+            month = monthEncoded - 60;
+          } else if (monthEncoded >= 81 && monthEncoded <= 92) {
+            yearPrefix = 1800;
+            month = monthEncoded - 80;
+          } else {
+            return "";
+          }
+
+          const year = yearPrefix + year2;
+          const date = new Date(Date.UTC(year, month - 1, day));
+          if (
+            date.getUTCFullYear() !== year ||
+            date.getUTCMonth() !== month - 1 ||
+            date.getUTCDate() !== day
+          ) {
+            return "";
+          }
+          return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
         }
 
         function escapeHtml(value) {
@@ -498,16 +789,61 @@
         function setRepresentativeEditor(item) {
           const normalized = normalizeRepresentative(item);
           Object.entries(repFields).forEach(([key, input]) => {
-            input.value = normalized[key] || "";
+            if (key === "birth_date" || key === "document_issue_date" || key === "document_expiry_date") {
+              input.value = toDisplayDate(normalized[key] || "");
+            } else {
+              input.value = normalized[key] || "";
+            }
           });
+          syncDatePickersFromText();
         }
 
         function readRepresentativeFromEditor() {
           const data = emptyRepresentative();
           Object.entries(repFields).forEach(([key, input]) => {
-            data[key] = normalizeText(input.value);
+            if (key === "birth_date" || key === "document_issue_date" || key === "document_expiry_date") {
+              data[key] = parseDateInput(input.value);
+            } else if (key === "pesel") {
+              data[key] = normalizeText(input.value).replace(/\D/g, "");
+            } else {
+              data[key] = normalizeText(input.value);
+            }
           });
           return data;
+        }
+
+        function toIsoFromDisplayDate(value) {
+          const match = normalizeText(value).match(/^(\d{2})-(\d{2})-(\d{4})$/);
+          if (!match) {
+            return "";
+          }
+          return `${match[3]}-${match[2]}-${match[1]}`;
+        }
+
+        function syncDatePickersFromText() {
+          datePickerLinks.forEach(({ textId, pickerId }) => {
+            const textInput = document.getElementById(textId);
+            const pickerInput = document.getElementById(pickerId);
+            if (!textInput || !pickerInput) {
+              return;
+            }
+            const normalized = parseDateInput(textInput.value);
+            textInput.value = normalized || normalizeText(textInput.value);
+            pickerInput.value = toIsoFromDisplayDate(normalized);
+          });
+        }
+
+        function updateInputCompletionState(input) {
+          if (!input) {
+            return;
+          }
+          const hasValue = normalizeText(input.value) !== "";
+          input.classList.toggle("field-filled", hasValue);
+          input.classList.toggle("field-empty", !hasValue);
+        }
+
+        function refreshCompletionStates() {
+          completionTrackedFields.forEach((input) => updateInputCompletionState(input));
         }
 
         function setRepresentativesError(message) {
@@ -528,6 +864,9 @@
             if (!normalizeText(data[key])) {
               return `Pole „${repLabels[key]}” jest wymagane.`;
             }
+          }
+          if (!/^\d{11}$/.test(data.pesel || "")) {
+            return "Pole „PESEL” musi zawierać 11 cyfr.";
           }
           return "";
         }
@@ -576,6 +915,7 @@
           setRepresentativesError("");
           renderRepresentatives();
           persistRepresentatives();
+          refreshCompletionStates();
           return true;
         }
 
@@ -590,6 +930,7 @@
           setRepresentativeEditor(emptyRepresentative());
           renderRepresentatives();
           setRepresentativesError("");
+          refreshCompletionStates();
         }
 
         function openRepresentative(index) {
@@ -601,6 +942,7 @@
           setRepresentativeEditor(candidate);
           renderRepresentatives();
           setRepresentativesError("");
+          refreshCompletionStates();
         }
 
         function showStep(stepNumber) {
@@ -624,17 +966,34 @@
         }
 
         function composeSummaryHtml() {
+          const registeredAddress = [
+            document.getElementById("registered_street").value,
+            document.getElementById("registered_building_no").value,
+            document.getElementById("registered_apartment_no").value
+              ? `lok. ${document.getElementById("registered_apartment_no").value}`
+              : "",
+            `${document.getElementById("registered_postal_code").value} ${document.getElementById("registered_city").value}`,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          const correspondenceAddress = [
+            document.getElementById("correspondence_street").value,
+            document.getElementById("correspondence_building_no").value,
+            document.getElementById("correspondence_apartment_no").value
+              ? `lok. ${document.getElementById("correspondence_apartment_no").value}`
+              : "",
+            `${document.getElementById("correspondence_postal_code").value} ${document.getElementById("correspondence_city").value}`,
+          ]
+            .filter(Boolean)
+            .join(", ");
           const fields = [
             ["Nazwa firmy", document.getElementById("company_name").value],
             ["NIP", document.getElementById("company_nip").value],
             ["Nr telefonu", document.getElementById("company_phone").value],
             ["E-mail", document.getElementById("company_email").value],
-            ["E-mail do faktur", document.getElementById("billing_email").value || "—"],
-            ["Adres siedziby", document.getElementById("registered_address").value],
-            [
-              "Adres korespondencyjny",
-              document.getElementById("correspondence_address").value || "—",
-            ],
+            ["E-mail do e-faktur", document.getElementById("billing_email").value || "—"],
+            ["Adres siedziby", registeredAddress || "—"],
+            ["Adres korespondencyjny", correspondenceAddress || "—"],
           ];
 
           let details = "<h3>Dane firmy</h3><dl>";
@@ -648,10 +1007,12 @@
             const headline = `${index + 1}. ${item.first_name} ${item.last_name}`.trim();
             details += "<dl>";
             details += `<dt>Osoba</dt><dd>${escapeHtml(headline)}</dd>`;
-            details += `<dt>PESEL / data urodzenia</dt><dd>${escapeHtml(item.personal_id)}</dd>`;
+            details += `<dt>PESEL</dt><dd>${escapeHtml(item.pesel)}</dd>`;
+            details += `<dt>Data urodzenia</dt><dd>${escapeHtml(item.birth_date)}</dd>`;
             details += `<dt>Dokument</dt><dd>${escapeHtml(item.document_type)}</dd>`;
             details += `<dt>Nr dokumentu</dt><dd>${escapeHtml(item.document_number)}</dd>`;
-            details += `<dt>Wydanie i ważność</dt><dd>${escapeHtml(item.document_issue_validity)}</dd>`;
+            details += `<dt>Data wydania</dt><dd>${escapeHtml(item.document_issue_date)}</dd>`;
+            details += `<dt>Data ważności</dt><dd>${escapeHtml(item.document_expiry_date)}</dd>`;
             details += "</dl>";
           });
           return details;
@@ -669,6 +1030,138 @@
           persistRepresentatives();
           showStep(3);
         }
+
+        function copyRegisteredAddressToCorrespondence() {
+          const mapping = [
+            ["registered_street", "correspondence_street"],
+            ["registered_building_no", "correspondence_building_no"],
+            ["registered_apartment_no", "correspondence_apartment_no"],
+            ["registered_postal_code", "correspondence_postal_code"],
+            ["registered_city", "correspondence_city"],
+          ];
+          mapping.forEach(([sourceId, targetId]) => {
+            const source = document.getElementById(sourceId);
+            const target = document.getElementById(targetId);
+            if (!source || !target) {
+              return;
+            }
+            target.value = source.value;
+          });
+          refreshCompletionStates();
+        }
+
+        const correspondenceSameCheckbox = document.getElementById(
+          "correspondence_same_as_registered"
+        );
+        const copyCompanyEmailToBillingCheckbox = document.getElementById(
+          "copy-company-email-to-billing"
+        );
+        const companyEmailInput = document.getElementById("company_email");
+        const billingEmailInput = document.getElementById("billing_email");
+        const registeredAddressInputs = [
+          "registered_street",
+          "registered_building_no",
+          "registered_apartment_no",
+          "registered_postal_code",
+          "registered_city",
+        ]
+          .map((id) => document.getElementById(id))
+          .filter(Boolean);
+
+        correspondenceSameCheckbox?.addEventListener("change", () => {
+          if (correspondenceSameCheckbox.checked) {
+            copyRegisteredAddressToCorrespondence();
+          }
+          refreshCompletionStates();
+        });
+
+        function syncBillingEmailFromCompany() {
+          if (!companyEmailInput || !billingEmailInput) {
+            return;
+          }
+          billingEmailInput.value = companyEmailInput.value;
+          refreshCompletionStates();
+        }
+
+        copyCompanyEmailToBillingCheckbox?.addEventListener("change", () => {
+          if (copyCompanyEmailToBillingCheckbox.checked) {
+            syncBillingEmailFromCompany();
+          }
+        });
+
+        companyEmailInput?.addEventListener("input", () => {
+          if (copyCompanyEmailToBillingCheckbox?.checked) {
+            syncBillingEmailFromCompany();
+          }
+        });
+
+        registeredAddressInputs.forEach((input) => {
+          input.addEventListener("input", () => {
+            if (correspondenceSameCheckbox?.checked) {
+              copyRegisteredAddressToCorrespondence();
+            }
+            refreshCompletionStates();
+          });
+        });
+
+        datePickerLinks.forEach(({ textId, pickerId, buttonId }) => {
+          const textInput = document.getElementById(textId);
+          const pickerInput = document.getElementById(pickerId);
+          const pickerButton = document.getElementById(buttonId);
+          if (!textInput || !pickerInput || !pickerButton) {
+            return;
+          }
+          textInput.addEventListener("input", () => {
+            refreshCompletionStates();
+          });
+          textInput.addEventListener("change", () => {
+            const normalized = parseDateInput(textInput.value);
+            textInput.value = normalized || normalizeText(textInput.value);
+            pickerInput.value = toIsoFromDisplayDate(normalized);
+            refreshCompletionStates();
+          });
+          pickerInput.addEventListener("change", () => {
+            textInput.value = toDisplayDate(pickerInput.value);
+            refreshCompletionStates();
+          });
+          pickerButton.addEventListener("click", () => {
+            if (typeof pickerInput.showPicker === "function") {
+              pickerInput.showPicker();
+              return;
+            }
+            pickerInput.focus();
+            pickerInput.click();
+          });
+        });
+
+        completionTrackedFields.forEach((input) => {
+          input.addEventListener("input", () => {
+            updateInputCompletionState(input);
+          });
+          input.addEventListener("blur", () => {
+            updateInputCompletionState(input);
+          });
+        });
+
+        repFields.pesel?.addEventListener("input", () => {
+          repFields.pesel.value = normalizeText(repFields.pesel.value).replace(/\D/g, "");
+          const inferredBirthDate = parsePeselBirthDate(repFields.pesel.value);
+          if (inferredBirthDate) {
+            repFields.birth_date.value = inferredBirthDate;
+            const picker = document.getElementById("rep_birth_date_picker");
+            if (picker) {
+              picker.value = toIsoFromDisplayDate(inferredBirthDate);
+            }
+          }
+          refreshCompletionStates();
+        });
+
+        if (correspondenceSameCheckbox?.checked) {
+          copyRegisteredAddressToCorrespondence();
+        }
+        syncDatePickersFromText();
+        refreshCompletionStates();
+        window.setTimeout(refreshCompletionStates, 60);
 
         document.getElementById("go-step-2").addEventListener("click", () => {
           if (!validateCompanyStep()) {
