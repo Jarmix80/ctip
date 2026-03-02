@@ -54,7 +54,7 @@ MSG
 fi
 
 collect_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${PYTHON_BIN}' -u collector_full.py"
-uvicorn_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${UVICORN_BIN}' app.main:app --reload --host 0.0.0.0 --port ${TEST_UVICORN_PORT}"
+uvicorn_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${UVICORN_BIN}' app.main:app --host 0.0.0.0 --port ${TEST_UVICORN_PORT}"
 sender_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${PYTHON_BIN}' -u sms_sender.py"
 
 # okno 0 – collector

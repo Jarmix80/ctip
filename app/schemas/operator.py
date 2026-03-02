@@ -151,7 +151,7 @@ class OperatorPasswordChangeRequest(BaseModel):
     """Żądanie zmiany hasła przez operatora."""
 
     current_password: str = Field(min_length=1)
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=9, max_length=128)
 
 
 class OperatorSmsTemplateBase(BaseModel):

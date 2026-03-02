@@ -10,6 +10,7 @@
 - Pasek szablonów prezentuje predefiniowane przyciski („Aplikacja”, „Liczniki”), aktywne szablony globalne oraz własne szablony operatora pobrane z `/operator/api/sms/templates`.
 - W ustawieniach szybkiej wysyłki dostępna jest opcja potwierdzania wysyłki przed dodaniem do kolejki oraz zapamiętania bieżącej treści jako nowego szablonu operatora.
 - Ustawienia operatora: edycja profilu (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmiana hasła oraz własne szablony SMS (CRUD).
+- Polityka hasła w formularzu zmiany: minimum 9 znaków, co najmniej jedna duża litera, jedna cyfra i jeden znak specjalny.
 - Obsługa opcji „Zapamiętaj mnie” – wydłużona ważność tokenu (`ADMIN_SESSION_REMEMBER_HOURS`) i przechowywanie w `localStorage`.
 
 ## Ścieżki UI
@@ -22,7 +23,7 @@
 | `/operator/api/me` | GET | Podstawowe informacje o zalogowanym operatorze. |
 | `/operator/api/profile` | GET | Szczegóły profilu (imię, nazwisko, e-mail, numer wewnętrzny, telefon, rola). |
 | `/operator/api/profile` | PUT | Aktualizacja danych profilu. |
-| `/operator/api/profile/change-password` | POST | Zmiana hasła (wymaga podania obecnego hasła). |
+| `/operator/api/profile/change-password` | POST | Zmiana hasła (wymaga podania obecnego hasła i spełnienia polityki złożoności). |
 | `/operator/api/calls` | GET | Lista połączeń (`limit`, `search`, `direction`). |
 | `/operator/api/calls/{id}` | GET | Szczegóły połączenia (wydarzenia CTIP, kontakt, historia SMS). |
 | `/operator/api/contacts/by-number/{number}` | GET | Dane kontaktu na podstawie numeru MSISDN. |

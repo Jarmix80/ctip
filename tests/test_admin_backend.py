@@ -3,7 +3,7 @@
 import json
 import sys
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
@@ -1103,8 +1103,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 for row in sms_rows
                 if isinstance(row.meta, dict) and row.meta.get("type") == "admin_user_credentials"
             ]
-            self.assertGreaterEqual(len(matching), 1)
-            self.assertEqual(matching[-1].dest, "+48600700800")
+            self.assertGreaterEqual(len(matching), 2)
+            self.assertEqual(matching[-1].dest, "+48600111222")
+            self.assertEqual(matching[-1].meta.get("action"), "password_reset")
 
         response = await self.client.patch(
             f"/admin/users/{user_id}/status",
@@ -1150,7 +1151,118 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(self.send_email_mock.await_count, 1)
+        self.assertEqual(self.send_email_mock.await_count, 2)
+
+    async def test_portal_user_can_update_own_profile(self):
+        response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": False,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["token"]
+
+        response = await self.client.get(
+            "/auth/profile",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        profile = response.json()
+        self.assertEqual(profile["email"], "operator@example.com")
+
+        update_payload = {
+            "email": "operator.updated@example.com",
+            "first_name": "Anna",
+            "last_name": "Nowak-Nowa",
+            "internal_ext": "222",
+            "mobile_phone": "+48699111222",
+        }
+        response = await self.client.put(
+            "/auth/profile",
+            headers={"X-Admin-Session": token},
+            json=update_payload,
+        )
+        self.assertEqual(response.status_code, 200)
+        updated = response.json()
+        self.assertEqual(updated["email"], "operator.updated@example.com")
+        self.assertEqual(updated["first_name"], "Anna")
+        self.assertEqual(updated["last_name"], "Nowak-Nowa")
+        self.assertEqual(updated["internal_ext"], "222")
+        self.assertEqual(updated["mobile_phone"], "+48699111222")
+        self.assertIn("operator", updated["sections"])
+
+        async with self.session_factory() as session:
+            stmt = select(AdminUser).where(AdminUser.email == "operator.updated@example.com")
+            db_user = (await session.execute(stmt)).scalar_one_or_none()
+            self.assertIsNotNone(db_user)
+            self.assertEqual(db_user.internal_ext, "222")
+            self.assertEqual(db_user.mobile_phone, "+48699111222")
+
+            audit_stmt = select(AdminAuditLog).where(
+                AdminAuditLog.action == "portal_profile_update"
+            )
+            audit_entries = (await session.execute(audit_stmt)).scalars().all()
+            self.assertGreaterEqual(len(audit_entries), 1)
+
+    async def test_portal_user_can_change_password_with_policy(self):
+        response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": False,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["token"]
+
+        weak_payload = {
+            "current_password": "Operator123!",
+            "new_password": "Abcdefg12",
+        }
+        response = await self.client.post(
+            "/auth/profile/change-password",
+            headers={"X-Admin-Session": token},
+            json=weak_payload,
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn(
+            "Hasło musi mieć co najmniej 9 znaków", str(response.json().get("detail", ""))
+        )
+
+        strong_payload = {
+            "current_password": "Operator123!",
+            "new_password": "NoweHaslo123!",
+        }
+        response = await self.client.post(
+            "/auth/profile/change-password",
+            headers={"X-Admin-Session": token},
+            json=strong_payload,
+        )
+        self.assertEqual(response.status_code, 204)
+
+        old_login = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": False,
+            },
+        )
+        self.assertEqual(old_login.status_code, 401)
+
+        new_login = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "NoweHaslo123!",
+                "remember_me": False,
+            },
+        )
+        self.assertEqual(new_login.status_code, 200)
 
     async def test_operator_cannot_manage_users(self):
         token, _ = await self._login_operator()
@@ -1162,10 +1274,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_operator_can_generate_form_link_and_list_requests(self):
         token, _ = await self._login_operator()
+        custom_expiry = date.today() + timedelta(days=10)
         payload = {
             "customer_name": "Klient Testowy",
             "customer_email": "klient.testowy@example.com",
             "customer_phone": "+48 600 700 800",
+            "expires_on": custom_expiry.isoformat(),
         }
         response = await self.client.post(
             "/admin/forms",
@@ -1180,6 +1294,27 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(body["sms_queued"])
         self.assertFalse(body["email_sent"])
         self.assertGreaterEqual(len(body["warnings"]), 1)
+        self.assertEqual(
+            datetime.fromisoformat(body["item"]["token_expires_at"]).date(),
+            custom_expiry,
+        )
+
+        response_default = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Domyślny",
+                "customer_email": "domyslny@example.com",
+                "customer_phone": "+48 600 800 900",
+            },
+        )
+        self.assertEqual(response_default.status_code, 201)
+        expires_default = datetime.fromisoformat(
+            response_default.json()["item"]["token_expires_at"]
+        )
+        delta_default = expires_default - datetime.now(UTC)
+        self.assertGreater(delta_default, timedelta(days=6, hours=20))
+        self.assertLess(delta_default, timedelta(days=7, hours=4))
 
         response = await self.client.get(
             "/admin/forms",
@@ -1187,13 +1322,15 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 200)
         items = response.json()["items"]
-        self.assertGreaterEqual(len(items), 1)
-        self.assertEqual(items[0]["customer_email"], "klient.testowy@example.com")
-        self.assertTrue(items[0]["created_by_name"])
+        self.assertGreaterEqual(len(items), 2)
+        emails = {item["customer_email"] for item in items}
+        self.assertIn("klient.testowy@example.com", emails)
+        self.assertIn("domyslny@example.com", emails)
+        self.assertTrue(all(item["created_by_name"] for item in items[:2]))
 
         async with self.session_factory() as session:
             forms = (await session.execute(select(FormRequest))).scalars().all()
-            self.assertEqual(len(forms), 1)
+            self.assertEqual(len(forms), 2)
             self.assertTrue(forms[0].token_hash)
             self.assertEqual(forms[0].status, "DISPATCHED")
             sms_rows = (
@@ -1205,8 +1342,23 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .scalars()
                 .all()
             )
-            self.assertEqual(len(sms_rows), 1)
+            self.assertEqual(len(sms_rows), 2)
             self.assertEqual(sms_rows[0].dest, "+48600700800")
+
+    async def test_operator_cannot_generate_form_with_past_expiry_date(self):
+        token, _ = await self._login_operator()
+        response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Przeterminowany",
+                "customer_email": "przeterminowany@example.com",
+                "customer_phone": "+48 600 000 111",
+                "expires_on": (date.today() - timedelta(days=1)).isoformat(),
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Data ważności formularza", response.json().get("detail", ""))
 
     async def test_generator_api_requires_generator_section(self):
         async with self.session_factory() as session:
@@ -1345,18 +1497,22 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             {
                 "first_name": "Jan",
                 "last_name": "Kowalski",
-                "personal_id": "85010112345",
+                "pesel": "85010112345",
+                "birth_date": "01:01:1985",
                 "document_type": "Dowód osobisty",
                 "document_number": "ABC123456",
-                "document_issue_validity": "2020-01-01 / 2030-01-01",
+                "document_issue_date": "01:01:2020",
+                "document_expiry_date": "01:01:2030",
             },
             {
                 "first_name": "Anna",
                 "last_name": "Nowak",
-                "personal_id": "1979-04-12",
+                "pesel": "02270803624",
+                "birth_date": "08:07:2002",
                 "document_type": "Paszport",
                 "document_number": "PZ998877",
-                "document_issue_validity": "2019-05-02 / 2029-05-01",
+                "document_issue_date": "02:05:2019",
+                "document_expiry_date": "01:05:2029",
             },
         ]
         email_settings = EmailDeliverySettings(
@@ -1385,8 +1541,17 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                         "company_phone": "+48601602603",
                         "company_email": "publiczny@example.com",
                         "billing_email": "faktury@example.com",
-                        "registered_address": "Warszawa, ul. Testowa 1",
-                        "correspondence_address": "Warszawa, ul. Korespondencyjna 2",
+                        "registered_street": "Testowa",
+                        "registered_building_no": "1",
+                        "registered_apartment_no": "2",
+                        "registered_postal_code": "00-001",
+                        "registered_city": "Warszawa",
+                        "correspondence_same_as_registered": "false",
+                        "correspondence_street": "Korespondencyjna",
+                        "correspondence_building_no": "2",
+                        "correspondence_apartment_no": "3",
+                        "correspondence_postal_code": "00-002",
+                        "correspondence_city": "Warszawa",
                         "representatives_json": json.dumps(reps),
                         "consent": "true",
                         "website": "",

@@ -270,8 +270,10 @@ async def send_credentials_email(
     user: AdminUser,
     password: str,
     login_url: str,
+    *,
+    reason: str = "create",
 ) -> None:
-    """Wysyła wiadomość z danymi logowania – pomija, gdy konfiguracja jest niepełna."""
+    """Wysyła wiadomość z danymi logowania po utworzeniu konta lub resecie hasła."""
     if delivery is None:
         logger.info("Pomijam wysyłkę e-maila z danymi logowania – brak konfiguracji SMTP.")
         return
@@ -279,18 +281,27 @@ async def send_credentials_email(
         logger.warning("Pomijam wysyłkę e-maila – użytkownik %s nie ma adresu.", user.id)
         return
 
+    reset_mode = reason == "password_reset"
     message = EmailMessage()
-    message["Subject"] = "Dane logowania do panelu CTIP"
+    message["Subject"] = (
+        "Reset hasła do panelu CTIP" if reset_mode else "Dane logowania do panelu CTIP"
+    )
     sender_title = delivery.sender_name or "CTIP Administrator"
     message["From"] = formataddr((sender_title, delivery.sender_address))
     message["To"] = user.email
     greeting = user.first_name or user.last_name or "Administratorze"
+    intro = (
+        "Hasło Twojego konta w panelu administracyjnym CTIP zostało zresetowane przez administratora."
+        if reset_mode
+        else "Utworzono nowe konto w panelu administracyjnym CTIP."
+    )
+    password_label = "Nowe hasło tymczasowe" if reset_mode else "Hasło tymczasowe"
     message.set_content(
         f"Dzień dobry {greeting},\n\n"
-        "Utworzono nowe konto w panelu administracyjnym CTIP.\n\n"
+        f"{intro}\n\n"
         f"Adres logowania: {login_url}\n"
         f"Nazwa użytkownika: {user.email}\n"
-        f"Hasło tymczasowe: {password}\n\n"
+        f"{password_label}: {password}\n\n"
         "Zalecamy zmianę hasła po pierwszym logowaniu.\n\n"
         "Pozdrawiamy,\nZespół CTIP"
     )
@@ -311,9 +322,17 @@ async def send_credentials_email(
 
     try:
         await asyncio.to_thread(_send)
-        logger.info("Wysłano e-mail z danymi logowania do użytkownika %s.", user.email)
+        logger.info(
+            "Wysłano e-mail (%s) z danymi logowania do użytkownika %s.",
+            "reset hasła" if reset_mode else "utworzenie konta",
+            user.email,
+        )
     except Exception:  # noqa: BLE001
-        logger.exception("Nie udało się wysłać e-maila z danymi logowania do %s.", user.email)
+        logger.exception(
+            "Nie udało się wysłać e-maila (%s) z danymi logowania do %s.",
+            "reset hasła" if reset_mode else "utworzenie konta",
+            user.email,
+        )
 
 
 async def queue_credentials_sms(
@@ -323,11 +342,14 @@ async def queue_credentials_sms(
     *,
     created_by: int | None,
     login_url: str,
+    reason: str = "create",
 ) -> None:
-    """Dodaje SMS z danymi logowania do kolejki, jeśli użytkownik ma numer telefonu."""
+    """Dodaje SMS z danymi logowania do kolejki po utworzeniu konta lub resecie hasła."""
     if not user.mobile_phone:
         return
-    text = f"Panel CTIP: {login_url}\n" f"Login: {user.email}\n" f"Hasło: {password}"
+    reset_mode = reason == "password_reset"
+    password_label = "Nowe hasło" if reset_mode else "Hasło"
+    text = f"Panel CTIP: {login_url}\n" f"Login: {user.email}\n" f"{password_label}: {password}"
     sms = SmsOut(
         dest=user.mobile_phone,
         text=text[:600],
@@ -335,7 +357,7 @@ async def queue_credentials_sms(
         origin="admin_user_credentials",
         status="NEW",
         created_by=created_by,
-        meta={"type": "admin_user_credentials", "user_id": user.id},
+        meta={"type": "admin_user_credentials", "user_id": user.id, "action": reason},
         created_at=datetime.now(UTC).replace(tzinfo=None),
     )
     session.add(sms)

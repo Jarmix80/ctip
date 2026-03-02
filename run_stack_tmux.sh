@@ -34,7 +34,7 @@ if tmux has-session -t "${SESSION_NAME}" 2>/dev/null; then
 fi
 
 collect_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${PYTHON_BIN}' -u collector_full.py"
-uvicorn_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${UVICORN_BIN}' app.main:app --reload --host 0.0.0.0 --port 8000"
+uvicorn_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${UVICORN_BIN}' app.main:app --host 0.0.0.0 --port 8000"
 sender_cmd="cd '${WORKDIR}' && set -a && source '${ENV_FILE}' && set +a && '${PYTHON_BIN}' -u sms_sender.py"
 
 # okno 0 – collector
@@ -49,7 +49,7 @@ tmux new-window -t "${SESSION_NAME}:2" -n "sms-sender" "bash -lc '${sender_cmd}'
 
 echo "Uruchomiono sesję tmux '${SESSION_NAME}' z trzema oknami:"
 echo "  - collector (collector_full.py)"
-echo "  - uvicorn   (uvicorn app.main:app --reload)"
+echo "  - uvicorn   (uvicorn app.main:app)"
 echo "  - sms-sender (sms_sender.py)"
 echo
 echo "Dołącz do sesji: tmux attach -t ${SESSION_NAME}"

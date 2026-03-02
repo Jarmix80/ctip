@@ -232,6 +232,7 @@ async def update_admin_user(
     summary="Reset hasła użytkownika",
 )
 async def reset_admin_password(
+    request: Request,
     user_id: int = Path(..., ge=1),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
@@ -244,6 +245,18 @@ async def reset_admin_password(
             status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono użytkownika."
         )
     new_password = await admin_users.reset_password(session, user)
+    login_url_default = urljoin(str(request.base_url), "")
+    panel_url_config = getattr(settings, "admin_panel_url", None)
+    login_url = (panel_url_config or "").strip() or login_url_default
+    email_delivery = await admin_users.resolve_email_delivery_settings(session)
+    await admin_users.queue_credentials_sms(
+        session,
+        user,
+        new_password,
+        created_by=admin_user.id,
+        login_url=login_url,
+        reason="password_reset",
+    )
 
     await record_audit(
         session,
@@ -253,6 +266,14 @@ async def reset_admin_password(
         payload={"user_id": user.id, "email": user.email},
     )
     await session.commit()
+
+    await admin_users.send_credentials_email(
+        email_delivery,
+        user,
+        new_password,
+        login_url,
+        reason="password_reset",
+    )
     return AdminUserResetPasswordResponse(password=new_password)
 
 
