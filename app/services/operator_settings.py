@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AdminSession, AdminUser, Contact, SmsTemplate
 from app.services import admin_users
 from app.services.audit import record_audit
-from app.services.security import hash_password, verify_password
+from app.services.security import hash_password, validate_password_policy, verify_password
 
 
 def _normalize(value: str | None) -> str | None:
@@ -61,6 +61,7 @@ async def change_password(
         raise ValueError("Nieprawidłowe aktualne hasło.")
     if verify_password(new_password, user.password_hash):
         raise ValueError("Nowe hasło nie może być identyczne z dotychczasowym.")
+    validate_password_policy(new_password)
 
     user.password_hash = hash_password(new_password)
     user.updated_at = datetime.now(UTC)

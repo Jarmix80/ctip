@@ -21,6 +21,87 @@
           <a class="root-btn secondary" href="/operator" data-section="operator" hidden>Panel operatora</a>
           <a class="root-btn secondary" href="/genform" data-section="generator" hidden>Generator formularzy</a>
         </div>
+        <div class="root-actions root-actions-inline">
+          <button id="root-profile-toggle" type="button" class="root-btn root-btn-ghost">
+            Edytuj profil
+          </button>
+        </div>
+        <form id="root-profile-form" class="root-form root-profile-form" hidden>
+          <div class="root-profile-grid">
+            <label>
+              E-mail
+              <input id="root-profile-email" name="email" type="email" autocomplete="username" required>
+            </label>
+            <label>
+              Imię
+              <input id="root-profile-first-name" name="first_name" type="text" autocomplete="given-name">
+            </label>
+            <label>
+              Nazwisko
+              <input id="root-profile-last-name" name="last_name" type="text" autocomplete="family-name">
+            </label>
+            <label>
+              Numer wewnętrzny
+              <input id="root-profile-internal-ext" name="internal_ext" type="text" autocomplete="tel-extension">
+            </label>
+            <label>
+              Telefon
+              <input id="root-profile-mobile-phone" name="mobile_phone" type="tel" autocomplete="tel">
+            </label>
+          </div>
+          <div class="root-profile-actions">
+            <button id="root-profile-submit" type="submit" class="root-btn">Zapisz profil</button>
+            <button id="root-profile-cancel" type="button" class="root-btn root-btn-ghost">Anuluj</button>
+          </div>
+          <p id="root-profile-feedback" class="root-profile-feedback" hidden></p>
+        </form>
+        <div class="root-actions root-actions-inline">
+          <button id="root-password-toggle" type="button" class="root-btn root-btn-ghost">
+            Zmień hasło
+          </button>
+        </div>
+        <form id="root-password-form" class="root-form root-profile-form" hidden>
+          <p class="root-profile-note">
+            Wymagania hasła: min. 9 znaków, co najmniej jedna duża litera, jedna cyfra i jeden znak specjalny.
+          </p>
+          <div class="root-profile-grid">
+            <label>
+              Aktualne hasło
+              <input
+                id="root-password-current"
+                name="current_password"
+                type="password"
+                autocomplete="current-password"
+                required
+              >
+            </label>
+            <label>
+              Nowe hasło
+              <input
+                id="root-password-new"
+                name="new_password"
+                type="password"
+                autocomplete="new-password"
+                required
+              >
+            </label>
+            <label>
+              Potwierdź nowe hasło
+              <input
+                id="root-password-confirm"
+                name="confirm_password"
+                type="password"
+                autocomplete="new-password"
+                required
+              >
+            </label>
+          </div>
+          <div class="root-profile-actions">
+            <button id="root-password-submit" type="submit" class="root-btn">Zmień hasło</button>
+            <button id="root-password-cancel" type="button" class="root-btn root-btn-ghost">Anuluj</button>
+          </div>
+          <p id="root-password-feedback" class="root-profile-feedback" hidden></p>
+        </form>
         <p id="root-sections-empty" class="root-warning" hidden>
           Twoje konto nie ma przypisanych sekcji. Skontaktuj się z administratorem systemu.
         </p>

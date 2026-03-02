@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 PanelSection = Literal["admin", "operator", "generator"]
 
@@ -307,6 +308,62 @@ class PortalUserInfo(BaseModel):
     last_name: str | None = None
     role: str
     sections: list[PanelSection] = Field(default_factory=list)
+
+
+class PortalProfile(BaseModel):
+    """Widok danych profilu użytkownika po zalogowaniu centralnym."""
+
+    email: EmailStr
+    first_name: str | None = None
+    last_name: str | None = None
+    internal_ext: str | None = None
+    mobile_phone: str | None = None
+    role: str
+    sections: list[PanelSection] = Field(default_factory=list)
+
+
+class PortalProfileUpdate(BaseModel):
+    """Aktualizacja danych profilu użytkownika."""
+
+    email: EmailStr
+    first_name: str | None = Field(default=None, max_length=120)
+    last_name: str | None = Field(default=None, max_length=120)
+    internal_ext: str | None = Field(default=None, max_length=16)
+    mobile_phone: str | None = Field(
+        default=None, min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$"
+    )
+
+    @field_validator("first_name", "last_name", "internal_ext", "mobile_phone", mode="before")
+    @classmethod
+    def _strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class PortalPasswordChangeRequest(BaseModel):
+    """Żądanie zmiany hasła użytkownika po zalogowaniu centralnym."""
+
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=9, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_password_policy(cls, value: str) -> str:
+        if re.search(r"[A-Z]", value) is None:
+            raise ValueError(
+                "Hasło musi mieć co najmniej 9 znaków oraz zawierać co najmniej jedną wielką literę, jedną cyfrę i jeden znak specjalny."
+            )
+        if re.search(r"\d", value) is None:
+            raise ValueError(
+                "Hasło musi mieć co najmniej 9 znaków oraz zawierać co najmniej jedną wielką literę, jedną cyfrę i jeden znak specjalny."
+            )
+        if re.search(r"[^A-Za-z0-9]", value) is None:
+            raise ValueError(
+                "Hasło musi mieć co najmniej 9 znaków oraz zawierać co najmniej jedną wielką literę, jedną cyfrę i jeden znak specjalny."
+            )
+        return value
 
 
 class AdminUserResetPasswordResponse(BaseModel):

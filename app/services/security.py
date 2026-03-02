@@ -5,11 +5,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from typing import Final
 
 PBKDF2_ROUNDS: Final[int] = 480_000
 SALT_LEN: Final[int] = 16
+PASSWORD_MIN_LENGTH: Final[int] = 9
+PASSWORD_POLICY_MESSAGE: Final[str] = (
+    "Hasło musi mieć co najmniej 9 znaków oraz zawierać co najmniej jedną wielką literę, "
+    "jedną cyfrę i jeden znak specjalny."
+)
 
 
 def _b64encode(data: bytes) -> str:
@@ -48,3 +54,15 @@ def verify_password(password: str, stored_hash: str) -> bool:
 def generate_session_token() -> str:
     """Generuje losowy token sesji."""
     return secrets.token_urlsafe(32)
+
+
+def validate_password_policy(password: str) -> None:
+    """Waliduje politykę złożoności hasła."""
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+    if re.search(r"[A-Z]", password) is None:
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+    if re.search(r"\d", password) is None:
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+    if re.search(r"[^A-Za-z0-9]", password) is None:
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
