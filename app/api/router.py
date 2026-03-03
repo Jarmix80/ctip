@@ -8,6 +8,7 @@ from app.api.routes import (
     admin_call_sms,
     admin_config,
     admin_contacts,
+    admin_contracts,
     admin_ctip,
     admin_email,
     admin_firebird,
@@ -30,6 +31,7 @@ api_router.include_router(admin_auth.router)
 api_router.include_router(admin_call_sms.router)
 api_router.include_router(admin_ctip.router)
 api_router.include_router(admin_config.router)
+api_router.include_router(admin_contracts.router)
 api_router.include_router(admin_contacts.router)
 api_router.include_router(admin_email.router)
 api_router.include_router(admin_forms.router)

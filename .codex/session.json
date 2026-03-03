@@ -1,37 +1,21 @@
 {
-  "timestamp": "2026-01-22T16:52:59+01:00",
+  "timestamp": "2026-03-03T16:10:00+00:00",
   "summary": [
-    "HttpSmsProvider wymusza FULL i utf dla dlugich lub nie-ASCII tresci SMS.",
-    "Dodano testy wymuszenia FULL/UTF i zaktualizowano README z opisem zachowania.",
-    "Pre-commit i python -m unittest discover -s tests zakonczone OK (ostrzezenia CALL_SMS w testach).",
-    "Testy kontekstu kolektora uzywaja atrapy polaczenia DB z cursor() aby uniknac szumu CALL_SMS.",
-    "python -m unittest discover -s tests zakonczone OK bez ostrzezen CALL_SMS.",
-    "Dodano skrypt diagnostyczny Windows dla CTIP-SMS i wpis w README.",
-    "Poprawiono ustawianie zmiennych srodowiskowych w skrypcie diagnostycznym.",
-    "Zaktualizowano wersje panelu operatora do 0.2.2 i odswiezono wpis w README.",
-    "Skrypt diagnostyczny NSSM scala wyjscie parametrow, aby uniknac System.Object[]."
-    ,
-    "Zdiagnozowano produkcje przez \\192.168.0.8\\ctip: sms_sender ma bledy polaczenia z PostgreSQL i brak nowych SMS.",
-    "Dodano automatyczne odnawianie polaczenia w sms_sender oraz test jednostkowy reconnect.",
-    "README uzupelniono o informacje o ponownym laczeniu z PostgreSQL w sms_sender.",
-    "Dodano skrypt restartu dziennego dla Windows z testami polaczen i opcjonalnymi alertami.",
-    "README uzupelniono o harmonogram restartu 00:00 oraz opis skryptu.",
-    "Zidentyfikowano duplikaty SMS w scenariuszach call_sms (repeat + bazowy) i zmieniono logike wyboru.",
-    "Testy call_sms zaktualizowano pod wybor tylko jednego scenariusza dla powtornego polaczenia.",
-    "Skrypt restartu dziennego obsluguje teraz PSQL_BIN oraz jasny komunikat o braku psql.",
-    "Dodano update_ctip_easy.ps1 do szybkiej aktualizacji bez testow i zaleznosci."
+    "Wdrożono moduł 'Obsługa umów' pod adresem /contracts (UI + API + integracja z formularzami SUBMITTED).",
+    "Dodano klikalne akcje w dashboardzie umów oraz endpoint /admin/contracts/action (tryb bezpieczny workflow).",
+    "Przebudowano arkusz Google 'Kalendarz_wiersze' pod wielokrotne zdarzenia dzienne i poprawiono formatowanie arkusza 'Urzadzenia'.",
+    "Naprawiono błędy 404/500 po wdrożeniu (restart uvicorn, obsługa błędów Firebird, poprawa ścieżek).",
+    "Skonfigurowano aliasy Firebird dla Menadżera Serwisu: BAZAMS_TEST oraz warianty z doklejanym \\BazaMS.fdb."
   ],
   "follow_up": [
-    "Zweryfikuj wysylke dlugich SMS na srodowisku produkcyjnym.",
-    "Wdrozyc zmiany sms_sender w produkcji i zrestartowac CTIP-SMS, a nastepnie potwierdzic naplyw call_events oraz sms_out.",
-    "Skonfigurowac zadanie harmonogramu 00:00 dla restart_daily.ps1 i potwierdzic logi.",
-    "Wdrozyc poprawke call_sms i sprawdzic, czy dla jednego call_id pojawia sie jeden SMS.",
-    "Ustawic PSQL_BIN lub PATH na serwerze dla restart_daily.ps1.",
-    "W razie potrzeby wdrozyc update_ctip_easy.ps1 na serwer."
+    "Dopięcie realnych akcji zapisu do lokalnej Firebird z poziomu modułu 'Obsługa umów'.",
+    "Weryfikacja ręczna pełnego workflow: formularz SUBMITTED -> klient Firebird -> podpięcie urządzeń.",
+    "Utrzymanie testów integracyjnych dla dashboardu i synchronizacji urządzeń z arkusza."
   ],
   "context": {
     "branch": "main",
     "python": "3.12",
-    "venv": ".venv"
+    "venv": ".venv",
+    "mode": "contracts-dashboard-firebird-alias-calendar"
   }
 }

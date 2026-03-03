@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP - Obsluga umow</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/contracts/contracts.css">
+    <script defer src="/static/contracts/contracts.js"></script>
+  </head>
+  <body>
+    <main class="contracts-shell">
+      <header class="contracts-header">
+        <div>
+          <h1>Obsluga umow</h1>
+          <p>Formularze ze statusem "Wypelnione" oraz potwierdzenie danych klienta i urzadzen.</p>
+        </div>
+        <div class="contracts-actions">
+          <button id="contracts-refresh" type="button">Odswiez</button>
+          <a href="/choice" class="contracts-secondary">Powrot</a>
+          <button id="contracts-logout" type="button" class="contracts-secondary">Wyloguj</button>
+        </div>
+      </header>
+
+      <section class="contracts-stats">
+        <article>
+          <span>Formularze SUBMITTED</span>
+          <strong id="contracts-forms-total">0</strong>
+        </article>
+        <article>
+          <span>Urzadzenia w arkuszu</span>
+          <strong id="contracts-devices-total">0</strong>
+        </article>
+        <article>
+          <span>Urzadzenia potwierdzone w Firebird</span>
+          <strong id="contracts-devices-matched">0</strong>
+        </article>
+      </section>
+
+      <section class="contracts-card">
+        <h2>Formularze do obslugi</h2>
+        <p id="contracts-forms-empty" class="contracts-empty" hidden>Brak formularzy ze statusem SUBMITTED.</p>
+        <div class="contracts-table-wrap">
+          <table class="contracts-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Klient</th>
+                <th>NIP</th>
+                <th>E-mail</th>
+                <th>Telefon</th>
+                <th>Firebird</th>
+                <th>Akcja</th>
+              </tr>
+            </thead>
+            <tbody id="contracts-forms-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="contracts-card">
+        <h2>Urzadzenia z arkusza</h2>
+        <div class="contracts-table-wrap">
+          <table class="contracts-table">
+            <thead>
+              <tr>
+                <th>Wiersz</th>
+                <th>Serial</th>
+                <th>Ewidencja</th>
+                <th>Model</th>
+                <th>Status Firebird</th>
+                <th>ID maszyny</th>
+                <th>ID klienta</th>
+                <th>Akcja</th>
+              </tr>
+            </thead>
+            <tbody id="contracts-devices-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p id="contracts-error" class="contracts-error" hidden></p>
+      <p id="contracts-info" class="contracts-info" hidden></p>
+    </main>
+  </body>
+</html>
