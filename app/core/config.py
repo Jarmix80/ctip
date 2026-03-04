@@ -60,6 +60,37 @@ class Settings(BaseSettings):
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
     email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
 
+    backup_execution_enabled: bool = Field(default=False, alias="BACKUP_EXECUTION_ENABLED")
+    backup_production_host: str = Field(default="192.168.0.8", alias="BACKUP_PRODUCTION_HOST")
+    backup_default_local_dir: str = Field(
+        default="D:\\Backup_CTIP_MS_optima", alias="BACKUP_DEFAULT_LOCAL_DIR"
+    )
+
+    optima_sql_server_instance: str | None = Field(default=None, alias="OPTIMA_SQL_SERVER_INSTANCE")
+    optima_sql_host: str | None = Field(default=None, alias="OPTIMA_SQL_HOST")
+    optima_sql_host_ip: str | None = Field(default=None, alias="OPTIMA_SQL_HOST_IP")
+    optima_sql_port: int = Field(default=1433, alias="OPTIMA_SQL_PORT")
+    optima_sql_auth_mode: str | None = Field(default=None, alias="OPTIMA_SQL_AUTH_MODE")
+    optima_sql_login: str | None = Field(default=None, alias="OPTIMA_SQL_LOGIN")
+    optima_sql_password: str | None = Field(default=None, alias="OPTIMA_SQL_PASSWORD")
+    optima_db_it_partner: str | None = Field(default=None, alias="OPTIMA_DB_IT_PARTNER")
+    optima_db_ksero_partner: str | None = Field(default=None, alias="OPTIMA_DB_KSERO_PARTNER")
+    optima_db_config: str | None = Field(default=None, alias="OPTIMA_DB_CONFIG")
+    office365_tenant_id: str | None = Field(default=None, alias="OFFICE365_TENANT_ID")
+    office365_client_id: str | None = Field(default=None, alias="OFFICE365_CLIENT_ID")
+    office365_client_secret: str | None = Field(default=None, alias="OFFICE365_CLIENT_SECRET")
+    office365_site_id: str | None = Field(default=None, alias="OFFICE365_SITE_ID")
+    office365_drive_id: str | None = Field(default=None, alias="OFFICE365_DRIVE_ID")
+    office365_folder_path: str | None = Field(default=None, alias="OFFICE365_FOLDER_PATH")
+    office365_folder_ctip: str = Field(default="BackupKP/CTIP", alias="OFFICE365_FOLDER_CTIP")
+    office365_folder_firebird_prod: str = Field(
+        default="BackupKP/Menadzer_Serwisu/prod", alias="OFFICE365_FOLDER_FIREBIRD_PROD"
+    )
+    office365_folder_firebird_test: str = Field(
+        default="BackupKP/Menadzer_Serwisu/test", alias="OFFICE365_FOLDER_FIREBIRD_TEST"
+    )
+    office365_folder_optima: str = Field(default="BackupKP/Optima", alias="OFFICE365_FOLDER_OPTIMA")
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property

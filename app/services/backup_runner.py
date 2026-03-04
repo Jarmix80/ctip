@@ -33,14 +33,23 @@ def list_backup_files(limit: int = 200) -> list[BackupFileInfo]:
             continue
         if path.name.startswith("."):
             continue
+        if path.suffix.lower() == ".sha256":
+            continue
         stat = path.stat()
         modified_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+        checksum = None
+        sidecar = path.with_name(f"{path.name}.sha256")
+        if sidecar.exists() and sidecar.is_file():
+            raw = sidecar.read_text(encoding="utf-8", errors="ignore").strip()
+            checksum = raw.split()[0] if raw else None
+        status = "CONFIRMED" if checksum else "READY"
         items.append(
             BackupFileInfo(
                 name=path.name,
                 size_bytes=stat.st_size,
                 modified_at=modified_at,
-                status="READY",
+                status=status,
+                checksum=checksum,
             )
         )
 

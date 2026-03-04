@@ -2,18 +2,192 @@
   <header class="monitor-card-header">
     <div>
       <h3>Kopie zapasowe</h3>
-      <p>Podgląd plików kopii zapasowych z katalogu lokalnego.</p>
+      <p>Konfiguracja harmonogramu, zakresu backupu i lista wykonanych kopii.</p>
     </div>
     <div class="status-actions">
-      <button type="button" class="btn-secondary" disabled>Utwórz kopię</button>
-      <button type="button" class="btn-secondary" disabled>Przywróć</button>
+      <button type="button" class="btn-secondary" id="backup-refresh-btn">Odśwież listę</button>
+      <button type="button" class="btn-secondary" id="backup-run-btn">Uruchom kopię teraz</button>
     </div>
   </header>
   <div class="monitor-card-meta">
     <span class="muted">Katalog:</span>
     <span class="path">{{ backup_dir }}</span>
-    <span class="muted">{{ note }}</span>
+    <a
+      class="backup-sp-link"
+      href="https://kseropartner.sharepoint.com/sites/Backups"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Otwórz SharePoint
+    </a>
+    <span class="muted" id="backup-note">{{ note }}</span>
   </div>
+
+  <form id="backup-config-form" class="backup-config-form">
+    <section class="backup-config-group">
+      <h4>Harmonogram i retencja</h4>
+      <div class="backup-grid">
+        <label>
+          Harmonogram poranny
+          <input type="time" name="schedule_morning" value="06:00" required>
+        </label>
+        <label>
+          Harmonogram wieczorny
+          <input type="time" name="schedule_evening" value="20:00" required>
+        </label>
+        <label>
+          Retencja lokalna
+          <input type="number" name="retention_local_copies" min="1" max="365" value="14" required>
+        </label>
+        <label>
+          Retencja chmura
+          <input type="number" name="retention_cloud_copies" min="1" max="365" value="7" required>
+        </label>
+      </div>
+    </section>
+
+    <section class="backup-config-group">
+      <h4>Zakres archiwizacji</h4>
+      <div class="backup-check-grid">
+        <label><input type="checkbox" name="archive_ctip_files" checked> Archiwizuj pliki CTIP</label>
+        <label><input type="checkbox" name="archive_ctip_db" checked> Archiwizuj bazę CTIP</label>
+        <label><input type="checkbox" name="archive_firebird_prod" checked> Archiwizuj Firebird produkcyjną</label>
+        <label><input type="checkbox" name="archive_firebird_test" checked> Archiwizuj Firebird testową</label>
+        <label><input type="checkbox" name="archive_optima" checked> Archiwizuj bazy Optimy</label>
+        <label><input type="checkbox" name="cloud_only_evening" checked> Chmura tylko dla kopii 20:00</label>
+      </div>
+    </section>
+
+    <section class="backup-config-group">
+      <h4>Magazyn lokalny i sieciowy</h4>
+      <div class="backup-grid">
+        <label>
+          Tryb zapisu
+          <select name="storage_mode">
+            <option value="local">Lokalny</option>
+            <option value="network">Sieciowy</option>
+          </select>
+        </label>
+        <label>
+          Folder lokalny
+          <input type="text" name="local_directory" value="D:\\Backup_CTIP_MS_optima" required>
+        </label>
+        <label>
+          Folder sieciowy (UNC)
+          <input type="text" name="network_directory" placeholder="\\\\serwer\\backup">
+        </label>
+      </div>
+      <p class="backup-hint">
+        Zalecana struktura lokalna: <code>CTIP/files</code>, <code>CTIP/db</code>,
+        <code>Menadzer_Serwisu/prod</code>, <code>Menadzer_Serwisu/test</code>, <code>Optima</code>.
+      </p>
+    </section>
+
+    <section class="backup-config-group">
+      <h4>Office 365 / SharePoint</h4>
+      <div class="backup-grid">
+        <label>
+          Chmura
+          <select name="cloud_provider">
+            <option value="office365">Office 365</option>
+            <option value="none">Brak</option>
+          </select>
+        </label>
+        <label>
+          Office Tenant ID
+          <input type="text" name="office_tenant_id">
+        </label>
+        <label>
+          Office Client ID
+          <input type="text" name="office_client_id">
+        </label>
+        <label>
+          Site ID
+          <input type="text" name="office_site_id">
+        </label>
+        <label>
+          Drive ID
+          <input type="text" name="office_drive_id">
+        </label>
+        <label>
+          Client Secret
+          <input type="password" name="office_client_secret" placeholder="••••••••">
+        </label>
+        <label>
+          Folder CTIP
+          <input type="text" name="office_folder_ctip" placeholder="BackupKP/CTIP">
+        </label>
+        <label>
+          Folder FB prod
+          <input type="text" name="office_folder_firebird_prod" placeholder="BackupKP/Menadzer_Serwisu/prod">
+        </label>
+        <label>
+          Folder FB test
+          <input type="text" name="office_folder_firebird_test" placeholder="BackupKP/Menadzer_Serwisu/test">
+        </label>
+        <label>
+          Folder Optima
+          <input type="text" name="office_folder_optima" placeholder="BackupKP/Optima">
+        </label>
+        <label>
+          Folder legacy
+          <input type="text" name="office_folder_path" placeholder="opcjonalnie">
+        </label>
+      </div>
+    </section>
+
+    <section class="backup-config-group">
+      <h4>Połączenie SQL Optimy</h4>
+      <div class="backup-grid">
+        <label>
+          Serwer/instancja
+          <input type="text" name="optima_server_instance" placeholder="SERWER1\\OPTIMA">
+        </label>
+        <label>
+          Host SQL
+          <input type="text" name="optima_host" placeholder="SERWER1 lub 192.168.0.8">
+        </label>
+        <label>
+          Port SQL Optimy
+          <input type="number" name="optima_port" min="1" max="65535" value="1433" required>
+        </label>
+        <label>
+          Tryb logowania
+          <select name="optima_auth_mode">
+            <option value="mixed">Mixed</option>
+            <option value="sql">SQL</option>
+            <option value="windows">Windows</option>
+          </select>
+        </label>
+        <label>
+          Login SQL
+          <input type="text" name="optima_login" placeholder="automate_backup">
+        </label>
+        <label>
+          Hasło SQL
+          <input type="password" name="optima_password" placeholder="••••••••">
+        </label>
+        <label>
+          Baza IT_PARTNER
+          <input type="text" name="optima_db_it_partner" placeholder="CDN_IT_Partner">
+        </label>
+        <label>
+          Baza KSERO_PARTNER
+          <input type="text" name="optima_db_ksero_partner" placeholder="CDN_Ksero_Partner1">
+        </label>
+        <label>
+          Baza konfig.
+          <input type="text" name="optima_db_config" placeholder="CDN_KNF_Ksero_Partner">
+        </label>
+      </div>
+    </section>
+
+    <div class="status-actions backup-actions" style="justify-content:flex-start;">
+      <button type="submit" class="btn-secondary" id="backup-save-btn">Zapisz konfigurację</button>
+      <button type="button" class="btn-secondary" id="backup-office-test-btn">Test Office 365</button>
+      <span class="muted" id="backup-config-status"></span>
+    </div>
+  </form>
 
   <div class="sms-history-table">
     <table>
@@ -23,9 +197,10 @@
           <th>Rozmiar</th>
           <th>Data</th>
           <th>Status</th>
+          <th>Potwierdzenie</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="backup-history-body">
         {% if items %}
           {% for item in items %}
             <tr>
@@ -33,14 +208,220 @@
               <td>{{ item.size }}</td>
               <td>{{ item.modified_at }}</td>
               <td>{{ item.status }}</td>
+              <td>{{ "TAK" if item.checksum else "NIE" }}</td>
             </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="4" class="sms-history-empty">Brak zarejestrowanych kopii.</td>
+            <td colspan="5" class="sms-history-empty">Brak zarejestrowanych kopii.</td>
           </tr>
         {% endif %}
       </tbody>
     </table>
   </div>
 </section>
+
+<script>
+(() => {
+  const token = window.AdminPanel && window.localStorage
+    ? (window.localStorage.getItem("admin-session-token") || window.sessionStorage.getItem("admin-session-token"))
+    : null;
+  const headers = token ? { "X-Admin-Session": token } : {};
+  const form = document.getElementById("backup-config-form");
+  const statusEl = document.getElementById("backup-config-status");
+  const runBtn = document.getElementById("backup-run-btn");
+  const refreshBtn = document.getElementById("backup-refresh-btn");
+  const officeTestBtn = document.getElementById("backup-office-test-btn");
+  const bodyEl = document.getElementById("backup-history-body");
+  const noteEl = document.getElementById("backup-note");
+
+  const setStatus = (message, variant = "info") => {
+    if (!statusEl) return;
+    statusEl.textContent = message || "";
+    statusEl.style.color = variant === "error" ? "#c62828" : variant === "success" ? "#2e7d32" : "";
+  };
+
+  const applyConfig = (cfg) => {
+    if (!form || !cfg) return;
+    form.schedule_morning.value = cfg.schedule_morning || "06:00";
+    form.schedule_evening.value = cfg.schedule_evening || "20:00";
+    form.retention_local_copies.value = cfg.retention_local_copies ?? 14;
+    form.retention_cloud_copies.value = cfg.retention_cloud_copies ?? 7;
+    form.storage_mode.value = cfg.storage_mode || "local";
+    form.local_directory.value = cfg.local_directory || "D:\\\\Backup_CTIP_MS_optima";
+    form.network_directory.value = cfg.network_directory || "";
+    form.cloud_provider.value = cfg.cloud_provider || "office365";
+    form.office_tenant_id.value = cfg.office_tenant_id || "";
+    form.office_client_id.value = cfg.office_client_id || "";
+    form.office_site_id.value = cfg.office_site_id || "";
+    form.office_drive_id.value = cfg.office_drive_id || "";
+    form.office_folder_path.value = cfg.office_folder_path || "";
+    form.office_folder_ctip.value = cfg.office_folder_ctip || "BackupKP/CTIP";
+    form.office_folder_firebird_prod.value = cfg.office_folder_firebird_prod || "BackupKP/Menadzer_Serwisu/prod";
+    form.office_folder_firebird_test.value = cfg.office_folder_firebird_test || "BackupKP/Menadzer_Serwisu/test";
+    form.office_folder_optima.value = cfg.office_folder_optima || "BackupKP/Optima";
+    form.office_client_secret.value = "";
+    form.optima_server_instance.value = cfg.optima_server_instance || "";
+    form.optima_host.value = cfg.optima_host || "";
+    form.optima_port.value = cfg.optima_port ?? 1433;
+    form.optima_auth_mode.value = cfg.optima_auth_mode || "mixed";
+    form.optima_login.value = cfg.optima_login || "";
+    form.optima_password.value = "";
+    form.optima_db_it_partner.value = cfg.optima_db_it_partner || "";
+    form.optima_db_ksero_partner.value = cfg.optima_db_ksero_partner || "";
+    form.optima_db_config.value = cfg.optima_db_config || "";
+    form.archive_ctip_files.checked = Boolean(cfg.archive_ctip_files);
+    form.archive_ctip_db.checked = Boolean(cfg.archive_ctip_db);
+    form.archive_firebird_prod.checked = Boolean(cfg.archive_firebird_prod);
+    form.archive_firebird_test.checked = Boolean(cfg.archive_firebird_test);
+    form.archive_optima.checked = Boolean(cfg.archive_optima);
+    form.cloud_only_evening.checked = Boolean(cfg.cloud_only_evening);
+    if (noteEl) {
+      noteEl.textContent = cfg.execution_enabled
+        ? "Tryb produkcyjny: wykonywanie backupu aktywne."
+        : "Tryb nieprodukcyjny: wykonywanie backupu wyłączone.";
+    }
+  };
+
+  const renderHistory = (items) => {
+    if (!bodyEl) return;
+    if (!Array.isArray(items) || !items.length) {
+      bodyEl.innerHTML = "<tr><td colspan='5' class='sms-history-empty'>Brak zarejestrowanych kopii.</td></tr>";
+      return;
+    }
+    bodyEl.innerHTML = items.map((item) => `
+      <tr>
+        <td>${item.name || "—"}</td>
+        <td>${item.size_bytes ?? "—"}</td>
+        <td>${item.modified_at || "—"}</td>
+        <td>${item.status || "—"}</td>
+        <td>${item.confirmed ? "TAK" : "NIE"}</td>
+      </tr>
+    `).join("");
+  };
+
+  const loadConfig = async () => {
+    const resp = await fetch("/admin/backup/config", { headers });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || "Błąd pobierania konfiguracji backupu.");
+    applyConfig(data);
+  };
+
+  const loadHistory = async () => {
+    const resp = await fetch("/admin/backup/history", { headers });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || "Błąd pobierania historii backupu.");
+    renderHistory(data.items || []);
+  };
+
+  if (form) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setStatus("Zapisywanie konfiguracji...");
+      const payload = {
+        schedule_morning: form.schedule_morning.value,
+        schedule_evening: form.schedule_evening.value,
+        retention_local_copies: Number(form.retention_local_copies.value || 14),
+        retention_cloud_copies: Number(form.retention_cloud_copies.value || 7),
+        archive_ctip_files: form.archive_ctip_files.checked,
+        archive_ctip_db: form.archive_ctip_db.checked,
+        archive_firebird_prod: form.archive_firebird_prod.checked,
+        archive_firebird_test: form.archive_firebird_test.checked,
+        archive_optima: form.archive_optima.checked,
+        storage_mode: form.storage_mode.value,
+        local_directory: form.local_directory.value,
+        network_directory: form.network_directory.value || null,
+        cloud_provider: form.cloud_provider.value,
+        cloud_only_evening: form.cloud_only_evening.checked,
+        office_tenant_id: form.office_tenant_id.value || null,
+        office_client_id: form.office_client_id.value || null,
+        office_site_id: form.office_site_id.value || null,
+        office_drive_id: form.office_drive_id.value || null,
+        office_folder_path: form.office_folder_path.value || null,
+        office_folder_ctip: form.office_folder_ctip.value || "BackupKP/CTIP",
+        office_folder_firebird_prod: form.office_folder_firebird_prod.value || "BackupKP/Menadzer_Serwisu/prod",
+        office_folder_firebird_test: form.office_folder_firebird_test.value || "BackupKP/Menadzer_Serwisu/test",
+        office_folder_optima: form.office_folder_optima.value || "BackupKP/Optima",
+        office_client_secret: form.office_client_secret.value || null,
+        optima_server_instance: form.optima_server_instance.value || null,
+        optima_host: form.optima_host.value || null,
+        optima_port: Number(form.optima_port.value || 1433),
+        optima_auth_mode: form.optima_auth_mode.value || "mixed",
+        optima_login: form.optima_login.value || null,
+        optima_password: form.optima_password.value || null,
+        optima_db_it_partner: form.optima_db_it_partner.value || null,
+        optima_db_ksero_partner: form.optima_db_ksero_partner.value || null,
+        optima_db_config: form.optima_db_config.value || null,
+      };
+      try {
+        const resp = await fetch("/admin/backup/config", {
+          method: "PUT",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || "Nie udało się zapisać konfiguracji.");
+        applyConfig(data);
+        setStatus("Konfiguracja kopii zapasowych zapisana.", "success");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Błąd zapisu konfiguracji.", "error");
+      }
+    });
+  }
+
+  if (runBtn) {
+    runBtn.addEventListener("click", async () => {
+      setStatus("Uruchamianie zadania backupu...");
+      try {
+        const resp = await fetch("/admin/backup/run", {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ dry_run: false, compress: true }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || "Nie udało się uruchomić backupu.");
+        setStatus(data.message || "Zadanie backupu uruchomione.", "success");
+        await loadHistory();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Błąd uruchomienia backupu.", "error");
+      }
+    });
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      try {
+        setStatus("Odświeżanie listy kopii...");
+        await loadHistory();
+        setStatus("Lista kopii odświeżona.", "success");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Błąd odświeżania listy.", "error");
+      }
+    });
+  }
+
+  if (officeTestBtn) {
+    officeTestBtn.addEventListener("click", async () => {
+      try {
+        setStatus("Testowanie połączenia Office 365...");
+        const resp = await fetch("/admin/backup/office365/test", {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || "Błąd testu Office 365.");
+        if (data.drive_id && form && form.office_drive_id) {
+          form.office_drive_id.value = data.drive_id;
+        }
+        setStatus(data.message || "Połączenie Office 365 działa.", "success");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Błąd testu Office 365.", "error");
+      }
+    });
+  }
+
+  Promise.all([loadConfig(), loadHistory()])
+    .then(() => setStatus("Konfiguracja i historia kopii załadowane."))
+    .catch((error) => setStatus(error instanceof Error ? error.message : "Błąd inicjalizacji.", "error"));
+})();
+</script>

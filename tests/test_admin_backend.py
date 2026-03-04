@@ -47,6 +47,7 @@ from app.services.admin_users import EmailDeliverySettings
 from app.services.backup_runner import BackupFileInfo
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
+from app.services.office365_backup import Office365ConnectionResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
 from log_utils import append_log, daily_log_path
@@ -674,6 +675,154 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    async def test_backup_config_get_and_update(self):
+        token, _ = await self._login()
+
+        response = await self.client.get(
+            "/admin/backup/config",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["schedule_morning"], "06:00")
+        self.assertEqual(data["schedule_evening"], "20:00")
+        self.assertEqual(data["retention_local_copies"], 14)
+        self.assertEqual(data["storage_mode"], "local")
+
+        update_payload = {
+            "schedule_morning": "05:30",
+            "schedule_evening": "21:15",
+            "retention_local_copies": 14,
+            "retention_cloud_copies": 7,
+            "archive_ctip_files": True,
+            "archive_ctip_db": True,
+            "archive_firebird_prod": True,
+            "archive_firebird_test": False,
+            "archive_optima": True,
+            "storage_mode": "network",
+            "local_directory": "D:\\\\Backup_CTIP_MS",
+            "network_directory": "\\\\NAS\\\\CTIP",
+            "cloud_provider": "office365",
+            "cloud_only_evening": True,
+            "office_tenant_id": "tenant-id",
+            "office_client_id": "client-id",
+            "office_site_id": "tenant.sharepoint.com,site-id,web-id",
+            "office_drive_id": "drive-id",
+            "office_folder_path": "CTIP-Backup",
+            "office_folder_ctip": "BackupKP/CTIP",
+            "office_folder_firebird_prod": "BackupKP/Menadzer_Serwisu/prod",
+            "office_folder_firebird_test": "BackupKP/Menadzer_Serwisu/test",
+            "office_folder_optima": "BackupKP/Optima",
+            "office_client_secret": "top-secret",
+            "optima_server_instance": "SERWER1\\\\OPTIMA",
+            "optima_host": "192.168.0.8",
+            "optima_port": 1433,
+            "optima_auth_mode": "mixed",
+            "optima_login": "automate_backup",
+            "optima_password": "secret123",
+            "optima_db_it_partner": "CDN_IT_Partner",
+            "optima_db_ksero_partner": "CDN_Ksero_Partner1",
+            "optima_db_config": "CDN_KNF_Ksero_Partner",
+        }
+        response = await self.client.put(
+            "/admin/backup/config",
+            headers={"X-Admin-Session": token},
+            json=update_payload,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["schedule_morning"], "05:30")
+        self.assertEqual(data["schedule_evening"], "21:15")
+        self.assertEqual(data["storage_mode"], "network")
+        self.assertTrue(data["office_client_secret_set"])
+        self.assertEqual(data["optima_server_instance"], "SERWER1\\\\OPTIMA")
+        self.assertEqual(data["optima_host"], "192.168.0.8")
+        self.assertEqual(data["optima_port"], 1433)
+        self.assertEqual(data["optima_auth_mode"], "mixed")
+        self.assertEqual(data["optima_login"], "automate_backup")
+        self.assertEqual(data["office_folder_ctip"], "BackupKP/CTIP")
+        self.assertEqual(data["office_folder_firebird_prod"], "BackupKP/Menadzer_Serwisu/prod")
+        self.assertEqual(data["office_folder_firebird_test"], "BackupKP/Menadzer_Serwisu/test")
+        self.assertEqual(data["office_folder_optima"], "BackupKP/Optima")
+        self.assertTrue(data["optima_password_set"])
+        self.assertEqual(data["optima_db_it_partner"], "CDN_IT_Partner")
+        self.assertEqual(data["optima_db_ksero_partner"], "CDN_Ksero_Partner1")
+        self.assertEqual(data["optima_db_config"], "CDN_KNF_Ksero_Partner")
+
+        async with self.session_factory() as session:
+            stored = await settings_store.get_namespace(session, "backup")
+            self.assertEqual(stored.get("schedule_morning"), "05:30")
+            self.assertEqual(stored.get("network_directory"), "\\\\NAS\\\\CTIP")
+            self.assertEqual(stored.get("office_tenant_id"), "tenant-id")
+            self.assertEqual(stored.get("office_client_secret"), "top-secret")
+            self.assertEqual(stored.get("office_site_id"), "tenant.sharepoint.com,site-id,web-id")
+            self.assertEqual(stored.get("office_folder_ctip"), "BackupKP/CTIP")
+            self.assertEqual(
+                stored.get("office_folder_firebird_prod"), "BackupKP/Menadzer_Serwisu/prod"
+            )
+            self.assertEqual(
+                stored.get("office_folder_firebird_test"), "BackupKP/Menadzer_Serwisu/test"
+            )
+            self.assertEqual(stored.get("office_folder_optima"), "BackupKP/Optima")
+            self.assertEqual(stored.get("optima_server_instance"), "SERWER1\\\\OPTIMA")
+            self.assertEqual(stored.get("optima_host"), "192.168.0.8")
+            self.assertEqual(stored.get("optima_port"), "1433")
+            self.assertEqual(stored.get("optima_auth_mode"), "mixed")
+            self.assertEqual(stored.get("optima_login"), "automate_backup")
+            self.assertEqual(stored.get("optima_password"), "secret123")
+            self.assertEqual(stored.get("optima_db_it_partner"), "CDN_IT_Partner")
+            self.assertEqual(stored.get("optima_db_ksero_partner"), "CDN_Ksero_Partner1")
+            self.assertEqual(stored.get("optima_db_config"), "CDN_KNF_Ksero_Partner")
+
+            result = await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_config_update")
+            )
+            entry = result.scalars().first()
+            self.assertIsNotNone(entry)
+
+    async def test_backup_office365_test_resolves_drive(self):
+        token, _ = await self._login()
+        async with self.session_factory() as session:
+            await settings_store.set_namespace(
+                session,
+                "backup",
+                {
+                    "office_tenant_id": StoredValue("tenant-id", False),
+                    "office_client_id": StoredValue("client-id", False),
+                    "office_client_secret": StoredValue("secret", True),
+                    "office_site_id": StoredValue("kseropartner.sharepoint.com,site,web", False),
+                    "office_folder_path": StoredValue("CTIP-Backup/Prod", False),
+                    "office_folder_ctip": StoredValue("BackupKP/CTIP", False),
+                },
+                user_id=1,
+            )
+            await session.commit()
+
+        fake_result = Office365ConnectionResult(
+            ok=True,
+            message="Połączenie z Office 365 (SharePoint) działa poprawnie.",
+            site_id="kseropartner.sharepoint.com,site,web",
+            drive_id="b!drive",
+            folder_path="CTIP-Backup/Prod",
+        )
+        with patch(
+            "app.api.routes.admin_backup.test_office365_connection",
+            new=AsyncMock(return_value=fake_result),
+        ):
+            response = await self.client.post(
+                "/admin/backup/office365/test",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["drive_id"], "b!drive")
+
+        async with self.session_factory() as session:
+            stored = await settings_store.get_namespace(session, "backup")
+            self.assertEqual(stored.get("office_drive_id"), "b!drive")
+
     async def test_backup_run_dry_creates_audit_entry(self):
         token, _ = await self._login()
         response = await self.client.post(
@@ -705,13 +854,13 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             headers={"X-Admin-Session": token},
             json={"label": "reczny", "compress": False, "dry_run": False},
         )
-        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.status_code, 403)
         data = response.json()
-        self.assertEqual(data["detail"], "Moduł kopii zapasowych nie jest jeszcze aktywny.")
+        self.assertEqual(data["detail"], "Backup jest wyłączony poza środowiskiem produkcyjnym.")
 
         async with self.session_factory() as session:
             result = await session.execute(
-                select(AdminAuditLog).where(AdminAuditLog.action == "backup_run_blocked")
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_run_blocked_non_prod")
             )
             entry = result.scalars().first()
             self.assertIsNotNone(entry)
@@ -748,13 +897,17 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             headers={"X-Admin-Session": token},
             json={"backup_name": "backup_2025-10-11.dump", "dry_run": False},
         )
-        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.status_code, 403)
         data = response.json()
-        self.assertEqual(data["detail"], "Przywracanie kopii zapasowych nie jest jeszcze aktywne.")
+        self.assertEqual(
+            data["detail"], "Przywracanie kopii jest wyłączone poza środowiskiem produkcyjnym."
+        )
 
         async with self.session_factory() as session:
             result = await session.execute(
-                select(AdminAuditLog).where(AdminAuditLog.action == "backup_restore_blocked")
+                select(AdminAuditLog).where(
+                    AdminAuditLog.action == "backup_restore_blocked_non_prod"
+                )
             )
             entry = result.scalars().first()
             self.assertIsNotNone(entry)

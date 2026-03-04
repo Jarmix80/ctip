@@ -1,0 +1,146 @@
+"""Integracja testowa Office 365 (Microsoft Graph) dla modułu backupu."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import httpx
+
+
+class Office365BackupError(RuntimeError):
+    """Błąd integracji z Microsoft Graph."""
+
+
+@dataclass(slots=True)
+class Office365ConnectionResult:
+    """Wynik testu połączenia z SharePoint/Drive."""
+
+    ok: bool
+    message: str
+    site_id: str | None = None
+    drive_id: str | None = None
+    folder_path: str | None = None
+
+
+def _sanitize_folder_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    normalized = path.strip().strip("/")
+    return normalized or None
+
+
+async def _fetch_token(
+    client: httpx.AsyncClient,
+    *,
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+) -> str:
+    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://graph.microsoft.com/.default",
+        "grant_type": "client_credentials",
+    }
+    response = await client.post(token_url, data=payload)
+    if response.status_code >= 400:
+        raise Office365BackupError(
+            f"Błąd autoryzacji OAuth ({response.status_code}): {response.text[:240]}"
+        )
+    data = response.json()
+    token = data.get("access_token")
+    if not token:
+        raise Office365BackupError("Brak access_token w odpowiedzi OAuth.")
+    return str(token)
+
+
+async def _resolve_drive_id(
+    client: httpx.AsyncClient,
+    *,
+    access_token: str,
+    site_id: str,
+) -> str:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    response = await client.get(
+        f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive", headers=headers
+    )
+    if response.status_code >= 400:
+        raise Office365BackupError(
+            f"Nie udało się pobrać Drive dla Site ID ({response.status_code}): {response.text[:240]}"
+        )
+    data = response.json()
+    drive_id = data.get("id")
+    if not drive_id:
+        raise Office365BackupError("Microsoft Graph nie zwrócił Drive ID dla wskazanego Site ID.")
+    return str(drive_id)
+
+
+async def test_office365_connection(
+    *,
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    site_id: str | None,
+    drive_id: str | None,
+    folder_path: str | None,
+) -> Office365ConnectionResult:
+    """Wykonuje test połączenia z Graph i weryfikuje dostęp do dysku/folderu."""
+    site_id_clean = (site_id or "").strip() or None
+    drive_id_clean = (drive_id or "").strip() or None
+    folder_clean = _sanitize_folder_path(folder_path)
+
+    if not tenant_id.strip() or not client_id.strip() or not client_secret.strip():
+        raise Office365BackupError("Brakuje wymaganych danych Office 365 (tenant/client/secret).")
+    if not site_id_clean and not drive_id_clean:
+        raise Office365BackupError("Podaj Office Site ID lub Office Drive ID.")
+
+    timeout = httpx.Timeout(20.0, connect=8.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        token = await _fetch_token(
+            client,
+            tenant_id=tenant_id.strip(),
+            client_id=client_id.strip(),
+            client_secret=client_secret.strip(),
+        )
+        resolved_drive_id = drive_id_clean
+        if not resolved_drive_id and site_id_clean:
+            resolved_drive_id = await _resolve_drive_id(
+                client,
+                access_token=token,
+                site_id=site_id_clean,
+            )
+        if not resolved_drive_id:
+            raise Office365BackupError("Nie udało się ustalić Drive ID.")
+
+        headers = {"Authorization": f"Bearer {token}"}
+        if folder_clean:
+            url = (
+                f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}/root:/{folder_clean}"
+            )
+        else:
+            url = f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}/root"
+        response = await client.get(url, headers=headers)
+        if folder_clean and response.status_code == 404:
+            return Office365ConnectionResult(
+                ok=True,
+                message="Połączenie działa, ale folder docelowy nie istnieje (utwórz go lub zmień ścieżkę).",
+                site_id=site_id_clean,
+                drive_id=resolved_drive_id,
+                folder_path=folder_clean,
+            )
+        if response.status_code >= 400:
+            raise Office365BackupError(
+                f"Błąd odczytu zasobu docelowego ({response.status_code}): {response.text[:240]}"
+            )
+
+    return Office365ConnectionResult(
+        ok=True,
+        message="Połączenie z Office 365 (SharePoint) działa poprawnie.",
+        site_id=site_id_clean,
+        drive_id=resolved_drive_id,
+        folder_path=folder_clean,
+    )
+
+
+__all__ = ["Office365BackupError", "Office365ConnectionResult", "test_office365_connection"]
