@@ -44,7 +44,7 @@ from app.models import (
 from app.models.base import Base
 from app.services import admin_ivr_map, section_permissions
 from app.services.admin_users import EmailDeliverySettings
-from app.services.backup_runner import BackupFileInfo
+from app.services.backup_runner import BackupFileInfo, BackupRunResult
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
 from app.services.office365_backup import Office365ConnectionResult
@@ -867,6 +867,37 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(entry.payload)
             self.assertEqual(entry.payload.get("label"), "reczny")
             self.assertFalse(entry.payload.get("compress"))
+
+    async def test_backup_run_enabled_creates_backup(self):
+        token, _ = await self._login()
+        prev = settings.backup_execution_enabled
+        settings.backup_execution_enabled = True
+        fake_run = BackupRunResult(
+            backup_name="backup_20260304_170000.tar.gz",
+            backup_path=Path("backups/backup_20260304_170000.tar.gz"),
+            checksum="abc123",
+            checksum_path=Path("backups/backup_20260304_170000.tar.gz.sha256"),
+            size_bytes=2048,
+            notes=[],
+        )
+        try:
+            with patch(
+                "app.api.routes.admin_backup.create_local_backup",
+                return_value=fake_run,
+            ):
+                response = await self.client.post(
+                    "/admin/backup/run",
+                    headers={"X-Admin-Session": token},
+                    json={"label": "reczny", "compress": True, "dry_run": False},
+                )
+        finally:
+            settings.backup_execution_enabled = prev
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["accepted"])
+        self.assertFalse(data["dry_run"])
+        self.assertEqual(data["backup_name"], "backup_20260304_170000.tar.gz")
 
     async def test_backup_restore_dry_creates_audit_entry(self):
         token, _ = await self._login()

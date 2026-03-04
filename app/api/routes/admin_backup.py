@@ -22,8 +22,12 @@ from app.schemas.admin_backup import (
     BackupRunResponse,
 )
 from app.services.audit import record_audit
-from app.services.backup_runner import list_backup_files
-from app.services.office365_backup import Office365BackupError, test_office365_connection
+from app.services.backup_runner import BackupRunError, create_local_backup, list_backup_files
+from app.services.office365_backup import (
+    Office365BackupError,
+    test_office365_connection,
+    upload_file_to_sharepoint,
+)
 
 router = APIRouter(prefix="/admin/backup", tags=["admin-backup"])
 
@@ -360,17 +364,92 @@ async def backup_run(
             detail="Backup jest wyłączony poza środowiskiem produkcyjnym.",
         )
 
+    cfg = await load_backup_config(session)
+    stored = await settings_store.get_namespace(session, "backup")
+
+    try:
+        run_result = create_local_backup(
+            label=payload.label,
+            compress=payload.compress,
+            config=cfg.model_dump(),
+        )
+    except BackupRunError as exc:
+        await record_audit(
+            session,
+            user_id=admin_user.id,
+            action="backup_run_failed",
+            client_ip=admin_session.client_ip,
+            payload={"error": str(exc)},
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Backup nie został utworzony: {exc}",
+        ) from exc
+
+    uploaded = False
+    upload_url: str | None = None
+    upload_error: str | None = None
+    if cfg.cloud_provider == "office365":
+        tenant_id = stored.get("office_tenant_id") or settings.office365_tenant_id or ""
+        client_id = stored.get("office_client_id") or settings.office365_client_id or ""
+        client_secret = stored.get("office_client_secret") or settings.office365_client_secret or ""
+        site_id = stored.get("office_site_id") or settings.office365_site_id
+        drive_id = stored.get("office_drive_id") or settings.office365_drive_id
+        folder_path = stored.get("office_folder_ctip") or settings.office365_folder_ctip
+        try:
+            up_archive = await upload_file_to_sharepoint(
+                tenant_id=tenant_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                site_id=site_id,
+                drive_id=drive_id,
+                folder_path=folder_path,
+                file_path=run_result.backup_path,
+            )
+            await upload_file_to_sharepoint(
+                tenant_id=tenant_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                site_id=site_id,
+                drive_id=up_archive.drive_id,
+                folder_path=folder_path,
+                file_path=run_result.checksum_path,
+            )
+            uploaded = True
+            upload_url = up_archive.web_url
+        except Office365BackupError as exc:
+            upload_error = str(exc)
+
     await record_audit(
         session,
         user_id=admin_user.id,
-        action="backup_run_blocked",
+        action="backup_run_success",
         client_ip=admin_session.client_ip,
-        payload={"label": payload.label, "compress": payload.compress},
+        payload={
+            "label": payload.label,
+            "compress": payload.compress,
+            "backup_name": run_result.backup_name,
+            "checksum": run_result.checksum,
+            "size_bytes": run_result.size_bytes,
+            "uploaded_to_cloud": uploaded,
+            "upload_url": upload_url,
+            "upload_error": upload_error,
+            "notes": run_result.notes,
+        },
     )
     await session.commit()
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Moduł kopii zapasowych nie jest jeszcze aktywny.",
+
+    message = "Kopia zapasowa została utworzona."
+    if uploaded:
+        message += " Wysłano do SharePoint."
+    elif upload_error:
+        message += f" Upload SharePoint nieudany: {upload_error}"
+    return BackupRunResponse(
+        accepted=True,
+        dry_run=False,
+        message=message,
+        backup_name=run_result.backup_name,
     )
 
 

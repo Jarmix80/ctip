@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -20,6 +21,17 @@ class Office365ConnectionResult:
     site_id: str | None = None
     drive_id: str | None = None
     folder_path: str | None = None
+
+
+@dataclass(slots=True)
+class Office365UploadResult:
+    """Wynik uploadu pliku do SharePoint/Drive."""
+
+    drive_id: str
+    item_id: str | None
+    web_url: str | None
+    name: str
+    size: int | None
 
 
 def _sanitize_folder_path(path: str | None) -> str | None:
@@ -143,4 +155,73 @@ async def test_office365_connection(
     )
 
 
-__all__ = ["Office365BackupError", "Office365ConnectionResult", "test_office365_connection"]
+async def upload_file_to_sharepoint(
+    *,
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    site_id: str | None,
+    drive_id: str | None,
+    folder_path: str | None,
+    file_path: Path,
+) -> Office365UploadResult:
+    """Wysyła plik do wskazanego folderu SharePoint przez Microsoft Graph."""
+    if not file_path.exists() or not file_path.is_file():
+        raise Office365BackupError(f"Plik do wysłania nie istnieje: {file_path}")
+
+    site_id_clean = (site_id or "").strip() or None
+    drive_id_clean = (drive_id or "").strip() or None
+    folder_clean = _sanitize_folder_path(folder_path)
+
+    if not tenant_id.strip() or not client_id.strip() or not client_secret.strip():
+        raise Office365BackupError("Brakuje wymaganych danych Office 365 (tenant/client/secret).")
+    if not site_id_clean and not drive_id_clean:
+        raise Office365BackupError("Podaj Office Site ID lub Office Drive ID.")
+
+    timeout = httpx.Timeout(90.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        token = await _fetch_token(
+            client,
+            tenant_id=tenant_id.strip(),
+            client_id=client_id.strip(),
+            client_secret=client_secret.strip(),
+        )
+        resolved_drive_id = drive_id_clean
+        if not resolved_drive_id and site_id_clean:
+            resolved_drive_id = await _resolve_drive_id(
+                client,
+                access_token=token,
+                site_id=site_id_clean,
+            )
+        if not resolved_drive_id:
+            raise Office365BackupError("Nie udało się ustalić Drive ID.")
+
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"}
+        target_name = file_path.name
+        if folder_clean:
+            url = f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}/root:/{folder_clean}/{target_name}:/content"
+        else:
+            url = f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}/root:/{target_name}:/content"
+
+        response = await client.put(url, headers=headers, content=file_path.read_bytes())
+        if response.status_code >= 400:
+            raise Office365BackupError(
+                f"Upload do SharePoint nie powiódł się ({response.status_code}): {response.text[:240]}"
+            )
+        data = response.json()
+        return Office365UploadResult(
+            drive_id=resolved_drive_id,
+            item_id=data.get("id"),
+            web_url=data.get("webUrl"),
+            name=data.get("name") or target_name,
+            size=data.get("size"),
+        )
+
+
+__all__ = [
+    "Office365BackupError",
+    "Office365ConnectionResult",
+    "Office365UploadResult",
+    "test_office365_connection",
+    "upload_file_to_sharepoint",
+]
