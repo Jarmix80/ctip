@@ -18,6 +18,31 @@ function Ensure-Module {
     Import-Module $Name -Force
 }
 
+function Resolve-DocumentLibrary {
+    param([string]$PreferredTitle)
+    $candidates = @()
+    if ($PreferredTitle) {
+        $candidates += $PreferredTitle
+    }
+    $candidates += @("Backup_KP", "Documents", "Shared Documents", "Dokumenty")
+    $candidates = $candidates | Select-Object -Unique
+
+    foreach ($name in $candidates) {
+        $list = Get-PnPList -Identity $name -ErrorAction SilentlyContinue
+        if ($list -and $list.BaseTemplate -eq 101) {
+            return $list
+        }
+    }
+
+    $all = Get-PnPList
+    $docLib = $all | Where-Object { $_.BaseTemplate -eq 101 } | Select-Object -First 1
+    if ($docLib) {
+        Write-Host "[WARN] Nie znaleziono wskazanej biblioteki. Uzyto pierwszej dostepnej: $($docLib.Title)"
+        return $docLib
+    }
+    throw "Nie znaleziono biblioteki dokumentow."
+}
+
 function Ensure-ViewForFolder {
     param(
         [string]$ListTitle,
@@ -79,6 +104,8 @@ Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
 Connect-PnPOnline -Url $SiteUrl -Interactive
 
 $web = Get-PnPWeb
+$list = Resolve-DocumentLibrary -PreferredTitle $LibraryTitle
+$LibraryTitle = $list.Title
 $list = Get-PnPList -Identity $LibraryTitle -Includes RootFolder -ErrorAction Stop
 $libraryRoot = $list.RootFolder.ServerRelativeUrl.TrimEnd("/")
 
