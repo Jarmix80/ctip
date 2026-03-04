@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$SiteUrl,
 
-    [string]$LibraryTitle = "Documents",
+    [string]$LibraryTitle = "Backup_KP",
     [string]$ViewName = "Backup Dashboard"
 )
 
