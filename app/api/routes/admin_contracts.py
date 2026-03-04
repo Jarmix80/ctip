@@ -57,6 +57,8 @@ async def contracts_dashboard_data(
             detail="Konto nie ma uprawnien do modulu obslugi umow.",
         )
 
+    warnings: list[str] = []
+
     forms = await load_submitted_forms(session, limit=300)
     await session.commit()
 
@@ -95,7 +97,11 @@ async def contracts_dashboard_data(
             }
         )
 
-    sheet_devices = await asyncio.to_thread(load_devices_from_sheet)
+    try:
+        sheet_devices = await asyncio.to_thread(load_devices_from_sheet)
+    except Exception as exc:  # noqa: BLE001
+        sheet_devices = []
+        warnings.append(f"Blad odczytu arkusza Urzadzenia: {exc}")
     devices_output: list[dict] = []
     for device in sheet_devices:
         match = await asyncio.to_thread(
@@ -123,6 +129,7 @@ async def contracts_dashboard_data(
         "devices_matched": matched_count,
         "forms": form_items,
         "devices": devices_output,
+        "warnings": warnings,
     }
 
 

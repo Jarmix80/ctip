@@ -283,10 +283,24 @@ document.addEventListener("alpine:init", () => {
           throw new Error(message);
         }
         const html = await response.text();
+        const executeEmbeddedScripts = (container) => {
+          const scripts = container.querySelectorAll("script");
+          scripts.forEach((oldScript) => {
+            const newScript = document.createElement("script");
+            for (const attr of oldScript.attributes) {
+              newScript.setAttribute(attr.name, attr.value);
+            }
+            if (oldScript.textContent) {
+              newScript.textContent = oldScript.textContent;
+            }
+            oldScript.replaceWith(newScript);
+          });
+        };
         const processTree = () => {
           const template = document.createElement("template");
           template.innerHTML = html;
           target.replaceChildren(template.content.cloneNode(true));
+          executeEmbeddedScripts(target);
           if (window.Alpine) {
             if (typeof Alpine.flushAndStopDeferringMutations === "function") {
               Alpine.flushAndStopDeferringMutations();
