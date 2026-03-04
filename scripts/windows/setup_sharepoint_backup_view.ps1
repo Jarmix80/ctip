@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 function Ensure-Module {
     param([string]$Name)
     if (-not (Get-Module -ListAvailable -Name $Name)) {
-        Write-Host "[INFO] Instalacja modułu $Name..."
+        Write-Host "[INFO] Instalacja modulu $Name..."
         Install-Module -Name $Name -Scope CurrentUser -Force -AllowClobber
     }
     Import-Module $Name -Force
@@ -19,7 +19,7 @@ function Ensure-Module {
 
 Ensure-Module -Name "PnP.PowerShell"
 
-Write-Host "[INFO] Łączenie z SharePoint: $SiteUrl"
+Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
 Connect-PnPOnline -Url $SiteUrl -Interactive
 
 $list = Get-PnPList -Identity $LibraryTitle -ErrorAction Stop
@@ -38,7 +38,7 @@ if (-not $view) {
     ) -Paged:$true -RowLimit 200
 }
 else {
-    Write-Host "[INFO] Widok już istnieje, aktualizacja ustawień: $ViewName"
+    Write-Host "[INFO] Widok juz istnieje, aktualizacja ustawien: $ViewName"
 }
 
 $query = @"
@@ -65,5 +65,5 @@ Set-PnPView -List $LibraryTitle -Identity $view.Id -Fields @(
 
 Set-PnPView -List $LibraryTitle -Identity $view.Id -SetAsDefault
 
-Write-Host "[OK] Widok '$ViewName' został ustawiony jako domyślny."
-Write-Host "[OK] Układ: grupowanie po folderach + sortowanie po dacie modyfikacji malejąco."
+Write-Host "[OK] Widok '$ViewName' zostal ustawiony jako domyslny."
+Write-Host "[OK] Uklad: grupowanie po folderach + sortowanie po dacie modyfikacji malejaco."
