@@ -41,6 +41,16 @@ def _sanitize_folder_path(path: str | None) -> str | None:
     return normalized or None
 
 
+def _sanitize_credential(value: str | None) -> str:
+    """Usuwa nadmiarowe spacje i opcjonalne cudzyslowy z wartosci sekretow/id."""
+    if value is None:
+        return ""
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    return cleaned
+
+
 async def _fetch_token(
     client: httpx.AsyncClient,
     *,
@@ -48,6 +58,9 @@ async def _fetch_token(
     client_id: str,
     client_secret: str,
 ) -> str:
+    tenant_id = _sanitize_credential(tenant_id)
+    client_id = _sanitize_credential(client_id)
+    client_secret = _sanitize_credential(client_secret)
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     payload = {
         "client_id": client_id,
@@ -102,7 +115,11 @@ async def test_office365_connection(
     drive_id_clean = (drive_id or "").strip() or None
     folder_clean = _sanitize_folder_path(folder_path)
 
-    if not tenant_id.strip() or not client_id.strip() or not client_secret.strip():
+    if (
+        not _sanitize_credential(tenant_id)
+        or not _sanitize_credential(client_id)
+        or not _sanitize_credential(client_secret)
+    ):
         raise Office365BackupError("Brakuje wymaganych danych Office 365 (tenant/client/secret).")
     if not site_id_clean and not drive_id_clean:
         raise Office365BackupError("Podaj Office Site ID lub Office Drive ID.")
@@ -173,7 +190,11 @@ async def upload_file_to_sharepoint(
     drive_id_clean = (drive_id or "").strip() or None
     folder_clean = _sanitize_folder_path(folder_path)
 
-    if not tenant_id.strip() or not client_id.strip() or not client_secret.strip():
+    if (
+        not _sanitize_credential(tenant_id)
+        or not _sanitize_credential(client_id)
+        or not _sanitize_credential(client_secret)
+    ):
         raise Office365BackupError("Brakuje wymaganych danych Office 365 (tenant/client/secret).")
     if not site_id_clean and not drive_id_clean:
         raise Office365BackupError("Podaj Office Site ID lub Office Drive ID.")
