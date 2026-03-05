@@ -5,7 +5,8 @@ param(
     [string]$LibraryTitle = "Backup_KP",
     [string]$ViewName = "Backup Dashboard",
     [string]$Tenant = "kseropartner.onmicrosoft.com",
-    [string]$ClientId = "31359c7f-bd7e-475c-86db-fdb8c937548e"
+    [string]$ClientId = "31359c7f-bd7e-475c-86db-fdb8c937548e",
+    [string]$ClientSecret = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +48,14 @@ function Resolve-DocumentLibrary {
 Ensure-Module -Name "PnP.PowerShell"
 
 Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
-Connect-PnPOnline -Url $SiteUrl -DeviceLogin -ClientId $ClientId -Tenant $Tenant
+if ($ClientSecret -and $ClientSecret.Trim()) {
+    Write-Host "[INFO] Tryb auth: app-only (client secret)"
+    Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -ClientSecret $ClientSecret -Tenant $Tenant
+}
+else {
+    Write-Host "[INFO] Tryb auth: device login"
+    Connect-PnPOnline -Url $SiteUrl -DeviceLogin -ClientId $ClientId -Tenant $Tenant
+}
 
 $list = Resolve-DocumentLibrary -PreferredTitle $LibraryTitle
 $LibraryTitle = $list.Title
