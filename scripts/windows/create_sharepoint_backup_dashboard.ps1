@@ -60,7 +60,7 @@ function Resolve-DocumentLibrary {
         }
     }
 
-    $all = Get-PnPList
+    $all = Get-PnPList -ErrorAction SilentlyContinue
     $docLib = $all | Where-Object {
         $_.BaseTemplate -eq 101 -or $_.BaseType -eq "DocumentLibrary"
     } | Select-Object -First 1
@@ -68,7 +68,14 @@ function Resolve-DocumentLibrary {
         Write-Host "[WARN] Nie znaleziono wskazanej biblioteki. Uzyto pierwszej dostepnej: $($docLib.Title)"
         return $docLib
     }
-    throw "Nie znaleziono biblioteki dokumentow."
+
+    if ($PreferredTitle) {
+        Write-Host "[WARN] Nie udalo sie pobrac list przez PnP. Uzycie wymuszonej biblioteki: $PreferredTitle"
+        return [pscustomobject]@{ Title = $PreferredTitle }
+    }
+
+    Write-Host "[WARN] Nie udalo sie wykryc biblioteki. Uzycie domyslnej nazwy: Backup_KP"
+    return [pscustomobject]@{ Title = "Backup_KP" }
 }
 
 function Ensure-ViewForFolder {
