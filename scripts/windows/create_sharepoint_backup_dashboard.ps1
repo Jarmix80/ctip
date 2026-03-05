@@ -4,7 +4,9 @@ param(
 
     [string]$LibraryTitle = "Backup_KP",
     [string]$PageName = "BackupKP-Dashboard",
-    [switch]$OverwritePage
+    [switch]$OverwritePage,
+    [string]$Tenant = "kseropartner.onmicrosoft.com",
+    [string]$ClientId = "31359c7f-bd7e-475c-86db-fdb8c937548e"
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,7 +103,7 @@ function Get-ViewUrl {
 Ensure-Module -Name "PnP.PowerShell"
 
 Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
-Connect-PnPOnline -Url $SiteUrl -Interactive
+Connect-PnPOnline -Url $SiteUrl -DeviceLogin -ClientId $ClientId -Tenant $Tenant
 
 $web = Get-PnPWeb
 $list = Resolve-DocumentLibrary -PreferredTitle $LibraryTitle

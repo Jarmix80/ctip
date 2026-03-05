@@ -3,7 +3,9 @@ param(
     [string]$SiteUrl,
 
     [string]$LibraryTitle = "Backup_KP",
-    [string]$ViewName = "Backup Dashboard"
+    [string]$ViewName = "Backup Dashboard",
+    [string]$Tenant = "kseropartner.onmicrosoft.com",
+    [string]$ClientId = "31359c7f-bd7e-475c-86db-fdb8c937548e"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,7 +47,7 @@ function Resolve-DocumentLibrary {
 Ensure-Module -Name "PnP.PowerShell"
 
 Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
-Connect-PnPOnline -Url $SiteUrl -Interactive
+Connect-PnPOnline -Url $SiteUrl -DeviceLogin -ClientId $ClientId -Tenant $Tenant
 
 $list = Resolve-DocumentLibrary -PreferredTitle $LibraryTitle
 $LibraryTitle = $list.Title
