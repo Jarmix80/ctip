@@ -56,8 +56,17 @@ function Connect-SharePoint {
         $directAuthError = $null
         $directAccessError = $null
         try {
-            Connect-PnPOnline -Url $TargetSiteUrl -ClientId $AppClientId -ClientSecret $AppClientSecret -Tenant $TenantName -ErrorAction Stop
-            Write-Host "[OK] App-only: polaczenie przez -ClientSecret."
+            $clientSecretNoTenantError = $null
+            try {
+                Connect-PnPOnline -Url $TargetSiteUrl -ClientId $AppClientId -ClientSecret $AppClientSecret -ErrorAction Stop
+                Write-Host "[OK] App-only: polaczenie przez -ClientSecret (bez -Tenant)."
+            }
+            catch {
+                $clientSecretNoTenantError = $_.Exception.Message
+                Write-Host "[WARN] App-only przez -ClientSecret (bez -Tenant) nieudane: $clientSecretNoTenantError"
+                Connect-PnPOnline -Url $TargetSiteUrl -ClientId $AppClientId -ClientSecret $AppClientSecret -Tenant $TenantName -ErrorAction Stop
+                Write-Host "[OK] App-only: polaczenie przez -ClientSecret (z -Tenant)."
+            }
             try {
                 $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
                 Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
