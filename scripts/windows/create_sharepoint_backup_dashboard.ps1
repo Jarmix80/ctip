@@ -221,6 +221,7 @@ function Get-ViewUrl {
     param(
         [string]$Site,
         [string]$LibraryRootServerRelativeUrl,
+        [string]$FolderServerRelativeUrl,
         [Guid]$ViewId
     )
     $siteUri = [System.Uri]::new($Site)
@@ -229,8 +230,10 @@ function Get-ViewUrl {
         [System.Uri]::EscapeDataString($_)
     }
     $encodedPath = "/" + ($encodedSegments -join "/")
+    $folderParam = [System.Uri]::EscapeDataString($FolderServerRelativeUrl)
 
-    return ("{0}://{1}{2}?viewid={3}" -f $siteUri.Scheme, $siteUri.Host, $encodedPath, $ViewId)
+    # Parametr id ustawia RootFolder; bez niego widok moze pokazac pusta liste.
+    return ("{0}://{1}{2}?id={3}&viewid={4}" -f $siteUri.Scheme, $siteUri.Host, $encodedPath, $folderParam, $ViewId)
 }
 
 function Publish-DashboardPage {
@@ -330,7 +333,7 @@ $folders = @(
 $createdViews = @()
 foreach ($folder in $folders) {
     $view = Ensure-ViewForFolder -ListTitle $LibraryTitle -ViewTitle $folder.Title -FolderServerRelativeUrl $folder.Path
-    $url = Get-ViewUrl -Site $SiteUrl -LibraryRootServerRelativeUrl $libraryRoot -ViewId $view.Id
+    $url = Get-ViewUrl -Site $SiteUrl -LibraryRootServerRelativeUrl $libraryRoot -FolderServerRelativeUrl $folder.Path -ViewId $view.Id
     $createdViews += @{
         Title = $folder.Title
         Url = $url
