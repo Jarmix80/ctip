@@ -201,9 +201,10 @@ function Get-ViewUrl {
     )
     $siteUri = [System.Uri]::new($Site)
     $serverPath = "{0}/Forms/AllItems.aspx" -f $LibraryRootServerRelativeUrl.TrimEnd("/")
-    $encodedPath = "/" + ((($serverPath.TrimStart("/")) -split "/") | ForEach-Object {
-            [System.Uri]::EscapeDataString($_)
-        } | Where-Object { $_ -ne "" }) -join "/"
+    $encodedSegments = (($serverPath.TrimStart("/")) -split "/") | Where-Object { $_ -ne "" } | ForEach-Object {
+        [System.Uri]::EscapeDataString($_)
+    }
+    $encodedPath = "/" + ($encodedSegments -join "/")
 
     return ("{0}://{1}{2}?viewid={3}" -f $siteUri.Scheme, $siteUri.Host, $encodedPath, $ViewId)
 }
