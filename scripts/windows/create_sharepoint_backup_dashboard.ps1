@@ -123,6 +123,30 @@ function Resolve-DocumentLibrary {
     return [pscustomobject]@{ Title = "Backup_KP" }
 }
 
+function Test-RemoteFolderExists {
+    param([string]$ServerRelativeUrl)
+    $folder = Get-PnPFolder -Url $ServerRelativeUrl -ErrorAction SilentlyContinue
+    return $null -ne $folder
+}
+
+function Resolve-ExistingFolderPath {
+    param(
+        [string]$Label,
+        [string[]]$Candidates
+    )
+
+    foreach ($candidate in $Candidates) {
+        if (Test-RemoteFolderExists -ServerRelativeUrl $candidate) {
+            Write-Host "[OK] Folder '$Label' wykryty: $candidate"
+            return $candidate
+        }
+    }
+
+    $fallback = $Candidates[0]
+    Write-Host "[WARN] Nie znaleziono folderu '$Label'. Uzycie fallback: $fallback"
+    return $fallback
+}
+
 function Update-ViewDefinition {
     param(
         [string]$ListTitle,
@@ -269,10 +293,38 @@ Write-Host "[OK] Biblioteka: $($list.Title)"
 Write-Host "[OK] Root: $libraryRoot"
 
 $folders = @(
-    @{ Key = "CTIP"; Title = "BackupKP - CTIP"; Path = "$libraryRoot/BackupKP/CTIP" },
-    @{ Key = "MS_PROD"; Title = "BackupKP - Menadzer Serwisu PROD"; Path = "$libraryRoot/BackupKP/Menadzer_Serwisu/prod" },
-    @{ Key = "MS_TEST"; Title = "BackupKP - Menadzer Serwisu TEST"; Path = "$libraryRoot/BackupKP/Menadzer_Serwisu/test" },
-    @{ Key = "OPTIMA"; Title = "BackupKP - Optima"; Path = "$libraryRoot/BackupKP/Optima" }
+    @{
+        Key = "CTIP"
+        Title = "BackupKP - CTIP"
+        Path = Resolve-ExistingFolderPath -Label "CTIP" -Candidates @(
+            "$libraryRoot/BackupKP/CTIP",
+            "$libraryRoot/CTIP"
+        )
+    },
+    @{
+        Key = "MS_PROD"
+        Title = "BackupKP - Menadzer Serwisu PROD"
+        Path = Resolve-ExistingFolderPath -Label "Menadzer Serwisu PROD" -Candidates @(
+            "$libraryRoot/BackupKP/Menadzer_Serwisu/prod",
+            "$libraryRoot/Menadzer_Serwisu/prod"
+        )
+    },
+    @{
+        Key = "MS_TEST"
+        Title = "BackupKP - Menadzer Serwisu TEST"
+        Path = Resolve-ExistingFolderPath -Label "Menadzer Serwisu TEST" -Candidates @(
+            "$libraryRoot/BackupKP/Menadzer_Serwisu/test",
+            "$libraryRoot/Menadzer_Serwisu/test"
+        )
+    },
+    @{
+        Key = "OPTIMA"
+        Title = "BackupKP - Optima"
+        Path = Resolve-ExistingFolderPath -Label "Optima" -Candidates @(
+            "$libraryRoot/BackupKP/Optima",
+            "$libraryRoot/Optima"
+        )
+    }
 )
 
 $createdViews = @()
