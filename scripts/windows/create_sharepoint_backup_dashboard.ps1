@@ -21,6 +21,29 @@ function Ensure-Module {
     Import-Module $Name -Force
 }
 
+function Get-SharePointAccessToken {
+    param(
+        [string]$TenantName,
+        [string]$AppClientId,
+        [string]$AppClientSecret,
+        [string]$TargetSiteUrl
+    )
+    $siteUri = [System.Uri]::new($TargetSiteUrl)
+    $scope = "https://$($siteUri.Host)/.default"
+    $tokenUrl = "https://login.microsoftonline.com/$TenantName/oauth2/v2.0/token"
+    $body = @{
+        client_id = $AppClientId
+        client_secret = $AppClientSecret
+        scope = $scope
+        grant_type = "client_credentials"
+    }
+    $resp = Invoke-RestMethod -Method Post -Uri $tokenUrl -ContentType "application/x-www-form-urlencoded" -Body $body
+    if (-not $resp.access_token) {
+        throw "Brak access_token w odpowiedzi OAuth."
+    }
+    return [string]$resp.access_token
+}
+
 function Resolve-DocumentLibrary {
     param([string]$PreferredTitle)
     $candidates = @()
@@ -106,7 +129,8 @@ Ensure-Module -Name "PnP.PowerShell"
 Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
 if ($ClientSecret -and $ClientSecret.Trim()) {
     Write-Host "[INFO] Tryb auth: app-only (client secret)"
-    Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -ClientSecret $ClientSecret -Tenant $Tenant
+    $token = Get-SharePointAccessToken -TenantName $Tenant -AppClientId $ClientId -AppClientSecret $ClientSecret -TargetSiteUrl $SiteUrl
+    Connect-PnPOnline -Url $SiteUrl -AccessToken $token
 }
 else {
     Write-Host "[INFO] Tryb auth: device login"
