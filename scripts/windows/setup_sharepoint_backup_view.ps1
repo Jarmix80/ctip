@@ -52,6 +52,9 @@ function Connect-SharePoint {
     )
 
     if ($AppClientSecret -and $AppClientSecret.Trim()) {
+        if ($AppClientId -eq "31359c7f-bd7e-475c-86db-fdb8c937548e") {
+            throw "Tryb app-only wymaga wlasnej rejestracji aplikacji Entra ID. Domyslny ClientId (31359c7f-bd7e-475c-86db-fdb8c937548e) sluzy do logowania delegowanego (DeviceLogin) i nie moze byc uzyty z ClientSecret. Podaj -ClientId oraz -ClientSecret swojej aplikacji."
+        }
         Write-Host "[INFO] Tryb auth: app-only (client secret)"
         $directAuthError = $null
         $directAccessError = $null
