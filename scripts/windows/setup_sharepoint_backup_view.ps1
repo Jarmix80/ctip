@@ -54,37 +54,50 @@ function Connect-SharePoint {
     if ($AppClientSecret -and $AppClientSecret.Trim()) {
         Write-Host "[INFO] Tryb auth: app-only (client secret)"
         $directAuthError = $null
+        $directAccessError = $null
         try {
             Connect-PnPOnline -Url $TargetSiteUrl -ClientId $AppClientId -ClientSecret $AppClientSecret -Tenant $TenantName -ErrorAction Stop
             Write-Host "[OK] App-only: polaczenie przez -ClientSecret."
+            try {
+                $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
+                Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
+                return
+            }
+            catch {
+                $directAccessError = $_.Exception.Message
+                Write-Host "[WARN] App-only przez -ClientSecret zestawione, ale brak dostepu do witryny: $directAccessError"
+            }
         }
         catch {
             $directAuthError = $_.Exception.Message
             Write-Host "[WARN] App-only przez -ClientSecret nieudane: $directAuthError"
-            Write-Host "[INFO] Proba awaryjna: token OAuth + -AccessToken"
-            $token = Get-SharePointAccessToken -TenantName $TenantName -AppClientId $AppClientId -AppClientSecret $AppClientSecret -TargetSiteUrl $TargetSiteUrl
-            try {
-                Connect-PnPOnline -Url $TargetSiteUrl -AccessToken $token -ErrorAction Stop
-                Write-Host "[OK] App-only: polaczenie przez -AccessToken."
-            }
-            catch {
-                $tokenAuthError = $_.Exception.Message
-                throw "Nie udalo sie zalogowac do SharePoint (app-only). Szczegoly: client-secret='$directAuthError'; access-token='$tokenAuthError'. Sprawdz uprawnienia aplikacji i admin consent."
-            }
+        }
+
+        Write-Host "[INFO] Proba awaryjna: token OAuth + -AccessToken"
+        $token = Get-SharePointAccessToken -TenantName $TenantName -AppClientId $AppClientId -AppClientSecret $AppClientSecret -TargetSiteUrl $TargetSiteUrl
+        try {
+            Connect-PnPOnline -Url $TargetSiteUrl -AccessToken $token -ErrorAction Stop
+            Write-Host "[OK] App-only: polaczenie przez -AccessToken."
+            $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
+            Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
+            return
+        }
+        catch {
+            $tokenAuthError = $_.Exception.Message
+            throw "Nie udalo sie zalogowac do SharePoint (app-only). Szczegoly: client-secret='$directAuthError'; web-access='$directAccessError'; access-token='$tokenAuthError'. Sprawdz uprawnienia aplikacji i admin consent."
         }
     }
     else {
         Write-Host "[INFO] Tryb auth: device login"
         Connect-PnPOnline -Url $TargetSiteUrl -DeviceLogin -ClientId $AppClientId -Tenant $TenantName -ErrorAction Stop
         Write-Host "[OK] Device login zakonczony."
-    }
-
-    try {
-        $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
-        Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
-    }
-    catch {
-        throw "Autoryzacja zakonczona, ale brak dostepu do witryny: $($_.Exception.Message)"
+        try {
+            $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
+            Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
+        }
+        catch {
+            throw "Autoryzacja zakonczona, ale brak dostepu do witryny: $($_.Exception.Message)"
+        }
     }
 }
 
