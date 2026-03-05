@@ -1,10 +1,13 @@
 """Wejście aplikacji FastAPI."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
+from app.api.routes.admin_backup import start_backup_scheduler, stop_backup_scheduler
 from app.core.config import settings
 from app.web.admin_ui import router as admin_ui_router
 from app.web.contracts_ui import router as contracts_ui_router
@@ -14,9 +17,23 @@ from app.web.operator_ui import router as operator_ui_router
 from app.web.root_ui import router as root_ui_router
 
 
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI):
+    """Obsługuje zadania startowe i zamknięcie aplikacji."""
+    scheduler_started = False
+    if settings.backup_scheduler_enabled and settings.backup_execution_active:
+        await start_backup_scheduler()
+        scheduler_started = True
+    try:
+        yield
+    finally:
+        if scheduler_started:
+            await stop_backup_scheduler()
+
+
 def create_app() -> FastAPI:
     """Buduje obiekt FastAPI wraz z trasami paneli i statycznymi zasobami."""
-    app = FastAPI(title=settings.app_title, version=settings.app_version)
+    app = FastAPI(title=settings.app_title, version=settings.app_version, lifespan=_app_lifespan)
 
     # Domyślne CORS – w razie potrzeby zawęzimy listę domen.
     app.add_middleware(

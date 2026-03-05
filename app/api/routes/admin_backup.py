@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_admin_session_context, get_db_session
 from app.api.routes.admin_config import settings_store
 from app.core.config import settings
+from app.db.session import AsyncSessionLocal
 from app.schemas.admin_backup import (
     BackupConfigResponse,
     BackupConfigUpdate,
@@ -22,7 +25,12 @@ from app.schemas.admin_backup import (
     BackupRunResponse,
 )
 from app.services.audit import record_audit
-from app.services.backup_runner import BackupRunError, create_local_backup, list_backup_files
+from app.services.backup_runner import (
+    BackupRunError,
+    BackupRunResult,
+    create_local_backup,
+    list_backup_files,
+)
 from app.services.office365_backup import (
     Office365BackupError,
     test_office365_connection,
@@ -30,6 +38,10 @@ from app.services.office365_backup import (
 )
 
 router = APIRouter(prefix="/admin/backup", tags=["admin-backup"])
+logger = logging.getLogger(__name__)
+_scheduler_task: asyncio.Task[None] | None = None
+_scheduler_stop_event: asyncio.Event | None = None
+_scheduler_last_run: dict[str, str] = {}
 
 
 def _ensure_admin(role: str) -> None:
@@ -56,6 +68,88 @@ def _to_bool(value: str | bool | None, default: bool) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "t", "yes", "on"}
     return default
+
+
+def _resolve_cloud_targets(cfg: BackupConfigResponse) -> list[str]:
+    """Wyznacza docelowe foldery chmurowe na podstawie zakresu backupu."""
+    targets: list[str] = []
+    if cfg.archive_ctip_files or cfg.archive_ctip_db:
+        targets.append(cfg.office_folder_ctip)
+    if cfg.archive_firebird_prod:
+        targets.append(cfg.office_folder_firebird_prod)
+    if cfg.archive_firebird_test:
+        targets.append(cfg.office_folder_firebird_test)
+    if cfg.archive_optima:
+        targets.append(cfg.office_folder_optima)
+    if not targets and cfg.office_folder_path:
+        targets.append(cfg.office_folder_path)
+
+    deduped: list[str] = []
+    for target in targets:
+        normalized = (target or "").strip().strip("/")
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+    return deduped
+
+
+async def _execute_backup_job(
+    *,
+    cfg: BackupConfigResponse,
+    stored: dict[str, str],
+    label: str | None,
+    compress: bool,
+    cloud_upload_enabled: bool,
+) -> dict[str, object]:
+    """Wykonuje lokalny backup i opcjonalny upload do SharePoint."""
+    run_result: BackupRunResult = create_local_backup(
+        label=label,
+        compress=compress,
+        config=cfg.model_dump(),
+    )
+
+    uploaded_folders: list[str] = []
+    upload_errors: list[str] = []
+    upload_urls: list[str] = []
+
+    if cloud_upload_enabled and cfg.cloud_provider == "office365":
+        tenant_id = stored.get("office_tenant_id") or settings.office365_tenant_id or ""
+        client_id = stored.get("office_client_id") or settings.office365_client_id or ""
+        client_secret = stored.get("office_client_secret") or settings.office365_client_secret or ""
+        site_id = stored.get("office_site_id") or settings.office365_site_id
+        drive_id = stored.get("office_drive_id") or settings.office365_drive_id
+
+        for folder_path in _resolve_cloud_targets(cfg):
+            try:
+                up_archive = await upload_file_to_sharepoint(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    site_id=site_id,
+                    drive_id=drive_id,
+                    folder_path=folder_path,
+                    file_path=run_result.backup_path,
+                )
+                await upload_file_to_sharepoint(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    site_id=site_id,
+                    drive_id=up_archive.drive_id,
+                    folder_path=folder_path,
+                    file_path=run_result.checksum_path,
+                )
+                uploaded_folders.append(folder_path)
+                if up_archive.web_url:
+                    upload_urls.append(up_archive.web_url)
+            except Office365BackupError as exc:
+                upload_errors.append(f"{folder_path}: {exc}")
+
+    return {
+        "run_result": run_result,
+        "uploaded_folders": uploaded_folders,
+        "upload_errors": upload_errors,
+        "upload_urls": upload_urls,
+    }
 
 
 async def load_backup_config(session: AsyncSession) -> BackupConfigResponse:
@@ -103,8 +197,125 @@ async def load_backup_config(session: AsyncSession) -> BackupConfigResponse:
         optima_db_ksero_partner=stored.get("optima_db_ksero_partner")
         or settings.optima_db_ksero_partner,
         optima_db_config=stored.get("optima_db_config") or settings.optima_db_config,
-        execution_enabled=settings.backup_execution_enabled,
+        execution_enabled=settings.backup_execution_active,
     )
+
+
+def _scheduled_slot_for_now(cfg: BackupConfigResponse, now: datetime) -> str | None:
+    """Zwraca nazwę slotu harmonogramu dla bieżącej minuty."""
+    hhmm = now.strftime("%H:%M")
+    if hhmm == cfg.schedule_morning:
+        return "morning"
+    if hhmm == cfg.schedule_evening:
+        return "evening"
+    return None
+
+
+async def backup_scheduler_tick() -> None:
+    """Wykonuje pojedynczy krok harmonogramu backupu."""
+    if not settings.backup_execution_active:
+        return
+
+    now = datetime.now()
+    day_key = now.strftime("%Y-%m-%d")
+
+    async with AsyncSessionLocal() as session:
+        cfg = await load_backup_config(session)
+        slot = _scheduled_slot_for_now(cfg, now)
+        if not slot:
+            return
+        if _scheduler_last_run.get(slot) == day_key:
+            return
+
+        stored = await settings_store.get_namespace(session, "backup")
+        cloud_upload_enabled = not (cfg.cloud_only_evening and slot == "morning")
+        label = f"auto_{slot}"
+
+        try:
+            outcome = await _execute_backup_job(
+                cfg=cfg,
+                stored=stored,
+                label=label,
+                compress=True,
+                cloud_upload_enabled=cloud_upload_enabled,
+            )
+            run_result = outcome["run_result"]
+            uploaded_folders = outcome["uploaded_folders"]
+            upload_errors = outcome["upload_errors"]
+            upload_urls = outcome["upload_urls"]
+            await record_audit(
+                session,
+                user_id=None,
+                action="backup_run_auto_success",
+                client_ip="scheduler",
+                payload={
+                    "slot": slot,
+                    "label": label,
+                    "backup_name": run_result.backup_name,
+                    "checksum": run_result.checksum,
+                    "size_bytes": run_result.size_bytes,
+                    "cloud_upload_enabled": cloud_upload_enabled,
+                    "uploaded_folders": uploaded_folders,
+                    "upload_errors": upload_errors,
+                    "upload_urls": upload_urls,
+                    "notes": run_result.notes,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            await record_audit(
+                session,
+                user_id=None,
+                action="backup_run_auto_failed",
+                client_ip="scheduler",
+                payload={"slot": slot, "label": label, "error": str(exc)},
+            )
+            logger.exception("Automatyczny backup nieudany dla slotu %s", slot)
+        finally:
+            _scheduler_last_run[slot] = day_key
+            await session.commit()
+
+
+async def _backup_scheduler_loop(stop_event: asyncio.Event) -> None:
+    """Uruchamia pętlę harmonogramu backupów."""
+    while not stop_event.is_set():
+        try:
+            await backup_scheduler_tick()
+        except Exception:  # noqa: BLE001
+            logger.exception("Błąd pętli harmonogramu backupów")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=30)
+        except TimeoutError:
+            continue
+
+
+async def start_backup_scheduler() -> None:
+    """Startuje harmonogram backupów w tle aplikacji."""
+    global _scheduler_task, _scheduler_stop_event  # noqa: PLW0603
+    if _scheduler_task is not None and not _scheduler_task.done():
+        return
+    _scheduler_stop_event = asyncio.Event()
+    _scheduler_task = asyncio.create_task(
+        _backup_scheduler_loop(_scheduler_stop_event), name="backup-scheduler"
+    )
+    logger.info("Uruchomiono harmonogram backupow.")
+
+
+async def stop_backup_scheduler() -> None:
+    """Zatrzymuje harmonogram backupów."""
+    global _scheduler_task, _scheduler_stop_event  # noqa: PLW0603
+    if _scheduler_stop_event is not None:
+        _scheduler_stop_event.set()
+    if _scheduler_task is not None:
+        try:
+            await asyncio.wait_for(_scheduler_task, timeout=5)
+        except TimeoutError:
+            _scheduler_task.cancel()
+            try:
+                await _scheduler_task
+            except asyncio.CancelledError:
+                pass
+    _scheduler_task = None
+    _scheduler_stop_event = None
 
 
 @router.get("/config", response_model=BackupConfigResponse, summary="Konfiguracja kopii zapasowych")
@@ -350,7 +561,7 @@ async def backup_run(
             backup_name=None,
         )
 
-    if not settings.backup_execution_enabled:
+    if not settings.backup_execution_active:
         await record_audit(
             session,
             user_id=admin_user.id,
@@ -368,11 +579,17 @@ async def backup_run(
     stored = await settings_store.get_namespace(session, "backup")
 
     try:
-        run_result = create_local_backup(
+        outcome = await _execute_backup_job(
+            cfg=cfg,
+            stored=stored,
             label=payload.label,
             compress=payload.compress,
-            config=cfg.model_dump(),
+            cloud_upload_enabled=True,
         )
+        run_result = outcome["run_result"]
+        uploaded_folders = outcome["uploaded_folders"]
+        upload_errors = outcome["upload_errors"]
+        upload_urls = outcome["upload_urls"]
     except BackupRunError as exc:
         await record_audit(
             session,
@@ -387,39 +604,8 @@ async def backup_run(
             detail=f"Backup nie został utworzony: {exc}",
         ) from exc
 
-    uploaded = False
-    upload_url: str | None = None
-    upload_error: str | None = None
-    if cfg.cloud_provider == "office365":
-        tenant_id = stored.get("office_tenant_id") or settings.office365_tenant_id or ""
-        client_id = stored.get("office_client_id") or settings.office365_client_id or ""
-        client_secret = stored.get("office_client_secret") or settings.office365_client_secret or ""
-        site_id = stored.get("office_site_id") or settings.office365_site_id
-        drive_id = stored.get("office_drive_id") or settings.office365_drive_id
-        folder_path = stored.get("office_folder_ctip") or settings.office365_folder_ctip
-        try:
-            up_archive = await upload_file_to_sharepoint(
-                tenant_id=tenant_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                site_id=site_id,
-                drive_id=drive_id,
-                folder_path=folder_path,
-                file_path=run_result.backup_path,
-            )
-            await upload_file_to_sharepoint(
-                tenant_id=tenant_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                site_id=site_id,
-                drive_id=up_archive.drive_id,
-                folder_path=folder_path,
-                file_path=run_result.checksum_path,
-            )
-            uploaded = True
-            upload_url = up_archive.web_url
-        except Office365BackupError as exc:
-            upload_error = str(exc)
+    uploaded = bool(uploaded_folders)
+    upload_error = "; ".join(upload_errors) if upload_errors else None
 
     await record_audit(
         session,
@@ -433,7 +619,8 @@ async def backup_run(
             "checksum": run_result.checksum,
             "size_bytes": run_result.size_bytes,
             "uploaded_to_cloud": uploaded,
-            "upload_url": upload_url,
+            "uploaded_folders": uploaded_folders,
+            "upload_urls": upload_urls,
             "upload_error": upload_error,
             "notes": run_result.notes,
         },
@@ -441,8 +628,10 @@ async def backup_run(
     await session.commit()
 
     message = "Kopia zapasowa została utworzona."
-    if uploaded:
-        message += " Wysłano do SharePoint."
+    if uploaded_folders:
+        message += f" Wysłano do SharePoint ({len(uploaded_folders)} foldery)."
+    elif upload_errors:
+        message += f" Upload SharePoint częściowo/całkowicie nieudany: {upload_error}"
     elif upload_error:
         message += f" Upload SharePoint nieudany: {upload_error}"
     return BackupRunResponse(
@@ -481,7 +670,7 @@ async def backup_restore(
             message="Symulacja przywracania kopii zapasowej zakończona.",
         )
 
-    if not settings.backup_execution_enabled:
+    if not settings.backup_execution_active:
         await record_audit(
             session,
             user_id=admin_user.id,
@@ -509,4 +698,4 @@ async def backup_restore(
     )
 
 
-__all__ = ["router"]
+__all__ = ["backup_scheduler_tick", "router", "start_backup_scheduler", "stop_backup_scheduler"]

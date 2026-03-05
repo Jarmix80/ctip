@@ -47,7 +47,7 @@ from app.services.admin_users import EmailDeliverySettings
 from app.services.backup_runner import BackupFileInfo, BackupRunResult
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
-from app.services.office365_backup import Office365ConnectionResult
+from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
 from log_utils import append_log, daily_log_path
@@ -105,7 +105,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             transport=ASGITransport(app=self.app), base_url="http://testserver"
         )
         self._previous_admin_secret_key = settings.admin_secret_key
+        self._previous_backup_scheduler_enabled = settings.backup_scheduler_enabled
         settings.admin_secret_key = Fernet.generate_key().decode("ascii")
+        settings.backup_scheduler_enabled = False
 
         async with self.session_factory() as session:
             now = datetime.now(UTC)
@@ -143,6 +145,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.app.dependency_overrides.clear()
         self._email_patch.stop()
         settings.admin_secret_key = self._previous_admin_secret_key
+        settings.backup_scheduler_enabled = self._previous_backup_scheduler_enabled
         await self.engine.dispose()
 
     async def _login_as(self, email: str, password: str) -> tuple[str, dict]:
@@ -849,11 +852,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_backup_run_blocked_records_audit(self):
         token, _ = await self._login()
-        response = await self.client.post(
-            "/admin/backup/run",
-            headers={"X-Admin-Session": token},
-            json={"label": "reczny", "compress": False, "dry_run": False},
-        )
+        prev = settings.backup_execution_enabled
+        settings.backup_execution_enabled = False
+        try:
+            response = await self.client.post(
+                "/admin/backup/run",
+                headers={"X-Admin-Session": token},
+                json={"label": "reczny", "compress": False, "dry_run": False},
+            )
+        finally:
+            settings.backup_execution_enabled = prev
         self.assertEqual(response.status_code, 403)
         data = response.json()
         self.assertEqual(data["detail"], "Backup jest wyłączony poza środowiskiem produkcyjnym.")
@@ -899,6 +907,67 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(data["dry_run"])
         self.assertEqual(data["backup_name"], "backup_20260304_170000.tar.gz")
 
+    async def test_backup_run_uploads_to_all_enabled_cloud_folders(self):
+        token, _ = await self._login()
+        prev = settings.backup_execution_enabled
+        settings.backup_execution_enabled = True
+        fake_run = BackupRunResult(
+            backup_name="backup_20260305_080000.tar.gz",
+            backup_path=Path("backups/backup_20260305_080000.tar.gz"),
+            checksum="def456",
+            checksum_path=Path("backups/backup_20260305_080000.tar.gz.sha256"),
+            size_bytes=4096,
+            notes=[],
+        )
+
+        async def fake_upload(**kwargs):
+            folder = kwargs.get("folder_path")
+            file_path = kwargs.get("file_path")
+            return Office365UploadResult(
+                drive_id="drive-test",
+                item_id="item-test",
+                web_url=f"https://sharepoint.test/{folder}",
+                name=file_path.name,
+                size=1,
+            )
+
+        try:
+            with (
+                patch(
+                    "app.api.routes.admin_backup.create_local_backup",
+                    return_value=fake_run,
+                ),
+                patch(
+                    "app.api.routes.admin_backup.upload_file_to_sharepoint",
+                    new=AsyncMock(side_effect=fake_upload),
+                ) as upload_mock,
+            ):
+                response = await self.client.post(
+                    "/admin/backup/run",
+                    headers={"X-Admin-Session": token},
+                    json={"label": "auto", "compress": True, "dry_run": False},
+                )
+        finally:
+            settings.backup_execution_enabled = prev
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["accepted"])
+        self.assertIn("Wysłano do SharePoint", data["message"])
+
+        called_folders = [call.kwargs.get("folder_path") for call in upload_mock.await_args_list]
+        unique_folders = set(called_folders)
+        self.assertEqual(
+            unique_folders,
+            {
+                "BackupKP/CTIP",
+                "BackupKP/Menadzer_Serwisu/prod",
+                "BackupKP/Menadzer_Serwisu/test",
+                "BackupKP/Optima",
+            },
+        )
+        self.assertEqual(len(called_folders), 8)
+
     async def test_backup_restore_dry_creates_audit_entry(self):
         token, _ = await self._login()
         response = await self.client.post(
@@ -923,11 +992,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_backup_restore_blocked_records_audit(self):
         token, _ = await self._login()
-        response = await self.client.post(
-            "/admin/backup/restore",
-            headers={"X-Admin-Session": token},
-            json={"backup_name": "backup_2025-10-11.dump", "dry_run": False},
-        )
+        prev = settings.backup_execution_enabled
+        settings.backup_execution_enabled = False
+        try:
+            response = await self.client.post(
+                "/admin/backup/restore",
+                headers={"X-Admin-Session": token},
+                json={"backup_name": "backup_2025-10-11.dump", "dry_run": False},
+            )
+        finally:
+            settings.backup_execution_enabled = prev
         self.assertEqual(response.status_code, 403)
         data = response.json()
         self.assertEqual(

@@ -1,5 +1,6 @@
 """Konfiguracja aplikacji oparta na zmiennych środowiskowych."""
 
+import socket
 from functools import lru_cache
 
 from pydantic import Field
@@ -60,7 +61,8 @@ class Settings(BaseSettings):
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
     email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
 
-    backup_execution_enabled: bool = Field(default=False, alias="BACKUP_EXECUTION_ENABLED")
+    backup_execution_enabled: bool | None = Field(default=None, alias="BACKUP_EXECUTION_ENABLED")
+    backup_scheduler_enabled: bool = Field(default=True, alias="BACKUP_SCHEDULER_ENABLED")
     backup_production_host: str = Field(default="192.168.0.8", alias="BACKUP_PRODUCTION_HOST")
     backup_default_local_dir: str = Field(
         default="D:\\Backup_CTIP_MS_optima", alias="BACKUP_DEFAULT_LOCAL_DIR"
@@ -100,6 +102,44 @@ class Settings(BaseSettings):
             f"postgresql+asyncpg://{self.pg_user}:{self.pg_password}"
             f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
         )
+
+    @staticmethod
+    def _resolve_host_ips(host: str) -> set[str]:
+        """Zwraca zestaw adresów IP rozwiązywanych dla podanego hosta."""
+        if not host:
+            return set()
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError:
+            return set()
+        return {info[4][0] for info in infos if info and info[4]}
+
+    @property
+    def backup_execution_active(self) -> bool:
+        """Określa, czy pełne wykonanie backupu jest aktywne dla bieżącego hosta."""
+        if self.backup_execution_enabled is not None:
+            return self.backup_execution_enabled
+
+        production_host = (self.backup_production_host or "").strip()
+        if not production_host:
+            return False
+
+        local_hostnames = {
+            socket.gethostname().lower(),
+            socket.getfqdn().lower(),
+            "localhost",
+        }
+        if production_host.lower() in local_hostnames:
+            return True
+
+        production_ips = self._resolve_host_ips(production_host)
+        local_ips = {
+            "127.0.0.1",
+            "::1",
+        }
+        local_ips |= self._resolve_host_ips(socket.gethostname())
+        local_ips |= self._resolve_host_ips(socket.getfqdn())
+        return bool(production_ips.intersection(local_ips))
 
 
 @lru_cache(1)
