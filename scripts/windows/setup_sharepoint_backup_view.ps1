@@ -54,13 +54,15 @@ function Resolve-DocumentLibrary {
 
     foreach ($name in $candidates) {
         $list = Get-PnPList -Identity $name -ErrorAction SilentlyContinue
-        if ($list -and $list.BaseTemplate -eq 101) {
+        if ($list) {
             return $list
         }
     }
 
     $all = Get-PnPList
-    $docLib = $all | Where-Object { $_.BaseTemplate -eq 101 } | Select-Object -First 1
+    $docLib = $all | Where-Object {
+        $_.BaseTemplate -eq 101 -or $_.BaseType -eq "DocumentLibrary"
+    } | Select-Object -First 1
     if ($docLib) {
         Write-Host "[WARN] Nie znaleziono wskazanej biblioteki. Uzyto pierwszej dostepnej: $($docLib.Title)"
         return $docLib
