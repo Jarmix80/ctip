@@ -43,6 +43,51 @@ function Get-SharePointAccessToken {
     return [string]$resp.access_token
 }
 
+function Connect-SharePoint {
+    param(
+        [string]$TargetSiteUrl,
+        [string]$TenantName,
+        [string]$AppClientId,
+        [string]$AppClientSecret
+    )
+
+    if ($AppClientSecret -and $AppClientSecret.Trim()) {
+        Write-Host "[INFO] Tryb auth: app-only (client secret)"
+        $directAuthError = $null
+        try {
+            Connect-PnPOnline -Url $TargetSiteUrl -ClientId $AppClientId -ClientSecret $AppClientSecret -Tenant $TenantName -ErrorAction Stop
+            Write-Host "[OK] App-only: polaczenie przez -ClientSecret."
+        }
+        catch {
+            $directAuthError = $_.Exception.Message
+            Write-Host "[WARN] App-only przez -ClientSecret nieudane: $directAuthError"
+            Write-Host "[INFO] Proba awaryjna: token OAuth + -AccessToken"
+            $token = Get-SharePointAccessToken -TenantName $TenantName -AppClientId $AppClientId -AppClientSecret $AppClientSecret -TargetSiteUrl $TargetSiteUrl
+            try {
+                Connect-PnPOnline -Url $TargetSiteUrl -AccessToken $token -ErrorAction Stop
+                Write-Host "[OK] App-only: polaczenie przez -AccessToken."
+            }
+            catch {
+                $tokenAuthError = $_.Exception.Message
+                throw "Nie udalo sie zalogowac do SharePoint (app-only). Szczegoly: client-secret='$directAuthError'; access-token='$tokenAuthError'. Sprawdz uprawnienia aplikacji i admin consent."
+            }
+        }
+    }
+    else {
+        Write-Host "[INFO] Tryb auth: device login"
+        Connect-PnPOnline -Url $TargetSiteUrl -DeviceLogin -ClientId $AppClientId -Tenant $TenantName -ErrorAction Stop
+        Write-Host "[OK] Device login zakonczony."
+    }
+
+    try {
+        $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
+        Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
+    }
+    catch {
+        throw "Autoryzacja zakonczona, ale brak dostepu do witryny: $($_.Exception.Message)"
+    }
+}
+
 function Resolve-DocumentLibrary {
     param([string]$PreferredTitle)
     $candidates = @()
@@ -77,34 +122,55 @@ function Resolve-DocumentLibrary {
     return [pscustomobject]@{ Title = "Backup_KP" }
 }
 
+function Update-ViewDefinition {
+    param(
+        [string]$ListTitle,
+        [Guid]$ViewId,
+        [string[]]$Fields,
+        [string]$ViewQuery,
+        [uint32]$RowLimit = 200,
+        [bool]$MakeDefault = $false
+    )
+
+    if ($Fields -and $Fields.Count -gt 0) {
+        Set-PnPView -List $ListTitle -Identity $ViewId -Fields $Fields | Out-Null
+    }
+
+    $viewRef = Get-PnPView -List $ListTitle -Identity $ViewId -ErrorAction Stop
+    $viewRef.ViewQuery = $ViewQuery
+    $viewRef.RowLimit = [uint32]$RowLimit
+    $viewRef.Paged = $true
+    if ($MakeDefault) {
+        $viewRef.DefaultView = $true
+    }
+
+    $viewRef.Update()
+    Invoke-PnPQuery
+    return $viewRef
+}
+
 Ensure-Module -Name "PnP.PowerShell"
 
 Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
-if ($ClientSecret -and $ClientSecret.Trim()) {
-    Write-Host "[INFO] Tryb auth: app-only (client secret)"
-    $token = Get-SharePointAccessToken -TenantName $Tenant -AppClientId $ClientId -AppClientSecret $ClientSecret -TargetSiteUrl $SiteUrl
-    Connect-PnPOnline -Url $SiteUrl -AccessToken $token
-}
-else {
-    Write-Host "[INFO] Tryb auth: device login"
-    Connect-PnPOnline -Url $SiteUrl -DeviceLogin -ClientId $ClientId -Tenant $Tenant
-}
+Connect-SharePoint -TargetSiteUrl $SiteUrl -TenantName $Tenant -AppClientId $ClientId -AppClientSecret $ClientSecret
 
 $list = Resolve-DocumentLibrary -PreferredTitle $LibraryTitle
 $LibraryTitle = $list.Title
 Write-Host "[OK] Biblioteka: $($list.Title)"
 
+$viewFields = @(
+    "DocIcon",
+    "LinkFilename",
+    "File_x0020_Type",
+    "FileSizeDisplay",
+    "Modified",
+    "Editor"
+)
+
 $view = Get-PnPView -List $LibraryTitle | Where-Object { $_.Title -eq $ViewName } | Select-Object -First 1
 if (-not $view) {
     Write-Host "[INFO] Tworzenie widoku: $ViewName"
-    $view = Add-PnPView -List $LibraryTitle -Title $ViewName -Fields @(
-        "DocIcon",
-        "LinkFilename",
-        "File_x0020_Type",
-        "FileSizeDisplay",
-        "Modified",
-        "Editor"
-    ) -Paged:$true -RowLimit 200
+    $view = Add-PnPView -List $LibraryTitle -Title $ViewName -Fields $viewFields -Paged:$true -RowLimit 200
 }
 else {
     Write-Host "[INFO] Widok juz istnieje, aktualizacja ustawien: $ViewName"
@@ -119,20 +185,7 @@ $query = @"
 </GroupBy>
 "@
 
-Set-PnPView -List $LibraryTitle -Identity $view.Id -Fields @(
-    "DocIcon",
-    "LinkFilename",
-    "File_x0020_Type",
-    "FileSizeDisplay",
-    "Modified",
-    "Editor"
-) -Values @{
-    RowLimit = 200
-    Paged = "TRUE"
-    Query = $query
-}
-
-Set-PnPView -List $LibraryTitle -Identity $view.Id -SetAsDefault
+Update-ViewDefinition -ListTitle $LibraryTitle -ViewId $view.Id -Fields $viewFields -ViewQuery $query -RowLimit 200 -MakeDefault:$true | Out-Null
 
 Write-Host "[OK] Widok '$ViewName' zostal ustawiony jako domyslny."
 Write-Host "[OK] Uklad: grupowanie po folderach + sortowanie po dacie modyfikacji malejaco."

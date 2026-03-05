@@ -44,6 +44,51 @@ function Get-SharePointAccessToken {
     return [string]$resp.access_token
 }
 
+function Connect-SharePoint {
+    param(
+        [string]$TargetSiteUrl,
+        [string]$TenantName,
+        [string]$AppClientId,
+        [string]$AppClientSecret
+    )
+
+    if ($AppClientSecret -and $AppClientSecret.Trim()) {
+        Write-Host "[INFO] Tryb auth: app-only (client secret)"
+        $directAuthError = $null
+        try {
+            Connect-PnPOnline -Url $TargetSiteUrl -ClientId $AppClientId -ClientSecret $AppClientSecret -Tenant $TenantName -ErrorAction Stop
+            Write-Host "[OK] App-only: polaczenie przez -ClientSecret."
+        }
+        catch {
+            $directAuthError = $_.Exception.Message
+            Write-Host "[WARN] App-only przez -ClientSecret nieudane: $directAuthError"
+            Write-Host "[INFO] Proba awaryjna: token OAuth + -AccessToken"
+            $token = Get-SharePointAccessToken -TenantName $TenantName -AppClientId $AppClientId -AppClientSecret $AppClientSecret -TargetSiteUrl $TargetSiteUrl
+            try {
+                Connect-PnPOnline -Url $TargetSiteUrl -AccessToken $token -ErrorAction Stop
+                Write-Host "[OK] App-only: polaczenie przez -AccessToken."
+            }
+            catch {
+                $tokenAuthError = $_.Exception.Message
+                throw "Nie udalo sie zalogowac do SharePoint (app-only). Szczegoly: client-secret='$directAuthError'; access-token='$tokenAuthError'. Sprawdz uprawnienia aplikacji i admin consent."
+            }
+        }
+    }
+    else {
+        Write-Host "[INFO] Tryb auth: device login"
+        Connect-PnPOnline -Url $TargetSiteUrl -DeviceLogin -ClientId $AppClientId -Tenant $TenantName -ErrorAction Stop
+        Write-Host "[OK] Device login zakonczony."
+    }
+
+    try {
+        $web = Get-PnPWeb -Includes Title, Url -ErrorAction Stop
+        Write-Host "[OK] Witryna: $($web.Title) [$($web.Url)]"
+    }
+    catch {
+        throw "Autoryzacja zakonczona, ale brak dostepu do witryny: $($_.Exception.Message)"
+    }
+}
+
 function Resolve-DocumentLibrary {
     param([string]$PreferredTitle)
     $candidates = @()
@@ -78,6 +123,33 @@ function Resolve-DocumentLibrary {
     return [pscustomobject]@{ Title = "Backup_KP" }
 }
 
+function Update-ViewDefinition {
+    param(
+        [string]$ListTitle,
+        [Guid]$ViewId,
+        [string[]]$Fields,
+        [string]$ViewQuery,
+        [uint32]$RowLimit = 200,
+        [bool]$MakeDefault = $false
+    )
+
+    if ($Fields -and $Fields.Count -gt 0) {
+        Set-PnPView -List $ListTitle -Identity $ViewId -Fields $Fields | Out-Null
+    }
+
+    $viewRef = Get-PnPView -List $ListTitle -Identity $ViewId -ErrorAction Stop
+    $viewRef.ViewQuery = $ViewQuery
+    $viewRef.RowLimit = [uint32]$RowLimit
+    $viewRef.Paged = $true
+    if ($MakeDefault) {
+        $viewRef.DefaultView = $true
+    }
+
+    $viewRef.Update()
+    Invoke-PnPQuery
+    return $viewRef
+}
+
 function Ensure-ViewForFolder {
     param(
         [string]$ListTitle,
@@ -94,12 +166,14 @@ function Ensure-ViewForFolder {
         "Editor"
     )
 
+    $escapedFolderPath = [System.Security.SecurityElement]::Escape($FolderServerRelativeUrl)
+
     $query = @"
 <Where>
-  <Contains>
+  <BeginsWith>
     <FieldRef Name='FileDirRef' />
-    <Value Type='Text'>$FolderServerRelativeUrl</Value>
-  </Contains>
+    <Value Type='Text'>$escapedFolderPath</Value>
+  </BeginsWith>
 </Where>
 <OrderBy>
   <FieldRef Name='Modified' Ascending='FALSE' />
@@ -115,12 +189,8 @@ function Ensure-ViewForFolder {
         Write-Host "[INFO] Aktualizacja widoku: $ViewTitle"
     }
 
-    Set-PnPView -List $ListTitle -Identity $view.Id -Fields $fields -Values @{
-        RowLimit = 200
-        Paged = "TRUE"
-        Query = $query
-    }
-    return $view
+    Update-ViewDefinition -ListTitle $ListTitle -ViewId $view.Id -Fields $fields -ViewQuery $query -RowLimit 200 | Out-Null
+    return (Get-PnPView -List $ListTitle -Identity $view.Id -ErrorAction Stop)
 }
 
 function Get-ViewUrl {
@@ -129,22 +199,59 @@ function Get-ViewUrl {
         [string]$LibraryRootServerRelativeUrl,
         [Guid]$ViewId
     )
-    $libPath = $LibraryRootServerRelativeUrl.TrimStart("/")
+    $libPath = $LibraryRootServerRelativeUrl.TrimStart("/") -replace " ", "%20"
     return ("{0}/{1}/Forms/AllItems.aspx?viewid={2}" -f $Site.TrimEnd("/"), $libPath, $ViewId)
+}
+
+function Publish-DashboardPage {
+    param(
+        [string]$TargetPageName,
+        [string]$TargetSiteUrl,
+        [array]$Views,
+        [switch]$ForceOverwrite
+    )
+
+    $pageIdentity = "$TargetPageName.aspx"
+    $pageExists = Get-PnPPage -Identity $pageIdentity -ErrorAction SilentlyContinue
+    if ($pageExists) {
+        if (-not $ForceOverwrite) {
+            throw "Strona $pageIdentity juz istnieje. Uruchom skrypt ponownie z -OverwritePage, aby odtworzyc zawartosc."
+        }
+        Write-Host "[INFO] Usuwanie istniejacej strony: $pageIdentity"
+        Remove-PnPPage -Identity $pageIdentity -Force
+    }
+
+    Write-Host "[INFO] Tworzenie strony: $pageIdentity"
+    Add-PnPPage -Name $TargetPageName -LayoutType Article | Out-Null
+
+    Add-PnPPageSection -Page $pageIdentity -SectionTemplate OneColumn | Out-Null
+    Add-PnPPageTextPart -Page $pageIdentity -Section 1 -Column 1 -Text @"
+<h2>BackupKP - dashboard backupow</h2>
+<p>Widok tylko do podgladu backupow pogrupowanych wg katalogow.</p>
+"@ | Out-Null
+
+    Add-PnPPageSection -Page $pageIdentity -SectionTemplate OneColumn | Out-Null
+
+    $html = "<table><thead><tr><th>Kategoria</th><th>Sciezka</th><th>Widok tabeli</th></tr></thead><tbody>"
+    foreach ($item in $Views) {
+        $html += "<tr>"
+        $html += "<td>$($item.Title)</td>"
+        $html += "<td><code>$($item.Path)</code></td>"
+        $html += "<td><a href='$($item.Url)' target='_blank' rel='noopener noreferrer'>Otworz tabele</a></td>"
+        $html += "</tr>"
+    }
+    $html += "</tbody></table>"
+
+    Add-PnPPageTextPart -Page $pageIdentity -Section 2 -Column 1 -Text $html | Out-Null
+    Set-PnPPage -Identity $pageIdentity -Publish | Out-Null
+
+    Write-Host "[OK] Strona opublikowana: $TargetSiteUrl/SitePages/$TargetPageName.aspx"
 }
 
 Ensure-Module -Name "PnP.PowerShell"
 
 Write-Host "[INFO] Laczenie z SharePoint: $SiteUrl"
-if ($ClientSecret -and $ClientSecret.Trim()) {
-    Write-Host "[INFO] Tryb auth: app-only (client secret)"
-    $token = Get-SharePointAccessToken -TenantName $Tenant -AppClientId $ClientId -AppClientSecret $ClientSecret -TargetSiteUrl $SiteUrl
-    Connect-PnPOnline -Url $SiteUrl -AccessToken $token
-}
-else {
-    Write-Host "[INFO] Tryb auth: device login"
-    Connect-PnPOnline -Url $SiteUrl -DeviceLogin -ClientId $ClientId -Tenant $Tenant
-}
+Connect-SharePoint -TargetSiteUrl $SiteUrl -TenantName $Tenant -AppClientId $ClientId -AppClientSecret $ClientSecret
 
 $web = Get-PnPWeb
 $list = Resolve-DocumentLibrary -PreferredTitle $LibraryTitle
@@ -173,49 +280,7 @@ foreach ($folder in $folders) {
     }
 }
 
-$pageExists = Get-PnPPage -Identity "$PageName.aspx" -ErrorAction SilentlyContinue
-if ($pageExists -and $OverwritePage) {
-    Write-Host "[INFO] Usuwanie istniejacej strony: $PageName.aspx"
-    Remove-PnPPage -Identity "$PageName.aspx" -Force
-    $pageExists = $null
-}
-
-if (-not $pageExists) {
-    Write-Host "[INFO] Tworzenie strony: $PageName.aspx"
-    Add-PnPPage -Name $PageName -LayoutType Home | Out-Null
-}
-else {
-    Write-Host "[INFO] Strona juz istnieje: $PageName.aspx"
-}
-
-$page = Get-PnPPage -Identity "$PageName.aspx"
-
-# Czyszczenie sekcji i budowa od nowa
-$page.Sections.Clear()
-
-Add-PnPPageSection -Page $page -SectionTemplate OneColumn | Out-Null
-Add-PnPPageTextPart -Page $page -Section 1 -Column 1 -Text @"
-<h2>BackupKP - dashboard backupow</h2>
-<p>Widok tylko do podgladu backupow pogrupowanych wg katalogow.</p>
-"@ | Out-Null
-
-Add-PnPPageSection -Page $page -SectionTemplate OneColumn | Out-Null
-
-$html = "<table><thead><tr><th>Kategoria</th><th>Sciezka</th><th>Widok tabeli</th></tr></thead><tbody>"
-foreach ($item in $createdViews) {
-    $html += "<tr>"
-    $html += "<td>$($item.Title)</td>"
-    $html += "<td><code>$($item.Path)</code></td>"
-    $html += "<td><a href='$($item.Url)' target='_blank' rel='noopener noreferrer'>Otworz tabele</a></td>"
-    $html += "</tr>"
-}
-$html += "</tbody></table>"
-
-Add-PnPPageTextPart -Page $page -Section 2 -Column 1 -Text $html | Out-Null
-
-Set-PnPPage -Identity "$PageName.aspx" -Publish | Out-Null
-
-Write-Host "[OK] Strona opublikowana: $SiteUrl/SitePages/$PageName.aspx"
+Publish-DashboardPage -TargetPageName $PageName -TargetSiteUrl $SiteUrl -Views $createdViews -ForceOverwrite:$OverwritePage
 Write-Host "[OK] Utworzone widoki tabelaryczne:"
 foreach ($item in $createdViews) {
     Write-Host ("  - {0}: {1}" -f $item.Title, $item.Url)
