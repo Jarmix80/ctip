@@ -38,13 +38,8 @@ logs/
 docs/archiwum/
 docs/raport/
 
-# Katalog wymiany plikow Windows -> serwer
-inbox/*
-!inbox/.gitkeep
-!inbox/README.md
-!inbox/firebird/
-inbox/firebird/*
-!inbox/firebird/README.md
+# Katalog wymiany plikow Windows -> serwer (lokalny, poza repo)
+inbox/
 
 # Lokalne klony/artefakty zewnetrznych repozytoriow
 docs/firebird/external/

@@ -20,7 +20,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/web/form_ui.py` + `app/templates/public/` – publiczny, jednorazowy formularz klienta pod adresem `/formularz/{token}`.
 - `app/api/routes/portal_auth.py` + `app/static/root/root.js` – centralne logowanie na stronie głównej (`/`) oraz wybór sekcji na osobnym widoku `/choice`.
 - `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
-- `inbox/` – katalog wymiany plików z Windows (dropzone), przeznaczony na pliki robocze poza wersjonowaniem Git.
+- `inbox/` – lokalny katalog wymiany plików z Windows (dropzone), celowo odcięty od repozytorium Git.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
 - `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
 - `integrations/google_sheets/update_calendar_and_devices.py` – aktualizacja arkuszy Google (`Kalendarz_wiersze`, `Urzadzenia`) z formatowaniem i slotami zdarzeń dziennych.
@@ -45,6 +45,11 @@ Przykład: `./scripts/run_codex.sh` (opcjonalnie z parametrami, np. `./scripts/r
 
 ### Katalog wymiany plikow (mapowany dysk Windows)
 Do wygodnego wrzucania plikow bez komend po stronie Windows przygotowany jest katalog `inbox/` oraz udział SMB.
+
+`inbox/` jest katalogiem lokalnym i nie jest wersjonowany przez Git. Po świeżym klonie repo utwórz go ręcznie:
+```bash
+mkdir -p inbox/firebird
+```
 
 Start/stop/uslugi SMB na serwerze:
 - start: `./scripts/inbox_samba.sh start`
