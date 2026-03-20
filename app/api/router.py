@@ -10,9 +10,11 @@ from app.api.routes import (
     admin_contacts,
     admin_contracts,
     admin_ctip,
+    admin_device,
     admin_email,
     admin_firebird,
     admin_forms,
+    admin_kp_repair,
     admin_sms,
     admin_status,
     admin_users,
@@ -32,10 +34,12 @@ api_router.include_router(admin_call_sms.router)
 api_router.include_router(admin_ctip.router)
 api_router.include_router(admin_config.router)
 api_router.include_router(admin_contracts.router)
+api_router.include_router(admin_device.router)
 api_router.include_router(admin_contacts.router)
 api_router.include_router(admin_email.router)
 api_router.include_router(admin_forms.router)
 api_router.include_router(admin_firebird.router)
+api_router.include_router(admin_kp_repair.router)
 api_router.include_router(admin_status.router)
 api_router.include_router(admin_sms.router)
 api_router.include_router(admin_users.router)

@@ -21,6 +21,8 @@ from app.api.routes.admin_config import (
     load_database_config,
     load_email_config,
     load_firebird_config,
+    load_firebird_vmaintenance_config,
+    load_kp_repair_source_config,
     load_sms_config,
 )
 from app.api.routes.admin_ctip import (
@@ -39,6 +41,8 @@ from app.schemas.admin import (
     CtipConfigResponse,
     DatabaseConfigResponse,
     FirebirdConfigResponse,
+    FirebirdVMaintenanceConfigResponse,
+    KpRepairSourceConfigResponse,
     SmsConfigResponse,
 )
 from app.schemas.admin_contacts import AdminContactSummary
@@ -130,13 +134,21 @@ async def admin_database_config_partial(
     _: tuple = Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> HTMLResponse:
-    """Formularz konfiguracji połączenia PostgreSQL."""
+    """Formularz konfiguracji baz danych i źródeł CSV."""
     config: DatabaseConfigResponse = await load_database_config(session)
+    firebird_config: FirebirdConfigResponse = await load_firebird_config(session)
+    firebird_v_config: FirebirdVMaintenanceConfigResponse = await load_firebird_vmaintenance_config(
+        session
+    )
+    kp_source_config: KpRepairSourceConfigResponse = await load_kp_repair_source_config(session)
     return templates.TemplateResponse(
         "admin/partials/config_database.html",
         {
             "request": request,
             "config": config.model_dump(),
+            "firebird_config": firebird_config.model_dump(),
+            "firebird_v_config": firebird_v_config.model_dump(),
+            "kp_source_config": kp_source_config.model_dump(),
         },
     )
 
@@ -154,6 +166,23 @@ async def admin_firebird_config_partial(
         {
             "request": request,
             "config": config.model_dump(),
+        },
+    )
+
+
+@router.get("/admin/partials/kp-repair", response_class=HTMLResponse)
+async def admin_kp_repair_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> HTMLResponse:
+    """Widok narzędzia naprawy oznaczeń KP/xxxx."""
+    source_config: KpRepairSourceConfigResponse = await load_kp_repair_source_config(session)
+    return templates.TemplateResponse(
+        "admin/partials/kp_repair.html",
+        {
+            "request": request,
+            "source_config": source_config.model_dump(),
         },
     )
 

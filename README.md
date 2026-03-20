@@ -16,7 +16,9 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_contacts.py` + `app/services/admin_contacts.py` – warstwa API i logika książki adresowej z obsługą pola `firebird_id`.
 - `app/api/routes/admin_forms.py` + `app/services/form_generator.py` – generator jednorazowych formularzy klienta (token haszowany, zapis danych zaszyfrowanych).
 - `app/web/genform_ui.py` + `app/templates/genform/` – osobny flow handlowca pod adresem `/genform` (logowanie, generowanie linku, lista statusów).
-- `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – dashboard „Obsługa umów” pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista urządzeń z arkusza Google i status dopasowania).
+- `app/web/flow_ui.py` + `app/templates/flow/` + `app/static/flow/` – widok `/flow` z bocznym menu dla sekcji „Obsługa umów”, „Obsługa urządzeń” i „Harmonogram dowozów”, nagłówkiem użytkownika, podglądem danych formularza z kopiowaniem pojedynczych pól, osobnym modalem workflow do prowadzenia sprawy klienta i wyboru urządzeń po stronie CTIP oraz stronami wizualizacji proformy `/flow/proforma-wizualizacja` i `/flow/proforma-wizualizacja1`.
+- `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + `app/services/device_dashboard.py` – wydzielony widok `/device` dla procesu urzadzen: audyt przyjec `PZ` na magazyn `28`, kontrola powiazan `MAGAZYN` / `SERIAL` / `MASZYNA`, lista problemow danych oraz audyt tabeli `MODEL`.
+- `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista urządzeń z arkusza Google i status dopasowania); `/flow` korzysta z tego samego backendu danych.
 - `app/web/form_ui.py` + `app/templates/public/` – publiczny, jednorazowy formularz klienta pod adresem `/formularz/{token}`.
 - `app/api/routes/portal_auth.py` + `app/static/root/root.js` – centralne logowanie na stronie głównej (`/`) oraz wybór sekcji na osobnym widoku `/choice`.
 - `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
@@ -132,9 +134,39 @@ Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej same
 | `FB_CHARSET` | `WIN1250` | Kodowanie sesji Firebird. |
 | `FB_ROLE` | *(puste)* | Rola Firebird (opcjonalnie). |
 | `FB_LOCAL_COPY_PATH` | `inbox/firebird/menadzer_serwisu.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
+| `FB_ALLOW_WRITES` | `false` | Jawnie odblokowuje zapis do lokalnej kopii Firebird. Ustawiaj wyłącznie w środowisku testowym. |
+| `FB_WAREHOUSE_CLIENT_ID` | `656` | Domyślny `ID_KLIENT` dla urządzeń magazynowych tworzonych z arkusza Google. |
+| `FB_WAREHOUSE_ID` | `28` | Domyślny `ID_MAGAZYN` dla pozycji magazynowych tworzonych przez synchronizację urządzeń. |
+
+### Zmienne środowiskowe Firebird v-maintenance
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `FB_V_HOST` | `192.168.0.8` | Host serwera Firebird dla bazy v-maintenance. |
+| `FB_V_PORT` | `3050` | Port usługi Firebird v-maintenance. |
+| `FB_V_DATABASE` | `D:\bazavmantenance\BAZA_CPC.FDB` | Ścieżka bazy v-maintenance. |
+| `FB_V_USER`, `FB_V_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania do bazy v-maintenance. |
+| `FB_V_CHARSET` | `WIN1250` | Kodowanie sesji Firebird v-maintenance. |
+| `FB_V_ROLE` | *(puste)* | Rola Firebird v-maintenance (opcjonalnie). |
+
+### Zmienne środowiskowe źródeł Naprawa KP/xxxx
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `KP_CSV_DIRECTORY` | `inbox/ewidencja` | Katalog wejściowy CSV dla oznaczeń `/R/`. |
+| `KP_CSV_PATTERN` | `DPLAC*.csv` | Wzorzec wyszukiwania pliku CSV w katalogu wejściowym. |
+| `KP_EMAIL_LOOKBACK_MONTHS` | `5` | Domyślne zawężenie źródła e-mail (`CMAIL`) do ostatnich miesięcy. |
 
 Kopię lokalną (po podmontowaniu źródłowego pliku `.fdb`) można wykonać skryptem:
 `python scripts/firebird_clone_local.py --force`.
+
+Analiza rzeczywistego przeplywu Menadzera Serwisu (model -> magazyn -> PZ -> proforma -> FV oraz zlecenie serwisowe -> webpanel -> czesci `ZPOZYCJA` -> FV serwisowa -> zamkniecie) i zakres zmian po aktualizacji KSeF sa opisane w `docs/firebird/proces_sprzedazy_ms.md`. Do lokalnej diagnostyki klienta MS nalezy uzywac aliasu `BAZAMS_TEST`; aktualna `.env.test` moze wskazywac inny plik niz alias obslugiwany przez kontener Firebird.
+
+Biezacy stan modułu FLOW, formularzy testowych i decyzji architektonicznych zapisano dodatkowo w `docs/projekt/flow_status_2026-03-16.md`.
+
+Dla dashboardu `/contracts` oraz modalu workflow w `/flow` lista urzadzen z arkusza Google jest aktywna tylko wtedy, gdy w aktywnym srodowisku ustawiono `GOOGLE_APPLICATION_CREDENTIALS` oraz `GOOGLE_SHEETS_SPREADSHEET_ID`. Bez tych zmiennych widok nadal laduje formularze `SUBMITTED`, ale sekcja urzadzen zwraca `0` rekordow.
+
+Akcja `POST /admin/contracts/action` oraz endpoint workflow `POST /admin/contracts/forms/{id}/workflow/client` moga wykonywac zapis klienta do lokalnej kopii Firebird tylko wtedy, gdy aktywne srodowisko ma ustawione `FB_ALLOW_WRITES=true`. Domyslnie zapis pozostaje zablokowany.
+
+Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` jako zrodlo numeru seryjnego, ewidencji i modelu. Przy aktywnym `FB_ALLOW_WRITES=true` potrafi dopisac brakujacy wpis `MASZYNA` oraz szkic pozycji `MAGAZYN` w lokalnej kopii Firebird, korzystajac z domyslnych identyfikatorow `FB_WAREHOUSE_CLIENT_ID` i `FB_WAREHOUSE_ID`. Osobny modal workflow w `/flow` zapisuje natomiast wybor urzadzen tylko w tabelach CTIP `form_workflow_case` i `form_workflow_device`, razem z recznie ustalanymi cenami `netto/brutto`, bez zmiany danych Menadzera Serwisu na etapie samego wyboru.
 
 ### Zmienne środowiskowe modułu e-mail (panel administratora)
 | Nazwa | Domyślna wartość | Opis |
@@ -249,7 +281,7 @@ Restart-Service "CTIP-SMS"
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty StatusCode
 ```
-5. W panelu administratora (`/admin`) przejdź do sekcji `Baza Firebird`, zapisz konfigurację i wykonaj `Testuj połączenie`.
+5. W panelu administratora (`/admin`) przejdź do sekcji `Konfiguracja bazy`, zapisz konfigurację Firebird i wykonaj `Testuj połączenie`.
 
 Aktualne nazwy usług produkcyjnych (Windows Server):
 - `CollectorService` – Collector Service (`collector_full.py`)
@@ -271,21 +303,24 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 
 ## Panel administracyjny (HTMX + Alpine)
 - Strona startowa znajduje się pod `/admin`; serwuje ją moduł `app/web/admin_ui.py`, korzystając z szablonów w `app/templates/admin/` oraz statycznych zasobów `app/static/admin/`.
-- Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację PostgreSQL/Firebird/CTIP/SerwerSMS/E-mail oraz pełny widok „Użytkownicy”.
+- Layout i nawigacja są sterowane przez Alpine.js (`admin.js`), a sekcje ładowane dynamicznie przez HTMX (`/admin/partials/...`). Udostępnione moduły obejmują Dashboard, konfigurację PostgreSQL/Firebird/CTIP/SerwerSMS/E-mail, narzędzie „Naprawa KP/xxxx” oraz pełny widok „Użytkownicy”.
 - Strona główna (`/`) działa jako centralny punkt logowania: formularz używa API `/auth/login`, a po poprawnym logowaniu przekierowuje na `/choice`.
 - Widok `/choice` pokazuje wyłącznie sekcje przypisane do konta (`admin`, `operator`, `generator`) i obsługuje wylogowanie (`/auth/logout`).
 - Każdy panel roboczy (`/admin`, `/operator`, `/genform`, `/contracts`) zawiera listę rozwijaną „Sekcja”, która pozwala szybko przełączyć się do innego modułu lub wrócić do `/choice`.
 - Logowanie odbywa się przez `/admin/auth/login` (formularz na stronie głównej). Token sesji (`X-Admin-Session`) zapisywany jest w `localStorage`, a kolejne żądania HTMX/fetch automatycznie go dołączają.
 - W razie odpowiedzi 401/403 podczas ładowania sekcji panel samoczynnie czyści token, wylogowuje użytkownika i sygnalizuje wygaśnięcie sesji.
 - Dashboard udostępnia aktywne akcje dla kafelków statusu: `Testuj połączenie` (baza danych), `Edytuj konfigurację` oraz `Diagnostyka` (CTIP i SerwerSMS). Diagnostyka pobiera dane z `/admin/status/<moduł>` i wyświetla je w panelu bocznym.
-- Formularze konfiguracji: PostgreSQL (`/admin/partials/config/database`), Firebird (`/admin/partials/config/firebird`), CTIP (`/admin/partials/config/ctip`) oraz SerwerSMS (`/admin/partials/config/sms`) zapisują dane przez `/admin/config/...` i zapewniają testy połączeń (`/admin/status/database`, `/admin/firebird/test`, `/admin/sms/test`).
+- Formularze konfiguracji: PostgreSQL + Firebird Menadżer Serwisu + Firebird v-maintenance + źródło CSV (`/admin/partials/config/database`), CTIP (`/admin/partials/config/ctip`) oraz SerwerSMS (`/admin/partials/config/sms`) zapisują dane przez `/admin/config/...` i zapewniają testy połączeń (`/admin/status/database`, `/admin/firebird/test`, `/admin/firebird/test-vmaintenance`, `/admin/sms/test`).
 - Sekcja SerwerSMS zawiera monitor pracy `sms_sender`: widok logu (`/admin/partials/sms/logs`) prezentuje końcówkę pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a tabela historii (`/admin/partials/sms/history`) odświeża ostatnie wysyłki z `ctip.sms_out` i pozwala filtrować je po statusach (`NEW`, `RETRY`, `SENT`, `ERROR`, `SIMULATED`). Formularz wysyłki testowej normalizuje numer do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`), a poprawna próba (w trybie testowym lub produkcyjnym) natychmiast pojawia się w logu i historii.
 - Sekcja CTIP udostępnia podgląd na żywo (`/admin/partials/ctip/live`) z filtrowaniem po wewnętrznych numerach oraz wbudowanym formularzem konfiguracji; kafelek na dashboardzie oferuje zarówno edycję parametrów, jak i szybkie przejście do widoku live. Aktualizacje są dostarczane kanałem WebSocket (`/admin/ctip/ws`), który pomija ramki keep-alive typu `T`.
 - Sekcja Automatyzacje IVR (`/admin/partials/ctip/ivr-map`) pozwala zarządzać mapowaniami cyfr IVR na numery wewnętrzne, treścią automatycznych SMS i ich aktywnością. Każda operacja (utworzenie, aktualizacja, usunięcie) jest audytowana i natychmiast dostępna dla kolektora bez restartu.
 - Sekcja SMS dla dzwoniacych (`/admin/partials/call-sms`) udostepnia konfiguracje scenariuszy przychodzacych/wychodzacych (odebrane, nieodebrane, ponowne), tryb ograniczen „Nigdy / Po X dniach / Zawsze”, liste numerow wykluczonych, scenariusz po godzinach pracy wyzwalany numerem wewnetrznym (np. 500) oraz masowa wysylke do unikalnych numerow z historii polaczen.
 - Sekcja E-mail umożliwia konfigurację serwera SMTP (host, port, logowanie, nadawca), test połączenia oraz wysłanie wiadomości testowej na wskazany adres (`/admin/email/test`). Wynik jest prezentowany w UI i zapisywany w audycie.
-- Sekcja Baza Firebird (Menadżer Serwisu) umożliwia zapis połączenia (`/admin/config/firebird`) i test logowania (`/admin/firebird/test`) z użyciem aktualnych danych środowiskowych lub nadpisania z formularza; panel pozwala przełączać aktywną bazę `sieciowa`/`lokalna`.
+- Sekcja Konfiguracja bazy zawiera parametry Menadżera Serwisu (`/admin/config/firebird`, test: `/admin/firebird/test`), parametry Firebird v-maintenance (`/admin/config/firebird-vmaintenance`, test: `/admin/firebird/test-vmaintenance`) oraz konfigurację źródła CSV dla oznaczeń `/R/` (`/admin/config/kp-repair-source`, test: `/admin/kp-repair/csv-source/test`).
 - W trybie `lokalna` panel automatycznie testuje połączenie pod `127.0.0.1` i wykorzystuje ścieżkę `FB_LOCAL_COPY_PATH`; pola hosta i ścieżki bazy sieciowej są wyszarzone.
+- Sekcja `Naprawa KP/xxxx` (`/admin/partials/kp-repair`) udostępnia raport ilości `/V /E /R`, czyszczenie markerów (`/admin/kp-repair/clear`) i retagowanie wg źródeł (`/admin/kp-repair/rebuild`); raporty i rollbacki są zapisywane do `inbox/ewidencja`.
+- Operacje `kp-repair` wykonują zapytania Firebird w wątku roboczym (`asyncio.to_thread`), aby nie blokować event-loop FastAPI i nie zamrażać panelu podczas generowania raportu.
+- UI `Naprawa KP/xxxx` pokazuje pasek postępu (orientacyjny) i licznik czasu operacji; klient ma limit czasu żądania 10 minut, a backend limit wykonania 900 s (HTTP 504 po przekroczeniu).
 - Sekcja Kopie zapasowe (`/admin/partials/backups`) udostępnia konfigurację harmonogramu (`06:00`, `20:00`), retencji, zakresu archiwizacji (CTIP/Firebird/Optima), wyboru miejsca zapisu (lokalne/sieciowe), dane Office 365/SharePoint (Tenant ID, Client ID, Site ID, Drive ID) oraz osobne foldery docelowe: `BackupKP/CTIP`, `BackupKP/Menadzer_Serwisu/prod`, `BackupKP/Menadzer_Serwisu/test`, `BackupKP/Optima`. Widok historii pokazuje status i potwierdzenie (suma kontrolna `.sha256`).
 - Konfiguracja backupu jest zapisywana przez API (`/admin/backup/config`). Pelne wykonanie (`dry_run=false`) jest aktywne automatycznie na hostcie zgodnym z `BACKUP_PRODUCTION_HOST`, a w innych srodowiskach mozna je jawnie wlaczyc lub wylaczyc przez `BACKUP_EXECUTION_ENABLED` (`true`/`false`).
 - Harmonogram zapisany w panelu (`schedule_morning`, `schedule_evening`) jest realizowany automatycznie przez scheduler backendu; dla kazdego slotu wykonywane jest maksymalnie jedno zadanie na dobe.
@@ -305,7 +340,19 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Przycisk `Kopiuj link` w `/genform` korzysta z Clipboard API, a gdy środowisko blokuje kopiowanie (np. brak `https`), automatycznie przełącza się na fallback `execCommand("copy")`.
 - Ekran `/genform` udostępnia akcje `Wyświetl`/`Usuń` dla każdego wniosku oraz okno szczegółów: dla statusu `SUBMITTED` prezentowane są odszyfrowane dane klienta, a dla pozostałych statusów czytelna informacja operacyjna (np. „formularz został wysłany, ale nie został jeszcze wypełniony”).
 - Tabela generatora zawiera kolumnę `Utworzone przez`, dzięki czemu od razu widać operatora/administratora, który wygenerował formularz.
-- Dashboard `/contracts` (Obsługa umów) pobiera formularze `SUBMITTED`, weryfikuje klienta po NIP w lokalnej kopii Firebird (`KLIENT`) oraz porównuje urządzenia z arkusza `Urzadzenia` względem tabeli `MASZYNA` (serial/ewidencja). Wynik pokazuje status „podłącz klienta” lub „utwórz klienta” oraz potwierdzenie urządzeń.
+- Dashboard `/contracts` (Obsługa umów) pozostaje technicznym widokiem integracji: pobiera formularze `SUBMITTED`, weryfikuje klienta po NIP w lokalnej kopii Firebird (`KLIENT`) oraz porównuje urządzenia z arkusza `Urzadzenia` względem tabeli `MASZYNA` (serial/ewidencja).
+- Widok `/flow` rozwija ten sam backend o zapis stanu sprawy w tabelach `ctip.form_workflow_case` i `ctip.form_workflow_device`: operator może otworzyć workflow formularza, potwierdzić podstawowe tworzenie klienta na potrzeby proformy, zapisać klienta Menadżera Serwisu, przypisać do formularza jedno lub wiele urządzeń po stronie CTIP, recznie wprowadzic cene `netto` i `brutto` dla kazdego urzadzenia, ustawic status biznesowy sprawy (`Robocza`, `Oczekuje na akceptacje`, `Zaakceptowano`, `Zerowka`, `Odrzucono`), zapisac ustalenia dowozu (data/okno/kontakt/notatka), a nastepnie wystawic realna proforme w lokalnej Firebird i otworzyc jej podglad A4. Lista formularzy w `/flow` ma tez akcje `Usun` z potwierdzeniem (`window.confirm`), korzystajaca z `DELETE /admin/forms/{id}`. Sekcja `Obsluga umow` laduje dashboard bez mapowania urzadzen, a pelne mapowanie arkusza/Firebird jest dociagane po przejsciu do sekcji `Obsluga urzadzen`.
+- Sekcja `Harmonogram dowozow` w `/flow` pokazuje plan dostaw w zakresie dat i umozliwia akcje operacyjne: przejscie do edycji wpisu w modalu workflow, przeniesienie wpisu o +/-1 dzien albo na wskazana date (`Przenies...`) oraz usuniecie wpisu z potwierdzeniem.
+- Informacje logistyczne dowozu sa przechowywane po stronie CTIP (`form_workflow_case`) i nie sa drukowane w dokumencie proformy.
+- W modalu workflow proformy jest opcja `Proforma na bank (domyslnie aktywna)`; przy wlaczonej opcji dokument jest wystawiany na klienta bankowego `GRENKELEASING Sp. z o.o.` (domyslnie `ID_KLIENT=855`, NIP `782-22-75-815`), a po odznaczeniu na klienta z formularza.
+- Widok `/device` jest teraz osobnym dashboardem operacyjnym obslugi urzadzen: czyta lokalna kopie Firebird, pokazuje ostatnie przyjecia `PZ` na magazyn `28`, wykrywa rozjazdy pomiedzy `ZAKPOZYCJA`, `MAGAZYN`, `SERIAL` i `MASZYNA`, raportuje jakosc danych w tabeli `MODEL` (duplikaty po normalizacji, braki `RODZAJ`, `KOLOR`, `PLIK`), a dodatkowo wyznacza status procesu dla kazdego egzemplarza, docelowy numer wew i nastepny krok operatora.
+- Dashboard `/device` niczego jeszcze nie zapisuje do Firebird. Sluzy do odtworzenia realnego procesu magazynowego i zidentyfikowania reguł, ktore trzeba domknac przed automatyzacją zakladania urzadzen.
+- Przy tworzeniu proformy z `/flow` backend preferuje recznie zapisane ceny `price_gross` albo `price_net` z workflow CTIP; jesli nie podano wyceny recznej, jako fallback wykorzystuje kolumne `cena` z arkusza Google `Urzadzenia` (traktowana obecnie jako cena brutto), a w dalszej kolejnosci `MAGAZYN.CENA_BRUTTO`.
+- Strona `/flow/proforma-wizualizacja` prezentuje referencyjny układ dokumentu handlowego na podstawie realnej proformy zapisanej w `inbox/faktura`; to wzorzec widoku do późniejszego spięcia z danymi Firebird i generacją PDF.
+- Strona `/flow/proforma-wizualizacja1` jest drugim wariantem, celowo bliższym oryginalnemu wydrukowi FastReport z Menadżera Serwisu: zachowuje węższą kartkę, układ metadanych, sekcje `Sprzedawca/Nabywca`, podpisy i blok ostrzeżenia w stopce.
+- Obie strony wizualizacji mają przycisk `Zapisz PDF A4`, który uruchamia przeglądarkowy wydruk z arkuszem stylów ustawionym pod format A4 w orientacji pionowej.
+- Strona `/flow/proforma/{id}` renderuje juz rzeczywista proforme odczytana z lokalnej Firebird; wariant `?variant=v1` jest domyslnym podgladem zblizonym do oryginalnego wydruku Menadzera Serwisu.
+- Backend zapisuje tez fizyczny plik PDF proformy do `inbox/faktura/generated/proforma_<ID>.pdf`; plik jest dostepny pod adresem `/flow/proforma/{id}/pdf`, a w workflow CTIP kolumna `proforma_pdf_path` trzyma sciezke do tego pliku.
 - Sekcja Użytkownicy umożliwia przypisanie dostępu do sekcji (`admin`, `operator`, `generator`) niezależnie od roli konta; strona główna i API respektują te uprawnienia przy prezentacji i autoryzacji modułów.
 - Treści SMS zawierające link jednorazowy lub potwierdzenie wypełnienia formularza są maskowane w historii panelu (`Treść ukryta`), aby nie ujawniać danych wrażliwych.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP, Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów) oraz Generatora formularzy. Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
@@ -315,10 +362,19 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
   1. `source .venv/bin/activate`
   2. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
   3. Otwórz przeglądarkę na `http://localhost:8000/admin`
+- Aby uruchomić caly stos (Firebird + collector + uvicorn + sms_sender) jednym poleceniem:
+  1. `./run_server_with_firebird.sh`
+  2. opcjonalnie dla innego pliku srodowiskowego: `ENV_FILE=.env.test ./run_server_with_firebird.sh`
+  3. opcjonalnie wymuszenie startu kontenera Firebird: `START_FIREBIRD=always ./run_server_with_firebird.sh`
 - Implementacja kolejnych sekcji (konsola SQL, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
 - `GET /admin/config/firebird`, `PUT /admin/config/firebird` – odczyt i zapis konfiguracji połączenia Firebird (wymaga roli `admin`).
 - `POST /admin/firebird/test` – test logowania do bazy Firebird z audytem (`config_firebird_test`, wymaga roli `admin`).
+- `GET /admin/config/firebird-vmaintenance`, `PUT /admin/config/firebird-vmaintenance` – odczyt i zapis konfiguracji połączenia Firebird v-maintenance.
+- `POST /admin/firebird/test-vmaintenance` – test logowania do bazy Firebird v-maintenance.
+- `GET /admin/config/kp-repair-source`, `PUT /admin/config/kp-repair-source` – konfiguracja katalogu/wzorca CSV i filtra czasu dla źródła e-mail.
+- `POST /admin/kp-repair/csv-source/test` – test katalogu CSV z wykrywaniem najnowszego pliku wejściowego.
+- `GET /admin/kp-repair/summary`, `POST /admin/kp-repair/clear`, `POST /admin/kp-repair/rebuild` – raport, czyszczenie i retagowanie `MASZYNA.EWIDENCJA` dla markerów `/V /E /R` (raporty i rollbacki trafiają do `inbox/ewidencja`).
 - `GET /admin/contacts`, `POST /admin/contacts`, `PUT /admin/contacts/{contact_id}`, `DELETE /admin/contacts/{contact_id}` – zarządzanie wpisami książki adresowej (wymaga nagłówka `X-Admin-Session` i roli `admin`); obsługa pola `firebird_id` umożliwia powiązanie z rekordami bazy Firebird.
 - `GET /admin/contacts/by-number/{number}` – wyszukaj kontakt po numerze MSISDN (wymagane `X-Admin-Session`; dostęp dla roli `admin` i `operator`).
 - `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` – centralne logowanie strony głównej i wybór sekcji na podstawie przypisanych uprawnień.
@@ -326,7 +382,25 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `POST /auth/profile/change-password` – zmiana własnego hasła z poziomu `/choice` (wymagania: min. 9 znaków, duża litera, cyfra, znak specjalny).
 - `GET /admin/forms`, `POST /admin/forms`, `GET /admin/forms/{id}`, `DELETE /admin/forms/{id}` – lista/generowanie/podgląd/usuwanie jednorazowych formularzy (wymagane uprawnienie sekcji `generator`).
 - `GET /genform` – osobny ekran handlowca do generowania i podglądu formularzy.
-- `GET /contracts`, `GET /admin/contracts/dashboard` – dashboard „Obsługa umów” i dane integracyjne (formularze SUBMITTED, Firebird, arkusz Google `Urzadzenia`), wymagane uprawnienie sekcji `generator`.
+- `GET /flow` – główny widok roboczy FLOW dla obsługi umów i urządzeń po zalogowaniu.
+- `GET /device` – wydzielony widok roboczy tylko dla obsługi urządzeń po zalogowaniu.
+- `GET /admin/device/dashboard` – dane dashboardu `/device`: ostatnie przyjecia `PZ` urzadzen, ocena spojnosci `MAGAZYN` / `SERIAL` / `MASZYNA`, audyt tabeli `MODEL`, reguly procesu oraz rekomendowane akcje dla kolejnego kroku obslugi egzemplarza.
+- `GET /flow/proforma-wizualizacja` – wzorcowa wizualizacja proformy oparta o rzeczywisty dokument z `inbox/faktura`, z przyciskiem `Zapisz PDF A4`.
+- `GET /flow/proforma-wizualizacja1` – wierniejsza wizualizacja proformy z układem zbliżonym do oryginalnego wydruku Menadżera Serwisu, również z przyciskiem `Zapisz PDF A4`.
+- `GET /flow/proforma/{proforma_firebird_id}?variant=(base|v1)` – podglad rzeczywistej proformy zapisanej w lokalnej Firebird, z przyciskiem `Zapisz PDF A4`.
+- `GET /flow/proforma/{proforma_firebird_id}/pdf` – backendowy plik PDF proformy zapisany w `inbox/faktura/generated/`.
+- `GET /contracts`, `GET /admin/contracts/dashboard` – dashboard „Obsługa umów” i dane integracyjne (formularze SUBMITTED, Firebird, arkusz Google `Urzadzenia`), wymagane uprawnienie sekcji `generator`; endpoint wspiera `include_devices=true|false` (domyslnie `true`) do kontrolowania kosztownego mapowania urzadzen.
+- `GET /admin/contracts/forms/{id}/workflow` – szczegóły sprawy workflow formularza `SUBMITTED` (podgląd klienta, stan CTIP, lista urządzeń do wyboru).
+- `POST /admin/contracts/forms/{id}/workflow/client` – tworzy albo potwierdza klienta w Menadżerze Serwisu i zapisuje powiązanie po stronie CTIP.
+- `POST /admin/contracts/forms/{id}/workflow/devices` – zapisuje wybór urządzeń do sprawy formularza wyłącznie po stronie CTIP, razem z recznie wpisaną ceną `netto` i `brutto` dla kazdego wybranego urzadzenia.
+- `POST /admin/contracts/forms/{id}/workflow/status` – zapisuje reczny status biznesowy sprawy po stronie CTIP (`Robocza`, `Oczekuje na akceptacje`, `Zaakceptowano`, `Zerowka`, `Odrzucono`).
+- `POST /admin/contracts/forms/{id}/workflow/proforma` – tworzy realna proforme w lokalnej Firebird na podstawie klienta Menadzera Serwisu i urzadzen wybranych w workflow CTIP; zapisuje numer dokumentu, sciezke backendowego PDF w `proforma_pdf_path` i URL podgladu/pobrania dokumentu.
+  - endpoint przyjmuje opcjonalne body JSON `{ "for_bank": true|false }`; domyslnie `true`.
+- `POST /admin/contracts/forms/{id}/workflow/delivery` – zapisuje dane dowozu dla sprawy workflow (`delivery_date`, `delivery_time_window`, `delivery_contact_name`, `delivery_contact_phone`, `delivery_notes`).
+- `DELETE /admin/contracts/forms/{id}/workflow/delivery` – usuwa dane dowozu przypisane do formularza.
+- `GET /admin/contracts/delivery/schedule?day_from=YYYY-MM-DD&day_to=YYYY-MM-DD` – zwraca harmonogram dowozow w zadanym zakresie dat.
+- `POST /admin/contracts/delivery/{workflow_case_id}/move` – przenosi wpis harmonogramu na inny dzien.
+- `DELETE /admin/contracts/delivery/{workflow_case_id}` – usuwa wpis harmonogramu dla wskazanej sprawy workflow.
 - `GET /formularz/{token}`, `POST /formularz/{token}` – publiczny formularz klienta oparty o jednorazowy token.
 - `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
 - `GET /admin/backup/config`, `PUT /admin/backup/config` – odczyt i zapis konfiguracji modułu kopii zapasowych (harmonogram, zakres, lokalizacja, Office 365, konfiguracja SQL Optimy i wybór baz do archiwizacji).
@@ -396,13 +470,13 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 - Pełny runbook wraz z zabezpieczeniami przed podłączeniem do produkcji: `docs/instal/test_env_wsl.md` (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`).
 - Skrót procedury:
   - przygotowanie zależności: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`;
-  - kopiowanie `.env.test.example` → `.env.test`, wypełnienie `PG*`, pozostawienie `PBX_HOST=127.0.0.1`, `PBX_PORT=5525`, `SMS_TEST_MODE=true`, `ADMIN_PANEL_URL=http://localhost:18000/admin`;
+  - kopiowanie `.env.test.example` → `.env.test`, wypełnienie `PG*`, pozostawienie `PBX_HOST=127.0.0.1`, `PBX_PORT=5525`, `SMS_TEST_MODE=true`, `ADMIN_PANEL_URL=http://localhost:18000/admin` oraz pustych pól `SMS_API_URL`, `SMS_API_TOKEN`, `SMS_API_USERNAME`, `SMS_API_PASSWORD`, jeśli test ma być całkowicie odcięty od operatora SMS;
   - załadowanie zmiennych i migracje: `set -a && source .env.test && set +a && alembic upgrade head`;
   - start mocka CTIP: `python scripts/mock/mock_ctip_server.py --port 5525 --loop --log-level INFO`;
   - uruchomienie stosu w tmux: `./run_test_stack_tmux.sh` (okna `collector`, `uvicorn` na porcie 18000, `sms-sender` z `SMS_TEST_MODE`);
   - podgląd/zatrzymanie: `tmux attach -t ctip-stack-test`, zakończenie `kill-session -t ctip-stack-test` i `Ctrl+C` w oknie mocka.
 - Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
-- Start całości jednym poleceniem (mock + kolektor + uvicorn + sms_sender): `./ctiptest` – tworzy sesję tmux `ctip-stack-test` z czterema oknami i blokuje uruchomienie, jeśli `.env.test` wskazuje na produkcyjną centralę lub `SMS_TEST_MODE` ≠ `true`.
+- Start całości jednym poleceniem (mock + kolektor + uvicorn + sms_sender): `./ctiptest` – tworzy sesję tmux `ctip-stack-test` z czterema oknami i blokuje uruchomienie, jeśli `.env.test` wskazuje na produkcyjną centralę lub `SMS_TEST_MODE` ≠ `true`. Przy pustych `SMS_API_*` wysylka przechodzi w lokalna symulacje `SIMULATED` bez ruchu do operatora.
 
 ## Instalacja jako usługa Windows
 1. Przygotuj `D:\CTIP` (git clone), Python 3.11 x64, plik `.env`.
@@ -440,6 +514,7 @@ Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypt
 - `docs/centralka` – instrukcje centrali Slican (m.in. „CTIP” oraz „instrukcja programowania NCP v1.21”) ułatwiające konfigurację warstwy telekomunikacyjnej i protokołu CTIP.
 - `docs/baza` – aktualny schemat `schema_ctip.sql`; plik `ctip_plain` pozostawiono jako nieaktualny zrzut archiwalny (do wglądu historycznego, nie do odtwarzania).
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
+- `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu), `panel_admin_ui.md` (plan interfejsu administratora), `dziennik_2026-02-26.md` (podsumowanie wdrozen z 26 lutego 2026) oraz `dziennik_2026-03-05.md` (podsumowanie prac SharePoint/backup z 5 marca 2026).
@@ -453,3 +528,11 @@ Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`
   - Zadania planowane.
 ## Zadania planowane
 Szczegółowy rejestr zadań znajduje się w pliku `docs/projekt/zadania_planowane.md`.
+Aktualny plan procesu obslugi umowy znajduje sie w `docs/projekt/prace_na_teraz_2026-03-13.md`.
+Plan naprawczy modeli produkcyjnych znajduje sie w `docs/projekt/plan_naprawczy_modeli_produkcyjnych_2026-03-18.md`.
+Audyt master tabeli MODEL na produkcji znajduje sie w `docs/projekt/audyt_master_model_produkcja_2026-03-18.md`.
+Robocze pliki CSV do decyzji i przepiec modeli sa zapisywane w katalogu `inbox/audyt_model`.
+Pipeline zdjec Ricoh (`pipeline_zdjec_imgdev.md`, `process_ricoh_images.py`, katalogi `imgsrc/`, `imgtmp/`, `imgdev/`, `logo/`) jest utrzymywany w `inbox/audyt_model`. Docelowy format PNG dla packshotow to `1200x1667`, biale tlo, logo w lewym gornym rogu oraz nazwa pliku z prefiksem `ran_`. Dodatkowy etap ponownego pozyskiwania kandydatow po odrzuceniu korzysta z katalogow `imgsrc_retry/`, `imgtmp_retry/`, `imgdev_retry/` oraz pliku `retry_better_candidates.csv`.
+W katalogu `inbox/audyt_model/imgdev` znajduje sie tez pomocniczy `index.html` z prosta galeria wszystkich finalnych obrazow `ran_*.png`; plik mozna wrzucic na hosting do tego samego katalogu co obrazy i otwierac przez HTTP/HTTPS.
+Synchronizacja `MODEL.PLIK` na lokalnej kopii Firebird jest zautomatyzowana skryptem `scripts/firebird_sync_model_plik.py`; w trybie `FB_MODE=local` skrypt laczy sie po `127.0.0.1`, obsluguje fallback do aliasu `BAZAMS_TEST` dla kopii WSL i dopiero po `--apply` zapisuje zmiany w lokalnej bazie.
+Naprawe tabeli `MODEL` wzgledem zatwierdzonego snapshotu referencyjnego wykonuje skrypt `scripts/firebird_repair_model_master.py`; skrypt potrafi przepiac `ID_MODEL` w `MASZYNA`, `MAGAZYN`, `CENNIK` i `MZ`, usunac nadmiarowe modele oraz zwalidowac wynik 1:1 wzgledem snapshotu. Dla zdalnej bazy produkcyjnej backup trzeba wykonac osobno, skrypt uruchomic z `--skip-backup`, a snapshot referencyjny czytac przez lokalny host (`--reference-host 127.0.0.1`).

@@ -67,3 +67,222 @@
     </template>
   </form>
 </section>
+
+<section
+  class="config-section"
+  x-data="firebirdConfig()"
+  x-init="init()"
+  x-on:admin:firebird-test.window="testConnection()"
+  data-initial='{{ firebird_config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja Firebird (Menadżer Serwisu)</h2>
+      <p>Parametry połączenia do bazy Menadżera Serwisu oraz lokalnej kopii roboczej.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="testStatus"></span>
+      <span class="config-meta-text" x-text="testMessage || 'Brak testu połączenia'">Brak testu połączenia</span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="fb-mode">Aktywna baza</label>
+        <select id="fb-mode" x-model="mode" required>
+          <option value="network">Baza sieciowa</option>
+          <option value="local">Baza lokalna</option>
+        </select>
+        <p class="input-help" x-text="mode === 'local' ? 'Test połączenia użyje ścieżki lokalnej.' : 'Test połączenia użyje ścieżki sieciowej.'"></p>
+      </div>
+      <div class="form-field">
+        <label for="fb-host">Host</label>
+        <input
+          id="fb-host"
+          type="text"
+          x-model="host"
+          :required="mode === 'network'"
+          :disabled="mode === 'local'"
+          :class="{ 'input-disabled': mode === 'local' }"
+          placeholder="np. 192.168.0.8"
+        >
+      </div>
+      <div class="form-field">
+        <label for="fb-port">Port</label>
+        <input id="fb-port" type="number" min="1" max="65535" x-model="port" required>
+      </div>
+      <div class="form-field">
+        <label for="fb-database">Ścieżka bazy sieciowej</label>
+        <input
+          id="fb-database"
+          type="text"
+          x-model="database"
+          required
+          :disabled="mode === 'local'"
+          :class="{ 'input-disabled': mode === 'local' }"
+          placeholder="np. C:/MS/BAZA/MS.FDB"
+        >
+      </div>
+      <div class="form-field">
+        <label for="fb-user">Użytkownik</label>
+        <input id="fb-user" type="text" x-model="user" required>
+      </div>
+      <div class="form-field">
+        <label for="fb-password">Hasło</label>
+        <input id="fb-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
+      </div>
+      <div class="form-field">
+        <label for="fb-charset">Kodowanie</label>
+        <input id="fb-charset" type="text" x-model="charset" required placeholder="WIN1250">
+      </div>
+      <div class="form-field">
+        <label for="fb-role">Rola (opcjonalnie)</label>
+        <input id="fb-role" type="text" x-model="role" placeholder="np. RDB$ADMIN">
+      </div>
+      <div class="form-field">
+        <label for="fb-local-copy">Ścieżka bazy lokalnej</label>
+        <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
+        <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>
+
+<section
+  class="config-section"
+  x-data="firebirdVMaintenanceConfig()"
+  x-init="init()"
+  data-initial='{{ firebird_v_config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja bazy FB v-maintenance</h2>
+      <p>Źródło urządzeń serwisowanych do oznaczeń /V/.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="testStatus"></span>
+      <span class="config-meta-text" x-text="testMessage || 'Brak testu połączenia'">Brak testu połączenia</span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="fbv-host">Host</label>
+        <input id="fbv-host" type="text" x-model="host" required>
+      </div>
+      <div class="form-field">
+        <label for="fbv-port">Port</label>
+        <input id="fbv-port" type="number" min="1" max="65535" x-model="port" required>
+      </div>
+      <div class="form-field">
+        <label for="fbv-database">Ścieżka bazy</label>
+        <input id="fbv-database" type="text" x-model="database" required placeholder="np. D:/bazavmantenance/BAZA_CPC.FDB">
+      </div>
+      <div class="form-field">
+        <label for="fbv-user">Użytkownik</label>
+        <input id="fbv-user" type="text" x-model="user" required>
+      </div>
+      <div class="form-field">
+        <label for="fbv-password">Hasło</label>
+        <input id="fbv-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
+      </div>
+      <div class="form-field">
+        <label for="fbv-charset">Kodowanie</label>
+        <input id="fbv-charset" type="text" x-model="charset" required placeholder="WIN1250">
+      </div>
+      <div class="form-field">
+        <label for="fbv-role">Rola (opcjonalnie)</label>
+        <input id="fbv-role" type="text" x-model="role" placeholder="np. RDB$ADMIN">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
+        <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>
+
+<section
+  class="config-section"
+  x-data="kpRepairSourceConfig()"
+  x-init="init()"
+  data-initial='{{ kp_source_config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Źródło CSV dla /R/</h2>
+      <p>Wskaż katalog i wzorzec plików CSV (np. produkcja: `D:\\Remote_csv`).</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="testStatus"></span>
+      <span class="config-meta-text" x-text="testMessage || 'Brak testu katalogu CSV'">Brak testu katalogu CSV</span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="kp-csv-directory">Katalog CSV</label>
+        <input id="kp-csv-directory" type="text" x-model="csvDirectory" required placeholder="np. D:\\Remote_csv">
+      </div>
+      <div class="form-field">
+        <label for="kp-csv-pattern">Wzorzec pliku</label>
+        <input id="kp-csv-pattern" type="text" x-model="csvPattern" required placeholder="DPLAC*.csv">
+      </div>
+      <div class="form-field">
+        <label for="kp-email-lookback">Email lookback (miesiące)</label>
+        <input id="kp-email-lookback" type="number" min="0" max="36" x-model="emailLookbackMonths" required>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testSource">
+        <span x-text="testing ? 'Testowanie…' : 'Testuj źródło CSV'">Testuj źródło CSV</span>
+      </button>
+    </div>
+
+    <template x-if="latestFile">
+      <p class="input-help">Najnowszy plik: <span x-text="latestFile"></span></p>
+    </template>
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>

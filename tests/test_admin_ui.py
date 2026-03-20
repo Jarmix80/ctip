@@ -1,8 +1,15 @@
+# ruff: noqa: E402
+
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 from app.api import deps
 from app.main import create_app
@@ -105,9 +112,57 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "password_set": True,
             }
 
-    with patch(
-        "app.web.admin_ui.load_database_config",
-        AsyncMock(return_value=DummyConfig()),
+    class DummyFirebirdConfig:
+        def model_dump(self) -> dict:
+            return {
+                "mode": "network",
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "C:/MS/BAZA/MS.FDB",
+                "user": "SYSDBA",
+                "charset": "WIN1250",
+                "role": None,
+                "local_copy_path": "inbox/firebird/ms_local.fdb",
+                "password_set": True,
+            }
+
+    class DummyFirebirdVConfig:
+        def model_dump(self) -> dict:
+            return {
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "D:/bazavmantenance/BAZA_CPC.FDB",
+                "user": "SYSDBA",
+                "charset": "WIN1250",
+                "role": None,
+                "password_set": True,
+            }
+
+    class DummyKpSourceConfig:
+        def model_dump(self) -> dict:
+            return {
+                "csv_directory": "inbox/ewidencja",
+                "csv_pattern": "DPLAC*.csv",
+                "email_lookback_months": 5,
+            }
+
+    with (
+        patch(
+            "app.web.admin_ui.load_database_config",
+            AsyncMock(return_value=DummyConfig()),
+        ),
+        patch(
+            "app.web.admin_ui.load_firebird_config",
+            AsyncMock(return_value=DummyFirebirdConfig()),
+        ),
+        patch(
+            "app.web.admin_ui.load_firebird_vmaintenance_config",
+            AsyncMock(return_value=DummyFirebirdVConfig()),
+        ),
+        patch(
+            "app.web.admin_ui.load_kp_repair_source_config",
+            AsyncMock(return_value=DummyKpSourceConfig()),
+        ),
     ):
         response = client.get(
             "/admin/partials/config/database",
@@ -171,6 +226,44 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert '<option value="network">Baza sieciowa</option>' in html
     assert '<option value="local">Baza lokalna</option>' in html
     assert ":disabled=\"mode === 'local'\"" in html
+
+
+def test_kp_repair_partial_requires_authentication():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/admin/partials/kp-repair")
+    assert response.status_code == 401
+
+
+def test_kp_repair_partial_renders_actions():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    app.dependency_overrides[deps.get_db_session] = _fake_db_session
+    client = TestClient(app)
+
+    class DummyConfig:
+        def model_dump(self) -> dict:
+            return {
+                "csv_directory": "inbox/ewidencja",
+                "csv_pattern": "DPLAC*.csv",
+                "email_lookback_months": 5,
+            }
+
+    with patch(
+        "app.web.admin_ui.load_kp_repair_source_config",
+        AsyncMock(return_value=DummyConfig()),
+    ):
+        response = client.get(
+            "/admin/partials/kp-repair",
+            headers={"X-Admin-Session": "token"},
+        )
+
+    assert response.status_code == 200
+    html = response.text
+    assert "Naprawa KP/xxxx" in html
+    assert "Raport ilości /V /E /R" in html
+    assert "Usuń wpisy /V /E /R" in html
+    assert "Zaktualizuj wg źródeł" in html
 
 
 def test_ctip_partial_requires_authentication():
@@ -315,6 +408,166 @@ def test_choice_page_renders_sections_view():
     assert response.status_code == 200
     assert "Dostępne sekcje" in response.text
     assert "root-sections-card" in response.text
+    assert 'href="/flow"' in response.text
+    assert 'href="/device"' in response.text
+
+
+def test_flow_page_renders_sections_layout():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/flow")
+    assert response.status_code == 200
+    assert "Operacyjny widok procesu" in response.text
+    assert "Obsluga umow" in response.text
+    assert "Obsluga urzadzen" in response.text
+    assert "Harmonogram dowozow" in response.text
+    assert "flow-nav-btn" in response.text
+    assert "Wybor sekcji" in response.text
+    assert "flow-user-chip" in response.text
+    assert "flow-form-detail-modal" in response.text
+    assert "Podglad formularza" in response.text
+    assert "flow-workflow-modal" in response.text
+    assert "Workflow formularza" in response.text
+    assert "Proforma na bank (domyslnie aktywna)" in response.text
+    assert "Status sprawy po proformie" in response.text
+    assert "Uzgodnienia dostawy" in response.text
+    assert "Dane dla handlowca" in response.text
+
+
+def test_flow_script_exposes_delete_form_action_with_confirmation():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/static/flow/flow.js")
+    assert response.status_code == 200
+    assert "data-delete-form-id" in response.text
+    assert 'method: "DELETE"' in response.text
+    assert "Czy na pewno chcesz usunac formularz" in response.text
+
+
+def test_device_page_renders_devices_layout():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/device")
+    assert response.status_code == 200
+    assert "Operacyjna obsluga urzadzen" in response.text
+    assert "Obsluga urzadzen" in response.text
+    assert "device-user-chip" in response.text
+    assert "device-refresh" in response.text
+    assert "device-intakes-body" in response.text
+    assert "device-model-duplicates-body" in response.text
+    assert "device-process-rules" in response.text
+    assert "Status i nastepny krok" in response.text
+    assert "Reguly procesu" in response.text
+    assert "Wnioski operacyjne" in response.text
+    assert "PZ urzadzen" in response.text
+
+
+def test_flow_invoice_preview_page_renders_sample_document():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/flow/proforma-wizualizacja")
+    assert response.status_code == 200
+    assert "Faktura Pro Forma" in response.text
+    assert "2/proforma/2026" in response.text
+    assert "ZANOX SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ" in response.text
+    assert "IMCTEST" in response.text
+    assert "Zapisz PDF A4" in response.text
+    assert "data-print-a4" in response.text
+
+
+def test_flow_invoice_preview_page_v1_renders_original_like_layout():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/flow/proforma-wizualizacja1")
+    assert response.status_code == 200
+    assert "Wizualizacja 1" in response.text
+    assert "Faktura Pro Forma nr:" in response.text
+    assert "Strona 1 z 1" in response.text
+    assert "Menadżer Serwisu i Fakturka - Serwisoft.pl" in response.text
+    assert "ZMIANA NUMERU KONTA ! UWAGA:" in response.text
+    assert "Zapisz PDF A4" in response.text
+    assert "data-print-a4" in response.text
+
+
+def test_flow_invoice_preview_live_page_renders_document_from_firebird_data():
+    app = create_app()
+    client = TestClient(app)
+    preview_payload = {
+        "document_title": "Faktura Pro Forma",
+        "document_number": "4/proforma/2026",
+        "place_of_issue": "Komorniki",
+        "service_date": "17.03.2026",
+        "issue_date": "17.03.2026",
+        "payment_due_date": "31.03.2026",
+        "payment_method": "Gotówka",
+        "buyer": {
+            "name": "FLOW TEST NOWY KLIENT SP. Z O.O.",
+            "street": "ul. Testowa 10",
+            "postal_code": "00-010",
+            "city": "Poznan",
+            "country_code": "PL",
+            "nip": "6112998877",
+        },
+        "seller": {
+            "name": "KSERO - PARTNER MIKOŁAJ FRĄSZCZAK SPÓŁKA KOMANDYTOWA",
+            "street": "ul. Fabianowska 165",
+            "postal_code": "62-052",
+            "city": "Komorniki",
+            "nip": "7773404157",
+            "bank_account": "PKO BP S.A. 33102040270000190218474209",
+        },
+        "line_items": [
+            {
+                "lp": 1,
+                "name": "RICOH IMC 3500",
+                "serial_number": "3111RB80109",
+                "quantity": "1,00",
+                "unit": "szt.",
+                "net_price": "3 024,39 zł",
+                "net_value": "3 024,39 zł",
+                "vat_rate": "23 %",
+                "vat_value": "695,61 zł",
+                "gross_value": "3 720,00 zł",
+            }
+        ],
+        "totals": {
+            "net": "3 024,39 zł",
+            "vat": "695,61 zł",
+            "gross": "3 720,00 zł",
+            "paid": "0,00 zł",
+            "remaining": "3 720,00 zł",
+            "gross_words": "trzy tysiace siedemset dwadziescia zlotych 00/100 gr.",
+        },
+        "notes": ["FLOW formularz 4"],
+        "issuer": "Operator Testowy",
+    }
+
+    with patch("app.web.flow_ui.load_proforma_preview_data", return_value=preview_payload):
+        response = client.get("/flow/proforma/70001?variant=v1")
+
+    assert response.status_code == 200
+    assert "4/proforma/2026" in response.text
+    assert "FLOW TEST NOWY KLIENT SP. Z O.O." in response.text
+    assert "RICOH IMC 3500" in response.text
+    assert "Zapisz PDF A4" in response.text
+
+
+def test_flow_invoice_pdf_file_returns_backend_pdf():
+    app = create_app()
+    client = TestClient(app)
+    pdf_path = Path("inbox/faktura/generated/test_flow_invoice_70001.pdf")
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n")
+
+    try:
+        with patch("app.web.flow_ui.ensure_proforma_pdf_file", return_value=pdf_path):
+            response = client.get("/flow/proforma/70001/pdf")
+    finally:
+        pdf_path.unlink(missing_ok=True)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.content.startswith(b"%PDF")
 
 
 def test_genform_page_renders_layout():

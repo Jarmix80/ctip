@@ -1,0 +1,88 @@
+<section
+  class="config-section"
+  x-data="kpRepairTool()"
+  x-init="init()"
+  data-source='{{ source_config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Naprawa KP/xxxx</h2>
+      <p>Raport i operacje czyszczenia/retagowania oznaczeń /V /E /R w `MASZYNA.EWIDENCJA`.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="statusVariant"></span>
+      <span class="config-meta-text" x-text="statusText || 'Brak uruchomionych operacji'">Brak uruchomionych operacji</span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="kp-tool-lookback">Nadpisz lookback e-mail (miesiące)</label>
+        <input id="kp-tool-lookback" type="number" min="0" max="36" x-model="emailLookbackMonths" placeholder="puste = z konfiguracji">
+        <p class="input-help" x-text="`Konfiguracja: ${sourceLookbackMonths} mies.`"></p>
+      </div>
+      <div class="form-field">
+        <label for="kp-tool-commit">Tryb wykonania</label>
+        <select id="kp-tool-commit" x-model="commitMode">
+          <option value="true">Commit (zapisz zmiany)</option>
+          <option value="false">Dry-run (bez zapisu)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" :disabled="working" @click.prevent="runSummary">
+        <span x-text="working ? 'Trwa…' : 'Raport ilości /V /E /R'">Raport ilości /V /E /R</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="working" @click.prevent="runClear">
+        <span x-text="working ? 'Trwa…' : 'Usuń wpisy /V /E /R'">Usuń wpisy /V /E /R</span>
+      </button>
+      <button type="button" :disabled="working" @click.prevent="runRebuild">
+        <span x-text="working ? 'Trwa…' : 'Zaktualizuj wg źródeł'">Zaktualizuj wg źródeł</span>
+      </button>
+    </div>
+
+    <div class="kp-progress" x-show="working || progressVisible" x-cloak>
+      <div class="kp-progress-meta">
+        <strong x-text="progressTitle || 'Trwa wykonywanie operacji…'">Trwa wykonywanie operacji…</strong>
+        <span x-text="progressInfo || ''"></span>
+      </div>
+      <div class="kp-progress-track">
+        <div class="kp-progress-fill" :style="`width: ${progressPercent}%`"></div>
+      </div>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+
+  <div class="config-form" x-show="result" x-cloak>
+    <h3 style="margin-top: 0;">Wynik</h3>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>Status</label>
+        <input type="text" :value="result?.message || ''" readonly>
+      </div>
+      <div class="form-field" x-show="result?.report_file">
+        <label>Raport</label>
+        <input type="text" :value="result?.report_file || ''" readonly>
+      </div>
+      <div class="form-field" x-show="result?.map_file">
+        <label>Mapa zmian</label>
+        <input type="text" :value="result?.map_file || ''" readonly>
+      </div>
+      <div class="form-field" x-show="result?.rollback_file">
+        <label>Rollback</label>
+        <input type="text" :value="result?.rollback_file || ''" readonly>
+      </div>
+    </div>
+    <template x-if="summaryLines.length">
+      <pre class="diagnostics-json" x-text="summaryLines.join('\n')"></pre>
+    </template>
+  </div>
+</section>

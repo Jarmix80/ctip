@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     fb_local_copy_path: str = Field(
         default="inbox/firebird/menadzer_serwisu.fdb", alias="FB_LOCAL_COPY_PATH"
     )
+    fb_v_host: str = Field(default="192.168.0.8", alias="FB_V_HOST")
+    fb_v_port: int = Field(default=3050, alias="FB_V_PORT")
+    fb_v_database: str = Field(default="D:\\bazavmantenance\\BAZA_CPC.FDB", alias="FB_V_DATABASE")
+    fb_v_user: str = Field(default="SYSDBA", alias="FB_V_USER")
+    fb_v_password: str = Field(default="masterkey", alias="FB_V_PASSWORD")
+    fb_v_charset: str = Field(default="WIN1250", alias="FB_V_CHARSET")
+    fb_v_role: str | None = Field(default=None, alias="FB_V_ROLE")
+
+    kp_csv_directory: str = Field(default="inbox/ewidencja", alias="KP_CSV_DIRECTORY")
+    kp_csv_pattern: str = Field(default="DPLAC*.csv", alias="KP_CSV_PATTERN")
+    kp_email_lookback_months: int = Field(default=5, alias="KP_EMAIL_LOOKBACK_MONTHS")
+    fb_allow_writes: bool = Field(default=False, alias="FB_ALLOW_WRITES")
+    fb_warehouse_client_id: int = Field(default=656, alias="FB_WAREHOUSE_CLIENT_ID")
+    fb_warehouse_id: int = Field(default=28, alias="FB_WAREHOUSE_ID")
 
     sms_default_sender: str = Field(default="KseroPartner", alias="SMS_DEFAULT_SENDER")
     sms_type: str = Field(default="eco+", alias="SMS_TYPE")

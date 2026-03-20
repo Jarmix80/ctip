@@ -58,9 +58,9 @@
             <span class="icon">🗄️</span>
             Konfiguracja bazy
           </button>
-          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'firebird' }" @click.prevent="openSection('firebird')">
-            <span class="icon">🔥</span>
-            Baza Firebird
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'kp-repair' }" @click.prevent="openSection('kp-repair')">
+            <span class="icon">🛠️</span>
+            Naprawa KP/xxxx
           </button>
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'backups' }" @click.prevent="openSection('backups')">
             <span class="icon">💾</span>

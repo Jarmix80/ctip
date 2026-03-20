@@ -16,6 +16,10 @@ from app.schemas.admin import (
     EmailConfigUpdate,
     FirebirdConfigResponse,
     FirebirdConfigUpdate,
+    FirebirdVMaintenanceConfigResponse,
+    FirebirdVMaintenanceConfigUpdate,
+    KpRepairSourceConfigResponse,
+    KpRepairSourceConfigUpdate,
     SmsConfigResponse,
     SmsConfigUpdate,
 )
@@ -107,6 +111,50 @@ async def load_firebird_config(session: AsyncSession) -> FirebirdConfigResponse:
         role=role,
         local_copy_path=local_copy_path,
         password_set=password_set,
+    )
+
+
+async def load_firebird_vmaintenance_config(
+    session: AsyncSession,
+) -> FirebirdVMaintenanceConfigResponse:
+    stored = await settings_store.get_namespace(session, "firebird_vmaintenance")
+    host = stored.get("host") or settings.fb_v_host
+    port = _to_int(stored.get("port") or settings.fb_v_port)
+    database = stored.get("database") or settings.fb_v_database
+    user = stored.get("user") or settings.fb_v_user
+    charset = stored.get("charset") or settings.fb_v_charset
+    raw_role = stored.get("role")
+    if raw_role is None:
+        role = settings.fb_v_role
+    else:
+        role = raw_role.strip() or None
+    password_set = bool(stored.get("password") or settings.fb_v_password)
+
+    return FirebirdVMaintenanceConfigResponse(
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        charset=charset,
+        role=role,
+        password_set=password_set,
+    )
+
+
+async def load_kp_repair_source_config(session: AsyncSession) -> KpRepairSourceConfigResponse:
+    stored = await settings_store.get_namespace(session, "kp_repair")
+    csv_directory = stored.get("csv_directory") or settings.kp_csv_directory
+    csv_pattern = stored.get("csv_pattern") or settings.kp_csv_pattern
+    email_lookback_months = _to_int(
+        stored.get("email_lookback_months") or settings.kp_email_lookback_months
+    )
+    if email_lookback_months < 0:
+        email_lookback_months = settings.kp_email_lookback_months
+
+    return KpRepairSourceConfigResponse(
+        csv_directory=csv_directory,
+        csv_pattern=csv_pattern,
+        email_lookback_months=email_lookback_months,
     )
 
 
@@ -322,6 +370,157 @@ async def update_firebird_config(
     await session.commit()
 
     return await load_firebird_config(session)
+
+
+@router.get(
+    "/firebird-vmaintenance",
+    response_model=FirebirdVMaintenanceConfigResponse,
+    summary="Aktualna konfiguracja Firebird v-maintenance",
+)
+async def get_firebird_vmaintenance_config(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FirebirdVMaintenanceConfigResponse:
+    """Zwraca konfigurację połączenia do bazy v-maintenance."""
+    _, admin_user = admin_context
+    _assert_admin(admin_user.role)
+    return await load_firebird_vmaintenance_config(session)
+
+
+@router.put(
+    "/firebird-vmaintenance",
+    response_model=FirebirdVMaintenanceConfigResponse,
+    summary="Aktualizacja konfiguracji Firebird v-maintenance",
+)
+async def update_firebird_vmaintenance_config(
+    payload: FirebirdVMaintenanceConfigUpdate,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FirebirdVMaintenanceConfigResponse:
+    """Zapisuje parametry połączenia do bazy v-maintenance."""
+    admin_session, admin_user = admin_context
+    _assert_admin(admin_user.role)
+
+    host = payload.host.strip()
+    database = payload.database.strip()
+    user = payload.user.strip()
+    charset = payload.charset.strip() or settings.fb_v_charset
+    role = (payload.role or "").strip()
+    if not host:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Host Firebird v-maintenance nie może być pusty.",
+        )
+    if not database:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ścieżka bazy Firebird v-maintenance nie może być pusta.",
+        )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Użytkownik Firebird v-maintenance nie może być pusty.",
+        )
+
+    values: dict[str, StoredValue] = {
+        "host": StoredValue(host, False),
+        "port": StoredValue(str(payload.port), False),
+        "database": StoredValue(database, False),
+        "user": StoredValue(user, False),
+        "charset": StoredValue(charset, False),
+        "role": StoredValue(role, False),
+    }
+    if payload.password is not None:
+        values["password"] = StoredValue(payload.password, True)
+
+    await settings_store.set_namespace(
+        session,
+        "firebird_vmaintenance",
+        values,
+        user_id=admin_user.id,
+    )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="config_firebird_vmaintenance_update",
+        client_ip=admin_session.client_ip,
+        payload={
+            "host": host,
+            "port": payload.port,
+            "database": database,
+            "user": user,
+            "charset": charset,
+            "role": role or None,
+            "password_changed": payload.password is not None,
+        },
+    )
+    await session.commit()
+
+    return await load_firebird_vmaintenance_config(session)
+
+
+@router.get(
+    "/kp-repair-source",
+    response_model=KpRepairSourceConfigResponse,
+    summary="Aktualna konfiguracja źródeł naprawy KP",
+)
+async def get_kp_repair_source_config(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> KpRepairSourceConfigResponse:
+    """Zwraca konfigurację katalogu CSV i filtra czasowego dla EMAIL."""
+    _, admin_user = admin_context
+    _assert_admin(admin_user.role)
+    return await load_kp_repair_source_config(session)
+
+
+@router.put(
+    "/kp-repair-source",
+    response_model=KpRepairSourceConfigResponse,
+    summary="Aktualizacja konfiguracji źródeł naprawy KP",
+)
+async def update_kp_repair_source_config(
+    payload: KpRepairSourceConfigUpdate,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> KpRepairSourceConfigResponse:
+    """Zapisuje konfigurację katalogu CSV i filtra czasowego dla EMAIL."""
+    admin_session, admin_user = admin_context
+    _assert_admin(admin_user.role)
+
+    csv_directory = payload.csv_directory.strip()
+    csv_pattern = payload.csv_pattern.strip() or settings.kp_csv_pattern
+    if not csv_directory:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Katalog CSV nie może być pusty.",
+        )
+    if not csv_pattern:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Wzorzec pliku CSV nie może być pusty.",
+        )
+
+    values: dict[str, StoredValue] = {
+        "csv_directory": StoredValue(csv_directory, False),
+        "csv_pattern": StoredValue(csv_pattern, False),
+        "email_lookback_months": StoredValue(str(payload.email_lookback_months), False),
+    }
+    await settings_store.set_namespace(session, "kp_repair", values, user_id=admin_user.id)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="config_kp_repair_source_update",
+        client_ip=admin_session.client_ip,
+        payload={
+            "csv_directory": csv_directory,
+            "csv_pattern": csv_pattern,
+            "email_lookback_months": payload.email_lookback_months,
+        },
+    )
+    await session.commit()
+
+    return await load_kp_repair_source_config(session)
 
 
 @router.get("/ctip", response_model=CtipConfigResponse, summary="Aktualna konfiguracja CTIP")

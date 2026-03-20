@@ -111,6 +111,103 @@ class FirebirdTestResponse(BaseModel):
     engine_version: str | None = None
 
 
+class FirebirdVMaintenanceConfigResponse(BaseModel):
+    """Widok konfiguracji połączenia z bazą Firebird v-maintenance."""
+
+    host: str
+    port: int
+    database: str
+    user: str
+    charset: str
+    role: str | None
+    password_set: bool
+
+
+class FirebirdVMaintenanceConfigUpdate(BaseModel):
+    """Żądanie aktualizacji konfiguracji Firebird v-maintenance."""
+
+    host: str
+    port: int
+    database: str
+    user: str
+    charset: str = "WIN1250"
+    role: str | None = None
+    password: str | None = None
+
+
+class FirebirdVMaintenanceTestRequest(BaseModel):
+    """Parametry testu Firebird v-maintenance (opcjonalne nadpisania)."""
+
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    user: str | None = None
+    password: str | None = None
+    charset: str | None = None
+    role: str | None = None
+
+
+class KpRepairSourceConfigResponse(BaseModel):
+    """Widok konfiguracji źródeł wejściowych dla naprawy KP."""
+
+    csv_directory: str
+    csv_pattern: str
+    email_lookback_months: int
+
+
+class KpRepairSourceConfigUpdate(BaseModel):
+    """Żądanie aktualizacji źródeł wejściowych dla naprawy KP."""
+
+    csv_directory: str
+    csv_pattern: str = "DPLAC*.csv"
+    email_lookback_months: int = Field(default=5, ge=0, le=36)
+
+
+class KpRepairCsvTestResponse(BaseModel):
+    """Rezultat testu katalogu CSV dla naprawy KP."""
+
+    success: bool
+    message: str
+    directory_exists: bool
+    files_found: int
+    latest_file: str | None = None
+
+
+class KpRepairSummaryResponse(BaseModel):
+    """Podsumowanie źródeł i aktualnych oznaczeń KP."""
+
+    marker_counts: dict[str, int]
+    source_counts: dict[str, int]
+    matched_counts: dict[str, int]
+    latest_csv_file: str | None = None
+    report_file: str | None = None
+
+
+class KpRepairActionRequest(BaseModel):
+    """Parametry akcji naprawczych KP."""
+
+    commit: bool = True
+    email_lookback_months: int | None = Field(default=None, ge=0, le=36)
+
+
+class KpRepairActionResponse(BaseModel):
+    """Wynik akcji naprawy KP."""
+
+    success: bool
+    message: str
+    commit: bool
+    candidates: int
+    updated: int
+    skipped: int
+    errors: int
+    marker_counts_before: dict[str, int]
+    marker_counts_after: dict[str, int]
+    source_counts: dict[str, int] | None = None
+    report_file: str | None = None
+    map_file: str | None = None
+    rollback_file: str | None = None
+
+
 class CtipConfigResponse(BaseModel):
     """Widok konfiguracji centrali CTIP."""
 

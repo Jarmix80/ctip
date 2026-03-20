@@ -199,6 +199,8 @@ document.addEventListener("alpine:init", () => {
           return "/admin/partials/dashboard";
         case "database":
           return "/admin/partials/config/database";
+        case "kp-repair":
+          return "/admin/partials/kp-repair";
         case "firebird":
           return "/admin/partials/config/firebird";
         case "backups":
@@ -2284,6 +2286,534 @@ document.addEventListener("alpine:init", () => {
     },
   });
 
+  const firebirdVMaintenanceConfig = () => ({
+    host: "",
+    port: "",
+    database: "",
+    user: "",
+    password: "",
+    charset: "WIN1250",
+    role: "",
+    passwordSet: false,
+    saving: false,
+    testing: false,
+    error: null,
+    success: null,
+    testStatus: "neutral",
+    testMessage: "",
+
+    init() {
+      const initial = this._readInitial();
+      this.host = initial.host || "";
+      this.port = String(initial.port || "");
+      this.database = initial.database || "";
+      this.user = initial.user || "";
+      this.charset = initial.charset || "WIN1250";
+      this.role = initial.role || "";
+      this.password = "";
+      this.passwordSet = Boolean(initial.password_set);
+    },
+
+    _readInitial() {
+      try {
+        return JSON.parse(this.$el.dataset.initial || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji Firebird v-maintenance", err);
+        return {};
+      }
+    },
+
+    get headers() {
+      const token = localStorage.getItem("admin-session-token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Admin-Session"] = token;
+      }
+      return headers;
+    },
+
+    resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    async save() {
+      if (this.saving) {
+        return;
+      }
+      this.resetMessages();
+      this.saving = true;
+      try {
+        const payload = {
+          host: this.host,
+          port: Number(this.port),
+          database: this.database,
+          user: this.user,
+          charset: this.charset,
+          role: this.role || null,
+        };
+        if (this.password) {
+          payload.password = this.password;
+        }
+        const response = await fetch("/admin/config/firebird-vmaintenance", {
+          method: "PUT",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się zapisać konfiguracji Firebird v-maintenance");
+        }
+        this.host = data.host || "";
+        this.port = String(data.port || "");
+        this.database = data.database || "";
+        this.user = data.user || "";
+        this.charset = data.charset || "WIN1250";
+        this.role = data.role || "";
+        this.password = "";
+        this.passwordSet = Boolean(data.password_set);
+        this.success = "Konfiguracja Firebird v-maintenance została zapisana.";
+        this.$el.dataset.initial = JSON.stringify(data);
+        showToast(this.success, "success");
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "Błąd zapisu";
+        showToast(this.error, "error");
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async testConnection() {
+      if (this.testing) {
+        return;
+      }
+      this.testing = true;
+      this.testStatus = "info";
+      this.testMessage = "Testowanie połączenia…";
+      try {
+        const token = localStorage.getItem("admin-session-token");
+        if (!token) {
+          throw new Error("Brak aktywnej sesji administratora.");
+        }
+        const payload = {
+          host: this.host || null,
+          port: Number(this.port || 3050),
+          database: this.database || null,
+          user: this.user || null,
+          password: this.password || null,
+          charset: this.charset || null,
+          role: this.role || null,
+        };
+        const response = await fetch("/admin/firebird/test-vmaintenance", {
+          method: "POST",
+          headers: { "X-Admin-Session": token, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Błąd testu Firebird v-maintenance");
+        }
+        this.testStatus = data.success ? "success" : "warning";
+        this.testMessage = data.message || (data.success ? "Połączenie zakończone sukcesem." : "Serwer zwrócił błąd.");
+        showToast(this.testMessage, data.success ? "success" : "warning");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd testu Firebird v-maintenance";
+        this.testStatus = "error";
+        this.testMessage = message;
+        showToast(message, "error");
+      } finally {
+        this.testing = false;
+      }
+    },
+  });
+
+  const kpRepairSourceConfig = () => ({
+    csvDirectory: "",
+    csvPattern: "DPLAC*.csv",
+    emailLookbackMonths: 5,
+    latestFile: "",
+    saving: false,
+    testing: false,
+    error: null,
+    success: null,
+    testStatus: "neutral",
+    testMessage: "",
+
+    init() {
+      const initial = this._readInitial();
+      this.csvDirectory = initial.csv_directory || "";
+      this.csvPattern = initial.csv_pattern || "DPLAC*.csv";
+      this.emailLookbackMonths = Number(initial.email_lookback_months || 5);
+      this.latestFile = "";
+    },
+
+    _readInitial() {
+      try {
+        return JSON.parse(this.$el.dataset.initial || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji źródła KP", err);
+        return {};
+      }
+    },
+
+    get headers() {
+      const token = localStorage.getItem("admin-session-token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Admin-Session"] = token;
+      }
+      return headers;
+    },
+
+    resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    async save() {
+      if (this.saving) {
+        return;
+      }
+      this.resetMessages();
+      this.saving = true;
+      try {
+        const payload = {
+          csv_directory: this.csvDirectory,
+          csv_pattern: this.csvPattern,
+          email_lookback_months: Number(this.emailLookbackMonths || 0),
+        };
+        const response = await fetch("/admin/config/kp-repair-source", {
+          method: "PUT",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się zapisać konfiguracji źródła CSV");
+        }
+        this.csvDirectory = data.csv_directory || "";
+        this.csvPattern = data.csv_pattern || "DPLAC*.csv";
+        this.emailLookbackMonths = Number(data.email_lookback_months || 0);
+        this.$el.dataset.initial = JSON.stringify(data);
+        this.success = "Konfiguracja źródeł KP została zapisana.";
+        showToast(this.success, "success");
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "Błąd zapisu";
+        showToast(this.error, "error");
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async testSource() {
+      if (this.testing) {
+        return;
+      }
+      this.testing = true;
+      this.testStatus = "info";
+      this.testMessage = "Testowanie źródła CSV…";
+      this.latestFile = "";
+      try {
+        const token = localStorage.getItem("admin-session-token");
+        if (!token) {
+          throw new Error("Brak aktywnej sesji administratora.");
+        }
+        const response = await fetch("/admin/kp-repair/csv-source/test", {
+          method: "POST",
+          headers: { "X-Admin-Session": token },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Błąd testu katalogu CSV");
+        }
+        this.testStatus = data.success ? "success" : "warning";
+        this.testMessage = data.message || "";
+        this.latestFile = data.latest_file || "";
+        showToast(this.testMessage, data.success ? "success" : "warning");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd testu katalogu CSV";
+        this.testStatus = "error";
+        this.testMessage = message;
+        showToast(message, "error");
+      } finally {
+        this.testing = false;
+      }
+    },
+  });
+
+  const kpRepairTool = () => ({
+    working: false,
+    error: null,
+    success: null,
+    result: null,
+    statusText: "",
+    statusVariant: "neutral",
+    commitMode: "true",
+    emailLookbackMonths: "",
+    sourceLookbackMonths: 5,
+    summaryLines: [],
+    requestTimeoutMs: 600000,
+    progressVisible: false,
+    progressPercent: 0,
+    progressTitle: "",
+    progressInfo: "",
+    progressStartedAtMs: 0,
+    progressTicker: null,
+
+    init() {
+      const source = this._readSource();
+      this.sourceLookbackMonths = Number(source.email_lookback_months || 5);
+      this.emailLookbackMonths = "";
+    },
+
+    _readSource() {
+      try {
+        return JSON.parse(this.$el.dataset.source || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji źródeł KP", err);
+        return {};
+      }
+    },
+
+    _headers(includeJson = false) {
+      const token = localStorage.getItem("admin-session-token");
+      if (!token) {
+        throw new Error("Brak aktywnej sesji administratora.");
+      }
+      const headers = { "X-Admin-Session": token };
+      if (includeJson) {
+        headers["Content-Type"] = "application/json";
+      }
+      return headers;
+    },
+
+    _requestPayload() {
+      const payload = { commit: this.commitMode === "true" };
+      const lookbackRaw = String(this.emailLookbackMonths || "").trim();
+      if (lookbackRaw.length) {
+        payload.email_lookback_months = Number(lookbackRaw);
+      }
+      return payload;
+    },
+
+    _resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    _formatDuration(seconds) {
+      const sec = Math.max(0, Number(seconds || 0));
+      if (sec < 60) {
+        return `${sec}s`;
+      }
+      const min = Math.floor(sec / 60);
+      const rest = sec % 60;
+      return `${min}m ${rest}s`;
+    },
+
+    _startProgress(title) {
+      this.progressTitle = title;
+      this.progressPercent = 4;
+      this.progressVisible = true;
+      this.progressStartedAtMs = Date.now();
+      const timeoutSeconds = Math.round(this.requestTimeoutMs / 1000);
+      this.progressInfo = `Czas: 0s / limit ${this._formatDuration(timeoutSeconds)}`;
+      if (this.progressTicker) {
+        window.clearInterval(this.progressTicker);
+      }
+      this.progressTicker = window.setInterval(() => {
+        const elapsedSeconds = Math.floor((Date.now() - this.progressStartedAtMs) / 1000);
+        const suggestedProgress = Math.min(94, 4 + Math.floor(elapsedSeconds * 1.6));
+        this.progressPercent = Math.max(this.progressPercent, suggestedProgress);
+        this.progressInfo = `Czas: ${this._formatDuration(elapsedSeconds)} / limit ${this._formatDuration(timeoutSeconds)}`;
+      }, 1000);
+    },
+
+    _stopProgress(markAsDone = false) {
+      if (this.progressTicker) {
+        window.clearInterval(this.progressTicker);
+        this.progressTicker = null;
+      }
+      if (markAsDone) {
+        this.progressPercent = 100;
+      }
+      if (!this.working) {
+        window.setTimeout(() => {
+          this.progressVisible = false;
+          this.progressInfo = "";
+        }, 800);
+      }
+    },
+
+    async _fetchWithTimeout(url, options = {}) {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), this.requestTimeoutMs);
+      try {
+        return await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          const timeoutSeconds = Math.round(this.requestTimeoutMs / 1000);
+          throw new Error(`Przekroczono limit czasu żądania (${this._formatDuration(timeoutSeconds)}).`);
+        }
+        throw err;
+      } finally {
+        window.clearTimeout(timer);
+      }
+    },
+
+    _setResult(data) {
+      this.result = data;
+      this.summaryLines = [];
+      if (!data || typeof data !== "object") {
+        return;
+      }
+      if (data.marker_counts) {
+        this.summaryLines.push(
+          `Markery aktualne V/E/R: ${data.marker_counts.V || 0} / ${data.marker_counts.E || 0} / ${data.marker_counts.R || 0}`,
+        );
+      }
+      if (data.marker_counts_before) {
+        this.summaryLines.push(
+          `Przed V/E/R: ${data.marker_counts_before.V || 0} / ${data.marker_counts_before.E || 0} / ${data.marker_counts_before.R || 0}`,
+        );
+      }
+      if (data.marker_counts_after) {
+        this.summaryLines.push(
+          `Po V/E/R: ${data.marker_counts_after.V || 0} / ${data.marker_counts_after.E || 0} / ${data.marker_counts_after.R || 0}`,
+        );
+      }
+      if (data.matched_counts) {
+        this.summaryLines.push(
+          `Kandydaci V/E/R: ${data.matched_counts.V || 0} / ${data.matched_counts.E || 0} / ${data.matched_counts.R || 0}`,
+        );
+      }
+      if (data.candidates !== undefined) {
+        this.summaryLines.push(`Kandydaci zmian: ${data.candidates}`);
+      }
+      if (data.updated !== undefined || data.skipped !== undefined) {
+        this.summaryLines.push(`Wynik zmian: updated=${data.updated || 0}, skipped=${data.skipped || 0}, errors=${data.errors || 0}`);
+      }
+      if (data.source_counts?.EMAIL_LOOKBACK_MONTHS !== undefined) {
+        this.summaryLines.push(`EMAIL lookback: ${data.source_counts.EMAIL_LOOKBACK_MONTHS} mies.`);
+      }
+      if (data.latest_csv_file) {
+        this.summaryLines.push(`Najnowszy CSV: ${data.latest_csv_file}`);
+      }
+    },
+
+    async runSummary() {
+      if (this.working) {
+        return;
+      }
+      this._resetMessages();
+      this.working = true;
+      this.statusVariant = "info";
+      this.statusText = "Generowanie raportu…";
+      this._startProgress("Generowanie raportu KP…");
+      try {
+        const response = await this._fetchWithTimeout("/admin/kp-repair/summary", {
+          headers: this._headers(false),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się wygenerować raportu.");
+        }
+        this.success = "Raport został wygenerowany.";
+        this.statusVariant = "success";
+        this.statusText = data.report_file ? `Raport: ${data.report_file}` : this.success;
+        this._setResult(data);
+        showToast(this.success, "success");
+        this._stopProgress(true);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd raportu KP";
+        this.error = message;
+        this.statusVariant = "error";
+        this.statusText = message;
+        showToast(message, "error");
+      } finally {
+        this.working = false;
+        this._stopProgress(false);
+      }
+    },
+
+    async runClear() {
+      if (this.working) {
+        return;
+      }
+      this._resetMessages();
+      this.working = true;
+      this.statusVariant = "info";
+      this.statusText = "Czyszczenie markerów…";
+      this._startProgress("Czyszczenie markerów KP…");
+      try {
+        const response = await this._fetchWithTimeout("/admin/kp-repair/clear", {
+          method: "POST",
+          headers: this._headers(true),
+          body: JSON.stringify(this._requestPayload()),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się wyczyścić markerów.");
+        }
+        this.success = data.message || "Czyszczenie zakończone.";
+        this.statusVariant = "success";
+        this.statusText = this.success;
+        this._setResult(data);
+        showToast(this.success, "success");
+        this._stopProgress(true);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd czyszczenia KP";
+        this.error = message;
+        this.statusVariant = "error";
+        this.statusText = message;
+        showToast(message, "error");
+      } finally {
+        this.working = false;
+        this._stopProgress(false);
+      }
+    },
+
+    async runRebuild() {
+      if (this.working) {
+        return;
+      }
+      this._resetMessages();
+      this.working = true;
+      this.statusVariant = "info";
+      this.statusText = "Retagowanie markerów…";
+      this._startProgress("Retagowanie markerów KP…");
+      try {
+        const response = await this._fetchWithTimeout("/admin/kp-repair/rebuild", {
+          method: "POST",
+          headers: this._headers(true),
+          body: JSON.stringify(this._requestPayload()),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się retagować markerów.");
+        }
+        this.success = data.message || "Retagowanie zakończone.";
+        this.statusVariant = "success";
+        this.statusText = this.success;
+        this._setResult(data);
+        showToast(this.success, "success");
+        this._stopProgress(true);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd retagowania KP";
+        this.error = message;
+        this.statusVariant = "error";
+        this.statusText = message;
+        showToast(message, "error");
+      } finally {
+        this.working = false;
+        this._stopProgress(false);
+      }
+    },
+  });
+
   const ctipConfig = () => ({
     host: "",
     port: "",
@@ -3220,6 +3750,9 @@ Alpine.data("adminApp", adminApp);
 Alpine.data("adminUsers", adminUsers);
 Alpine.data("databaseConfig", databaseConfig);
 Alpine.data("firebirdConfig", firebirdConfig);
+Alpine.data("firebirdVMaintenanceConfig", firebirdVMaintenanceConfig);
+Alpine.data("kpRepairSourceConfig", kpRepairSourceConfig);
+Alpine.data("kpRepairTool", kpRepairTool);
 Alpine.data("ctipConfig", ctipConfig);
 Alpine.data("ctipIvrMap", ctipIvrMap);
 Alpine.data("smsConfig", smsConfig);
@@ -3230,6 +3763,9 @@ Alpine.data("emailConfig", emailConfig);
   window.adminUsers = adminUsers;
   window.databaseConfig = databaseConfig;
   window.firebirdConfig = firebirdConfig;
+window.firebirdVMaintenanceConfig = firebirdVMaintenanceConfig;
+window.kpRepairSourceConfig = kpRepairSourceConfig;
+window.kpRepairTool = kpRepairTool;
 window.ctipConfig = ctipConfig;
 window.ctipIvrMap = ctipIvrMap;
 window.smsConfig = smsConfig;
