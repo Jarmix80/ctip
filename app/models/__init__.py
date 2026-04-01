@@ -6,6 +6,8 @@ from .admin import (  # noqa: F401
     AdminSetting,
     AdminUser,
     FormRequest,
+    FormWorkflowCase,
+    FormWorkflowDevice,
 )
 from .base import Base  # noqa: F401
 from .call import Call  # noqa: F401

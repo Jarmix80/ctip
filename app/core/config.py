@@ -2,6 +2,7 @@
 
 import socket
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -65,6 +66,15 @@ class Settings(BaseSettings):
         default="http://localhost:8000/admin", alias="ADMIN_PANEL_URL"
     )
     form_public_base_url: str | None = Field(default=None, alias="FORM_PUBLIC_BASE_URL")
+    cors_allowed_origins_raw: str = Field(
+        default="http://localhost:8000,http://127.0.0.1:8000,http://testserver",
+        alias="CORS_ALLOWED_ORIGINS",
+    )
+    auth_cookie_name: str = Field(default="ctip_session", alias="AUTH_COOKIE_NAME")
+    auth_cookie_secure: bool = Field(default=False, alias="AUTH_COOKIE_SECURE")
+    auth_cookie_samesite_raw: str = Field(default="lax", alias="AUTH_COOKIE_SAMESITE")
+    auth_cookie_domain: str | None = Field(default=None, alias="AUTH_COOKIE_DOMAIN")
+    auth_cookie_path: str = Field(default="/", alias="AUTH_COOKIE_PATH")
 
     email_host: str | None = Field(default=None, alias="EMAIL_HOST")
     email_port: int = Field(default=587, alias="EMAIL_PORT")
@@ -154,6 +164,37 @@ class Settings(BaseSettings):
         local_ips |= self._resolve_host_ips(socket.gethostname())
         local_ips |= self._resolve_host_ips(socket.getfqdn())
         return bool(production_ips.intersection(local_ips))
+
+    @staticmethod
+    def _normalize_origin(value: str | None) -> str | None:
+        """Normalizuje URL do postaci origin używanej przez CORS."""
+        normalized = str(value or "").strip().rstrip("/")
+        if not normalized or "://" not in normalized:
+            return None
+        parsed = urlsplit(normalized)
+        if not parsed.scheme or not parsed.netloc:
+            return None
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        """Zwraca listę dozwolonych originów CORS dla paneli WWW."""
+        values = [item.strip() for item in self.cors_allowed_origins_raw.split(",")]
+        values.extend([self.admin_panel_url or "", self.form_public_base_url or ""])
+        origins: list[str] = []
+        for value in values:
+            origin = self._normalize_origin(value)
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    @property
+    def auth_cookie_samesite(self) -> str:
+        """Zwraca poprawną wartość SameSite dla ciasteczka sesji."""
+        value = str(self.auth_cookie_samesite_raw or "").strip().lower()
+        if value in {"lax", "strict", "none"}:
+            return value
+        return "lax"
 
 
 @lru_cache(1)

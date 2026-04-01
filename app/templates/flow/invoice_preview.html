@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ invoice.document_title }} {{ invoice.document_number }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/flow/invoice_preview.css">
+    <script defer src="/static/flow/invoice_print.js"></script>
+  </head>
+  <body class="invoice-preview-body">
+    <main class="invoice-preview-shell">
+      <header class="invoice-preview-topbar">
+        <div>
+          <p class="invoice-preview-kicker">{{ preview_kicker or "FLOW / Wizualizacja dokumentu" }}</p>
+          <h1>{{ preview_title or invoice.document_title }}</h1>
+          <p class="invoice-preview-lead">
+            {{ preview_lead or "Podglad oparty o rzeczywisty dokument z katalogu `inbox/faktura`. To jest wzorzec wizualny do dalszego podpiecia pod dane Firebird i PDF." }}
+          </p>
+        </div>
+        <div class="invoice-preview-topbar-actions">
+          <button type="button" class="invoice-preview-link" data-print-a4>Zapisz PDF A4</button>
+          {% if alternate_url %}
+          <a href="{{ alternate_url }}" class="invoice-preview-link">{{ alternate_label or "Drugi wariant" }}</a>
+          {% endif %}
+          <a href="{{ back_url or '/flow' }}" class="invoice-preview-link">Powrot do FLOW</a>
+        </div>
+      </header>
+
+      <section class="invoice-sheet">
+        <header class="invoice-sheet-head">
+          <div class="invoice-sheet-title">
+            <p class="invoice-sheet-eyebrow">Dokument handlowy</p>
+            <h2>{{ invoice.document_title }}</h2>
+            <strong>{{ invoice.document_number }}</strong>
+          </div>
+          <dl class="invoice-meta-grid">
+            <div>
+              <dt>Miejsce wystawienia</dt>
+              <dd>{{ invoice.place_of_issue }}</dd>
+            </div>
+            <div>
+              <dt>Data zakończenia dostaw/usług</dt>
+              <dd>{{ invoice.service_date }}</dd>
+            </div>
+            <div>
+              <dt>Data wystawienia</dt>
+              <dd>{{ invoice.issue_date }}</dd>
+            </div>
+            <div>
+              <dt>Termin płatności</dt>
+              <dd>{{ invoice.payment_due_date }}</dd>
+            </div>
+            <div>
+              <dt>Forma płatności</dt>
+              <dd>{{ invoice.payment_method }}</dd>
+            </div>
+          </dl>
+        </header>
+
+        <section class="invoice-parties">
+          <article class="invoice-party-card">
+            <p class="invoice-party-label">Nabywca</p>
+            <h3>{{ invoice.buyer.name }}</h3>
+            <p>{{ invoice.buyer.street }}</p>
+            <p>{{ invoice.buyer.postal_code }} {{ invoice.buyer.city }}</p>
+            <p>{{ invoice.buyer.country_code }} {{ invoice.buyer.nip }}</p>
+          </article>
+
+          <article class="invoice-party-card invoice-party-card-accent">
+            <p class="invoice-party-label">Sprzedawca</p>
+            <h3>{{ invoice.seller.name }}</h3>
+            <p>{{ invoice.seller.street }}</p>
+            <p>{{ invoice.seller.postal_code }} {{ invoice.seller.city }}</p>
+            <p>NIP: {{ invoice.seller.nip }}</p>
+          </article>
+        </section>
+
+        <section class="invoice-section">
+          <div class="invoice-section-head">
+            <h3>Pozycje dokumentu</h3>
+            <p class="invoice-muted">
+              Uklad odtwarza zakres danych widoczny w przykladzie proformy z Menadzera Serwisu.
+            </p>
+          </div>
+
+          <div class="invoice-table-wrap">
+            <table class="invoice-table">
+              <thead>
+                <tr>
+                  <th>Lp.</th>
+                  <th>Nazwa towaru / uslugi</th>
+                  <th>Ilosc</th>
+                  <th>Jm.</th>
+                  <th>Cena netto</th>
+                  <th>Wartosc netto</th>
+                  <th>VAT</th>
+                  <th>Kwota VAT</th>
+                  <th>Wartosc brutto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in invoice.line_items %}
+                <tr>
+                  <td>{{ item.lp }}.</td>
+                  <td>
+                    <strong>{{ item.name }}</strong>
+                    <div class="invoice-row-subtle">Nr seryjny: {{ item.serial_number }}</div>
+                  </td>
+                  <td>{{ item.quantity }}</td>
+                  <td>{{ item.unit }}</td>
+                  <td>{{ item.net_price }}</td>
+                  <td>{{ item.net_value }}</td>
+                  <td>{{ item.vat_rate }}</td>
+                  <td>{{ item.vat_value }}</td>
+                  <td>{{ item.gross_value }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="invoice-summary-grid">
+          <article class="invoice-summary-card">
+            <p class="invoice-party-label">Podsumowanie</p>
+            <dl class="invoice-summary-list">
+              <div>
+                <dt>Razem netto</dt>
+                <dd>{{ invoice.totals.net }}</dd>
+              </div>
+              <div>
+                <dt>VAT</dt>
+                <dd>{{ invoice.totals.vat }}</dd>
+              </div>
+              <div>
+                <dt>Razem brutto</dt>
+                <dd>{{ invoice.totals.gross }}</dd>
+              </div>
+              <div>
+                <dt>Zaplacono</dt>
+                <dd>{{ invoice.totals.paid }}</dd>
+              </div>
+              <div class="is-total">
+                <dt>Pozostalo do zaplaty</dt>
+                <dd>{{ invoice.totals.remaining }}</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="invoice-summary-card invoice-summary-card-accent">
+            <p class="invoice-party-label">Rachunek bankowy</p>
+            <p class="invoice-bank-account">{{ invoice.seller.bank_account }}</p>
+            <p class="invoice-muted">
+              Slownie: <strong>{{ invoice.totals.gross_words }}</strong>
+            </p>
+            <div class="invoice-signature-block">
+              <span>Wystawil</span>
+              <strong>{{ invoice.issuer }}</strong>
+            </div>
+          </article>
+        </section>
+
+        <section class="invoice-section invoice-section-notes">
+          <div class="invoice-section-head">
+            <h3>Uwagi</h3>
+          </div>
+          <ul class="invoice-notes-list">
+            {% for note in invoice.notes %}
+            <li>{{ note }}</li>
+            {% endfor %}
+          </ul>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

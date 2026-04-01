@@ -38,6 +38,26 @@ class SettingsTests(unittest.TestCase):
         )
         self.assertFalse(cfg.backup_execution_active)
 
+    def test_cors_allowed_origins_merge_env_and_public_urls(self) -> None:
+        cfg = Settings(
+            CORS_ALLOWED_ORIGINS="http://localhost:8000, https://panel.example.com/app",
+            ADMIN_PANEL_URL="http://192.168.0.133:8000/admin",
+            FORM_PUBLIC_BASE_URL="https://forms.example.com/formularz",
+        )
+        self.assertEqual(
+            cfg.cors_allowed_origins,
+            [
+                "http://localhost:8000",
+                "https://panel.example.com",
+                "http://192.168.0.133:8000",
+                "https://forms.example.com",
+            ],
+        )
+
+    def test_auth_cookie_samesite_falls_back_to_lax(self) -> None:
+        cfg = Settings(AUTH_COOKIE_SAMESITE="niepoprawne")
+        self.assertEqual(cfg.auth_cookie_samesite, "lax")
+
 
 if __name__ == "__main__":
     unittest.main()

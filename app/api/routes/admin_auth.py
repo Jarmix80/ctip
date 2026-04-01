@@ -15,6 +15,7 @@ from app.schemas.admin import AdminLoginRequest, AdminLoginResponse, AdminUserIn
 from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.security import generate_session_token, verify_password
+from app.services.session_cookie import clear_admin_session_cookie, set_admin_session_cookie
 
 router = APIRouter(prefix="/admin/auth", tags=["admin"])
 
@@ -23,9 +24,10 @@ router = APIRouter(prefix="/admin/auth", tags=["admin"])
 async def admin_login(
     payload: AdminLoginRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> AdminLoginResponse:
-    """Weryfikuje dane logowania i zwraca token sesji."""
+    """Weryfikuje dane logowania, zwraca token i ustawia ciasteczko sesji."""
     stmt = select(AdminUser).where(AdminUser.email == payload.email)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
@@ -72,6 +74,7 @@ async def admin_login(
         payload={"user_id": user.id},
     )
     await session.commit()
+    set_admin_session_cookie(response, token=token, expires_at=expires_at)
 
     return AdminLoginResponse(token=token, expires_at=expires_at)
 
@@ -81,7 +84,7 @@ async def admin_logout(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
-    """Zamyka bieżącą sesję administratora."""
+    """Zamyka biezaca sesje administratora i czyści ciasteczko."""
     admin_session, admin_user = admin_context
     now = datetime.now(UTC)
     admin_session.revoked_at = now
@@ -94,7 +97,9 @@ async def admin_logout(
     )
     await session.commit()
 
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_admin_session_cookie(response)
+    return response
 
 
 @router.get("/me", response_model=AdminUserInfo, summary="Informacje o zalogowanym administratorze")

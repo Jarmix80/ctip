@@ -37,12 +37,17 @@ function formatDate(value) {
   }
 }
 
+function deviceActionLabel(action) {
+  const mapped = {
+    synchronizuj: "Synchronizuj",
+    podlacz: "Synchronizuj",
+    do_weryfikacji: "Do weryfikacji",
+  };
+  return mapped[action] || action || "Akcja";
+}
+
 async function initializeContractsPage() {
-  const token = readContractsToken();
-  if (!token) {
-    window.location.replace("/");
-    return;
-  }
+  let token = readContractsToken();
 
   const formsTotal = document.getElementById("contracts-forms-total");
   const devicesTotal = document.getElementById("contracts-devices-total");
@@ -85,9 +90,30 @@ async function initializeContractsPage() {
     refreshBtn.textContent = busy ? "Odswiezanie..." : "Odswiez";
   };
 
-  const headers = () => ({
-    "X-Admin-Session": token,
-  });
+  let currentUser = null;
+
+  const ensureCurrentUser = async ({ forceRefresh = false } = {}) => {
+    if (currentUser && !forceRefresh) {
+      return currentUser;
+    }
+    const response = await fetch("/auth/me", { headers: headers() });
+    if (response.status === 401) {
+      throw new Error("Sesja wygasla.");
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || "Nie udalo sie pobrac danych sesji.");
+    }
+    currentUser = await response.json();
+    return currentUser;
+  };
+
+  const headers = () => {
+    if (!token) {
+      return {};
+    }
+    return { "X-Admin-Session": token };
+  };
 
   const renderForms = (items) => {
     if (!Array.isArray(items) || items.length === 0) {
@@ -101,8 +127,18 @@ async function initializeContractsPage() {
         const firebird = item.firebird || {};
         const statusClass = firebird.found ? "ok" : "warn";
         const statusLabel = firebird.found ? "Znaleziony" : "Brak klienta";
-        const actionLabel = item.contract_action === "utworz_klienta" ? "Utworz klienta" : "Podlacz klienta";
-        const actionCode = item.contract_action === "utworz_klienta" ? "utworz_klienta" : "podlacz_klienta";
+        const actionLabel =
+          item.contract_action === "utworz_klienta"
+            ? "Utworz klienta"
+            : item.contract_action === "podlacz_klienta"
+              ? "Podlacz klienta"
+              : "";
+        const actionCode =
+          item.contract_action === "utworz_klienta"
+            ? "utworz_klienta"
+            : item.contract_action === "podlacz_klienta"
+              ? "podlacz_klienta"
+              : "";
         return `
           <tr>
             <td>${escapeHtml(item.id)}</td>
@@ -115,15 +151,21 @@ async function initializeContractsPage() {
               <div>ID: ${escapeHtml(firebird.id_klient || "—")}</div>
             </td>
             <td>
-              <button
-                type="button"
-                class="contracts-action-btn"
-                data-entity="form"
-                data-action="${escapeHtml(actionCode)}"
-                data-target-id="${escapeHtml(item.id)}"
-              >
-                ${escapeHtml(actionLabel)}
-              </button>
+              ${
+                actionCode
+                  ? `
+                    <button
+                      type="button"
+                      class="contracts-action-btn"
+                      data-entity="form"
+                      data-action="${escapeHtml(actionCode)}"
+                      data-target-id="${escapeHtml(item.id)}"
+                    >
+                      ${escapeHtml(actionLabel)}
+                    </button>
+                  `
+                  : "Brak akcji"
+              }
             </td>
           </tr>
         `;
@@ -139,7 +181,7 @@ async function initializeContractsPage() {
     devicesBody.innerHTML = items
       .map((item) => {
         const statusClass = item.found_in_firebird ? "ok" : "warn";
-        const statusLabel = item.found_in_firebird ? "Potwierdzone" : "Brak w Firebird";
+        const statusLabel = item.found_in_firebird ? "Potwierdzone" : "Brak w Menadzerze Serwisu";
         return `
           <tr>
             <td>${escapeHtml(item.row)}</td>
@@ -157,7 +199,7 @@ async function initializeContractsPage() {
                 data-action="${escapeHtml(item.sync_action || "do_weryfikacji")}"
                 data-row="${escapeHtml(item.row || 0)}"
               >
-                ${escapeHtml(item.sync_action || "do_weryfikacji")}
+                ${escapeHtml(deviceActionLabel(item.sync_action || "do_weryfikacji"))}
               </button>
             </td>
           </tr>
@@ -204,6 +246,7 @@ async function initializeContractsPage() {
         throw new Error(data.detail || "Nie udało się wykonać akcji.");
       }
       setInfo(data.message || "Akcja wykonana.");
+      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Błąd akcji.");
     } finally {
@@ -217,11 +260,7 @@ async function initializeContractsPage() {
     setInfo("");
     setBusy(true);
     try {
-      const meResponse = await fetch("/auth/me", { headers: headers() });
-      if (!meResponse.ok) {
-        throw new Error("Sesja wygasla.");
-      }
-      const me = await meResponse.json();
+      const me = await ensureCurrentUser();
       const sections = new Set(Array.isArray(me.sections) ? me.sections : []);
       if (!sections.has("generator")) {
         throw new Error("Brak uprawnien do sekcji Obsluga umow.");
@@ -230,6 +269,9 @@ async function initializeContractsPage() {
       const response = await fetch("/admin/contracts/dashboard", { headers: headers() });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Sesja wygasla.");
+        }
         throw new Error(data.detail || "Nie udalo sie pobrac danych dashboardu.");
       }
 
@@ -243,6 +285,8 @@ async function initializeContractsPage() {
       const message = err instanceof Error ? err.message : "Blad ladowania danych.";
       setError(message);
       if (message.includes("Sesja")) {
+        token = null;
+        currentUser = null;
         clearContractsToken();
         window.location.replace("/");
       }
@@ -276,6 +320,8 @@ async function initializeContractsPage() {
     } catch (err) {
       console.error(err);
     } finally {
+      token = null;
+      currentUser = null;
       clearContractsToken();
       window.location.replace("/");
     }

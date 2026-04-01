@@ -606,13 +606,154 @@ ALTER TABLE ctip.admin_audit_log OWNER TO postgres;
 
 CREATE INDEX ix_admin_audit_log_created_at ON ctip.admin_audit_log USING btree (created_at);
 
+CREATE SEQUENCE ctip.form_request_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.form_request_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.form_request_id_seq OWNED BY ctip.form_request.id;
+
+CREATE TABLE ctip.form_request (
+    id integer NOT NULL DEFAULT nextval('ctip.form_request_id_seq'::regclass),
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_by integer,
+    customer_name text NOT NULL,
+    customer_email text NOT NULL,
+    customer_phone text NOT NULL,
+    status text DEFAULT 'GENERATED'::text NOT NULL,
+    token_hash text NOT NULL,
+    token_expires_at timestamp with time zone NOT NULL,
+    token_used_at timestamp with time zone,
+    sms_status text,
+    email_status text,
+    notification_error text,
+    submitted_payload text,
+    submitted_at timestamp with time zone,
+    CONSTRAINT form_request_pkey PRIMARY KEY (id),
+    CONSTRAINT form_request_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE SET NULL,
+    CONSTRAINT form_request_status_check CHECK (status = ANY (ARRAY['GENERATED'::text, 'DISPATCHED'::text, 'SUBMITTED'::text, 'EXPIRED'::text])),
+    CONSTRAINT uq_form_request_token_hash UNIQUE (token_hash)
+);
+
+ALTER TABLE ctip.form_request OWNER TO postgres;
+
+CREATE INDEX idx_form_request_status_created ON ctip.form_request USING btree (status, created_at);
+CREATE INDEX idx_form_request_created_by ON ctip.form_request USING btree (created_by, created_at);
+
+CREATE SEQUENCE ctip.form_workflow_case_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.form_workflow_case_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.form_workflow_case_id_seq OWNED BY ctip.form_workflow_case.id;
+
+CREATE TABLE ctip.form_workflow_case (
+    id integer NOT NULL DEFAULT nextval('ctip.form_workflow_case_id_seq'::regclass),
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    form_request_id integer NOT NULL,
+    created_by integer,
+    updated_by integer,
+    stage text DEFAULT 'FORM_SUBMITTED'::text NOT NULL,
+    business_status text DEFAULT 'DRAFT'::text NOT NULL,
+    client_mode text,
+    firebird_client_id integer,
+    firebird_client_status text,
+    client_payload_snapshot json,
+    proforma_firebird_id integer,
+    proforma_number text,
+    proforma_pdf_path text,
+    delivery_date date,
+    delivery_time_window text,
+    delivery_contact_name text,
+    delivery_contact_phone text,
+    delivery_notes text,
+    CONSTRAINT form_workflow_case_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_form_workflow_case_form_request_id UNIQUE (form_request_id),
+    CONSTRAINT form_workflow_case_form_request_id_fkey FOREIGN KEY (form_request_id)
+        REFERENCES ctip.form_request (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT form_workflow_case_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE SET NULL,
+    CONSTRAINT form_workflow_case_updated_by_fkey FOREIGN KEY (updated_by)
+        REFERENCES ctip.admin_user (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE SET NULL,
+    CONSTRAINT form_workflow_case_stage_check CHECK (stage = ANY (ARRAY['FORM_SUBMITTED'::text, 'CLIENT_READY'::text, 'DEVICES_SELECTED'::text, 'PROFORMA_CREATED'::text])),
+    CONSTRAINT form_workflow_case_business_status_check CHECK (business_status = ANY (ARRAY['DRAFT'::text, 'PENDING_APPROVAL'::text, 'APPROVED'::text, 'ZEROWKA'::text, 'REJECTED'::text]))
+);
+
+ALTER TABLE ctip.form_workflow_case OWNER TO postgres;
+
+CREATE INDEX idx_form_workflow_case_form_request ON ctip.form_workflow_case USING btree (form_request_id);
+
+CREATE SEQUENCE ctip.form_workflow_device_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.form_workflow_device_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.form_workflow_device_id_seq OWNED BY ctip.form_workflow_device.id;
+
+CREATE TABLE ctip.form_workflow_device (
+    id integer NOT NULL DEFAULT nextval('ctip.form_workflow_device_id_seq'::regclass),
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    workflow_case_id integer NOT NULL,
+    source_type text DEFAULT 'google_sheet'::text NOT NULL,
+    source_row integer,
+    producer text,
+    model text,
+    serial text,
+    ewidencja text,
+    device_status text,
+    reservation_status text,
+    price text,
+    price_net text,
+    price_gross text,
+    firebird_machine_id integer,
+    firebird_client_id integer,
+    snapshot json,
+    CONSTRAINT form_workflow_device_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_form_workflow_device_source_row UNIQUE (workflow_case_id, source_type, source_row),
+    CONSTRAINT form_workflow_device_workflow_case_id_fkey FOREIGN KEY (workflow_case_id)
+        REFERENCES ctip.form_workflow_case (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
+    CONSTRAINT form_workflow_device_source_type_check CHECK (source_type = ANY (ARRAY['google_sheet'::text, 'firebird_magazyn_28'::text]))
+);
+
+ALTER TABLE ctip.form_workflow_device OWNER TO postgres;
+
+CREATE INDEX idx_form_workflow_device_case ON ctip.form_workflow_device USING btree (workflow_case_id);
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_user TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_session TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_setting TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_audit_log TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_request TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_case TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_device TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_user_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_session_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_audit_log_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.form_request_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.form_workflow_case_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.form_workflow_device_id_seq TO appuser;
 
 
 --

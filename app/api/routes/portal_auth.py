@@ -22,6 +22,7 @@ from app.schemas.admin import (
 from app.services import operator_settings, section_permissions
 from app.services.audit import record_audit
 from app.services.security import generate_session_token, verify_password
+from app.services.session_cookie import clear_admin_session_cookie, set_admin_session_cookie
 
 router = APIRouter(prefix="/auth", tags=["portal-auth"])
 
@@ -30,9 +31,10 @@ router = APIRouter(prefix="/auth", tags=["portal-auth"])
 async def portal_login(
     payload: AdminLoginRequest,
     request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> PortalLoginResponse:
-    """Logowanie centralne i zwrot dostępnych sekcji interfejsu."""
+    """Logowanie centralne, zwrot sekcji i ustawienie ciasteczka sesji."""
     stmt = select(AdminUser).where(AdminUser.email == payload.email)
     user = (await session.execute(stmt)).scalar_one_or_none()
     if (
@@ -70,6 +72,7 @@ async def portal_login(
         payload={"user_id": user.id, "sections": sections},
     )
     await session.commit()
+    set_admin_session_cookie(response, token=token, expires_at=expires_at)
     return PortalLoginResponse(token=token, expires_at=expires_at, sections=sections)
 
 
@@ -78,7 +81,7 @@ async def portal_logout(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
-    """Unieważnia aktywną sesję użytkownika."""
+    """Uniewaznia aktywna sesje uzytkownika i czysci ciasteczko."""
     admin_session, admin_user = admin_context
     admin_session.revoked_at = datetime.now(UTC)
     await record_audit(
@@ -89,7 +92,9 @@ async def portal_logout(
         payload={"user_id": admin_user.id},
     )
     await session.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_admin_session_cookie(response)
+    return response
 
 
 @router.get("/me", response_model=PortalUserInfo, summary="Informacje o zalogowanym użytkowniku")

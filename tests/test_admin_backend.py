@@ -53,6 +53,11 @@ from app.services.contracts_dashboard import (
     FirebirdDeviceSyncResult,
 )
 from app.services.contracts_proforma import FirebirdProformaWriteResult
+from app.services.device_intake import (
+    DeviceCatalogSyncResult,
+    DeviceIntakeBatchResult,
+    DeviceIntakeResult,
+)
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
 from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
@@ -262,6 +267,21 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["role"], "admin")
         self.assertIn("mobile_phone", data)
 
+    async def test_admin_login_sets_cookie_and_accepts_cookie_session(self):
+        response = await self.client.post(
+            "/admin/auth/login",
+            json={"email": "admin@example.com", "password": "Sekret123!"},
+        )
+        self.assertEqual(response.status_code, 200)
+        set_cookie = response.headers.get("set-cookie", "")
+        self.assertIn(f"{settings.auth_cookie_name}=", set_cookie)
+        self.assertIn("httponly", set_cookie.lower())
+        self.assertIn(f"samesite={settings.auth_cookie_samesite}", set_cookie.lower())
+
+        me_response = await self.client.get("/admin/auth/me")
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.json()["email"], "admin@example.com")
+
     async def test_operator_login_allowed(self):
         token, payload = await self._login_operator()
         self.assertIn("expires_at", payload)
@@ -301,6 +321,29 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(me["email"], "operator@example.com")
         self.assertEqual(me["role"], "operator")
         self.assertIn("operator", me["sections"])
+
+    async def test_portal_logout_clears_cookie_session(self):
+        response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": True,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+
+        me_response = await self.client.get("/auth/me")
+        self.assertEqual(me_response.status_code, 200)
+
+        logout_response = await self.client.post("/auth/logout")
+        self.assertEqual(logout_response.status_code, 204)
+        set_cookie = logout_response.headers.get("set-cookie", "")
+        self.assertIn(f"{settings.auth_cookie_name}=", set_cookie)
+        self.assertIn("max-age=0", set_cookie.lower())
+
+        after_logout_response = await self.client.get("/auth/me")
+        self.assertEqual(after_logout_response.status_code, 401)
 
     async def test_operator_login_requires_operator_section(self):
         async with self.session_factory() as session:
@@ -1830,6 +1873,38 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(sms_rows), 2)
             self.assertEqual(sms_rows[0].dest, "+48600700800")
 
+    async def test_operator_can_list_forms_with_reserved_email_domain(self):
+        token, _ = await self._login_operator()
+        now = datetime.now(UTC)
+        async with self.session_factory() as session:
+            legacy_form = FormRequest(
+                created_at=now,
+                updated_at=now,
+                created_by=1,
+                customer_name="Klient Legacy",
+                customer_email="flow-4x-4@test.local",
+                customer_phone="+48600111222",
+                status="DISPATCHED",
+                token_hash=f"legacy-{int(now.timestamp() * 1_000_000)}",
+                token_expires_at=now + timedelta(days=7),
+                sms_status="QUEUED",
+                email_status=None,
+            )
+            session.add(legacy_form)
+            await session.commit()
+            await session.refresh(legacy_form)
+
+        response = await self.client.get(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        legacy_row = next((item for item in items if item["id"] == legacy_form.id), None)
+        self.assertIsNotNone(legacy_row)
+        assert legacy_row is not None
+        self.assertEqual(legacy_row["customer_email"], "flow-4x-4@test.local")
+
     async def test_operator_cannot_generate_form_with_past_expiry_date(self):
         token, _ = await self._login_operator()
         response = await self.client.post(
@@ -2270,6 +2345,442 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["model_quality"]["duplicate_signatures_count"], 30)
         self.assertEqual(len(body["process_rules"]), 1)
         self.assertEqual(len(body["operational_notes"]), 1)
+
+    async def test_device_intake_defaults_returns_next_ewidencja(self):
+        token, _ = await self._login_operator()
+        with patch(
+            "app.api.routes.admin_device.get_next_ewidencja_suggestion",
+            return_value={
+                "prefix": "KP/",
+                "next_number": 5074,
+                "width": 4,
+                "suggested": "KP/5074",
+            },
+        ):
+            response = await self.client.get(
+                "/admin/device/intake/defaults?ewidencja_prefix=KP/",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["defaults"]["suggested"], "KP/5074")
+
+    async def test_device_models_lookup_returns_rows(self):
+        token, _ = await self._login_operator()
+        with patch(
+            "app.api.routes.admin_device.search_device_models",
+            return_value=[
+                {
+                    "id_model": 33,
+                    "marka": "Canon",
+                    "model": "IR 2520",
+                    "grupa": "Druk",
+                    "rodzaj": "MFP",
+                    "kolor": "NIE",
+                    "plik": "",
+                    "auto_item_id": 18170,
+                }
+            ],
+        ):
+            response = await self.client.get(
+                "/admin/device/models?query=Canon&limit=20",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(len(body["rows"]), 1)
+        self.assertEqual(body["rows"][0]["id_model"], 33)
+
+    async def test_device_model_form_options_returns_brand_group_kind_lists(self):
+        token, _ = await self._login_operator()
+        with (
+            patch(
+                "app.api.routes.admin_device._get_or_seed_device_brands",
+                new=AsyncMock(return_value=["Ricoh", "Canon"]),
+            ),
+            patch(
+                "app.api.routes.admin_device.load_device_model_taxonomy",
+                return_value={"groups": ["Druk"], "kinds": ["MFP A3"]},
+            ),
+        ):
+            response = await self.client.get(
+                "/admin/device/model-form-options",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["options"]["default_brand"], "Ricoh")
+        self.assertEqual(body["options"]["brands"], ["Ricoh", "Canon"])
+        self.assertEqual(body["options"]["groups"], ["Druk"])
+        self.assertEqual(body["options"]["kinds"], ["MFP A3"])
+
+    async def test_device_suppliers_lookup_returns_rows(self):
+        token, _ = await self._login_operator()
+        with patch(
+            "app.api.routes.admin_device.search_device_suppliers",
+            return_value=[
+                {
+                    "id_klient": 656,
+                    "nazwa": "CTIP TEST",
+                    "nip": "9000000656",
+                    "adres": "Testowa 1",
+                    "kod": "60-001",
+                    "poczta": "Poznan",
+                    "telefon": "",
+                    "email": "",
+                }
+            ],
+        ):
+            response = await self.client.get(
+                "/admin/device/suppliers?query=9000&limit=20",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["rows"][0]["id_klient"], 656)
+
+    async def test_device_supplier_create_executes_when_enabled(self):
+        token, _ = await self._login_operator()
+        with (
+            patch(
+                "app.api.routes.admin_device.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.api.routes.admin_device.create_device_supplier",
+                return_value={
+                    "id_klient": 2900,
+                    "nazwa": "NOWY DOSTAWCA",
+                    "nip": "9000002900",
+                    "adres": "Testowa 2",
+                    "kod": "60-002",
+                    "poczta": "Poznan",
+                },
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/device/suppliers",
+                headers={"X-Admin-Session": token},
+                json={
+                    "name": "NOWY DOSTAWCA",
+                    "nip": "9000002900",
+                    "address": "Testowa 2",
+                    "postal_code": "60-002",
+                    "city": "Poznan",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["supplier"]["id_klient"], 2900)
+
+    async def test_device_model_create_executes_when_enabled(self):
+        token, _ = await self._login_operator()
+        with (
+            patch(
+                "app.api.routes.admin_device.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.api.routes.admin_device.create_device_model",
+                return_value={
+                    "created": True,
+                    "id_model": 30003000,
+                    "marka": "Canon",
+                    "model": "IR TEST",
+                    "catalog": {
+                        "action": "created",
+                        "warehouse_item_id": 20001,
+                        "index": "AUTO/2001",
+                    },
+                },
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/device/models",
+                headers={"X-Admin-Session": token},
+                json={
+                    "marka": "Canon",
+                    "model": "IR TEST",
+                    "grupa": "Druk",
+                    "rodzaj": "MFP",
+                    "kolor": False,
+                    "sync_catalog": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["model"]["id_model"], 30003000)
+
+    async def test_device_catalog_sync_rejects_when_firebird_writes_disabled(self):
+        token, _ = await self._login_operator()
+        with patch(
+            "app.api.routes.admin_device.firebird_writes_enabled",
+            return_value=(
+                False,
+                "Zapis do lokalnej Firebird jest zablokowany. Ustaw FB_ALLOW_WRITES=true w srodowisku testowym.",
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/device/catalog/sync",
+                headers={"X-Admin-Session": token},
+                json={"only_missing": True},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("FB_ALLOW_WRITES", response.json()["detail"])
+
+    async def test_device_catalog_sync_executes_when_enabled(self):
+        token, _ = await self._login_operator()
+        expected = DeviceCatalogSyncResult(
+            total_models=2,
+            created=1,
+            updated=1,
+            existing=0,
+            rows=[
+                {
+                    "model_id": 472,
+                    "marka": "Ricoh",
+                    "model": "MP 301",
+                    "warehouse_item_id": 19001,
+                    "index": "AUTO/0001",
+                    "action": "created",
+                },
+                {
+                    "model_id": 545,
+                    "marka": "Ricoh",
+                    "model": "MPC 307",
+                    "warehouse_item_id": 19002,
+                    "index": "AUTO/0002",
+                    "action": "updated",
+                },
+            ],
+        )
+
+        with (
+            patch(
+                "app.api.routes.admin_device.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.api.routes.admin_device.sync_device_catalog_from_models",
+                return_value=expected,
+            ) as sync_mock,
+        ):
+            response = await self.client.post(
+                "/admin/device/catalog/sync",
+                headers={"X-Admin-Session": token},
+                json={"model_ids": [472, 545], "only_missing": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["summary"]["created"], 1)
+        self.assertEqual(body["summary"]["updated"], 1)
+        self.assertEqual(len(body["rows"]), 2)
+        self.assertIn("Synchronizacja kartoteki AUTO", body["message"])
+        sync_mock.assert_called_once_with(
+            model_ids=[472, 545],
+            only_missing=False,
+            kto="operator@example.com",
+        )
+
+        async with self.session_factory() as session:
+            entries = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(AdminAuditLog.action == "device_catalog_sync")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertTrue(
+                any(entry.payload and entry.payload.get("created") == 1 for entry in entries)
+            )
+
+    async def test_device_intake_create_executes_when_enabled(self):
+        token, _ = await self._login_operator()
+        expected = DeviceIntakeResult(
+            model_id=472,
+            warehouse_item_id=19001,
+            warehouse_index="AUTO/0001",
+            pz_id=40111,
+            pz_number="PZ / 111 / 2026",
+            zakpozycja_id=109001,
+            serial_id=20123,
+            serial="SN-DEV-001",
+            ewidencja="KP/DEV/001",
+            supplier_id=656,
+        )
+
+        with (
+            patch(
+                "app.api.routes.admin_device.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.api.routes.admin_device.create_device_intake",
+                return_value=expected,
+            ) as intake_mock,
+        ):
+            response = await self.client.post(
+                "/admin/device/intake",
+                headers={"X-Admin-Session": token},
+                json={
+                    "model_id": 472,
+                    "serial": "SN-DEV-001",
+                    "ewidencja": "KP/DEV/001",
+                    "supplier_id": 656,
+                    "external_document": "FV/DEV/001",
+                    "issued_by": "Operator",
+                    "force": False,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["intake"]["pz_id"], 40111)
+        self.assertEqual(body["intake"]["serial_id"], 20123)
+        self.assertIn("Utworzono przyjecie", body["message"])
+        intake_mock.assert_called_once_with(
+            model_id=472,
+            serial="SN-DEV-001",
+            ewidencja="KP/DEV/001",
+            supplier_id=656,
+            external_document="FV/DEV/001",
+            issued_by="Operator",
+            force=False,
+            kto="operator@example.com",
+        )
+
+        async with self.session_factory() as session:
+            entries = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(AdminAuditLog.action == "device_intake_create")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertTrue(
+                any(entry.payload and entry.payload.get("pz_id") == 40111 for entry in entries)
+            )
+
+    async def test_device_intake_batch_create_executes_when_enabled(self):
+        token, _ = await self._login_operator()
+        expected = DeviceIntakeBatchResult(
+            pz_id=40222,
+            pz_number="PZ / 222 / 2026",
+            supplier_id=656,
+            items=[
+                DeviceIntakeResult(
+                    model_id=472,
+                    warehouse_item_id=19001,
+                    warehouse_index="AUTO/0001",
+                    pz_id=40222,
+                    pz_number="PZ / 222 / 2026",
+                    zakpozycja_id=109101,
+                    serial_id=21123,
+                    serial="SN-BATCH-001",
+                    ewidencja="KP/BATCH/001",
+                    supplier_id=656,
+                    machine_id=7634,
+                    machine_table_id=5722,
+                ),
+                DeviceIntakeResult(
+                    model_id=545,
+                    warehouse_item_id=19002,
+                    warehouse_index="AUTO/0002",
+                    pz_id=40222,
+                    pz_number="PZ / 222 / 2026",
+                    zakpozycja_id=109102,
+                    serial_id=21124,
+                    serial="SN-BATCH-002",
+                    ewidencja="KP/BATCH/002",
+                    supplier_id=656,
+                    machine_id=7635,
+                    machine_table_id=5723,
+                ),
+            ],
+        )
+
+        with (
+            patch(
+                "app.api.routes.admin_device.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.api.routes.admin_device.create_device_intake_batch",
+                return_value=expected,
+            ) as intake_mock,
+        ):
+            response = await self.client.post(
+                "/admin/device/intake/batch",
+                headers={"X-Admin-Session": token},
+                json={
+                    "items": [
+                        {
+                            "model_id": 472,
+                            "serial": "SN-BATCH-001",
+                            "ewidencja": "KP/BATCH/001",
+                        },
+                        {
+                            "model_id": 545,
+                            "serial": "SN-BATCH-002",
+                            "ewidencja": "KP/BATCH/002",
+                        },
+                    ],
+                    "supplier_id": 656,
+                    "external_document": "FV/BATCH/001",
+                    "issued_by": "Operator",
+                    "force": False,
+                    "ewidencja_prefix": "KP/BATCH/",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["batch"]["pz_id"], 40222)
+        self.assertEqual(len(body["batch"]["items"]), 2)
+        self.assertIn("Utworzono przyjecie", body["message"])
+
+        called_items = intake_mock.call_args.kwargs["items"]
+        self.assertEqual(len(called_items), 2)
+        self.assertEqual(called_items[0].model_id, 472)
+        self.assertEqual(called_items[1].ewidencja, "KP/BATCH/002")
+        self.assertEqual(intake_mock.call_args.kwargs["ewidencja_prefix"], "KP/BATCH/")
+
+        async with self.session_factory() as session:
+            entries = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action == "device_intake_batch_create"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertTrue(
+                any(entry.payload and entry.payload.get("item_count") == 2 for entry in entries)
+            )
 
     async def test_contracts_action_create_client_rejects_when_firebird_writes_disabled(self):
         token, _ = await self._login_operator()

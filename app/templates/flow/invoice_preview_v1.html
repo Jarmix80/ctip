@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ invoice.document_title }} {{ invoice.document_number }} / wariant 1</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/flow/invoice_preview_v1.css">
+    <script defer src="/static/flow/invoice_print.js"></script>
+  </head>
+  <body class="invoice-v1-body">
+    <main class="invoice-v1-shell">
+      <header class="invoice-v1-topbar">
+        <div>
+          <p class="invoice-v1-kicker">{{ preview_kicker or "FLOW / Proforma" }}</p>
+          <h1>{{ preview_title or "Wizualizacja 1" }}</h1>
+          <p class="invoice-v1-lead">
+            {{ preview_lead or "Ten wariant jest celowo blizszy oryginalnemu wydrukowi Menadzera Serwisu: wezsza kartka, uklad kolumnowy, lekkie kursywy i blok podsumowania po prawej." }}
+          </p>
+        </div>
+        <div class="invoice-v1-topbar-actions">
+          <button type="button" class="invoice-v1-link" data-print-a4>Zapisz PDF A4</button>
+          {% if alternate_url %}
+          <a href="{{ alternate_url }}" class="invoice-v1-link">{{ alternate_label or "Wariant bazowy" }}</a>
+          {% endif %}
+          <a href="{{ back_url or '/flow' }}" class="invoice-v1-link">Powrot do FLOW</a>
+        </div>
+      </header>
+
+      <section class="invoice-v1-page">
+        <header class="invoice-v1-head">
+          <div class="invoice-v1-title-wrap">
+            <span class="invoice-v1-title-label">{{ invoice.document_title }} nr:</span>
+            <strong class="invoice-v1-title-number">{{ invoice.document_number }}</strong>
+          </div>
+        </header>
+
+        <section class="invoice-v1-meta">
+          <article>
+            <span>Miejsce wystawienia</span>
+            <strong>{{ invoice.place_of_issue }}</strong>
+          </article>
+          <article>
+            <span>Data zakończenia dostaw / usług</span>
+            <strong>{{ invoice.service_date }}</strong>
+          </article>
+          <article>
+            <span>Data wystawienia</span>
+            <strong>{{ invoice.issue_date }}</strong>
+          </article>
+          <article>
+            <span>Termin płatności</span>
+            <strong>{{ invoice.payment_due_date }}</strong>
+          </article>
+          <article>
+            <span>Forma płatności</span>
+            <strong>{{ invoice.payment_method }}</strong>
+          </article>
+        </section>
+
+        <section class="invoice-v1-parties">
+          <article class="invoice-v1-party">
+            <h2>Sprzedawca</h2>
+            <div class="invoice-v1-rule"></div>
+            <strong>{{ invoice.seller.name }}</strong>
+            <p>{{ invoice.seller.street }}</p>
+            <p>{{ invoice.seller.postal_code }} {{ invoice.seller.city }}</p>
+            <p>NIP: {{ invoice.seller.nip }}</p>
+          </article>
+
+          <article class="invoice-v1-party">
+            <h2>Nabywca</h2>
+            <div class="invoice-v1-rule"></div>
+            <strong>{{ invoice.buyer.name }}</strong>
+            <p>{{ invoice.buyer.street }}</p>
+            <p>{{ invoice.buyer.postal_code }} {{ invoice.buyer.city }}</p>
+            <p>NIP: {{ invoice.buyer.country_code }} {{ invoice.buyer.nip }}</p>
+          </article>
+        </section>
+
+        <section class="invoice-v1-lines">
+          <table class="invoice-v1-table">
+            <thead>
+              <tr>
+                <th class="col-lp">Lp.</th>
+                <th class="col-name">Nazwa towaru / usługi</th>
+                <th class="col-qty">Ilość</th>
+                <th class="col-unit">Jm.</th>
+                <th class="col-price">Cena netto</th>
+                <th class="col-net">Wartość netto</th>
+                <th class="col-vat-rate">Stawka VAT</th>
+                <th class="col-vat">Kwota VAT</th>
+                <th class="col-gross">Wartość brutto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in invoice.line_items %}
+              <tr>
+                <td>{{ item.lp }}.</td>
+                <td>{{ item.name }}</td>
+                <td class="is-right">{{ item.quantity }}</td>
+                <td class="is-center">{{ item.unit }}</td>
+                <td class="is-right">{{ item.net_price }}</td>
+                <td class="is-right">{{ item.net_value }}</td>
+                <td class="is-center">{{ item.vat_rate }}</td>
+                <td class="is-right">{{ item.vat_value }}</td>
+                <td class="is-right">{{ item.gross_value }}</td>
+              </tr>
+              <tr class="invoice-v1-serial-row">
+                <td></td>
+                <td colspan="8">Nr seryjny: {{ item.serial_number }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="invoice-v1-totals">
+          <div class="invoice-v1-totals-right">
+            <div class="invoice-v1-totals-row">
+              <span>Razem:</span>
+              <strong>{{ invoice.totals.net }}</strong>
+              <strong>{{ invoice.totals.vat }}</strong>
+              <strong>{{ invoice.totals.gross }}</strong>
+            </div>
+            <div class="invoice-v1-totals-row invoice-v1-totals-row-small">
+              <span>wg stawki 23 %</span>
+              <span>{{ invoice.totals.net }}</span>
+              <span>{{ invoice.totals.vat }}</span>
+              <span>{{ invoice.totals.gross }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="invoice-v1-payment">
+          <div class="invoice-v1-payment-left">
+            <div class="invoice-v1-payment-row">
+              <span>Razem do zapłaty:</span>
+              <strong>{{ invoice.totals.gross }}</strong>
+            </div>
+            <div class="invoice-v1-payment-row">
+              <span>Zapłacono:</span>
+              <strong>{{ invoice.totals.paid }}</strong>
+            </div>
+            <div class="invoice-v1-payment-row">
+              <span>Pozostało do zapłaty:</span>
+              <strong>{{ invoice.totals.remaining }}</strong>
+            </div>
+          </div>
+          <div class="invoice-v1-payment-right">
+            <span>Słownie:</span>
+            <strong>{{ invoice.totals.gross_words }}</strong>
+          </div>
+        </section>
+
+        <section class="invoice-v1-bank">
+          <span>Numer rachunku bankowego:</span>
+          <strong>{{ invoice.seller.bank_account }}</strong>
+        </section>
+
+        <section class="invoice-v1-signatures">
+          <div class="invoice-v1-signature">
+            <strong>{{ invoice.issuer }}</strong>
+            <div class="invoice-v1-signature-line"></div>
+            <span>(podpis osoby wystawiającej fakturę)</span>
+          </div>
+          <div class="invoice-v1-signature">
+            <strong>&nbsp;</strong>
+            <div class="invoice-v1-signature-line"></div>
+            <span>(podpis osoby odbierającej fakturę)</span>
+          </div>
+        </section>
+
+        <section class="invoice-v1-notes">
+          <strong>Uwagi:</strong>
+          <div class="invoice-v1-notes-box"></div>
+        </section>
+
+        <footer class="invoice-v1-footer">
+          <div class="invoice-v1-footer-warning">
+            <p>ZMIANA NUMERU KONTA ! UWAGA: Towar pozostaje własnością KSERO-PARTNER SK</p>
+            <p>do czasu całkowitej zapłaty. Za zwłokę naliczamy odsetki.</p>
+          </div>
+          <div class="invoice-v1-footer-meta">
+            <span>Strona 1 z 1</span>
+            <span>Menadżer Serwisu i Fakturka - Serwisoft.pl</span>
+          </div>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>

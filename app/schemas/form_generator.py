@@ -56,7 +56,7 @@ class FormRequestSummary(BaseModel):
 
     id: int
     customer_name: str
-    customer_email: EmailStr
+    customer_email: str
     customer_phone: str
     created_by_name: str | None = None
     status: FORM_STATUS

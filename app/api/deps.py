@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.db.session import get_session
 from app.models import AdminSession, AdminUser
 
@@ -33,14 +34,16 @@ async def get_current_user_id(
 
 
 async def get_admin_session_context(
-    token: str | None = Header(default=None, alias="X-Admin-Session"),
+    token_header: str | None = Header(default=None, alias="X-Admin-Session"),
+    token_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> tuple[AdminSession, AdminUser]:
-    """Weryfikuje token sesji administratora i zwraca (sesja, użytkownik)."""
+    """Weryfikuje sesje administratora z naglowka lub ciasteczka."""
+    token = token_header or token_cookie
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Brak nagłówka X-Admin-Session",
+            detail="Brak aktywnej sesji administratora.",
         )
 
     stmt = (

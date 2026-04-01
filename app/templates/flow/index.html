@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP - FLOW</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/flow/flow.css">
+    <script defer src="/static/flow/flow.js"></script>
+  </head>
+  <body>
+    <main class="flow-shell">
+      <header class="flow-topbar">
+        <div>
+          <p class="flow-kicker">CTIP / FLOW</p>
+          <h1>Operacyjny widok procesu</h1>
+          <p class="flow-lead">
+            Jeden ekran do przegladania formularzy klienta i urzadzen roboczych dla dalszego workflow.
+          </p>
+        </div>
+        <div class="flow-topbar-actions">
+          <div id="flow-user-chip" class="flow-user-chip">Uzytkownik</div>
+          <a href="/choice" class="flow-secondary">Wybor sekcji</a>
+          <button id="flow-logout" type="button" class="flow-secondary">Wyloguj</button>
+        </div>
+      </header>
+
+      <div class="flow-layout">
+        <aside class="flow-sidebar">
+          <div class="flow-sidebar-brand">
+            <strong>FLOW</strong>
+            <span>Wersja robocza procesu</span>
+          </div>
+
+          <nav class="flow-nav" aria-label="Sekcje FLOW">
+            <button
+              type="button"
+              class="flow-nav-btn is-active"
+              data-section-target="contracts"
+            >
+              Obsluga umow
+            </button>
+            <button
+              type="button"
+              class="flow-nav-btn"
+              data-section-target="devices"
+            >
+              Obsluga urzadzen
+            </button>
+            <button
+              type="button"
+              class="flow-nav-btn"
+              data-section-target="schedule"
+            >
+              Harmonogram dowozow
+            </button>
+            <button id="flow-refresh" type="button" class="flow-nav-btn flow-nav-btn-refresh">
+              Odswiez dane
+            </button>
+          </nav>
+
+          <section class="flow-sidebar-card">
+            <h2>Aktualne zalozenie</h2>
+            <p>
+              Formularze pochodza z generatora, a lista urzadzen jest tymczasowo ladowana z arkusza
+              Google. Zrodlo urzadzen mozna pozniej przelaczyc na Menadzer Serwisu magazyn `28`.
+            </p>
+          </section>
+
+          <section class="flow-sidebar-card">
+            <h2>Zakres na teraz</h2>
+            <p>
+              Widok ma przygotowac mechanizmy pod dalszy workflow, bez wymuszania jeszcze finalnego
+              ksztaltu procesu.
+            </p>
+          </section>
+        </aside>
+
+        <section class="flow-content">
+          <section class="flow-panel" data-section-panel="contracts">
+            <div class="flow-panel-head">
+              <div>
+                <p class="flow-panel-kicker">Sekcja 1</p>
+                <h2>Obsluga umow</h2>
+                <p class="flow-panel-lead">
+                  Lista formularzy z generatora, ze statusami i gotowymi akcjami Menadzera Serwisu dla etapu
+                  handlowego.
+                </p>
+              </div>
+            </div>
+
+            <section class="flow-stats">
+              <article>
+                <span>Wszystkie formularze</span>
+                <strong id="flow-forms-total">0</strong>
+              </article>
+              <article>
+                <span>Wygenerowane</span>
+                <strong id="flow-forms-generated">0</strong>
+              </article>
+              <article>
+                <span>Wyslane</span>
+                <strong id="flow-forms-dispatched">0</strong>
+              </article>
+              <article>
+                <span>Wypelnione</span>
+                <strong id="flow-forms-submitted">0</strong>
+              </article>
+              <article>
+                <span>Wygasle</span>
+                <strong id="flow-forms-expired">0</strong>
+              </article>
+            </section>
+
+            <div class="flow-card">
+              <div class="flow-card-head">
+                <h3>Formularze klienta</h3>
+                <p id="flow-forms-empty" class="flow-empty" hidden>Brak formularzy do wyswietlenia.</p>
+              </div>
+              <div class="flow-table-wrap">
+                <table class="flow-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Status</th>
+                      <th>Klient</th>
+                      <th>NIP</th>
+                      <th>E-mail</th>
+                      <th>Telefon</th>
+                      <th>Menadzer Serwisu</th>
+                      <th>Akcja</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flow-forms-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="flow-panel" data-section-panel="devices" hidden>
+            <div class="flow-panel-head">
+              <div>
+                <p class="flow-panel-kicker">Sekcja 2</p>
+                <h2>Obsluga urzadzen</h2>
+                <p class="flow-panel-lead">
+                  Tymczasowo lista operacyjna z arkusza Google, z kontrola dopasowania do Menadzera Serwisu i
+                  akcjami synchronizacji.
+                </p>
+              </div>
+            </div>
+
+            <section class="flow-stats flow-stats-devices">
+              <article>
+                <span>Urzadzenia w zrodle</span>
+                <strong id="flow-devices-total">0</strong>
+              </article>
+              <article>
+                <span>Potwierdzone w Menadzerze Serwisu</span>
+                <strong id="flow-devices-matched">0</strong>
+              </article>
+              <article>
+                <span>Do synchronizacji</span>
+                <strong id="flow-devices-pending">0</strong>
+              </article>
+            </section>
+
+            <div class="flow-card">
+              <div class="flow-card-head">
+                <h3>Urzadzenia robocze</h3>
+                <p class="flow-note">
+                  Zrodlo tymczasowe: arkusz Google. Docelowo ta sekcja moze przejsc na liste Menadzera Serwisu
+                  magazyn `28`.
+                </p>
+              </div>
+              <div class="flow-table-wrap">
+                <table class="flow-table">
+                  <thead>
+                    <tr>
+                      <th>Wiersz</th>
+                      <th>Serial</th>
+                      <th>Ewidencja</th>
+                      <th>Model</th>
+                      <th>Status Menadzera Serwisu</th>
+                      <th>ID maszyny</th>
+                      <th>ID klienta</th>
+                      <th>Akcja</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flow-devices-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="flow-panel" data-section-panel="schedule" hidden>
+            <div class="flow-panel-head">
+              <div>
+                <p class="flow-panel-kicker">Sekcja 3</p>
+                <h2>Harmonogram dowozow</h2>
+                <p class="flow-panel-lead">
+                  Operacyjny kalendarz dowozow: edycja terminu, przenoszenie na inny dzien i
+                  usuwanie wpisu bez zmiany danych proformy.
+                </p>
+              </div>
+            </div>
+
+            <div class="flow-card">
+              <div class="flow-card-head">
+                <h3>Plan dowozow</h3>
+                <div class="flow-inline-actions flow-inline-actions-tight">
+                  <label class="flow-filter-field">
+                    <span>Od dnia</span>
+                    <input id="flow-schedule-from" type="date">
+                  </label>
+                  <label class="flow-filter-field">
+                    <span>Do dnia</span>
+                    <input id="flow-schedule-to" type="date">
+                  </label>
+                  <button id="flow-schedule-load" type="button" class="flow-action-btn flow-action-btn-secondary">
+                    Odswiez harmonogram
+                  </button>
+                </div>
+              </div>
+              <p id="flow-schedule-empty" class="flow-empty" hidden>Brak wpisow w wybranym zakresie.</p>
+              <div id="flow-schedule-board" class="flow-schedule-board"></div>
+            </div>
+          </section>
+        </section>
+      </div>
+
+      <section id="flow-form-detail-modal" class="flow-modal" hidden>
+        <div class="flow-modal-backdrop" data-flow-modal-close></div>
+        <div class="flow-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-form-detail-title">
+          <header class="flow-modal-head">
+            <div>
+              <p class="flow-panel-kicker">Podglad formularza</p>
+              <h2 id="flow-form-detail-title">Dane formularza</h2>
+            </div>
+            <button id="flow-form-detail-close" type="button" class="flow-secondary">Zamknij</button>
+          </header>
+
+          <div class="flow-modal-summary">
+            <article>
+              <span>ID formularza</span>
+              <strong id="flow-detail-id">—</strong>
+            </article>
+            <article>
+              <span>Status</span>
+              <strong id="flow-detail-status">—</strong>
+            </article>
+            <article>
+              <span>Menadzer Serwisu</span>
+              <strong id="flow-detail-ms">—</strong>
+            </article>
+          </div>
+
+          <div class="flow-modal-body">
+            <table class="flow-detail-table">
+              <thead>
+                <tr>
+                  <th>Pole</th>
+                  <th>Wartosc</th>
+                  <th>Kopiuj</th>
+                </tr>
+              </thead>
+              <tbody id="flow-form-detail-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="flow-workflow-modal" class="flow-modal" hidden>
+        <div class="flow-modal-backdrop" data-flow-workflow-close></div>
+        <div class="flow-modal-dialog flow-workflow-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-workflow-title">
+          <header class="flow-modal-head">
+            <div>
+              <p class="flow-panel-kicker">Prowadzenie sprawy</p>
+              <h2 id="flow-workflow-title">Workflow formularza</h2>
+              <p class="flow-note">
+                Ten widok zapisuje stan po stronie CTIP: klient Menadzera Serwisu, wybrane urzadzenia
+                i kolejne etapy pod proforme.
+              </p>
+            </div>
+            <button id="flow-workflow-close" type="button" class="flow-secondary">Zamknij</button>
+          </header>
+
+          <div class="flow-modal-summary flow-workflow-summary">
+            <article>
+              <span>ID formularza</span>
+              <strong id="flow-workflow-form-id">—</strong>
+            </article>
+            <article>
+              <span>Etap sprawy</span>
+              <strong id="flow-workflow-stage">—</strong>
+            </article>
+            <article>
+              <span>Klient MS</span>
+              <strong id="flow-workflow-client-id">—</strong>
+            </article>
+            <article>
+              <span>Urzadzenia CTIP</span>
+              <strong id="flow-workflow-devices-count">0</strong>
+            </article>
+            <article>
+              <span>Status biznesowy</span>
+              <strong id="flow-workflow-business-status">—</strong>
+            </article>
+            <article>
+              <span>Dowoz</span>
+              <strong id="flow-workflow-delivery-summary">Brak</strong>
+            </article>
+          </div>
+
+          <div class="flow-modal-body flow-workflow-body">
+            <section class="flow-workflow-section">
+              <div class="flow-card-head flow-card-head-compact">
+                <div>
+                  <h3>Dane klienta do utworzenia</h3>
+                  <p class="flow-note">
+                    Skrocony podglad danych z formularza. Pelny widok z kopiowaniem jest dostepny pod
+                    przyciskiem `Dane`.
+                  </p>
+                </div>
+                <span id="flow-workflow-client-action-label" class="flow-badge soft">—</span>
+              </div>
+              <div id="flow-workflow-client-preview" class="flow-preview-grid"></div>
+              <div class="flow-inline-actions">
+                <button id="flow-workflow-client-save" type="button" class="flow-action-btn">
+                  Zapisz klienta
+                </button>
+                <button
+                  id="flow-workflow-open-devices"
+                  type="button"
+                  class="flow-action-btn flow-action-btn-secondary"
+                >
+                  Przejdz do urzadzen
+                </button>
+              </div>
+              <p id="flow-workflow-client-note" class="flow-note"></p>
+            </section>
+
+            <section class="flow-workflow-section">
+              <div class="flow-card-head flow-card-head-compact">
+                <div>
+                  <h3>Urzadzenia do formularza</h3>
+                  <p class="flow-note">
+                    Wybor jest zapisywany tylko po stronie CTIP. Na tym etapie nie tworzymy jeszcze
+                    wpisow w Menadzerze Serwisu.
+                  </p>
+                </div>
+                <div class="flow-inline-actions flow-inline-actions-tight">
+                  <button
+                    id="flow-workflow-devices-save"
+                    type="button"
+                    class="flow-action-btn"
+                  >
+                    Zapisz wybor urzadzen
+                  </button>
+                </div>
+              </div>
+
+              <div class="flow-filter-bar">
+                <label class="flow-filter-field">
+                  <span>Wyszukaj</span>
+                  <input
+                    id="flow-workflow-device-search"
+                    type="search"
+                    placeholder="Serial, nr wewnetrzny, model, producent"
+                  >
+                </label>
+                <label class="flow-filter-field">
+                  <span>Status</span>
+                  <select id="flow-workflow-device-status-filter">
+                    <option value="">Wszystkie</option>
+                  </select>
+                </label>
+                <label class="flow-filter-field">
+                  <span>Rezerwacja</span>
+                  <select id="flow-workflow-device-reservation-filter">
+                    <option value="">Wszystkie</option>
+                  </select>
+                </label>
+              </div>
+
+              <p id="flow-workflow-device-note" class="flow-note"></p>
+              <p id="flow-workflow-selection-summary" class="flow-subtle">Brak wybranych urzadzen.</p>
+              <p class="flow-note">
+                Handlowiec wpisuje cene recznie dla kazdego wybranego urzadzenia. Na tym etapie
+                przeliczenie netto/brutto wykorzystuje domyslnie VAT 23%.
+              </p>
+
+              <div class="flow-table-wrap">
+                <table class="flow-detail-table flow-device-picker-table">
+                  <thead>
+                    <tr>
+                      <th>Wybierz</th>
+                      <th>Wiersz</th>
+                      <th>Producent</th>
+                      <th>Model</th>
+                      <th>Serial</th>
+                      <th>Nr wewnetrzny</th>
+                      <th>Status</th>
+                      <th>Rezerwacja</th>
+                      <th>Cena netto</th>
+                      <th>Cena brutto</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flow-workflow-device-picker-body"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="flow-workflow-section flow-workflow-section-muted">
+              <div class="flow-card-head flow-card-head-compact">
+                <div>
+                  <h3>Proforma</h3>
+                  <p class="flow-note">
+                    Kolejny etap po kliencie i wyborze urzadzen. Po zapisaniu proformy mozna
+                    otworzyc jej podglad A4 i zapisac PDF z poziomu przegladarki.
+                  </p>
+                  <label class="flow-proforma-bank-toggle">
+                    <input id="flow-workflow-proforma-bank" type="checkbox" checked>
+                    <span>Proforma na bank (domyslnie aktywna)</span>
+                  </label>
+                  <p class="flow-note">
+                    Bank: GRENKELEASING Sp. z o.o., ul. Abpa A. Baraniaka 88, 61-131 Poznan,
+                    NIP 782-22-75-815.
+                  </p>
+                </div>
+                <div class="flow-inline-actions flow-inline-actions-tight">
+                  <button
+                    id="flow-workflow-proforma-create"
+                    type="button"
+                    class="flow-action-btn"
+                  >
+                    Utworz proforme
+                  </button>
+                  <a
+                    id="flow-workflow-proforma-preview"
+                    class="flow-action-btn flow-action-btn-secondary"
+                    href="#"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    hidden
+                  >
+                    Otworz podglad A4
+                  </a>
+                </div>
+              </div>
+              <p id="flow-workflow-proforma-note" class="flow-note">
+                Dla tego formularza nie ma jeszcze zapisanej proformy.
+              </p>
+            </section>
+
+            <section id="flow-workflow-delivery-section" class="flow-workflow-section">
+              <div class="flow-card-head flow-card-head-compact">
+                <div>
+                  <h3>Uzgodnienia dostawy</h3>
+                  <p class="flow-note">
+                    Dane operacyjne dla harmonogramu dowozow. Ta sekcja nie jest drukowana na proformie.
+                  </p>
+                </div>
+                <div class="flow-inline-actions flow-inline-actions-tight">
+                  <button id="flow-workflow-delivery-save" type="button" class="flow-action-btn">
+                    Zapisz dowoz
+                  </button>
+                  <button
+                    id="flow-workflow-delivery-clear"
+                    type="button"
+                    class="flow-action-btn flow-action-btn-secondary"
+                  >
+                    Usun wpis
+                  </button>
+                </div>
+              </div>
+              <div class="flow-filter-bar">
+                <label class="flow-filter-field">
+                  <span>Data dowozu</span>
+                  <input id="flow-workflow-delivery-date" type="date">
+                </label>
+                <label class="flow-filter-field">
+                  <span>Okno czasowe</span>
+                  <input id="flow-workflow-delivery-time-window" type="text" placeholder="np. 10:00-12:00">
+                </label>
+                <label class="flow-filter-field">
+                  <span>Telefon kontaktowy</span>
+                  <input id="flow-workflow-delivery-contact-phone" type="text" placeholder="+48...">
+                </label>
+              </div>
+              <div class="flow-filter-bar">
+                <label class="flow-filter-field">
+                  <span>Osoba kontaktowa</span>
+                  <input id="flow-workflow-delivery-contact-name" type="text" placeholder="Imie i nazwisko">
+                </label>
+                <label class="flow-filter-field">
+                  <span>Uwagi logistyczne</span>
+                  <input id="flow-workflow-delivery-notes" type="text" placeholder="np. Dowoz tylna brama">
+                </label>
+              </div>
+              <p id="flow-workflow-delivery-note" class="flow-note">
+                Brak zapisanego terminu dowozu.
+              </p>
+            </section>
+
+            <section class="flow-workflow-section">
+              <div class="flow-card-head flow-card-head-compact">
+                <div>
+                  <h3>Status sprawy po proformie</h3>
+                  <p class="flow-note">
+                    Reczny status operacyjny dla dalszego obiegu: akceptacja handlowa, zerowka i
+                    kolejne etapy.
+                  </p>
+                </div>
+                <div class="flow-inline-actions flow-inline-actions-tight">
+                  <button
+                    id="flow-workflow-status-save"
+                    type="button"
+                    class="flow-action-btn"
+                  >
+                    Zapisz status
+                  </button>
+                </div>
+              </div>
+              <div class="flow-filter-bar flow-filter-bar-single">
+                <label class="flow-filter-field">
+                  <span>Status biznesowy</span>
+                  <select id="flow-workflow-status-select"></select>
+                </label>
+              </div>
+              <p id="flow-workflow-status-note" class="flow-note">
+                Po utworzeniu proformy sprawa przechodzi domyslnie na etap oczekiwania na akceptacje.
+              </p>
+            </section>
+
+            <section class="flow-workflow-section flow-workflow-section-muted">
+              <div class="flow-card-head flow-card-head-compact">
+                <div>
+                  <h3>Dane dla handlowca</h3>
+                  <p class="flow-note">
+                    Pakiet roboczy do dalszego obiegu: dane klienta, reprezentanci, wybrane
+                    urzadzenia oraz numer proformy.
+                  </p>
+                </div>
+              </div>
+              <div class="flow-sales-packet">
+                <section>
+                  <h4>Dane klienta</h4>
+                  <div id="flow-sales-client" class="flow-preview-grid"></div>
+                </section>
+                <section>
+                  <h4>Reprezentanci</h4>
+                  <div id="flow-sales-representatives" class="flow-preview-grid"></div>
+                </section>
+                <section>
+                  <h4>Urzadzenia i wycena</h4>
+                  <div class="flow-table-wrap">
+                    <table class="flow-detail-table flow-sales-devices-table">
+                      <thead>
+                        <tr>
+                          <th>Wiersz</th>
+                          <th>Model</th>
+                          <th>Serial</th>
+                          <th>Nr wewnetrzny</th>
+                          <th>Netto</th>
+                          <th>Brutto</th>
+                        </tr>
+                      </thead>
+                      <tbody id="flow-sales-devices-body"></tbody>
+                    </table>
+                  </div>
+                </section>
+                <section>
+                  <h4>Proforma</h4>
+                  <div id="flow-sales-proforma" class="flow-preview-grid"></div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <p id="flow-error" class="flow-message flow-message-error" hidden></p>
+      <p id="flow-info" class="flow-message flow-message-info" hidden></p>
+    </main>
+  </body>
+</html>

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -145,8 +147,125 @@ class FormRequest(Base):
     created_by_user: Mapped[AdminUser | None] = relationship()
 
 
+class FormWorkflowCase(Base):
+    """Sprawa workflow powiązana z pojedynczym formularzem klienta."""
+
+    __tablename__ = "form_workflow_case"
+    __table_args__ = (
+        CheckConstraint(
+            "stage in ('FORM_SUBMITTED','CLIENT_READY','DEVICES_SELECTED','PROFORMA_CREATED')",
+            name="form_workflow_case_stage_check",
+        ),
+        CheckConstraint(
+            "business_status in ('DRAFT','PENDING_APPROVAL','APPROVED','ZEROWKA','REJECTED')",
+            name="form_workflow_case_business_status_check",
+        ),
+        UniqueConstraint("form_request_id", name="uq_form_workflow_case_form_request_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    form_request_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.form_request.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    stage: Mapped[str] = mapped_column(Text, nullable=False, default="FORM_SUBMITTED")
+    business_status: Mapped[str] = mapped_column(Text, nullable=False, default="DRAFT")
+    client_mode: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_client_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_client_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_payload_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    proforma_firebird_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proforma_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proforma_pdf_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delivery_time_window: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_contact_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_contact_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    form_request: Mapped[FormRequest] = relationship()
+    created_by_user: Mapped[AdminUser | None] = relationship(
+        foreign_keys=[created_by], overlaps="created_by_user"
+    )
+    updated_by_user: Mapped[AdminUser | None] = relationship(
+        foreign_keys=[updated_by], overlaps="created_by_user"
+    )
+    devices: Mapped[list[FormWorkflowDevice]] = relationship(
+        back_populates="workflow_case", cascade="all, delete-orphan"
+    )
+
+
+class FormWorkflowDevice(Base):
+    """Urządzenie robocze wybrane do sprawy formularza po stronie CTIP."""
+
+    __tablename__ = "form_workflow_device"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type in ('google_sheet','firebird_magazyn_28')",
+            name="form_workflow_device_source_type_check",
+        ),
+        UniqueConstraint(
+            "workflow_case_id",
+            "source_type",
+            "source_row",
+            name="uq_form_workflow_device_source_row",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    workflow_case_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.form_workflow_case.id", ondelete="CASCADE"), nullable=False
+    )
+    source_type: Mapped[str] = mapped_column(Text, nullable=False, default="google_sheet")
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    producer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    serial: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ewidencja: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reservation_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price_net: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price_gross: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_machine_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_client_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    workflow_case: Mapped[FormWorkflowCase] = relationship(back_populates="devices")
+
+
 Index("idx_form_request_status_created", FormRequest.status, FormRequest.created_at.desc())
 Index("idx_form_request_created_by", FormRequest.created_by, FormRequest.created_at.desc())
+Index(
+    "idx_form_workflow_case_form_request",
+    FormWorkflowCase.form_request_id,
+)
+Index(
+    "idx_form_workflow_device_case",
+    FormWorkflowDevice.workflow_case_id,
+)
 
 
-__all__ = ["AdminUser", "AdminSession", "AdminSetting", "AdminAuditLog", "FormRequest"]
+__all__ = [
+    "AdminUser",
+    "AdminSession",
+    "AdminSetting",
+    "AdminAuditLog",
+    "FormRequest",
+    "FormWorkflowCase",
+    "FormWorkflowDevice",
+]
