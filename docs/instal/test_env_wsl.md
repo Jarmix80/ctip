@@ -72,7 +72,9 @@ pip install -r requirements.txt
 1. Skopiuj wzorzec: `cp .env.test.example .env.test`.
 2. Ustaw dane dostępowe do lokalnej bazy (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`).
 3. Zostaw `PBX_HOST=127.0.0.1` i `PBX_PORT=5525` – to port mocka CTIP.
-4. Upewnij się, że `SMS_TEST_MODE=true`, a `SMS_API_URL` wskazuje na endpoint testowy (np. `https://httpbin.org/post`).
+4. Upewnij się, że `SMS_TEST_MODE=true`, a pola `SMS_API_URL`, `SMS_API_TOKEN`,
+   `SMS_API_USERNAME` i `SMS_API_PASSWORD` pozostają puste, jeśli środowisko
+   testowe ma być całkowicie odcięte od operatora SMS.
 
 ## Krok 3 – baza danych testowa
 ```bash
@@ -108,7 +110,8 @@ Skrypt zatrzyma się, jeśli `PBX_HOST` wskazuje na adres produkcyjnej centrali 
 ## Krok 6 – weryfikacja
 - Kolektor: `tmux select-window -t ctip-stack-test:collector` i obserwuj linie `[CTIP]` z mocka.
 - Panel: przeglądarka → `http://localhost:18000/admin` (domyślny port w skrypcie testowym).
-- SMS: log `docs/LOG/sms/sms_sender_<DATE>.log` powinien zawierać wpisy `SMS_TEST_MODE`.
+- SMS: przy pustych polach `SMS_API_*` provider przechodzi w tryb lokalnej
+  symulacji (`SIMULATED`) i nie wykonuje żadnych wywołań do operatora.
 - Baza: sprawdź `ctip.call_events` w `ctip_test`.
 
 ## Krok 7 – zatrzymanie
@@ -117,5 +120,7 @@ Skrypt zatrzyma się, jeśli `PBX_HOST` wskazuje na adres produkcyjnej centrali 
 
 ## Dobre praktyki
 - Nigdy nie edytuj `.env` produkcyjnego; trzymaj `.env.test` wyłącznie dla testów.
+- Dla pelnej izolacji testow trzymaj `SMS_API_URL`, `SMS_API_TOKEN`,
+  `SMS_API_USERNAME` i `SMS_API_PASSWORD` puste w `.env.test`.
 - Jeśli musisz czasowo podłączyć WSL do prawdziwej centrali (np. diagnostyka), zatrzymaj usługę `CollectorService` na Windowsie, wykonaj test i natychmiast uruchom usługę ponownie.
 - Testowe konto `ctip_test` w bazie ogranicz do lokalnego hosta (`pg_hba.conf`: `host ctip_test ctip_test 127.0.0.1/32 md5`).

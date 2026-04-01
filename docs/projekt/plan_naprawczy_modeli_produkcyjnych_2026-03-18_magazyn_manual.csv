@@ -1,0 +1,3 @@
+id_magazyn_table;id_magazyn;indeks;nazwa;serial_flag;marka;model;data_z;co_moge_wykonac_sam;czego_brakuje_od_ciebie;decyzja_id_model;uwagi_uzytkownika
+15607;27;KP/4416;RICOH IM 2500 S/N:4413R441401;TAK;;;;Moge uzupelnic ID_MODEL po identyfikacji modelu albo po uzupelnieniu MARKA/MODEL.;Potrzebuje od Ciebie potwierdzenia modelu urzadzenia dla tego rekordu magazynowego.;;
+15586;28;KP/4416;RICOH IM 2500 S/N:4413R441401;TAK;;;2024-04-17;Moge uzupelnic ID_MODEL po identyfikacji modelu albo po uzupelnieniu MARKA/MODEL.;Potrzebuje od Ciebie potwierdzenia modelu urzadzenia dla tego rekordu magazynowego.;;
