@@ -85,6 +85,15 @@ class Settings(BaseSettings):
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
     email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
 
+    mailbox_email_address: str | None = Field(default=None, alias="MAILBOX_EMAIL_ADDRESS")
+    mailbox_email_password: str | None = Field(default=None, alias="MAILBOX_EMAIL_PASSWORD")
+    mailbox_imap_host: str | None = Field(default=None, alias="MAILBOX_IMAP_HOST")
+    mailbox_imap_port: int = Field(default=993, alias="MAILBOX_IMAP_PORT")
+    mailbox_smtp_host: str | None = Field(default=None, alias="MAILBOX_SMTP_HOST")
+    mailbox_smtp_port: int = Field(default=465, alias="MAILBOX_SMTP_PORT")
+    mailbox_smtp_use_ssl: bool = Field(default=True, alias="MAILBOX_SMTP_USE_SSL")
+    mailbox_smtp_use_starttls: bool = Field(default=False, alias="MAILBOX_SMTP_USE_STARTTLS")
+
     backup_execution_enabled: bool | None = Field(default=None, alias="BACKUP_EXECUTION_ENABLED")
     backup_scheduler_enabled: bool = Field(default=True, alias="BACKUP_SCHEDULER_ENABLED")
     backup_production_host: str = Field(default="192.168.0.8", alias="BACKUP_PRODUCTION_HOST")

@@ -94,6 +94,18 @@ Uwagi operacyjne:
 - jezeli dokument jest pustym wzorem (bez wypelnionych pol), wynik moze nie zawierac `nip` i/lub `contract_number`,
 - lista wszystkich wykrytych kandydatow jest zapisywana w polach `nips_found` i `contract_number_candidates`.
 
+### Test połączenia skrzynki umów (IMAP + SMTP SSL)
+Pierwszy krok automatyzacji obsługi umów to test połączenia skrzynki e-mail przez IMAP (odbiór) oraz SMTP (wysyłka). W repo dostępny jest skrypt `scripts/mailbox_connection_check.py`.
+
+Uruchomienie testu:
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+python scripts/mailbox_connection_check.py
+```
+
+Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP SSL i test logowania SMTP SSL/STARTTLS.
+
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -179,6 +191,18 @@ Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` 
 | `EMAIL_SENDER_ADDRESS` | *(puste)* | Adres nadawcy (From). |
 | `EMAIL_USE_TLS` | `true` | Włącza STARTTLS. |
 | `EMAIL_USE_SSL` | `false` | Połączenie przez SSL/TLS (port 465). |
+
+### Zmienne środowiskowe skrzynki automatyzacji umów (IMAP/SMTP)
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `MAILBOX_EMAIL_ADDRESS` | *(puste)* | Adres skrzynki używanej przez automatyzację umów. |
+| `MAILBOX_EMAIL_PASSWORD` | *(puste)* | Hasło do skrzynki automatyzacji. |
+| `MAILBOX_IMAP_HOST` | *(puste)* | Host IMAP skrzynki (odbiór). |
+| `MAILBOX_IMAP_PORT` | `993` | Port IMAP SSL. |
+| `MAILBOX_SMTP_HOST` | *(puste)* | Host SMTP skrzynki (wysyłka). |
+| `MAILBOX_SMTP_PORT` | `465` | Port SMTP SSL. |
+| `MAILBOX_SMTP_USE_SSL` | `true` | Wymusza połączenie SMTP przez SSL. |
+| `MAILBOX_SMTP_USE_STARTTLS` | `false` | Włącza STARTTLS dla SMTP (nie łączyć z SSL). |
 
 ### Zmienne środowiskowe panelu administratora (`app/api/routes/admin_*`)
 | Nazwa | Domyślna wartość | Opis |

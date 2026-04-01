@@ -58,6 +58,27 @@ class SettingsTests(unittest.TestCase):
         cfg = Settings(AUTH_COOKIE_SAMESITE="niepoprawne")
         self.assertEqual(cfg.auth_cookie_samesite, "lax")
 
+    def test_mailbox_defaults_and_override(self) -> None:
+        cfg_default = Settings()
+        self.assertEqual(cfg_default.mailbox_imap_port, 993)
+        self.assertEqual(cfg_default.mailbox_smtp_port, 465)
+        self.assertTrue(cfg_default.mailbox_smtp_use_ssl)
+        self.assertFalse(cfg_default.mailbox_smtp_use_starttls)
+
+        cfg_custom = Settings(
+            MAILBOX_EMAIL_ADDRESS="umowy-tets@ksero-partner.com.pl",
+            MAILBOX_EMAIL_PASSWORD="Sekret",
+            MAILBOX_IMAP_HOST="ksero-partner.com.pl",
+            MAILBOX_IMAP_PORT=993,
+            MAILBOX_SMTP_HOST="ksero-partner.com.pl",
+            MAILBOX_SMTP_PORT=465,
+            MAILBOX_SMTP_USE_SSL=True,
+            MAILBOX_SMTP_USE_STARTTLS=False,
+        )
+        self.assertEqual(cfg_custom.mailbox_email_address, "umowy-tets@ksero-partner.com.pl")
+        self.assertEqual(cfg_custom.mailbox_imap_host, "ksero-partner.com.pl")
+        self.assertEqual(cfg_custom.mailbox_smtp_host, "ksero-partner.com.pl")
+
 
 if __name__ == "__main__":
     unittest.main()
