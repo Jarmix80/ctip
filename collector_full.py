@@ -50,15 +50,15 @@ class CallContext:
 
 
 # -------------------- Config (env) --------------------
-PBX_HOST = os.getenv("PBX_HOST", "192.168.0.11")
-PBX_PORT = int(os.getenv("PBX_PORT", "5524"))
+PBX_HOST = os.getenv("PBX_HOST", "127.0.0.1")
+PBX_PORT = int(os.getenv("PBX_PORT", "5525"))
 PBX_PIN = os.getenv("PBX_PIN", "1234")  # CTIP LOGA PIN
 
-PGHOST = os.getenv("PGHOST", "192.168.0.8")
-PGPORT = int(os.getenv("PGPORT", "5433"))
-PGDATABASE = os.getenv("PGDATABASE", "ctip")
-PGUSER = os.getenv("PGUSER", "appuser")
-PGPASSWORD = os.getenv("PGPASSWORD", "change_me")
+PGHOST = os.getenv("PGHOST", "127.0.0.1")
+PGPORT = int(os.getenv("PGPORT", "5432"))
+PGDATABASE = os.getenv("PGDATABASE", "ctip_test")
+PGUSER = os.getenv("PGUSER", "ctip_test")
+PGPASSWORD = os.getenv("PGPASSWORD", "ctip_test")
 PGSSLMODE = os.getenv("PGSSLMODE", "disable")
 
 SOCK_CONNECT_TIMEOUT = int(os.getenv("SOCK_CONNECT_TIMEOUT", "5"))

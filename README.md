@@ -34,13 +34,14 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - System Linux lub Windows (dla usługi Windows wymagane uprawnienia administratora).
 
 ## Konfiguracja środowiskowa
-Ustawienia lokalnych narzędzi automatyzacji (np. dostęp SMB dla Codex) są zapisywane w `.codex/smb_settings.json`, a sekrety w `.env`; oba pliki pozostają poza wersjonowaniem.
+Lokalna praca w repozytorium odbywa się wyłącznie na `.env.test` oraz bazie `ctip_test`. Produkcyjny `.env` pozostaje poza repo i jest używany dopiero na serwerze wdrożeniowym. Artefakty lokalne (`.codex/*` poza `.codex/session.json`, `backups/`, lokalne binaria w `tools/`) pozostają poza wersjonowaniem; sekrety z obu plików środowiskowych również nie trafiają do Git.
 
 ### Uruchomienie Codex
 Skrypt `scripts/run_codex.sh` uruchamia Codex w kontekście repozytorium i automatyzuje kroki wymagane przez `AGENTS.md`:
 - ustawia katalog roboczy na root projektu i weryfikuje obecność `AGENTS.md`,
-- wczytuje `.env` z eksportem zmiennych,
+- wczytuje lokalne `.env.test` z eksportem zmiennych,
 - tworzy (jeśli brak) i aktywuje `.venv`,
+- wykonuje preflight (`scripts/codex_preflight.py`): sprawdza, czy konfiguracja pozostaje testowa, czy działa web `/health`, czy odpowiada lokalna baza PostgreSQL i czy działa port CTIP/mock; jeśli system testowy nie jest uruchomiony, skrypt pyta, czy wystartować `./ctiptest`,
 - ustawia `CODEX_HOME` na `.codex` i uruchamia `codex` lub `openai codex`.
 
 Przykład: `./scripts/run_codex.sh` (opcjonalnie z parametrami, np. `./scripts/run_codex.sh --help`).
@@ -78,14 +79,14 @@ W repo dostepny jest automat `scripts/inbox_contract_watcher.py`, ktory przetwar
 Uruchomienie jednorazowe:
 ```bash
 source .venv/bin/activate
-set -a && source .env && set +a
+set -a && source .env.test && set +a
 python scripts/inbox_contract_watcher.py --inbox-dir inbox
 ```
 
 Tryb ciagly (nasluch nowych/zmienionych PDF):
 ```bash
 source .venv/bin/activate
-set -a && source .env && set +a
+set -a && source .env.test && set +a
 python scripts/inbox_contract_watcher.py --inbox-dir inbox --watch
 ```
 
@@ -100,20 +101,57 @@ Pierwszy krok automatyzacji obsługi umów to test połączenia skrzynki e-mail 
 Uruchomienie testu:
 ```bash
 source .venv/bin/activate
-set -a && source .env && set +a
+set -a && source .env.test && set +a
 python scripts/mailbox_connection_check.py
 ```
 
 Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP SSL i test logowania SMTP SSL/STARTTLS.
 
+### Synchronizacja wiadomości umów z FLOW
+Skrypt `scripts/contracts_mailbox_sync.py` analizuje wiadomości z `INBOX`, rozpoznaje tematy:
+- `Decyzja do wniosku ...` -> ustawia status biznesowy sprawy na `PENDING_APPROVAL`,
+- `Zgoda na realizację zamówienia do wniosku ...` -> ustawia status na `APPROVED` i zapisuje datę e-mail jako datę podpisania umowy (`delivery_date`).
+
+Dodatkowo skrypt:
+- próbuje powiązać wiadomość z formularzem `SUBMITTED` po numerze wniosku i treści (NIP/nazwa/reprezentant),
+- zapisuje numer wniosku i metadane e-maila w snapshotcie sprawy (`_mailbox_meta`),
+- dla zaszyfrowanego PDF próbuje odszyfrować dokument hasłem wyliczonym z danych reprezentanta i zwraca wynik ekstrakcji/OCR,
+- format hasła PDF: `ostatnie 5 cyfr PESEL + inicjały ImięNazwisko + $` (np. `05791JK$`),
+- zapisuje wszystkie załączniki lokalnie w strukturze `inbox/mailbox/contracts/<scope>/<YYYY-MM-DD>/<message_id>/`,
+- zapisuje metadane plików (ścieżka, nazwa, rozmiar, SHA-256) do bazy w `form_workflow_case.client_payload_snapshot._mailbox_meta`,
+- zapisuje nierozpoznane lub niedopasowane wiadomości do kolejki wyjątków w `inbox/mailbox/contracts_mailbox_state.json` (`unresolved`).
+
+Powody wpisu do kolejki wyjątków:
+- `unsupported_subject` – temat nie pasuje do obsługiwanych wzorców,
+- `unmatched_form` – wiadomość nie została powiązana z formularzem,
+- `ambiguous_match` – wykryto wieloznaczne dopasowanie (np. remis punktacji).
+
+Wynik działania skryptu pokazuje liczniki bezpieczeństwa:
+- `nierozpoznane`,
+- `niedopasowane`,
+- `wieloznaczne`,
+- `otwarte wyjątki`.
+
+Uruchomienie:
+```bash
+source .venv/bin/activate
+set -a && source .env.test && set +a
+python scripts/contracts_mailbox_sync.py --limit 30
+```
+
+Tryb podglądu (bez zmian w bazie):
+```bash
+python scripts/contracts_mailbox_sync.py --limit 30 --dry-run
+```
+
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
-| `PBX_HOST` | `192.168.0.11` | Adres centrali Slican CTIP (CP-000 NO03914 v1.23.0140/15). |
-| `PBX_PORT` | `5524` | Port TCP protokołu CTIP. |
+| `PBX_HOST` | `127.0.0.1` | Lokalny mock CTIP dla pracy testowej; produkcyjna centrala to `192.168.0.11` i wymaga jawnego startu produkcyjnego. |
+| `PBX_PORT` | `5525` | Port TCP lokalnego mocka CTIP. |
 | `PBX_PIN` | `1234` | PIN do komendy `LOGA`. |
-| `PGHOST` / `PGPORT` | `192.168.0.8` / `5433` | Adres/port PostgreSQL. |
-| `PGDATABASE`, `PGUSER`, `PGPASSWORD` | `ctip`, `appuser`, `change_me` | Dane uwierzytelniające. |
+| `PGHOST` / `PGPORT` | `127.0.0.1` / `5432` | Adres/port lokalnego PostgreSQL dla pracy w repo. |
+| `PGDATABASE`, `PGUSER`, `PGPASSWORD` | `ctip_test`, `ctip_test`, `ctip_test` | Dane lokalnej, jedynej kanonicznej bazy testowej. |
 | `PGSSLMODE` | `disable` | Tryb TLS (ustaw na `require`, jeśli serwer wymusza TLS). |
 | `SOCK_CONNECT_TIMEOUT`, `SOCK_RECV_TIMEOUT` | `5`, `5` | Limity czasowe gniazda w sekundach. |
 | `RECONNECT_DELAY_SEC` | `3` | Odstęp między próbami ponownego połączenia. |
@@ -121,31 +159,31 @@ Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP
 | `PAYLOAD_ENCODING` | `latin-1` | Kodowanie zapisu surowego payloadu. |
 | `LOG_PREFIX` | `[CTIP]` | Prefiks logów widocznych na STDOUT. |
 
-Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej samej podsieci warstwy dostępowej co host kolektora. Należy zapewnić trasowanie i reguły zapory pozwalające na dwukierunkową komunikację w sieci lokalnej 192.168.0.0/24. Po przełączeniu WSL w tryb mostkowany (zob. `docs/projekt/update_wsl.md`) host kolektora ma adres `192.168.0.133/24` (`hostname -I`). Zaktualizuj zasady zapory Windows/`pg_hba.conf`, aby dopuścić ten adres do serwera PostgreSQL (`PGHOST:PGPORT`, domyślnie `192.168.0.8:5433`); brak reguły skutkuje timeoutem przy logowaniu administratora.
+Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11` (PBX) są traktowane jako produkcyjne. Lokalny start repozytorium nie może z nich korzystać bez wyraźnego polecenia użytkownika.
 
 ### Zmienne środowiskowe modułu SMS (`sms_sender.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE` | jak wyżej | Dostęp do PostgreSQL. |
 | `POLL_SEC` | `3` | Okres odpytywania kolejki `sms_out`. |
-| `SMS_DEFAULT_SENDER` | `KseroPartner` | Domyślna nazwa nadawcy przekazywana do API. |
+| `SMS_DEFAULT_SENDER` | `CTIP-Test` | Domyślna nazwa nadawcy w środowisku lokalnym. |
 | `SMS_TYPE` | `eco+` | Kanał/typ wiadomości (zgodnie z konfiguracją operatora). |
-| `SMS_API_URL` | `https://api2.serwersms.pl` | Bazowy adres HTTPS API. |
+| `SMS_API_URL` | *(puste)* | Puste pole wymusza lokalną symulację `SIMULATED`, jeśli nie podasz operatora. |
 | `SMS_API_TOKEN` | *(puste)* | Token dostępowy (opcjonalnie, gdy operator go udostępnia). |
 | `SMS_API_USERNAME`, `SMS_API_PASSWORD` | *(puste)* | Login i hasło do HTTPS API (jeśli nie używamy tokenu). |
-| `SMS_TEST_MODE` | `true` | Umożliwia wysyłkę w trybie testowym bez naliczania kosztów. |
+| `SMS_TEST_MODE` | `true` | W lokalnym repo musi pozostać `true`, aby nie generować realnych wiadomości. |
 
 ### Zmienne środowiskowe modułu Firebird (Menadżer Serwisu)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
-| `FB_HOST` | `192.168.0.8` | Host serwera Firebird dla Menadżera Serwisu. |
+| `FB_HOST` | `127.0.0.1` | Host lokalnego Firebird lub kontenera testowego. |
 | `FB_PORT` | `3050` | Port usługi Firebird. |
-| `FB_MODE` | `network` | Aktywny tryb pracy Firebird: `network` (baza sieciowa) lub `local` (baza lokalna). |
-| `FB_DATABASE` | `D:/BAZA_MS_KP/BAZAMS.FDB` | Ścieżka bazy Firebird (po stronie hosta Firebird). |
+| `FB_MODE` | `local` | Domyślny tryb pracy lokalnej kopii Firebird. |
+| `FB_DATABASE` | `/tmp/test_ms.fdb` | Ścieżka lokalnej bazy Firebird dla testów. |
 | `FB_USER`, `FB_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania Firebird. |
-| `FB_CHARSET` | `WIN1250` | Kodowanie sesji Firebird. |
+| `FB_CHARSET` | `UTF8` | Kodowanie sesji Firebird. |
 | `FB_ROLE` | *(puste)* | Rola Firebird (opcjonalnie). |
-| `FB_LOCAL_COPY_PATH` | `inbox/firebird/menadzer_serwisu.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
+| `FB_LOCAL_COPY_PATH` | `inbox/firebird/test_ms_local.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
 | `FB_ALLOW_WRITES` | `false` | Jawnie odblokowuje zapis do lokalnej kopii Firebird. Ustawiaj wyłącznie w środowisku testowym. |
 | `FB_WAREHOUSE_CLIENT_ID` | `656` | Domyślny `ID_KLIENT` dla urządzeń magazynowych tworzonych z arkusza Google. |
 | `FB_WAREHOUSE_ID` | `28` | Domyślny `ID_MAGAZYN` dla pozycji magazynowych tworzonych przez synchronizację urządzeń. |
@@ -153,11 +191,11 @@ Uwaga operacyjna: centrala Slican (`PBX_HOST = 192.168.0.11`) pracuje w tej same
 ### Zmienne środowiskowe Firebird v-maintenance
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
-| `FB_V_HOST` | `192.168.0.8` | Host serwera Firebird dla bazy v-maintenance. |
+| `FB_V_HOST` | `127.0.0.1` | Host lokalnej kopii bazy v-maintenance. |
 | `FB_V_PORT` | `3050` | Port usługi Firebird v-maintenance. |
-| `FB_V_DATABASE` | `D:\bazavmantenance\BAZA_CPC.FDB` | Ścieżka bazy v-maintenance. |
+| `FB_V_DATABASE` | `/tmp/test_vmaintenance.fdb` | Ścieżka lokalnej bazy v-maintenance. |
 | `FB_V_USER`, `FB_V_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania do bazy v-maintenance. |
-| `FB_V_CHARSET` | `WIN1250` | Kodowanie sesji Firebird v-maintenance. |
+| `FB_V_CHARSET` | `UTF8` | Kodowanie sesji Firebird v-maintenance. |
 | `FB_V_ROLE` | *(puste)* | Rola Firebird v-maintenance (opcjonalnie). |
 
 ### Zmienne środowiskowe źródeł Naprawa KP/xxxx
@@ -227,16 +265,16 @@ Warstwa HTTP dodaje teraz również podstawowe nagłówki bezpieczeństwa (`X-Fr
 
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
-2. Uzupełnij plik `.env` wszystkimi parametrami (PostgreSQL, Firebird, CTIP, SerwerSMS) oraz wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
-3. Wykonaj migracje: `alembic upgrade head` (dodaje również tabele panelu administracyjnego i nowe sekwencje).
+2. Dla pracy lokalnej skopiuj `.env.test.example` do `.env.test`, pozostaw `PGDATABASE=ctip_test`, `PBX_HOST=127.0.0.1`, `SMS_TEST_MODE=true` i wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
+3. Wykonaj migracje na lokalnej bazie testowej: `set -a && source .env.test && set +a && alembic upgrade head`.
 4. Dodaj pierwszego administratora, np. w SQL: `INSERT INTO ctip.admin_user (email, role, password_hash, is_active) VALUES (...)`; skrót hasła wygeneruj funkcją `hash_password` z `app.services.security`.
 5. Zweryfikuj instalację: `source .venv/bin/activate && pytest` oraz testowe logowanie do `/admin/auth/login` (ciasteczko `HttpOnly` lub nagłówek `X-Admin-Session`).
 
-### Uruchamianie kolektora w WSL z pliku `.env`
-W środowiskach Windows Subsystem for Linux zaleca się przechowywanie konfiguracji w pliku `.env` (format `KEY=VALUE`). Przed startem `collector_full.py` oraz `sms_sender.py` należy wczytać zmienne, np.:
+### Uruchamianie kolektora w WSL z pliku `.env.test`
+W środowiskach Windows Subsystem for Linux lokalny start repozytorium powinien korzystać z `.env.test` (format `KEY=VALUE`). Przed startem `collector_full.py` oraz `sms_sender.py` należy wczytać zmienne, np.:
 ```bash
 set -a
-source .env
+source .env.test
 set +a
 python collector_full.py
 ```
@@ -247,13 +285,13 @@ python sms_sender.py
 Procedura wymaga wcześniejszego zainstalowania zależności opisanych w sekcji „Instalacja i uruchomienie na Linux”.
 
 ## Procedura inicjalizacji CTIP
-1. Po zestawieniu gniazda TCP (domyślnie `192.168.0.11:5524`) wyślij polecenie `aWHO`, aby sprawdzić odpowiedź centrali. Prawidłowa centrala Slican NCP melduje się komunikatem w formacie `aOK NCP-000 NO03914 v1.23.0140/15 2025.10.10 01:54'59`.
+1. Po zestawieniu gniazda TCP (lokalnie domyślnie `127.0.0.1:5525`, produkcyjnie `192.168.0.11:5524`) wyślij polecenie `aWHO`, aby sprawdzić odpowiedź centrali. Prawidłowa centrala Slican NCP melduje się komunikatem w formacie `aOK NCP-000 NO03914 v1.23.0140/15 2025.10.10 01:54'59`.
 2. Po potwierdzeniu odpowiedzi wykonaj dokładnie jedno `aLOGA <PIN>` (np. `aLOGA 1234`). Komenda aktywuje monitorowanie wszystkich numerów. Projekt zakłada pojedynczą aktywną sesję – aby zakończyć nasłuch, należy zamknąć gniazdo TCP/IP; centrala nie udostępnia komendy wylogowującej.
-3. Wszystkie komendy wysyłane do centrali muszą mieć prefiks `a`. Do szybkich testów można wykorzystać `telnet 192.168.0.11 5524` lub tryb RAW w ulubionym kliencie TCP.
+3. Wszystkie komendy wysyłane do centrali muszą mieć prefiks `a`. Do szybkich testów lokalnych można wykorzystać `telnet 127.0.0.1 5525`, a do diagnostyki produkcji wyłącznie po jawnym poleceniu użytkownika `telnet 192.168.0.11 5524`.
 4. `collector_full.py` automatyzuje powyższą sekwencję, loguje identyfikator centrali i przerywa pracę, gdy `aLOGA` zostanie odrzucone (np. z powodu aktywnej sesji innego kolektora).
 
 ## Przygotowanie bazy danych
-Schemat `ctip` musi być dostarczony zewnętrznie (migracje Alembic lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Przed uruchomieniem kolektora ustaw `.env` (np. na podstawie `.env.example`), wykonaj `alembic upgrade head`, a w sytuacjach awaryjnych możesz jednorazowo zaimportować zrzut SQL (np. `psql $DATABASE_URL -f docs/baza/schema_ctip_11.10.2025.sql`). Po migracji uzupełnij mapę IVR. Wszystkie znaczniki czasu w tabelach `calls`, `call_events`, `contact`, `sms_out` i `sms_template` muszą mieć typ `timestamp with time zone`, ponieważ backend zapisuje daty w UTC i udostępnia je operatorowi – brak strefy czasowej kończy się błędem 500 podczas wysyłki SMS lub pobierania statystyk.
+Schemat `ctip` musi być dostarczony zewnętrznie (migracje Alembic lub dump z katalogu `docs/baza/`). Od wersji 0.2 kolektor nie wykonuje operacji DDL – podczas startu weryfikuje obecność wymaganych kolumn (`calls`, `call_events`, `sms_out`, `ivr_map`, `contact`, `contact_device`). W przypadku braków `collector_full.py` przerwie pracę i wypisze listę brakujących kolumn. Przed lokalnym uruchomieniem kolektora ustaw `.env.test` (na podstawie `.env.test.example`) i wykonaj `alembic upgrade head`; produkcyjny `.env` pozostaje tylko po stronie serwera. Wszystkie znaczniki czasu w tabelach `calls`, `call_events`, `contact`, `sms_out` i `sms_template` muszą mieć typ `timestamp with time zone`, ponieważ backend zapisuje daty w UTC i udostępnia je operatorowi – brak strefy czasowej kończy się błędem 500 podczas wysyłki SMS lub pobierania statystyk.
 
 Przykładowe wstawienie rekordu:
 ```sql
@@ -403,10 +441,20 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
   1. `source .venv/bin/activate`
   2. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
   3. Otwórz przeglądarkę na `http://localhost:8000/admin`
-- Aby uruchomić caly stos (Firebird + collector + uvicorn + sms_sender) jednym poleceniem:
-  1. `./run_server_with_firebird.sh`
-  2. opcjonalnie dla innego pliku srodowiskowego: `ENV_FILE=.env.test ./run_server_with_firebird.sh`
-  3. opcjonalnie wymuszenie startu kontenera Firebird: `START_FIREBIRD=always ./run_server_with_firebird.sh`
+- Domyslna polityka startu calego systemu:
+  1. domyslnie uruchamiaj wyłącznie srodowisko testowe (`.env.test`, baza `ctip_test`, lokalny Firebird, mock CTIP);
+  2. zasoby `192.168.0.8` i `192.168.0.11` traktuj jako produkcyjne i nie używaj ich bez jawnego polecenia;
+  3. start produkcyjny z `.env` jest celowo blokowany bez jawnego potwierdzenia;
+  4. do testow preferuj `./ctiptest` albo `./run_test_stack_tmux.sh`.
+- Aby uruchomić caly stos testowy jednym poleceniem:
+  1. `./ctiptest`
+  2. alternatywnie: `./run_test_stack_tmux.sh`
+  3. dla wariantu z lokalnym Firebird: `ENV_FILE=.env.test ./run_server_with_firebird.sh`
+- Aby uruchomic caly stos produkcyjny jednym poleceniem:
+  1. `ALLOW_PRODUCTION_START=true ./run_stack_tmux.sh`
+  2. albo `ALLOW_PRODUCTION_START=true ./run_server_with_firebird.sh`
+  3. opcjonalnie wymuszenie startu kontenera Firebird: `ALLOW_PRODUCTION_START=true START_FIREBIRD=always ./run_server_with_firebird.sh`
+  4. wdrozenie produkcyjne powinno wynikac z commita GitHub oraz jawnej konfiguracji `.env` po stronie serwera.
 - Implementacja kolejnych sekcji (konsola SQL, raporty) jest prowadzona zgodnie z dokumentem `docs/projekt/panel_admin_ui.md`.
 - `GET /contacts/{number}` oraz `GET /contacts?search=` – dane i wyszukiwarka kartoteki kontaktów.
 - `GET /admin/config/firebird`, `PUT /admin/config/firebird` – odczyt i zapis konfiguracji połączenia Firebird (wymaga roli `admin`).
@@ -516,15 +564,17 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 
 ## Środowisko testowe WSL (mock CTIP + osobna baza)
 - Pełny runbook wraz z zabezpieczeniami przed podłączeniem do produkcji: `docs/instal/test_env_wsl.md` (mock CTIP, `.env.test`, `run_test_stack_tmux.sh`).
+- To jest domyslna i zalecana sciezka uruchamiania calego systemu lokalnie. Start produkcyjny przez `run_stack_tmux.sh` oraz `run_server_with_firebird.sh` wymaga od teraz jawnej flagi `ALLOW_PRODUCTION_START=true`.
 - Skrót procedury:
   - przygotowanie zależności: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`;
-  - kopiowanie `.env.test.example` → `.env.test`, wypełnienie `PG*`, pozostawienie `PBX_HOST=127.0.0.1`, `PBX_PORT=5525`, `SMS_TEST_MODE=true`, `ADMIN_PANEL_URL=http://localhost:18000/admin` oraz pustych pól `SMS_API_URL`, `SMS_API_TOKEN`, `SMS_API_USERNAME`, `SMS_API_PASSWORD`, jeśli test ma być całkowicie odcięty od operatora SMS;
+  - kopiowanie `.env.test.example` → `.env.test`, pozostawienie `PGDATABASE=ctip_test`, `PBX_HOST=127.0.0.1`, `PBX_PORT=5525`, `SMS_TEST_MODE=true`, lokalnych hostów baz `127.0.0.1` oraz pustych pól `SMS_API_URL`, `SMS_API_TOKEN`, `SMS_API_USERNAME`, `SMS_API_PASSWORD`, jeśli test ma być całkowicie odcięty od operatora SMS;
+  - dla dostepu z innych hostow LAN ustaw `TEST_PUBLIC_HOST=<IP_lub_DNS_hosta>` albo pozostaw autodetekcje; `ctiptest` i `run_test_stack_tmux.sh` nadpisuja testowe `ADMIN_PANEL_URL` oraz `FORM_PUBLIC_BASE_URL` publicznym adresem hosta;
   - załadowanie zmiennych i migracje: `set -a && source .env.test && set +a && alembic upgrade head`;
   - start mocka CTIP: `python scripts/mock/mock_ctip_server.py --port 5525 --loop --log-level INFO`;
-  - uruchomienie stosu w tmux: `./run_test_stack_tmux.sh` (okna `collector`, `uvicorn` na porcie 18000, `sms-sender` z `SMS_TEST_MODE`);
+  - uruchomienie stosu w tmux: `./run_test_stack_tmux.sh` (okna `collector`, `uvicorn` na porcie 8000, `sms-sender` z `SMS_TEST_MODE`);
   - podgląd/zatrzymanie: `tmux attach -t ctip-stack-test`, zakończenie `kill-session -t ctip-stack-test` i `Ctrl+C` w oknie mocka.
 - Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
-- Start całości jednym poleceniem (mock + kolektor + uvicorn + sms_sender): `./ctiptest` – tworzy sesję tmux `ctip-stack-test` z czterema oknami i blokuje uruchomienie, jeśli `.env.test` wskazuje na produkcyjną centralę lub `SMS_TEST_MODE` ≠ `true`. Przy pustych `SMS_API_*` wysylka przechodzi w lokalna symulacje `SIMULATED` bez ruchu do operatora.
+- Start całości jednym poleceniem (mock + kolektor + uvicorn + sms_sender): `./ctiptest` – tworzy sesję tmux `ctip-stack-test` z czterema oknami i blokuje uruchomienie, jeśli `.env.test` wskazuje na produkcyjną centralę, hosty baz `192.168.0.8`, bazę inną niż `ctip_test` albo `SMS_TEST_MODE` ≠ `true`. Domyslnie uruchamia `uvicorn` bez `--reload`, aby nie wpadać w bledy watchera na katalogach roboczych; reload mozna wlaczyc jawnie przez `TEST_UVICORN_RELOAD=true ./ctiptest`. Skrypt publikuje testowy adres WWW pod wykrytym adresem LAN hosta albo pod wartoscia `TEST_PUBLIC_HOST`, dzieki czemu linki i panel nie wskazuja na `localhost` przy dostepie z innych maszyn. Przy pustych `SMS_API_*` wysylka przechodzi w lokalna symulacje `SIMULATED` bez ruchu do operatora.
 
 ## Instalacja jako usługa Windows
 1. Przygotuj `D:\CTIP` (git clone), Python 3.11 x64, plik `.env`.

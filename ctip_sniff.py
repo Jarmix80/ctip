@@ -1,9 +1,12 @@
 import datetime as dt
+import os
 import pathlib
 import socket
 import time
 
-HOST, PORT, PIN = "192.168.0.11", 5524, "1234"
+HOST = os.getenv("PBX_HOST", "127.0.0.1")
+PORT = int(os.getenv("PBX_PORT", "5525"))
+PIN = os.getenv("PBX_PIN", "1234")
 OUT = pathlib.Path("ctip_sniff.log")
 
 

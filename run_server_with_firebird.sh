@@ -2,20 +2,71 @@
 set -euo pipefail
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${ENV_FILE:-${WORKDIR}/.env}"
+ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"
 VENV_DIR="${WORKDIR}/.venv"
 PYTHON_BIN="${VENV_DIR}/bin/python"
 PIP_BIN="${VENV_DIR}/bin/pip"
 UVICORN_BIN="${VENV_DIR}/bin/uvicorn"
 
-SESSION_NAME="${SESSION_NAME:-ctip-stack}"
+SESSION_NAME="${SESSION_NAME:-ctip-stack-test}"
 APP_HOST="${APP_HOST:-0.0.0.0}"
 APP_PORT="${APP_PORT:-8000}"
 UVICORN_RELOAD="${UVICORN_RELOAD:-false}"
+ALLOW_PRODUCTION_START="${ALLOW_PRODUCTION_START:-false}"
+PRODUCTION_DB_HOST="192.168.0.8"
+PRODUCTION_PBX_HOST="192.168.0.11"
+LOCAL_TEST_DATABASE="ctip_test"
 
 FIREBIRD_CONTAINER="${FIREBIRD_CONTAINER:-ctip-firebird-local}"
 START_FIREBIRD="${START_FIREBIRD:-auto}" # auto|always|never
 FIREBIRD_WAIT_SECONDS="${FIREBIRD_WAIT_SECONDS:-30}"
+
+read_env_value() {
+    local key="$1"
+    grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 | cut -d '=' -f 2- || true
+}
+
+assert_env_value_not_production() {
+    local key="$1"
+    local production_value="$2"
+    local description="$3"
+    local current_value
+    current_value="$(read_env_value "${key}")"
+    if [[ -n "${current_value}" && "${current_value}" == "${production_value}" ]]; then
+        echo "${key} wskazuje na produkcyjne ${description} (${current_value}). Środowisko testowe musi korzystać wyłącznie z lokalnych zasobów." >&2
+        exit 1
+    fi
+}
+
+assert_env_value_equals() {
+    local key="$1"
+    local expected_value="$2"
+    local error_message="$3"
+    local current_value
+    current_value="$(read_env_value "${key}")"
+    if [[ "${current_value}" != "${expected_value}" ]]; then
+        echo "${error_message}" >&2
+        exit 1
+    fi
+}
+
+if [[ "$(basename "${ENV_FILE}")" != ".env.test" ]] && [[ "${ALLOW_PRODUCTION_START,,}" != "true" ]]; then
+    cat >&2 <<MSG
+Start na pliku srodowiskowym '${ENV_FILE}' zostal zablokowany domyslnie.
+Domyslny tryb uruchomienia calego systemu to srodowisko testowe.
+
+Uzyj:
+  ./ctiptest
+  ./run_test_stack_tmux.sh
+  ENV_FILE=.env.test ./run_server_with_firebird.sh
+
+Jesli swiadomie chcesz uruchomic produkcje, potwierdz to jawnie:
+  ALLOW_PRODUCTION_START=true ./run_server_with_firebird.sh
+
+Wdrozenia produkcyjne wykonuj z commita GitHub i jawnego .env po stronie serwera.
+MSG
+    exit 1
+fi
 
 if ! command -v tmux >/dev/null 2>&1; then
     echo "tmux nie jest zainstalowany. Zainstaluj pakiet tmux i sproboj ponownie." >&2
@@ -30,6 +81,20 @@ fi
 if [[ ! -f "${ENV_FILE}" ]]; then
     echo "Brak pliku srodowiskowego: ${ENV_FILE}" >&2
     exit 1
+fi
+
+if [[ "$(basename "${ENV_FILE}")" == ".env.test" ]]; then
+    PBX_HOST_VALUE="$(read_env_value "PBX_HOST")"
+    if [[ -z "${PBX_HOST_VALUE}" ]]; then
+        echo "Nie okreslono PBX_HOST w ${ENV_FILE}." >&2
+        exit 1
+    fi
+    assert_env_value_not_production "PBX_HOST" "${PRODUCTION_PBX_HOST}" "centralę CTIP"
+    assert_env_value_not_production "PGHOST" "${PRODUCTION_DB_HOST}" "bazę PostgreSQL"
+    assert_env_value_not_production "FB_HOST" "${PRODUCTION_DB_HOST}" "bazę Firebird"
+    assert_env_value_not_production "FB_V_HOST" "${PRODUCTION_DB_HOST}" "bazę Firebird v-maintenance"
+    assert_env_value_equals "PGDATABASE" "${LOCAL_TEST_DATABASE}" "PGDATABASE w ${ENV_FILE} musi mieć wartość ${LOCAL_TEST_DATABASE}, aby lokalna praca zawsze trafiała do jednej testowej bazy."
+    assert_env_value_equals "SMS_TEST_MODE" "true" "SMS_TEST_MODE w ${ENV_FILE} musi mieć wartość true, aby lokalne środowisko nie wysyłało realnych wiadomości."
 fi
 
 if [[ ! -d "${VENV_DIR}" ]]; then
@@ -143,7 +208,7 @@ tmux new-window -t "${SESSION_NAME}:2" -n "sms-sender" "bash -lc '${sender_cmd}'
 
 cat <<INFO
 Uruchomiono sesje tmux '${SESSION_NAME}':
-  - collector  (collector_full.py)
+  - collector  (collector_full.py -> PostgreSQL ${PGDATABASE:-nieustawione})
   - uvicorn    (app.main:app --host ${APP_HOST} --port ${APP_PORT})
   - sms-sender (sms_sender.py)
 

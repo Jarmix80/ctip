@@ -9,11 +9,11 @@ from jinja2 import DictLoader
 from psycopg_pool import ConnectionPool
 
 # ---------- Config (env) ----------
-PGHOST = os.getenv("PGHOST", "192.168.0.8")
-PGPORT = int(os.getenv("PGPORT", "5433"))
-PGDATABASE = os.getenv("PGDATABASE", "ctip")  # <- suggest using ctip
-PGUSER = os.getenv("PGUSER", "appuser")
-PGPASSWORD = os.getenv("PGPASSWORD", "change_me")
+PGHOST = os.getenv("PGHOST", "127.0.0.1")
+PGPORT = int(os.getenv("PGPORT", "5432"))
+PGDATABASE = os.getenv("PGDATABASE", "ctip_test")
+PGUSER = os.getenv("PGUSER", "ctip_test")
+PGPASSWORD = os.getenv("PGPASSWORD", "ctip_test")
 PGSCHEMA = os.getenv("PGSCHEMA", "ctip")  # app-only variable (NOT passed to libpq)
 PGSSLMODE = os.getenv("PGSSLMODE", "disable")
 POOL_MIN = int(os.getenv("POOL_MIN", "1"))

@@ -3094,15 +3094,15 @@ document.addEventListener("alpine:init", () => {
   });
 
   const smsConfig = () => ({
-    apiUrl: "https://api2.serwersms.pl",
-    defaultSender: "",
+    apiUrl: "",
+    defaultSender: "CTIP-Test",
     smsType: "eco+",
     apiUsername: "",
     apiPassword: "",
     apiToken: "",
     tokenSet: false,
     passwordSet: false,
-    testMode: false,
+    testMode: true,
     saving: false,
     error: null,
     success: null,
@@ -3114,8 +3114,8 @@ document.addEventListener("alpine:init", () => {
 
     init() {
       const initial = this._readInitial();
-      this.apiUrl = initial.api_url || "https://api2.serwersms.pl";
-      this.defaultSender = initial.default_sender || "";
+      this.apiUrl = initial.api_url || "";
+      this.defaultSender = initial.default_sender || "CTIP-Test";
       this.smsType = initial.sms_type || "eco+";
       this.apiUsername = initial.api_username || "";
       this.apiPassword = "";
@@ -3125,6 +3125,8 @@ document.addEventListener("alpine:init", () => {
       const rawTestMode = initial.test_mode;
       if (typeof rawTestMode === "string") {
         this.testMode = ["1", "true", "t", "yes", "on"].includes(rawTestMode.toLowerCase());
+      } else if (rawTestMode === undefined || rawTestMode === null) {
+        this.testMode = true;
       } else {
         this.testMode = Boolean(rawTestMode);
       }

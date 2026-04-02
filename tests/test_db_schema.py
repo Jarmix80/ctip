@@ -9,17 +9,17 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-env_path = Path(".env")
+env_path = Path(".env.test")
 if env_path.exists():
     load_dotenv(env_path, override=False)
 
 
 def _connect():
-    host = os.getenv("PGHOST", "192.168.0.8")
-    port = int(os.getenv("PGPORT", "5433"))
-    db = os.getenv("PGDATABASE", "ctip")
-    user = os.getenv("PGUSER", "appuser")
-    password = os.getenv("PGPASSWORD", "change_me")
+    host = os.getenv("PGHOST", "127.0.0.1")
+    port = int(os.getenv("PGPORT", "5432"))
+    db = os.getenv("PGDATABASE", "ctip_test")
+    user = os.getenv("PGUSER", "ctip_test")
+    password = os.getenv("PGPASSWORD", "ctip_test")
     return psycopg.connect(host=host, port=port, dbname=db, user=user, password=password)
 
 

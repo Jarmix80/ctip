@@ -10,6 +10,20 @@ from app.core.config import Settings
 class SettingsTests(unittest.TestCase):
     """Waliduje zachowanie ustawien wyliczanych dynamicznie."""
 
+    def test_domyslne_fallbacki_wskazuja_na_lokalne_srodowisko_testowe(self) -> None:
+        cfg = Settings(_env_file=None)
+
+        self.assertEqual(cfg.pbx_host, "127.0.0.1")
+        self.assertEqual(cfg.pbx_port, 5525)
+        self.assertEqual(cfg.pg_host, "127.0.0.1")
+        self.assertEqual(cfg.pg_port, 5432)
+        self.assertEqual(cfg.pg_database, "ctip_test")
+        self.assertEqual(cfg.pg_user, "ctip_test")
+        self.assertEqual(cfg.fb_host, "127.0.0.1")
+        self.assertEqual(cfg.fb_v_host, "127.0.0.1")
+        self.assertTrue(cfg.sms_test_mode)
+        self.assertEqual(cfg.sms_api_url, "")
+
     def test_backup_execution_active_respects_explicit_true(self) -> None:
         cfg = Settings(
             BACKUP_EXECUTION_ENABLED=True,
@@ -59,7 +73,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(cfg.auth_cookie_samesite, "lax")
 
     def test_mailbox_defaults_and_override(self) -> None:
-        cfg_default = Settings()
+        cfg_default = Settings(_env_file=None)
         self.assertEqual(cfg_default.mailbox_imap_port, 993)
         self.assertEqual(cfg_default.mailbox_smtp_port, 465)
         self.assertTrue(cfg_default.mailbox_smtp_use_ssl)

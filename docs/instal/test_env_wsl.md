@@ -1,12 +1,13 @@
 # Środowisko testowe CTIP w WSL
 
-Celem środowiska testowego jest równoległe uruchomienie wszystkich kluczowych komponentów (kolektor `collector_full.py`, panel FastAPI + uvicorn oraz `sms_sender.py`) bez ingerencji w produkcyjny kolektor działający jako usługa Windows. Zamiast łączyć się z prawdziwą centralą Slican, środowisko WSL wykorzystuje lokalny mock CTIP i oddzielną bazę PostgreSQL.
+Celem środowiska testowego jest równoległe uruchomienie wszystkich kluczowych komponentów (kolektor `collector_full.py`, panel FastAPI + uvicorn oraz `sms_sender.py`) bez ingerencji w produkcyjny kolektor działający jako usługa Windows. Zamiast łączyć się z prawdziwą centralą Slican, środowisko WSL wykorzystuje lokalny mock CTIP, lokalne bazy i wymusza `SMS_TEST_MODE=true`.
 
 ## Założenia
 - Produkcja: Windows Server 2022 (`D:\CTIP`, usługa `CollectorService`).
 - Testy: WSL2 (Ubuntu) z repozytorium w `~/projects/ctip`.
 - Połączenia CTIP nie są współdzielone: mock udostępnia dane tylko do testów.
-- Baza danych testowa `ctip_test` działa lokalnie (np. kontener Docker lub lokalny serwer PostgreSQL na WSL).
+- Baza danych testowa `ctip_test` działa lokalnie (np. kontener Docker lub lokalny serwer PostgreSQL na WSL) i jest jedyną kanoniczną bazą do pracy lokalnej.
+- Zdalne zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11` (PBX) są traktowane jako produkcyjne i nie mogą być używane bez jawnej decyzji.
 
 ## Szybki runbook – pełne uruchomienie wersji testowej
 1. Przygotuj zależności w WSL:
@@ -19,9 +20,9 @@ Celem środowiska testowego jest równoległe uruchomienie wszystkich kluczowych
 2. Skopiuj i uzupełnij `.env.test` (oddzielne od produkcyjnego `.env`):
    ```bash
    cp .env.test.example .env.test
-   # ustaw PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD dla lokalnej bazy
+   # pozostaw PGDATABASE=ctip_test i ustaw lokalne PGHOST/PGPORT/PGUSER/PGPASSWORD
    # pozostaw PBX_HOST=127.0.0.1 i PBX_PORT=5525 (mock CTIP)
-   # wymagane: SMS_TEST_MODE=true, ADMIN_PANEL_URL=http://localhost:18000/admin
+   # wymagane: SMS_TEST_MODE=true, hosty baz 127.0.0.1, ADMIN_PANEL_URL=http://localhost:8000/admin
    ```
 3. Załaduj zmienne środowiskowe do bieżącej powłoki:
    ```bash
@@ -41,13 +42,13 @@ Celem środowiska testowego jest równoległe uruchomienie wszystkich kluczowych
    ```bash
    ./run_test_stack_tmux.sh
    ```
-   Skrypt przerwie start, jeśli `PBX_HOST=192.168.0.11` (produkcja) albo `SMS_TEST_MODE` nie jest `true`.
+   Skrypt przerwie start, jeśli `PBX_HOST=192.168.0.11`, którykolwiek host bazy wskazuje `192.168.0.8`, `PGDATABASE!=ctip_test` albo `SMS_TEST_MODE` nie jest `true`.
 7. Podgląd i weryfikacja:
    ```bash
    tmux attach -t ctip-stack-test
    ```
    - okno `collector`: logi `[CTIP]` z mocka,
-   - okno `uvicorn`: panel na `http://localhost:18000/admin`,
+   - okno `uvicorn`: panel na `http://localhost:8000/admin`,
    - okno `sms-sender`: wpisy `SMS_TEST_MODE`.
 8. Zatrzymanie środowiska:
    - w oknie mocka `Ctrl+C`,
@@ -58,7 +59,7 @@ Po wykonaniu powyższych kroków przygotowawczych możesz startować pełne śro
 ```bash
 ./ctiptest
 ```
-Skrypt tworzy sesję tmux `ctip-stack-test` z czterema oknami (`mock-ctip`, `collector`, `uvicorn`, `sms-sender`) i wymusza zabezpieczenia: `.env.test` musi mieć `PBX_HOST` różny od produkcyjnego `192.168.0.11` oraz `SMS_TEST_MODE=true`.
+Skrypt tworzy sesję tmux `ctip-stack-test` z czterema oknami (`mock-ctip`, `collector`, `uvicorn`, `sms-sender`) i wymusza zabezpieczenia: `.env.test` musi mieć `PBX_HOST` różny od produkcyjnego `192.168.0.11`, hosty baz różne od `192.168.0.8`, `PGDATABASE=ctip_test` oraz `SMS_TEST_MODE=true`.
 
 ## Krok 1 – środowisko Python i zależności
 ```bash
@@ -70,7 +71,7 @@ pip install -r requirements.txt
 
 ## Krok 2 – konfiguracja `.env.test`
 1. Skopiuj wzorzec: `cp .env.test.example .env.test`.
-2. Ustaw dane dostępowe do lokalnej bazy (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`).
+2. Ustaw dane dostępowe do lokalnej bazy (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`), pozostawiając `PGDATABASE=ctip_test`.
 3. Zostaw `PBX_HOST=127.0.0.1` i `PBX_PORT=5525` – to port mocka CTIP.
 4. Upewnij się, że `SMS_TEST_MODE=true`, a pola `SMS_API_URL`, `SMS_API_TOKEN`,
    `SMS_API_USERNAME` i `SMS_API_PASSWORD` pozostają puste, jeśli środowisko
@@ -105,11 +106,11 @@ Skrypt `run_test_stack_tmux.sh` uruchamia trzy procesy w sesji tmux zasilanej ko
 # dołączenie do sesji
  tmux attach -t ctip-stack-test
 ```
-Skrypt zatrzyma się, jeśli `PBX_HOST` wskazuje na adres produkcyjnej centrali lub `SMS_TEST_MODE!=true`, co chroni przed przypadkowym podłączeniem do środowiska produkcyjnego.
+Skrypt zatrzyma się, jeśli `PBX_HOST` wskazuje na adres produkcyjnej centrali, którykolwiek host bazy wskazuje `192.168.0.8`, `PGDATABASE!=ctip_test` albo `SMS_TEST_MODE!=true`, co chroni przed przypadkowym podłączeniem do środowiska produkcyjnego.
 
 ## Krok 6 – weryfikacja
 - Kolektor: `tmux select-window -t ctip-stack-test:collector` i obserwuj linie `[CTIP]` z mocka.
-- Panel: przeglądarka → `http://localhost:18000/admin` (domyślny port w skrypcie testowym).
+- Panel: przeglądarka → `http://localhost:8000/admin` (domyślny port w skrypcie testowym).
 - SMS: przy pustych polach `SMS_API_*` provider przechodzi w tryb lokalnej
   symulacji (`SIMULATED`) i nie wykonuje żadnych wywołań do operatora.
 - Baza: sprawdź `ctip.call_events` w `ctip_test`.
@@ -119,7 +120,7 @@ Skrypt zatrzyma się, jeśli `PBX_HOST` wskazuje na adres produkcyjnej centrali 
 - W tmux: `Ctrl+b` → `:` → `kill-session -t ctip-stack-test`.
 
 ## Dobre praktyki
-- Nigdy nie edytuj `.env` produkcyjnego; trzymaj `.env.test` wyłącznie dla testów.
+- Nigdy nie edytuj `.env` produkcyjnego z poziomu lokalnego repo; trzymaj `.env.test` wyłącznie dla testów.
 - Dla pelnej izolacji testow trzymaj `SMS_API_URL`, `SMS_API_TOKEN`,
   `SMS_API_USERNAME` i `SMS_API_PASSWORD` puste w `.env.test`.
 - Jeśli musisz czasowo podłączyć WSL do prawdziwej centrali (np. diagnostyka), zatrzymaj usługę `CollectorService` na Windowsie, wykonaj test i natychmiast uruchom usługę ponownie.

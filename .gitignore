@@ -22,8 +22,9 @@ venv/
 htmlcov/
 .pre-commit-cache/
 
-# Ustawienia Codex (lokalne)
-.codex/smb_settings.json
+# Ustawienia Codex i artefakty lokalne
+.codex/*
+!.codex/session.json
 
 # VS Code
 .vscode/
@@ -40,6 +41,9 @@ docs/raport/
 
 # Katalog wymiany plikow Windows -> serwer (lokalny, poza repo)
 inbox/
+backups/
 
 # Lokalne klony/artefakty zewnetrznych repozytoriow
 docs/firebird/external/
+tools/gh/
+tools/*.tar.gz

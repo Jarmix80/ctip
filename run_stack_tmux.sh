@@ -7,6 +7,24 @@ ENV_FILE="${WORKDIR}/.env"
 VENV_DIR="${WORKDIR}/.venv"
 PYTHON_BIN="${VENV_DIR}/bin/python"
 UVICORN_BIN="${VENV_DIR}/bin/uvicorn"
+ALLOW_PRODUCTION_START="${ALLOW_PRODUCTION_START:-false}"
+
+if [[ "${ALLOW_PRODUCTION_START,,}" != "true" ]]; then
+    cat >&2 <<MSG
+Start produkcyjny zostal zablokowany domyslnie.
+Domyslna sciezka uruchomienia calego systemu to srodowisko testowe.
+
+Uzyj:
+  ./ctiptest
+  ./run_test_stack_tmux.sh
+
+Jesli swiadomie chcesz uruchomic produkcje, potwierdz to jawnie:
+  ALLOW_PRODUCTION_START=true ./run_stack_tmux.sh
+
+Wdrozenia produkcyjne wykonuj z commita GitHub i jawnego .env po stronie serwera.
+MSG
+    exit 1
+fi
 
 if ! command -v tmux >/dev/null 2>&1; then
     echo "tmux nie jest zainstalowany. Zainstaluj pakiet tmux i spróbuj ponownie." >&2

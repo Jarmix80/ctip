@@ -17,8 +17,8 @@ from datetime import datetime
 from log_utils import append_log
 
 PAYLOAD_ENCODING = os.getenv("PAYLOAD_ENCODING", "latin-1")
-PBX_HOST = os.getenv("PBX_HOST", "192.168.0.11")
-PBX_PORT = int(os.getenv("PBX_PORT", "5524"))
+PBX_HOST = os.getenv("PBX_HOST", "127.0.0.1")
+PBX_PORT = int(os.getenv("PBX_PORT", "5525"))
 PBX_PIN = os.getenv("PBX_PIN", "1234")
 SOCK_CONNECT_TIMEOUT = int(os.getenv("SOCK_CONNECT_TIMEOUT", "5"))
 SOCK_RECV_TIMEOUT = int(os.getenv("SOCK_RECV_TIMEOUT", "5"))

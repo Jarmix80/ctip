@@ -14,34 +14,34 @@ class Settings(BaseSettings):
     app_title: str = "CTIP API"
     app_version: str = "0.2.2"
 
-    pbx_host: str = Field(default="192.168.0.11", alias="PBX_HOST")
-    pbx_port: int = Field(default=5524, alias="PBX_PORT")
+    pbx_host: str = Field(default="127.0.0.1", alias="PBX_HOST")
+    pbx_port: int = Field(default=5525, alias="PBX_PORT")
     pbx_pin: str = Field(default="1234", alias="PBX_PIN")
 
-    pg_host: str = Field(default="192.168.0.8", alias="PGHOST")
-    pg_port: int = Field(default=5433, alias="PGPORT")
-    pg_database: str = Field(default="ctip", alias="PGDATABASE")
-    pg_user: str = Field(default="appuser", alias="PGUSER")
-    pg_password: str = Field(default="change_me", alias="PGPASSWORD")
+    pg_host: str = Field(default="127.0.0.1", alias="PGHOST")
+    pg_port: int = Field(default=5432, alias="PGPORT")
+    pg_database: str = Field(default="ctip_test", alias="PGDATABASE")
+    pg_user: str = Field(default="ctip_test", alias="PGUSER")
+    pg_password: str = Field(default="ctip_test", alias="PGPASSWORD")
     pg_sslmode: str = Field(default="disable", alias="PGSSLMODE")
 
     fb_host: str = Field(default="127.0.0.1", alias="FB_HOST")
     fb_port: int = Field(default=3050, alias="FB_PORT")
-    fb_mode: str = Field(default="network", alias="FB_MODE")
-    fb_database: str = Field(default="D:/BAZA_MS_KP/BAZAMS.FDB", alias="FB_DATABASE")
+    fb_mode: str = Field(default="local", alias="FB_MODE")
+    fb_database: str = Field(default="/tmp/test_ms.fdb", alias="FB_DATABASE")
     fb_user: str = Field(default="SYSDBA", alias="FB_USER")
     fb_password: str = Field(default="masterkey", alias="FB_PASSWORD")
-    fb_charset: str = Field(default="WIN1250", alias="FB_CHARSET")
+    fb_charset: str = Field(default="UTF8", alias="FB_CHARSET")
     fb_role: str | None = Field(default=None, alias="FB_ROLE")
     fb_local_copy_path: str = Field(
-        default="inbox/firebird/menadzer_serwisu.fdb", alias="FB_LOCAL_COPY_PATH"
+        default="inbox/firebird/test_ms_local.fdb", alias="FB_LOCAL_COPY_PATH"
     )
-    fb_v_host: str = Field(default="192.168.0.8", alias="FB_V_HOST")
+    fb_v_host: str = Field(default="127.0.0.1", alias="FB_V_HOST")
     fb_v_port: int = Field(default=3050, alias="FB_V_PORT")
-    fb_v_database: str = Field(default="D:\\bazavmantenance\\BAZA_CPC.FDB", alias="FB_V_DATABASE")
+    fb_v_database: str = Field(default="/tmp/test_vmaintenance.fdb", alias="FB_V_DATABASE")
     fb_v_user: str = Field(default="SYSDBA", alias="FB_V_USER")
     fb_v_password: str = Field(default="masterkey", alias="FB_V_PASSWORD")
-    fb_v_charset: str = Field(default="WIN1250", alias="FB_V_CHARSET")
+    fb_v_charset: str = Field(default="UTF8", alias="FB_V_CHARSET")
     fb_v_role: str | None = Field(default=None, alias="FB_V_ROLE")
 
     kp_csv_directory: str = Field(default="inbox/ewidencja", alias="KP_CSV_DIRECTORY")
@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     fb_warehouse_client_id: int = Field(default=656, alias="FB_WAREHOUSE_CLIENT_ID")
     fb_warehouse_id: int = Field(default=28, alias="FB_WAREHOUSE_ID")
 
-    sms_default_sender: str = Field(default="KseroPartner", alias="SMS_DEFAULT_SENDER")
+    sms_default_sender: str = Field(default="CTIP-Test", alias="SMS_DEFAULT_SENDER")
     sms_type: str = Field(default="eco+", alias="SMS_TYPE")
-    sms_api_url: str = Field(default="https://api2.serwersms.pl", alias="SMS_API_URL")
+    sms_api_url: str = Field(default="", alias="SMS_API_URL")
     sms_api_token: str | None = Field(default=None, alias="SMS_API_TOKEN")
     sms_api_username: str | None = Field(default=None, alias="SMS_API_USERNAME")
     sms_api_password: str | None = Field(default=None, alias="SMS_API_PASSWORD")
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
 
     backup_execution_enabled: bool | None = Field(default=None, alias="BACKUP_EXECUTION_ENABLED")
     backup_scheduler_enabled: bool = Field(default=True, alias="BACKUP_SCHEDULER_ENABLED")
-    backup_production_host: str = Field(default="192.168.0.8", alias="BACKUP_PRODUCTION_HOST")
+    backup_production_host: str = Field(default="", alias="BACKUP_PRODUCTION_HOST")
     backup_default_local_dir: str = Field(
         default="D:\\Backup_CTIP_MS_optima", alias="BACKUP_DEFAULT_LOCAL_DIR"
     )
@@ -126,7 +126,11 @@ class Settings(BaseSettings):
     )
     office365_folder_optima: str = Field(default="BackupKP/Optima", alias="OFFICE365_FOLDER_OPTIMA")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env.test", ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     @property
     def database_url(self) -> str:
