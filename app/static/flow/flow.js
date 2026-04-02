@@ -99,8 +99,8 @@ function workflowStageLabel(stage) {
 function workflowBusinessStatusLabel(status) {
   const mapped = {
     DRAFT: "Robocza",
-    PENDING_APPROVAL: "Oczekuje na akceptacje",
-    APPROVED: "Zaakceptowano",
+    PENDING_APPROVAL: "Umowa czeka na podpis klienta",
+    APPROVED: "Umowa podpisana - dowoz urzadzenia",
     ZEROWKA: "Zerowka",
     REJECTED: "Odrzucono",
   };
