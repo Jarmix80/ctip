@@ -189,6 +189,17 @@ class Settings(BaseSettings):
             return None
         return f"{parsed.scheme}://{parsed.netloc}"
 
+    @staticmethod
+    def _extract_hostname(value: str | None) -> str | None:
+        """Wyciąga nazwę hosta z pełnego URL lub zwraca None dla pustej wartości."""
+        normalized = str(value or "").strip()
+        if not normalized:
+            return None
+        if "://" not in normalized:
+            normalized = f"http://{normalized}"
+        parsed = urlsplit(normalized)
+        return parsed.hostname or None
+
     @property
     def cors_allowed_origins(self) -> list[str]:
         """Zwraca listę dozwolonych originów CORS dla paneli WWW."""
@@ -200,6 +211,15 @@ class Settings(BaseSettings):
             if origin and origin not in origins:
                 origins.append(origin)
         return origins
+
+    @property
+    def public_form_trusted_hosts(self) -> list[str]:
+        """Zwraca listę hostów akceptowanych przez publiczną aplikację formularzy."""
+        hosts = ["localhost", "127.0.0.1", "::1", "testserver"]
+        public_host = self._extract_hostname(self.form_public_base_url)
+        if public_host and public_host not in hosts:
+            hosts.append(public_host)
+        return hosts
 
     @property
     def auth_cookie_samesite(self) -> str:

@@ -4,7 +4,11 @@ param(
     [string]$NssmPath = "",
     [string]$UvicornHost = "0.0.0.0",
     [int]$UvicornPort = 8000,
-    [int]$UvicornWorkers = 4
+    [int]$UvicornWorkers = 4,
+    [switch]$InstallPublicForms,
+    [string]$PublicFormsHost = "127.0.0.1",
+    [int]$PublicFormsPort = 8100,
+    [int]$PublicFormsWorkers = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -112,11 +116,14 @@ if ($LASTEXITCODE -ne 0) {
 
 $logsWeb = Join-Path $InstallDir "logs\web"
 $logsSms = Join-Path $InstallDir "logs\sms"
+$logsForms = Join-Path $InstallDir "logs\forms_public"
 Ensure-Dir -Path $logsWeb
 Ensure-Dir -Path $logsSms
+Ensure-Dir -Path $logsForms
 
 $webService = "$ServicePrefix-Web"
 $smsService = "$ServicePrefix-SMS"
+$formsService = "$ServicePrefix-FormsPublic"
 
 $webArgs = @(
     "-m", "uvicorn", "app.main:app",
@@ -127,6 +134,12 @@ $webArgs = @(
 $smsArgs = @(
     "-u", (Join-Path $InstallDir "sms_sender.py")
 )
+$formsArgs = @(
+    "-m", "uvicorn", "app.public_forms_app:app",
+    "--host", $PublicFormsHost,
+    "--port", $PublicFormsPort.ToString(),
+    "--workers", $PublicFormsWorkers.ToString()
+)
 
 Install-NssmService -Nssm $nssm -ServiceName $webService -Executable $pythonExe -Args $webArgs `
     -WorkDir $InstallDir -StdoutLog (Join-Path $logsWeb "web_stdout.log") -StderrLog (Join-Path $logsWeb "web_stderr.log")
@@ -134,4 +147,13 @@ Install-NssmService -Nssm $nssm -ServiceName $webService -Executable $pythonExe 
 Install-NssmService -Nssm $nssm -ServiceName $smsService -Executable $pythonExe -Args $smsArgs `
     -WorkDir $InstallDir -StdoutLog (Join-Path $logsSms "sms_stdout.log") -StderrLog (Join-Path $logsSms "sms_stderr.log")
 
-Write-Host "Gotowe. Sprawdz status: Get-Service $webService, $smsService"
+if ($InstallPublicForms) {
+    Install-NssmService -Nssm $nssm -ServiceName $formsService -Executable $pythonExe -Args $formsArgs `
+        -WorkDir $InstallDir -StdoutLog (Join-Path $logsForms "forms_stdout.log") -StderrLog (Join-Path $logsForms "forms_stderr.log")
+}
+
+if ($InstallPublicForms) {
+    Write-Host "Gotowe. Sprawdz status: Get-Service $webService, $smsService, $formsService"
+} else {
+    Write-Host "Gotowe. Sprawdz status: Get-Service $webService, $smsService"
+}

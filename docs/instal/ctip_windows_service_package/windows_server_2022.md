@@ -57,8 +57,8 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    ```
 5. Po pierwszym starcie zweryfikuj w logu komunikaty `aWHO` oraz `aLOGA`, aby potwierdzić handshake z centralą.
 
-## Panel web i sms_sender jako usługi Windows (NSSM)
-Panel FastAPI (`uvicorn app.main:app`) i moduł SMS (`sms_sender.py`) można uruchomić jako dwie dodatkowe usługi Windows przy użyciu NSSM.
+## Panel web, sms_sender i publiczne formularze jako usługi Windows (NSSM)
+Panel FastAPI (`uvicorn app.main:app`) i moduł SMS (`sms_sender.py`) można uruchomić jako dodatkowe usługi Windows przy użyciu NSSM. Dla subdomeny publicznych formularzy dostępna jest też osobna aplikacja `app.public_forms_app:app`, którą uruchamiamy jako trzecią usługę tylko wtedy, gdy chcemy wystawić formularze poza LAN.
 
 1. Zainstaluj NSSM (https://nssm.cc/download) i upewnij się, że `nssm.exe` jest dostępne w `PATH` lub pod standardową ścieżką `C:\Program Files\nssm\nssm.exe`.
 2. Upewnij się, że w `D:\CTIP` istnieją: `.env`, gotowe `.venv` (utworzone przez `install_service.ps1`) oraz zaktualizowane repozytorium (`git pull`).
@@ -71,17 +71,30 @@ Panel FastAPI (`uvicorn app.main:app`) i moduł SMS (`sms_sender.py`) można uru
    .\scripts\windows\install_web_sms_nssm.ps1 -InstallDir "D:\CTIP" -ServicePrefix "CTIP" -UvicornPort 8000 -NssmPath "C:\Program Files\nssm\nssm.exe"
    ```
    Skrypt rejestruje i startuje obie usługi, ustawia katalog roboczy na `D:\CTIP`, logi w `logs\web` i `logs\sms`, rotację logów oraz uruchamianie automatyczne po restarcie serwera.
-5. Weryfikacja:
+5. Jeżeli formularze mają być wystawione publicznie pod osobną subdomeną, doinstaluj trzecią usługę `CTIP-FormsPublic`:
    ```powershell
-   Get-Service CTIP-Web,CTIP-SMS
+   .\scripts\windows\install_web_sms_nssm.ps1 -InstallDir "D:\CTIP" -ServicePrefix "CTIP" -UvicornPort 8000 -InstallPublicForms -PublicFormsHost "127.0.0.1" -PublicFormsPort 8100 -NssmPath "C:\Program Files\nssm\nssm.exe"
+   ```
+   Ta usługa uruchamia `uvicorn app.public_forms_app:app` na osobnym porcie wewnętrznym i ma logi w `logs\forms_public`. Reverse proxy lub firewall ma wystawiać na Internet wyłącznie tę usługę.
+6. W `.env` ustaw:
+   ```dotenv
+   ADMIN_PANEL_URL=http://192.168.0.8:8000/admin
+   FORM_PUBLIC_BASE_URL=https://form.ksero-partner.com.pl
+   ```
+7. Weryfikacja:
+   ```powershell
+   Get-Service CTIP-Web,CTIP-SMS,CTIP-FormsPublic
    Get-Content -Tail 50 D:\CTIP\logs\web\web_stdout.log
    Get-Content -Tail 50 D:\CTIP\logs\sms\sms_stdout.log
+   Get-Content -Tail 50 D:\CTIP\logs\forms_public\forms_stdout.log
    ```
-   Panel powinien odpowiadać pod `http://<adres_serwera>:8000/admin`, a `/health` pod tym samym portem.
-6. Aktualizacje kodu: użyj `update_ctip.ps1` z listą usług (aktualizuje kod, zależności, pre-commit i testy):
+   Panel powinien odpowiadać pod `http://<adres_serwera>:8000/admin`, a publiczna subdomena po reverse proxy ma kierować do `https://form.ksero-partner.com.pl/formularz/<token>`.
+8. Aktualizacje kodu: użyj `update_ctip.ps1` z listą usług (aktualizuje kod, zależności, pre-commit i testy):
    ```powershell
-   .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -ServiceNames "CollectorService","CTIP-Web","CTIP-SMS" -GitRemote origin -GitBranch main
+   .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -ServiceNames "CollectorService","CTIP-Web","CTIP-SMS","CTIP-FormsPublic" -GitRemote origin -GitBranch main
    ```
+
+Szczegółowy runbook DNS/NAT/reverse proxy dla subdomeny formularzy znajduje się w `docs/instal/public_forms_production.md`.
 
 ## Aktualizacje aplikacji
 1. Zachowaj konwencję pracy tylko w katalogu `D:\CTIP` (wiązanie z repozytorium git).

@@ -165,3 +165,24 @@ def test_run_server_with_firebird_defaults_to_env_test() -> None:
         in script_content
     )
     assert 'assert_env_value_equals "PGDATABASE" "${LOCAL_TEST_DATABASE}"' in script_content
+
+
+def test_run_public_forms_tmux_requires_explicit_confirmation_and_public_https_url() -> None:
+    """Skrypt publicznych formularzy musi wymagać jawnego startu i poprawnego URL."""
+    script_content = (ROOT_DIR / "run_public_forms_tmux.sh").read_text(encoding="utf-8")
+
+    assert 'SESSION_NAME="${SESSION_NAME:-ctip-public-forms}"' in script_content
+    assert 'ENV_FILE="${ENV_FILE:-${WORKDIR}/.env}"' in script_content
+    assert 'PUBLIC_FORMS_HOST="${PUBLIC_FORMS_HOST:-127.0.0.1}"' in script_content
+    assert 'PUBLIC_FORMS_PORT="${PUBLIC_FORMS_PORT:-8100}"' in script_content
+    assert 'ALLOW_PRODUCTION_START="${ALLOW_PRODUCTION_START:-false}"' in script_content
+    assert (
+        "Start produkcyjny publicznych formularzy zostal zablokowany domyslnie." in script_content
+    )
+    assert "FORM_PUBLIC_BASE_URL=https://form.twoja-domena.pl" in script_content
+    assert "FORM_PUBLIC_BASE_URL musi zaczynac sie od https://" in script_content
+    assert "FORM_PUBLIC_BASE_URL nie moze wskazywac na localhost ani 127.0.0.1" in script_content
+    assert (
+        "app.public_forms_app:app --host ${PUBLIC_FORMS_HOST} --port ${PUBLIC_FORMS_PORT}"
+        in script_content
+    )

@@ -58,6 +58,35 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    ```
 5. Po pierwszym starcie zweryfikuj w logu komunikaty `aWHO` oraz `aLOGA`, aby potwierdzić handshake z centralą.
 
+## Panel web, sms_sender i publiczne formularze (NSSM)
+Pełna aplikacja panelowa (`app.main:app`) oraz `sms_sender.py` mogą działać jako osobne usługi NSSM. Dla wystawienia formularzy poza LAN dostępna jest także trzecia usługa `app.public_forms_app:app`, która udostępnia wyłącznie `/`, `/health` i `/formularz/{token}`.
+
+1. Zainstaluj NSSM (https://nssm.cc/download) i upewnij się, że `nssm.exe` jest dostępne w `PATH` lub pod standardową ścieżką `C:\Program Files\nssm\nssm.exe`.
+2. W `.env` ustaw publiczny adres formularzy:
+   ```dotenv
+   ADMIN_PANEL_URL=http://192.168.0.8:8000/admin
+   FORM_PUBLIC_BASE_URL=https://form.ksero-partner.com.pl
+   ```
+3. Zainstaluj usługi panelu i SMS:
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+   .\scripts\windows\install_web_sms_nssm.ps1 -InstallDir "D:\CTIP" -ServicePrefix "CTIP" -UvicornPort 8000 -NssmPath "C:\Program Files\nssm\nssm.exe"
+   ```
+4. Jeżeli formularze mają być wystawione publicznie pod osobną subdomeną, doinstaluj trzecią usługę:
+   ```powershell
+   .\scripts\windows\install_web_sms_nssm.ps1 -InstallDir "D:\CTIP" -ServicePrefix "CTIP" -UvicornPort 8000 -InstallPublicForms -PublicFormsHost "127.0.0.1" -PublicFormsPort 8100 -NssmPath "C:\Program Files\nssm\nssm.exe"
+   ```
+5. Weryfikacja:
+   ```powershell
+   Get-Service CTIP-Web,CTIP-SMS,CTIP-FormsPublic
+   Get-Content -Tail 50 D:\CTIP\logs\web\web_stdout.log
+   Get-Content -Tail 50 D:\CTIP\logs\sms\sms_stdout.log
+   Get-Content -Tail 50 D:\CTIP\logs\forms_public\forms_stdout.log
+   ```
+6. Reverse proxy lub firewall ma wystawiać na Internet wyłącznie `CTIP-FormsPublic`, nie pełny panel.
+
+Szczegółowy runbook DNS, NAT i reverse proxy znajduje się w `docs/instal/public_forms_production.md`.
+
 ## Aktualizacje aplikacji
 1. Zachowaj konwencję pracy tylko w katalogu `D:\CTIP` (wiązanie z repozytorium git).
 2. Podczas wdrażania poprawek uruchom PowerShell jako Administrator i wykonaj:
@@ -70,11 +99,15 @@ Logi rosną według dnia; rotację wykonuje zadanie logrotate Windows lub harmon
    ```powershell
    .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -ServiceNames "CollectorService","CTIP-Web","CTIP-SMS" -GitRemote origin -GitBranch main
    ```
-4. Opcje awaryjne:
+4. Jeżeli aktywne są też publiczne formularze, uwzględnij trzecią usługę:
+   ```powershell
+   .\scripts\windows\update_ctip.ps1 -InstallDir "D:\CTIP" -ServiceNames "CollectorService","CTIP-Web","CTIP-SMS","CTIP-FormsPublic" -GitRemote origin -GitBranch main
+   ```
+5. Opcje awaryjne:
    - `-SkipPreCommit` – pomija lint/format.
    - `-SkipTests` – pomija testy jednostkowe.
    - `-ForceStartOnFailure` – uruchamia usługi nawet przy błędzie aktualizacji.
-5. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
+6. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
 
 ### Wariant z gotowym .venv (pomijanie instalacji zależności)
 Jeżeli `.venv` oraz `pywin32_postinstall` zostały już wykonane ręcznie (np. jak w `docs/archiwum/install.txt`), możesz pominąć ponowną instalację zależności i rejestrację pywin32:

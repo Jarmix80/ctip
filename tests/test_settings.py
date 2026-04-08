@@ -72,6 +72,13 @@ class SettingsTests(unittest.TestCase):
         cfg = Settings(AUTH_COOKIE_SAMESITE="niepoprawne")
         self.assertEqual(cfg.auth_cookie_samesite, "lax")
 
+    def test_public_form_trusted_hosts_include_configured_host(self) -> None:
+        cfg = Settings(FORM_PUBLIC_BASE_URL="https://form.ksero-partner.com.pl")
+        self.assertEqual(
+            cfg.public_form_trusted_hosts,
+            ["localhost", "127.0.0.1", "::1", "testserver", "form.ksero-partner.com.pl"],
+        )
+
     def test_mailbox_defaults_and_override(self) -> None:
         cfg_default = Settings(_env_file=None)
         self.assertEqual(cfg_default.mailbox_imap_port, 993)
