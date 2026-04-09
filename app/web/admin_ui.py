@@ -511,6 +511,7 @@ def _user_summary_from_row(row: admin_users.UserRow, sections: list[str]) -> Adm
         last_name=user.last_name,
         internal_ext=user.internal_ext,
         role=user.role,
+        is_salesperson=bool(user.is_salesperson),
         sections=sections,
         is_active=user.is_active,
         created_at=user.created_at,

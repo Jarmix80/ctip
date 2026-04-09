@@ -949,6 +949,14 @@ async def contracts_form_workflow_client(
         payload_snapshot=form_payload,
         updated_by=admin_user.id,
     )
+    sync_time = datetime.now(UTC)
+    item.ms_status = form_generator.build_ms_status_message(
+        state="CREATED" if created else "LINKED",
+        event_at=sync_time,
+        client_id=match.id_klient,
+        automatic=False,
+    )
+    item.updated_at = sync_time
     workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
 
     await record_audit(
@@ -1402,6 +1410,14 @@ async def contracts_dashboard_action(
                     payload_snapshot=form_payload,
                     updated_by=admin_user.id,
                 )
+            sync_time = datetime.now(UTC)
+            item.ms_status = form_generator.build_ms_status_message(
+                state="CREATED" if result.created else "LINKED",
+                event_at=sync_time,
+                client_id=result.match.id_klient,
+                automatic=False,
+            )
+            item.updated_at = sync_time
 
             await record_audit(
                 session,
@@ -1465,6 +1481,14 @@ async def contracts_dashboard_action(
                     payload_snapshot=form_payload,
                     updated_by=admin_user.id,
                 )
+            sync_time = datetime.now(UTC)
+            item.ms_status = form_generator.build_ms_status_message(
+                state="LINKED",
+                event_at=sync_time,
+                client_id=match.id_klient,
+                automatic=False,
+            )
+            item.updated_at = sync_time
 
             await record_audit(
                 session,

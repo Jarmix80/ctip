@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import secrets
@@ -19,6 +20,17 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.models import FormRequest, SmsOut
 from app.services import admin_users
+from app.services.contracts_dashboard import (
+    create_client_from_submitted_payload,
+    find_client_in_firebird,
+    firebird_writes_enabled,
+    normalize_nip,
+)
+from app.services.contracts_workflow import (
+    WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
+    get_or_create_form_workflow_case,
+    set_form_workflow_client,
+)
 from app.services.email_client import send_smtp_message
 from app.services.form_handling_config import FormHandlingConfig, load_form_handling_config
 from app.services.form_handling_config import render_template as render_form_template
@@ -144,6 +156,158 @@ def build_status_message(form: FormRequest) -> str:
     if form.status == "EXPIRED":
         return "Ważność linku wygasła. Klient nie może już wypełnić formularza."
     return "Status formularza jest nieznany."
+
+
+def _format_ms_status_time(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%d.%m.%Y %H:%M UTC")
+
+
+def _truncate_ms_status_details(value: str | None, *, limit: int = 180) -> str:
+    details = (value or "").strip().replace("\n", " ")
+    if len(details) <= limit:
+        return details
+    return f"{details[: limit - 3].rstrip()}..."
+
+
+def build_ms_status_message(
+    *,
+    state: str,
+    event_at: datetime,
+    client_id: int | None = None,
+    details: str | None = None,
+    automatic: bool = True,
+) -> str:
+    """Buduje czytelny status integracji formularza z Menadzerem Serwisu."""
+    prefix = "Automat MS" if automatic else "MS"
+    stamp = _format_ms_status_time(event_at)
+    short_details = _truncate_ms_status_details(details)
+    client_label = str(client_id) if client_id is not None else "nieustalone"
+
+    if state == "LINKED":
+        return f"{prefix}: powiazano z klientem ID {client_label} ({stamp})."
+    if state == "CREATED":
+        return f"{prefix}: dodano klienta ID {client_label} ({stamp})."
+    if state == "BLOCKED":
+        suffix = f" {short_details}" if short_details else ""
+        return f"{prefix}: brak klienta w MS, auto-dodanie zablokowane ({stamp}).{suffix}"
+    if state == "LOOKUP_ERROR":
+        suffix = f" {short_details}" if short_details else ""
+        return f"{prefix}: blad weryfikacji klienta ({stamp}).{suffix}"
+    if state == "CREATE_ERROR":
+        suffix = f" {short_details}" if short_details else ""
+        return f"{prefix}: blad dodawania klienta ({stamp}).{suffix}"
+    if state == "SKIPPED":
+        suffix = f" {short_details}" if short_details else ""
+        return f"{prefix}: pominieto integracje z MS ({stamp}).{suffix}"
+    return f"{prefix}: status nieznany ({stamp})."
+
+
+async def _store_ms_client_link(
+    session: AsyncSession,
+    *,
+    form: FormRequest,
+    payload: dict,
+    firebird_client_id: int,
+    firebird_client_status: str,
+    updated_by: int | None,
+) -> None:
+    workflow_case = await get_or_create_form_workflow_case(
+        session,
+        form=form,
+        user_id=updated_by,
+        payload_snapshot=payload,
+    )
+    await set_form_workflow_client(
+        session,
+        workflow_case=workflow_case,
+        firebird_client_id=firebird_client_id,
+        firebird_client_status=firebird_client_status,
+        client_mode=WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
+        payload_snapshot=payload,
+        updated_by=updated_by,
+    )
+
+
+async def _sync_submitted_form_with_firebird_ms(
+    session: AsyncSession,
+    *,
+    form: FormRequest,
+    payload: dict,
+    submitted_at: datetime,
+) -> None:
+    """Automatycznie sprawdza lub tworzy klienta w Menadzerze Serwisu po SUBMITTED."""
+    nip = normalize_nip(str(payload.get("company_nip") or ""))
+    if not nip:
+        form.ms_status = build_ms_status_message(
+            state="SKIPPED",
+            event_at=submitted_at,
+            details="Brak NIP klienta w formularzu.",
+        )
+        return
+
+    existing = await asyncio.to_thread(find_client_in_firebird, nip)
+    if existing.error:
+        form.ms_status = build_ms_status_message(
+            state="LOOKUP_ERROR",
+            event_at=submitted_at,
+            details=existing.error,
+        )
+        return
+
+    if existing.found and existing.id_klient:
+        await _store_ms_client_link(
+            session,
+            form=form,
+            payload=payload,
+            firebird_client_id=existing.id_klient,
+            firebird_client_status="linked",
+            updated_by=form.created_by,
+        )
+        form.ms_status = build_ms_status_message(
+            state="LINKED",
+            event_at=submitted_at,
+            client_id=existing.id_klient,
+        )
+        return
+
+    writes_enabled, reason = firebird_writes_enabled()
+    if not writes_enabled:
+        form.ms_status = build_ms_status_message(
+            state="BLOCKED",
+            event_at=submitted_at,
+            details=reason,
+        )
+        return
+
+    try:
+        result = await asyncio.to_thread(
+            create_client_from_submitted_payload,
+            payload,
+            source_name=f"CTIP formularz {form.id}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        form.ms_status = build_ms_status_message(
+            state="CREATE_ERROR",
+            event_at=submitted_at,
+            details=str(exc),
+        )
+        return
+
+    if result.match.id_klient:
+        await _store_ms_client_link(
+            session,
+            form=form,
+            payload=payload,
+            firebird_client_id=result.match.id_klient,
+            firebird_client_status="created" if result.created else "linked",
+            updated_by=form.created_by,
+        )
+
+    form.ms_status = build_ms_status_message(
+        state="CREATED" if result.created else "LINKED",
+        event_at=submitted_at,
+        client_id=result.match.id_klient,
+    )
 
 
 def decode_submitted_payload(
@@ -366,18 +530,27 @@ async def _dispatch_submission_notifications(
     else:
         result.warnings.append("Brak adresu e-mail klienta do wysłania potwierdzenia.")
 
-    creator_phone: str | None = None
-    if form.created_by is not None:
-        creator = await admin_users.fetch_user(session, form.created_by)
-        if creator and creator.mobile_phone:
-            try:
-                creator_phone = admin_users.normalize_mobile_phone(creator.mobile_phone)
-            except ValueError:
-                creator_phone = None
-                result.warnings.append(
-                    "Nieprawidłowy numer telefonu użytkownika tworzącego formularz."
-                )
-    if creator_phone:
+    salespeople = await admin_users.list_active_salespeople(session)
+    sales_recipients: list[tuple[int, str]] = []
+    seen_numbers: set[str] = set()
+    invalid_salespeople = 0
+    missing_salespeople = 0
+
+    for salesperson in salespeople:
+        if not salesperson.mobile_phone:
+            missing_salespeople += 1
+            continue
+        try:
+            normalized_phone = admin_users.normalize_mobile_phone(salesperson.mobile_phone)
+        except ValueError:
+            invalid_salespeople += 1
+            continue
+        if not normalized_phone or normalized_phone in seen_numbers:
+            continue
+        seen_numbers.add(normalized_phone)
+        sales_recipients.append((salesperson.id, normalized_phone))
+
+    if sales_recipients:
         sms_text = render_form_template(
             config.owner_sms_template,
             {
@@ -385,26 +558,34 @@ async def _dispatch_submission_notifications(
                 "customer_name": form.customer_name,
             },
         )
-        sms = SmsOut(
-            dest=creator_phone,
-            text=sms_text[:600],
-            source="form-generator",
-            origin="form_submission_completed",
-            status="NEW",
-            created_by=form.created_by,
-            meta={
-                "type": "form_submission_completed",
-                "form_request_id": form.id,
-                "company_name": company_name,
-            },
-            created_at=submitted_at,
-        )
-        session.add(sms)
+        for recipient_user_id, recipient_phone in sales_recipients:
+            sms = SmsOut(
+                dest=recipient_phone,
+                text=sms_text[:600],
+                source="form-generator",
+                origin="form_submission_completed",
+                status="NEW",
+                created_by=form.created_by,
+                meta={
+                    "type": "form_submission_completed",
+                    "form_request_id": form.id,
+                    "company_name": company_name,
+                    "recipient_user_id": recipient_user_id,
+                    "recipient_group": "salespeople",
+                },
+                created_at=submitted_at,
+            )
+            session.add(sms)
         result.owner_sms_queued = True
     else:
         result.warnings.append(
-            "Brak numeru telefonu osoby tworzącej formularz. Powiadomienie SMS zostało pominięte."
+            "Brak aktywnych handlowców z poprawnym numerem telefonu. Powiadomienie SMS zostało pominięte."
         )
+
+    if missing_salespeople:
+        result.warnings.append("Część handlowców nie ma uzupełnionego telefonu komórkowego.")
+    if invalid_salespeople:
+        result.warnings.append("Część handlowców ma nieprawidłowy numer telefonu.")
 
     _merge_notification_warnings(form, result.warnings)
     return result
@@ -525,6 +706,12 @@ async def submit_form_payload(
     form.token_used_at = now
     form.status = "SUBMITTED"
     form.updated_at = now
+    await _sync_submitted_form_with_firebird_ms(
+        session,
+        form=form,
+        payload=payload,
+        submitted_at=now,
+    )
     try:
         config = await load_form_handling_config(session)
         await _dispatch_submission_notifications(
@@ -546,6 +733,7 @@ __all__ = [
     "FormSubmissionNotificationResult",
     "build_status_message",
     "build_form_url",
+    "build_ms_status_message",
     "create_form_request",
     "decode_submitted_payload",
     "delete_form_request",

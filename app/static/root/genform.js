@@ -421,7 +421,7 @@ function initializeGenForm() {
 
   function renderItems(items) {
     if (!Array.isArray(items) || !items.length) {
-      tableBody.innerHTML = "<tr><td colspan='8'>Brak wygenerowanych formularzy.</td></tr>";
+      tableBody.innerHTML = "<tr><td colspan='9'>Brak wygenerowanych formularzy.</td></tr>";
       return;
     }
     tableBody.innerHTML = items
@@ -433,6 +433,7 @@ function initializeGenForm() {
           <td>${escapeHtml(item.customer_phone || "—")}</td>
           <td>${escapeHtml(item.created_by_name || "—")}</td>
           <td><span class="genform-status ${statusClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span></td>
+          <td class="genform-ms-status">${escapeHtml(item.ms_status || "—")}</td>
           <td>${escapeHtml(formatDate(item.token_expires_at))}</td>
           <td>${escapeHtml(formatDate(item.created_at))}</td>
           <td>

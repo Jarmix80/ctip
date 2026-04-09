@@ -124,5 +124,6 @@ async def operator_me(
         first_name=admin_user.first_name,
         last_name=admin_user.last_name,
         role=admin_user.role,
+        is_salesperson=bool(admin_user.is_salesperson),
         sections=sections,
     )

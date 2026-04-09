@@ -87,6 +87,7 @@ class OperatorUserInfo(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: str
+    is_salesperson: bool = False
     sections: list[PanelSection] = Field(default_factory=list)
 
 
@@ -127,6 +128,7 @@ class OperatorProfile(BaseModel):
     internal_ext: str | None = None
     mobile_phone: str | None = None
     role: str
+    is_salesperson: bool = False
 
 
 class OperatorProfileUpdate(BaseModel):

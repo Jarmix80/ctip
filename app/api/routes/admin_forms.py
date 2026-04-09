@@ -63,6 +63,7 @@ def _to_summary(item: FormRequest, *, fallback_user: AdminUser | None = None) ->
         created_at=item.created_at,
         sms_status=item.sms_status,
         email_status=item.email_status,
+        ms_status=item.ms_status,
     )
 
 

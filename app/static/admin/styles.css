@@ -1412,6 +1412,10 @@ a {
   height: 16px;
 }
 
+.users-flag-option {
+  min-height: 42px;
+}
+
 .users-table-wrapper {
   border: 1px solid var(--border);
   border-radius: 12px;

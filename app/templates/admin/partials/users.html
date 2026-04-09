@@ -49,6 +49,13 @@
             <option value="admin">Administrator</option>
           </select>
         </div>
+        <div class="form-field">
+          <label class="users-section-option users-flag-option" for="user-is-salesperson">
+            <input id="user-is-salesperson" type="checkbox" x-model="form.isSalesperson">
+            Handlowiec
+          </label>
+          <small>Znacznik biznesowy do grupowego routingu powiadomień formularzy.</small>
+        </div>
         <div class="form-field form-field-wide">
           <label>Dostępne sekcje</label>
           <div class="users-sections-grid">
@@ -89,6 +96,7 @@
           <th>Wewnętrzny</th>
           <th>Telefon</th>
           <th>Rola</th>
+          <th>Handlowiec</th>
           <th>Sekcje</th>
           <th>Status</th>
           <th>Ostatnie logowanie</th>
@@ -99,7 +107,7 @@
       <tbody>
         <template x-if="users.length === 0">
           <tr>
-            <td colspan="10" class="sms-history-empty">Brak użytkowników.</td>
+            <td colspan="11" class="sms-history-empty">Brak użytkowników.</td>
           </tr>
         </template>
         <template x-for="user in users" :key="user.id">
@@ -115,6 +123,9 @@
             <td x-text="formatPhone(user.mobile_phone)"></td>
             <td>
               <span class="badge" :class="user.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="user.role"></span>
+            </td>
+            <td>
+              <span class="status-chip" :class="user.is_salesperson ? 'success' : 'info'" x-text="user.is_salesperson ? 'Tak' : 'Nie'"></span>
             </td>
             <td x-text="formatSections(user.sections, user.role)"></td>
             <td>
@@ -214,6 +225,10 @@
                   <dt>Sekcje</dt>
                   <dd x-text="formatSections(modalDetail.sections, modalDetail.role)"></dd>
                 </div>
+                <div>
+                  <dt>Handlowiec</dt>
+                  <dd x-text="modalDetail.is_salesperson ? 'Tak' : 'Nie'"></dd>
+                </div>
               </dl>
             </div>
             <div>
@@ -234,7 +249,8 @@
             <div class="form-message success" x-text="modalSuccess"></div>
           </template>
 
-          <form class="config-form users-form" @submit.prevent="saveModal()" x-show="canManage">
+          <template x-if="canManage">
+            <form class="config-form users-form" @submit.prevent="saveModal()">
             <h5>Edycja danych użytkownika</h5>
             <div class="form-grid">
               <div class="form-field">
@@ -263,6 +279,13 @@
                   <option value="operator">Operator</option>
                   <option value="admin">Administrator</option>
                 </select>
+              </div>
+              <div class="form-field">
+                <label class="users-section-option users-flag-option" for="modal-user-is-salesperson">
+                  <input id="modal-user-is-salesperson" type="checkbox" x-model="modalEdit.isSalesperson">
+                  Handlowiec
+                </label>
+                <small>Użytkownik będzie odbiorcą grupowych powiadomień formularzy.</small>
               </div>
               <div class="form-field form-field-wide">
                 <label>Dostępne sekcje</label>
@@ -295,7 +318,8 @@
                 Reset hasła
               </button>
             </div>
-          </form>
+            </form>
+          </template>
 
           <section class="users-sessions">
             <header>

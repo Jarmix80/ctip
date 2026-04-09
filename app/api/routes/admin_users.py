@@ -43,6 +43,7 @@ def _map_summary(row: admin_users.UserRow, sections: list[str]) -> AdminUserSumm
         last_name=user.last_name,
         internal_ext=user.internal_ext,
         role=user.role,
+        is_salesperson=bool(user.is_salesperson),
         sections=sections,
         is_active=user.is_active,
         created_at=user.created_at,
@@ -116,6 +117,7 @@ async def create_admin_user(
             last_name=payload.last_name,
             internal_ext=payload.internal_ext,
             role=payload.role,
+            is_salesperson=payload.is_salesperson,
             password=payload.password,
             mobile_phone=payload.mobile_phone,
         )
@@ -150,6 +152,7 @@ async def create_admin_user(
             "user_id": user.id,
             "email": user.email,
             "role": user.role,
+            "is_salesperson": user.is_salesperson,
             "sections": normalized_sections,
         },
     )
@@ -199,6 +202,7 @@ async def update_admin_user(
             last_name=payload.last_name,
             internal_ext=payload.internal_ext,
             role=payload.role,
+            is_salesperson=payload.is_salesperson,
             mobile_phone=payload.mobile_phone,
         )
         normalized_sections = await section_permissions.set_user_sections(
@@ -220,6 +224,7 @@ async def update_admin_user(
             "user_id": user.id,
             "email": user.email,
             "role": user.role,
+            "is_salesperson": user.is_salesperson,
             "sections": normalized_sections,
         },
     )

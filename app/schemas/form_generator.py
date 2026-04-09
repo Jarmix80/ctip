@@ -65,6 +65,7 @@ class FormRequestSummary(BaseModel):
     created_at: datetime
     sms_status: str | None = None
     email_status: str | None = None
+    ms_status: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

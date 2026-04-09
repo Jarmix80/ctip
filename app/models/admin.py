@@ -38,6 +38,7 @@ class AdminUser(Base):
     role: Mapped[str] = mapped_column(Text, nullable=False, default="admin")
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_salesperson: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mobile_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
@@ -140,6 +141,7 @@ class FormRequest(Base):
     token_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sms_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     email_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ms_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     notification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

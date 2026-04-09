@@ -7,7 +7,7 @@
   <header class="config-header">
     <div>
       <h2>Obsługa formularza</h2>
-      <p>Konfiguracja adresu publicznego oraz treści komunikatów wysyłanych do klienta i operatora.</p>
+      <p>Konfiguracja adresu publicznego oraz treści komunikatów wysyłanych do klienta i handlowców.</p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="statusState"></span>
@@ -73,7 +73,7 @@
           <p class="input-help">Dostępne zmienne: <code>{company_name}</code>, <code>{customer_name}</code>, <code>{sender_name}</code>.</p>
         </div>
         <div class="form-field" style="grid-column: 1 / -1;">
-          <label for="form-owner-sms-template">SMS do opiekuna formularza</label>
+          <label for="form-owner-sms-template">SMS do handlowców po zapisie formularza</label>
           <textarea id="form-owner-sms-template" rows="3" x-model="ownerSmsTemplate" required></textarea>
           <p class="input-help">Dostępne zmienne: <code>{company_name}</code>, <code>{customer_name}</code>.</p>
         </div>
@@ -88,7 +88,7 @@
           <pre x-text="submissionEmailBodyPreview"></pre>
         </div>
         <div class="template-preview-card">
-          <strong>Podgląd SMS do opiekuna</strong>
+          <strong>Podgląd SMS do handlowców</strong>
           <pre x-text="ownerSmsPreview"></pre>
         </div>
       </div>

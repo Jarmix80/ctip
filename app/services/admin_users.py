@@ -143,6 +143,7 @@ async def create_user(
     last_name: str | None,
     internal_ext: str | None,
     role: str,
+    is_salesperson: bool = False,
     password: str | None = None,
     mobile_phone: str | None = None,
 ) -> tuple[AdminUser, str]:
@@ -161,6 +162,7 @@ async def create_user(
         role=role,
         password_hash=hashed,
         is_active=True,
+        is_salesperson=bool(is_salesperson),
         mobile_phone=normalized_phone,
     )
     session.add(user)
@@ -177,6 +179,7 @@ async def update_user(
     last_name: str | None,
     internal_ext: str | None,
     role: str,
+    is_salesperson: bool,
     mobile_phone: str | None,
 ) -> AdminUser:
     email_normalized = email.strip().lower()
@@ -190,6 +193,7 @@ async def update_user(
     user.last_name = (last_name or "").strip() or None
     user.internal_ext = (internal_ext or "").strip() or None
     user.role = role
+    user.is_salesperson = bool(is_salesperson)
     user.mobile_phone = normalized_phone
     user.updated_at = datetime.now(UTC)
     return user
@@ -375,6 +379,17 @@ async def count_active_admins(session: AsyncSession, *, exclude_user_id: int | N
     return int(result.scalar() or 0)
 
 
+async def list_active_salespeople(session: AsyncSession) -> list[AdminUser]:
+    """Zwraca aktywnych użytkowników oznaczonych jako handlowcy."""
+    stmt = (
+        select(AdminUser)
+        .where(AdminUser.is_active.is_(True), AdminUser.is_salesperson.is_(True))
+        .order_by(AdminUser.last_name.asc(), AdminUser.first_name.asc(), AdminUser.email.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars())
+
+
 async def delete_user(session: AsyncSession, user: AdminUser) -> None:
     """Usuwa użytkownika wraz z sesjami."""
     await revoke_sessions(session, user.id)
@@ -397,5 +412,6 @@ __all__ = [
     "send_credentials_email",
     "queue_credentials_sms",
     "count_active_admins",
+    "list_active_salespeople",
     "delete_user",
 ]

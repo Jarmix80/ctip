@@ -221,6 +221,12 @@ body {
   vertical-align: top;
 }
 
+.genform-ms-status {
+  min-width: 220px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .genform-table th {
   background: rgba(31, 63, 105, 0.08);
   color: var(--muted);

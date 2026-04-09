@@ -266,6 +266,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["email"], "admin@example.com")
         self.assertEqual(data["first_name"], "Jan")
         self.assertEqual(data["role"], "admin")
+        self.assertFalse(data["is_salesperson"])
         self.assertIn("mobile_phone", data)
 
     async def test_admin_login_sets_cookie_and_accepts_cookie_session(self):
@@ -295,6 +296,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         data = response.json()
         self.assertEqual(data["email"], "operator@example.com")
         self.assertEqual(data["role"], "operator")
+        self.assertFalse(data["is_salesperson"])
         self.assertIn("operator", data["sections"])
 
     async def test_portal_login_and_me_returns_sections(self):
@@ -321,6 +323,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         me = me_response.json()
         self.assertEqual(me["email"], "operator@example.com")
         self.assertEqual(me["role"], "operator")
+        self.assertFalse(me["is_salesperson"])
         self.assertIn("operator", me["sections"])
 
     async def test_portal_logout_clears_cookie_session(self):
@@ -1550,6 +1553,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "last_name": "Zielinski",
             "internal_ext": "205",
             "role": "operator",
+            "is_salesperson": True,
             "mobile_phone": "+48600700800",
             "sections": ["operator"],
         }
@@ -1564,6 +1568,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         user_id = created_user["id"]
         self.assertEqual(created_user["email"], create_payload["email"])
         self.assertEqual(created_user["mobile_phone"], "+48600700800")
+        self.assertTrue(created_user["is_salesperson"])
         self.assertEqual(created_user["sections"], ["operator"])
         self.assertTrue(body["password"])
         self.assertTrue(body["sms_queued"])
@@ -1603,6 +1608,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["email"], create_payload["email"])
         self.assertEqual(detail["sessions_active"], 0)
         self.assertEqual(detail["mobile_phone"], "+48600700800")
+        self.assertTrue(detail["is_salesperson"])
         self.assertEqual(detail["sections"], ["operator"])
 
         update_payload = {
@@ -1611,6 +1617,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "last_name": "Zielinski",
             "internal_ext": "305",
             "role": "admin",
+            "is_salesperson": False,
             "mobile_phone": "+48600111222",
             "sections": ["admin", "generator"],
         }
@@ -1623,12 +1630,14 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         updated = response.json()
         self.assertEqual(updated["internal_ext"], "305")
         self.assertEqual(updated["role"], "admin")
+        self.assertFalse(updated["is_salesperson"])
         self.assertEqual(updated["mobile_phone"], "+48600111222")
         self.assertEqual(updated["sections"], ["admin", "generator"])
 
         async with self.session_factory() as session:
             db_user = await session.get(AdminUser, user_id)
             self.assertIsNotNone(db_user)
+            self.assertFalse(db_user.is_salesperson)
             old_hash = db_user.password_hash
 
         response = await self.client.post(
@@ -1741,6 +1750,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["last_name"], "Nowak-Nowa")
         self.assertEqual(updated["internal_ext"], "222")
         self.assertEqual(updated["mobile_phone"], "+48699111222")
+        self.assertFalse(updated["is_salesperson"])
         self.assertIn("operator", updated["sections"])
 
         async with self.session_factory() as session:
@@ -1749,6 +1759,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(db_user)
             self.assertEqual(db_user.internal_ext, "222")
             self.assertEqual(db_user.mobile_phone, "+48699111222")
+            self.assertFalse(db_user.is_salesperson)
 
             audit_stmt = select(AdminAuditLog).where(
                 AdminAuditLog.action == "portal_profile_update"
@@ -1910,6 +1921,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 token_expires_at=now + timedelta(days=7),
                 sms_status="QUEUED",
                 email_status=None,
+                ms_status="Automat MS: powiazano z klientem ID 9001 (09.04.2026 10:00 UTC).",
             )
             session.add(legacy_form)
             await session.commit()
@@ -1925,6 +1937,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(legacy_row)
         assert legacy_row is not None
         self.assertEqual(legacy_row["customer_email"], "flow-4x-4@test.local")
+        self.assertEqual(
+            legacy_row["ms_status"],
+            "Automat MS: powiazano z klientem ID 9001 (09.04.2026 10:00 UTC).",
+        )
 
     async def test_operator_cannot_generate_form_with_past_expiry_date(self):
         token, _ = await self._login_operator()
@@ -2040,6 +2056,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(admin)
             assert admin is not None
             admin.mobile_phone = "+48600700800"
+            admin.is_salesperson = True
+            operator = await session.get(AdminUser, 2)
+            self.assertIsNotNone(operator)
+            assert operator is not None
+            operator.mobile_phone = "+48600800800"
+            operator.is_salesperson = True
             await session.commit()
 
         config_response = await self.client.put(
@@ -2223,6 +2245,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(form_row)
             assert form_row is not None
             self.assertEqual(form_row.status, "SUBMITTED")
+            self.assertTrue(form_row.ms_status)
             self.assertIsNotNone(form_row.submitted_payload)
             cipher = Fernet(settings.admin_secret_key.encode("utf-8"))
             decrypted = cipher.decrypt(form_row.submitted_payload.encode("utf-8")).decode("utf-8")
@@ -2239,12 +2262,210 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .scalars()
                 .all()
             )
-            self.assertEqual(len(sms_rows), 1)
-            self.assertEqual(sms_rows[0].dest, "+48600700800")
+            self.assertEqual(len(sms_rows), 2)
+            self.assertEqual({row.dest for row in sms_rows}, {"+48600700800", "+48600800800"})
+            self.assertTrue(
+                all(
+                    row.text == "Operator: klient Firma Publiczna Sp. z o.o. wypelnil formularz."
+                    for row in sms_rows
+                )
+            )
+            self.assertTrue(
+                all(
+                    isinstance(row.meta, dict) and row.meta.get("recipient_group") == "salespeople"
+                    for row in sms_rows
+                )
+            )
             self.assertEqual(
                 sms_rows[0].text,
                 "Operator: klient Firma Publiczna Sp. z o.o. wypelnil formularz.",
             )
+
+    async def test_public_form_submission_links_existing_firebird_client_by_nip(self):
+        token, _ = await self._login()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient MS Link",
+                "customer_email": "link-ms@example.com",
+                "customer_phone": "+48 601 111 222",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+        form_url = create_response.json()["form_url"]
+        link_token = form_url.rsplit("/formularz/", maxsplit=1)[-1]
+        representatives = json.dumps(
+            [
+                {
+                    "first_name": "Jan",
+                    "last_name": "Linkowski",
+                    "representative_email": "jan.linkowski@example.com",
+                    "representative_phone": "+48601111000",
+                    "pesel": "85010112345",
+                    "birth_date": "01:01:1985",
+                    "document_type": "Dowód osobisty",
+                    "document_number": "AAA111222",
+                    "document_issue_date": "01:01:2020",
+                    "document_expiry_date": "01:01:2030",
+                }
+            ]
+        )
+
+        with patch(
+            "app.services.form_generator.find_client_in_firebird",
+            return_value=FirebirdClientMatch(
+                found=True,
+                id_klient=4815,
+                nazwa="Klient MS Link",
+                nip="5250001111",
+            ),
+        ):
+            submit_response = await self.client.post(
+                f"/formularz/{link_token}",
+                data={
+                    "company_name": "Klient MS Link",
+                    "company_nip": "5250001111",
+                    "company_phone": "+48601111222",
+                    "company_email": "link-ms@example.com",
+                    "billing_email": "faktury-link@example.com",
+                    "registered_street": "Testowa",
+                    "registered_building_no": "7",
+                    "registered_apartment_no": "",
+                    "registered_postal_code": "60-101",
+                    "registered_city": "Poznan",
+                    "correspondence_same_as_registered": "true",
+                    "correspondence_street": "Testowa",
+                    "correspondence_building_no": "7",
+                    "correspondence_apartment_no": "",
+                    "correspondence_postal_code": "60-101",
+                    "correspondence_city": "Poznan",
+                    "representatives_json": representatives,
+                    "consent": "true",
+                    "website": "",
+                },
+            )
+
+        self.assertEqual(submit_response.status_code, 200)
+
+        async with self.session_factory() as session:
+            form_row = await session.get(FormRequest, form_id)
+            self.assertIsNotNone(form_row)
+            assert form_row is not None
+            self.assertIn("Automat MS: powiazano z klientem ID 4815", str(form_row.ms_status))
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form_id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(workflow_case.firebird_client_id, 4815)
+            self.assertEqual(workflow_case.firebird_client_status, "linked")
+            self.assertEqual(workflow_case.client_mode, "basic_proforma")
+
+    async def test_public_form_submission_creates_firebird_client_when_missing(self):
+        token, _ = await self._login()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient MS Create",
+                "customer_email": "create-ms@example.com",
+                "customer_phone": "+48 602 111 333",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+        form_url = create_response.json()["form_url"]
+        link_token = form_url.rsplit("/formularz/", maxsplit=1)[-1]
+        representatives = json.dumps(
+            [
+                {
+                    "first_name": "Anna",
+                    "last_name": "Nowak",
+                    "representative_email": "anna.nowak@example.com",
+                    "representative_phone": "+48602111000",
+                    "pesel": "02270803624",
+                    "birth_date": "08:07:2002",
+                    "document_type": "Paszport",
+                    "document_number": "PZ998877",
+                    "document_issue_date": "02:05:2019",
+                    "document_expiry_date": "01:05:2029",
+                }
+            ]
+        )
+        result = FirebirdClientWriteResult(
+            created=True,
+            match=FirebirdClientMatch(
+                found=True,
+                id_klient=6321,
+                nazwa="Klient MS Create",
+                nip="5250002222",
+            ),
+        )
+
+        with (
+            patch(
+                "app.services.form_generator.find_client_in_firebird",
+                return_value=FirebirdClientMatch(found=False),
+            ),
+            patch(
+                "app.services.form_generator.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.form_generator.create_client_from_submitted_payload",
+                return_value=result,
+            ),
+        ):
+            submit_response = await self.client.post(
+                f"/formularz/{link_token}",
+                data={
+                    "company_name": "Klient MS Create",
+                    "company_nip": "5250002222",
+                    "company_phone": "+48602111333",
+                    "company_email": "create-ms@example.com",
+                    "billing_email": "faktury-create@example.com",
+                    "registered_street": "Fabryczna",
+                    "registered_building_no": "12",
+                    "registered_apartment_no": "4",
+                    "registered_postal_code": "61-001",
+                    "registered_city": "Poznan",
+                    "correspondence_same_as_registered": "true",
+                    "correspondence_street": "Fabryczna",
+                    "correspondence_building_no": "12",
+                    "correspondence_apartment_no": "4",
+                    "correspondence_postal_code": "61-001",
+                    "correspondence_city": "Poznan",
+                    "representatives_json": representatives,
+                    "consent": "true",
+                    "website": "",
+                },
+            )
+
+        self.assertEqual(submit_response.status_code, 200)
+
+        async with self.session_factory() as session:
+            form_row = await session.get(FormRequest, form_id)
+            self.assertIsNotNone(form_row)
+            assert form_row is not None
+            self.assertIn("Automat MS: dodano klienta ID 6321", str(form_row.ms_status))
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form_id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(workflow_case.firebird_client_id, 6321)
+            self.assertEqual(workflow_case.firebird_client_status, "created")
+            self.assertEqual(workflow_case.client_mode, "basic_proforma")
 
     async def test_contracts_dashboard_returns_all_forms_for_flow(self):
         token, _ = await self._login_operator()
@@ -2937,6 +3158,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         create_mock.assert_called_once()
 
         async with self.session_factory() as session:
+            form_row = await session.get(FormRequest, form.id)
+            self.assertIsNotNone(form_row)
+            assert form_row is not None
+            self.assertIn("MS: dodano klienta ID 3210", str(form_row.ms_status))
             entries = (
                 (
                     await session.execute(
@@ -3239,8 +3464,13 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .scalars()
                 .one()
             )
+            form_row = await session.get(FormRequest, form.id)
+            self.assertIsNotNone(form_row)
+            assert form_row is not None
+            self.assertIn("MS: dodano klienta ID 3210", str(form_row.ms_status))
             self.assertEqual(workflow_case.firebird_client_id, 3210)
             self.assertEqual(workflow_case.client_mode, "basic_proforma")
+            self.assertEqual(workflow_case.firebird_client_status, "created")
 
     async def test_contracts_form_workflow_devices_saves_selected_rows(self):
         token, _ = await self._login_operator()

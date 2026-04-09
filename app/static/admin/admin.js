@@ -1460,6 +1460,7 @@ document.addEventListener("alpine:init", () => {
       lastName: "",
       internalExt: "",
       role: "operator",
+      isSalesperson: false,
       mobilePhone: "",
       sections: ["operator", "generator"],
     },
@@ -1476,6 +1477,7 @@ document.addEventListener("alpine:init", () => {
       lastName: "",
       internalExt: "",
       role: "operator",
+      isSalesperson: false,
       mobilePhone: "",
       sections: ["operator", "generator"],
     },
@@ -1625,6 +1627,7 @@ document.addEventListener("alpine:init", () => {
       this.form.lastName = "";
       this.form.internalExt = "";
       this.form.role = "operator";
+      this.form.isSalesperson = false;
       this.form.mobilePhone = "";
       this.form.sections = this.defaultSectionsForRole("operator");
     },
@@ -1692,6 +1695,7 @@ document.addEventListener("alpine:init", () => {
         last_name: normalize(source.lastName) || null,
         internal_ext: normalize(source.internalExt) || null,
         role: source.role || "operator",
+        is_salesperson: Boolean(source.isSalesperson),
         mobile_phone: mobile || null,
         sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
       };
@@ -1836,6 +1840,7 @@ document.addEventListener("alpine:init", () => {
         if (this.modalOpen && this.modalDetail && this.modalDetail.id === user.id) {
           this.modalDetail.is_active = data.is_active;
           this.modalEdit.role = data.role;
+          this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
           this.modalEdit.sections = this.normalizeSectionsForRole(
             data.sections,
             data.role || this.modalEdit.role,
@@ -1912,6 +1917,7 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.lastName = "";
       this.modalEdit.internalExt = "";
       this.modalEdit.role = "operator";
+      this.modalEdit.isSalesperson = false;
       this.modalEdit.mobilePhone = "";
       this.modalEdit.sections = this.defaultSectionsForRole("operator");
       this._loadModal(userId);
@@ -1939,6 +1945,7 @@ document.addEventListener("alpine:init", () => {
         this.modalEdit.lastName = data.last_name || "";
         this.modalEdit.internalExt = data.internal_ext || "";
         this.modalEdit.role = data.role || "operator";
+        this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
         this.modalEdit.mobilePhone = data.mobile_phone || "";
         this.modalEdit.sections = this.normalizeSectionsForRole(
           data.sections,

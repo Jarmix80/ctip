@@ -37,6 +37,7 @@ class AdminUserInfo(BaseModel):
     internal_ext: str | None
     role: str
     mobile_phone: str | None = None
+    is_salesperson: bool = False
     sections: list[PanelSection] = Field(default_factory=list)
 
 
@@ -368,6 +369,7 @@ class AdminUserSummary(BaseModel):
     last_name: str | None
     internal_ext: str | None
     role: Literal["admin", "operator"]
+    is_salesperson: bool = False
     sections: list[PanelSection] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
@@ -411,6 +413,7 @@ class AdminUserCreate(BaseModel):
     last_name: str | None = None
     internal_ext: str | None = None
     role: Literal["admin", "operator"] = "operator"
+    is_salesperson: bool = False
     sections: list[PanelSection] | None = None
     password: str | None = None
     mobile_phone: str = Field(min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$")
@@ -433,6 +436,7 @@ class AdminUserUpdate(BaseModel):
     last_name: str | None = None
     internal_ext: str | None = None
     role: Literal["admin", "operator"] = "operator"
+    is_salesperson: bool = False
     sections: list[PanelSection] | None = None
     mobile_phone: str | None = Field(
         default=None, min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$"
@@ -455,6 +459,7 @@ class PortalUserInfo(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     role: str
+    is_salesperson: bool = False
     sections: list[PanelSection] = Field(default_factory=list)
 
 
@@ -467,6 +472,7 @@ class PortalProfile(BaseModel):
     internal_ext: str | None = None
     mobile_phone: str | None = None
     role: str
+    is_salesperson: bool = False
     sections: list[PanelSection] = Field(default_factory=list)
 
 

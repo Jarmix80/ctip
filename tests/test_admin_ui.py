@@ -431,6 +431,7 @@ def test_users_partial_renders_listing():
         role="operator",
         password_hash="hash",
         is_active=True,
+        is_salesperson=True,
         created_at=now,
         updated_at=now,
         mobile_phone="+48600900900",
@@ -448,6 +449,7 @@ def test_users_partial_renders_listing():
     assert "panel@example.com" in response.text
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
+    assert "Handlowiec" in response.text
     assert "+48600900900" in response.text
 
 
@@ -646,6 +648,7 @@ def test_genform_page_renders_layout():
     assert "genform-detail-print" in response.text
     assert "genform-detail-pdf" in response.text
     assert "Utworzone przez" in response.text
+    assert "Status MS" in response.text
     assert f"Wersja {app.version}" in response.text
 
 
@@ -657,6 +660,7 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert "function renderDetailSections(detailData)" in content
     assert "button[data-copy-value]" in content
     assert "window.print();" in content
+    assert 'item.ms_status || "—"' in content
     assert '{ label: "Ważny do"' not in content
     assert 'label: "E-mail firmowy"' in content
     assert 'label: "Telefon reprezentanta"' in content
@@ -676,8 +680,9 @@ def test_genform_print_css_keeps_first_page_compact_with_inner_margins():
 
 def test_admin_users_modal_edit_form_is_not_hidden_by_x_cloak():
     template = Path("app/templates/admin/partials/users.html").read_text(encoding="utf-8")
-    assert '@submit.prevent="saveModal()" x-show="canManage"' in template
-    assert '@submit.prevent="saveModal()" x-show="canManage" x-cloak' not in template
+    assert '@submit.prevent="saveModal()"' in template
+    assert "modal-user-is-salesperson" in template
+    assert '@submit.prevent="saveModal()" x-show="canManage"' not in template
 
 
 def test_public_form_template_has_date_mask_and_auto_expiry_logic():

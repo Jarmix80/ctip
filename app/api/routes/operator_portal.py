@@ -206,6 +206,7 @@ async def operator_me(
         first_name=admin_user.first_name,
         last_name=admin_user.last_name,
         role=admin_user.role,
+        is_salesperson=bool(admin_user.is_salesperson),
         sections=sections,
     )
 
@@ -558,6 +559,7 @@ async def get_operator_profile(
         internal_ext=admin_user.internal_ext,
         mobile_phone=admin_user.mobile_phone,
         role=admin_user.role,
+        is_salesperson=bool(admin_user.is_salesperson),
     )
 
 
@@ -590,6 +592,7 @@ async def update_operator_profile(
         internal_ext=admin_user.internal_ext,
         mobile_phone=admin_user.mobile_phone,
         role=admin_user.role,
+        is_salesperson=bool(admin_user.is_salesperson),
     )
 
 

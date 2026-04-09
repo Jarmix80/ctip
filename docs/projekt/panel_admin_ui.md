@@ -20,7 +20,7 @@
 | CTIP Live | Monitor protokołu, restart klienta, status handshake | Panel z WebSocket (lista zdarzeń), karty statusu, przyciski akcji |
 | Automatyzacje IVR | Mapowanie cyfr IVR na SMS i numery wewnętrzne | Lista reguł, formularz CRUD, audyt operacji, walidacja unikalności |
 | SerwerSMS | Parametry operatora, tryb demo, wysyłka testowa | Formularz, przełącznik demo, moduł wysyłki testowej, saldo |
-| Obsługa formularza | Publiczny adres formularza oraz treści interakcji po stronie klienta i operatora | Formularz konfiguracji, pola szablonów, lista dostepnych placeholderow, podglad renderu |
+| Obsługa formularza | Publiczny adres formularza oraz treści interakcji po stronie klienta i handlowców | Formularz konfiguracji, pola szablonów, lista dostepnych placeholderow, podglad renderu |
 | Książka adresowa | Kartoteka kontaktów, powiązanie z bazą Firebird | Lista kontaktów, formularz dodawania, edycja w modalach, wyszukiwarka |
 | Konsola SQL & Raporty | Sandbox `SELECT`, zapisane zapytania, wykresy SMS | Edytor tekstowy, wyniki tabelaryczne, eksport CSV |
 | Użytkownicy | Zarządzanie kontami, przypisanie numerów, statystyki | Tabela CRUD, modale, wykres słupkowy (SMS na użytkownika) |
@@ -104,7 +104,7 @@
   - tresc SMS do klienta po wygenerowaniu formularza,
   - temat i tresc e-maila z linkiem,
   - temat i tresc e-maila potwierdzajacego zapis formularza,
-  - tresc SMS do operatora/opiekuna po zapisie.
+  - tresc SMS do aktywnych handlowcow po zapisie.
 - Sekcja renderuje podglad wszystkich szablonow na przykładowych danych (`customer_name`, `company_name`, `form_url`, `expires_at`, `sender_name`), aby administrator mogl zweryfikowac tresc bez tworzenia realnego formularza.
 - Dostepne placeholdery sa walidowane przy zapisie i obejmuja m.in. `form_url`, `expires_at`, `customer_name`, `company_name`, `sender_name`.
 - Konfiguracja trafia do `admin_setting` pod namespace `form_handling` i jest odczytywana przez `app.services.form_generator`.
@@ -117,9 +117,10 @@
 - API: `POST /admin/database/query` (ograniczone do `SELECT`), `GET /admin/reports/sms-summary` (do wykonania).
 
 ### 7. Użytkownicy
-- Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
-- Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli i przypisanych sekcji (`admin`, `operator`, `generator`).
+- Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Handlowiec`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
+- Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli, znacznika `Handlowiec` i przypisanych sekcji (`admin`, `operator`, `generator`).
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
+- Znacznik `Handlowiec` jest atrybutem biznesowym niezależnym od roli i sekcji; służy do grupowania powiadomień formularzy po statusie `SUBMITTED`.
 - Akcja `Reset hasła` generuje nowe hasło tymczasowe, unieważnia aktywne sesje użytkownika i automatycznie wysyła powiadomienie e-mail + SMS z nowymi danymi logowania.
 - API dla tworzenia użytkownika i resetu hasła zwraca pola `sms_queued` oraz `sms_recipient`, dzięki czemu interfejs potwierdza, czy SMS z danymi logowania został dodany do kolejki.
 - Modal szczegółów prezentuje dane profilu, listę sesji (z informacją o unieważnieniu) oraz umożliwia edycję.
@@ -143,7 +144,7 @@
 - Widok `/choice` udostępnia dodatkowy formularz edycji własnego profilu (`/auth/profile`) z polami: imię, nazwisko, e-mail, numer wewnętrzny i telefon komórkowy.
 - Widok `/choice` udostępnia również formularz zmiany hasła (`/auth/profile/change-password`) z polityką: minimum 9 znaków, co najmniej jedna duża litera, jedna cyfra i jeden znak specjalny.
 - Wylogowanie strony głównej realizuje endpoint `/auth/logout`.
-- Sekcja Użytkownicy w panelu administratora zawiera checkboxy przypisania sekcji podczas tworzenia i edycji konta.
+- Sekcja Użytkownicy w panelu administratora zawiera checkboxy przypisania sekcji oraz osobny znacznik `Handlowiec` podczas tworzenia i edycji konta.
 
 ### 8b. Generator formularzy (osobny flow)
 - Generator formularzy został wydzielony poza panel administratora i działa pod adresem `/genform`.
@@ -155,11 +156,12 @@
   - krok 3: podsumowanie i końcowe potwierdzenie.
 - Ekran `/genform` podczas tworzenia linku umożliwia ustawienie daty ważności formularza; domyślnie ustawiane jest 7 dni od daty wygenerowania.
 - Po wysyłce (dopiero po końcowym `Potwierdź`) dane są zapisywane jako szyfrowany payload (Fernet, klucz `ADMIN_SECRET_KEY`) i status zmieniany na `SUBMITTED`.
-- Po zapisie system wysyła e-mail potwierdzający do klienta oraz tworzy SMS do użytkownika, który wygenerował link formularza.
+- Po zapisaniu statusu `SUBMITTED` backend automatycznie sprawdza bazę Menadżera Serwisu po NIP klienta; przy znalezionym rekordzie zapisuje powiązanie sprawy workflow, a przy braku rekordu może utworzyć klienta w Firebird i zapisuje czytelny wynik operacji w polu `ms_status`.
+- Po zapisie system wysyła e-mail potwierdzający do klienta oraz tworzy SMS do wszystkich aktywnych użytkowników oznaczonych jako `Handlowiec`.
 - Lista formularzy zawiera akcje `Wyświetl` i `Usuń`.
 - `Wyświetl` otwiera modal szczegółów z czytelnym układem danych firmy i reprezentantów (zgodnym z końcowym podsumowaniem formularza klienta), bez pustej przestrzeni w widoku wydruku/PDF, z przyciskiem kopiowania przy każdym polu oraz akcjami `Drukuj` i `PDF` opartymi o systemowe okno drukowania; wariant wydruku ma wewnętrzne marginesy i zwarty układ, a kolejne strony są dobierane naturalnie przez silnik drukowania.
 - Modal pokazuje pełne dane klienta po statusie `SUBMITTED`, a dla statusów `GENERATED`/`DISPATCHED`/`EXPIRED` zwraca komunikat operacyjny („formularz został wysłany, ale nie został jeszcze wypełniony” itp.).
-- Lista generatora zawiera kolumnę `Utworzone przez`.
+- Lista generatora zawiera kolumny `Utworzone przez` oraz `Status MS`.
 
 ## Komponenty wspólne
 - **Karty**: kontenery z ikoną, wartością i opisem. Wersje `success`, `warning`, `danger`.

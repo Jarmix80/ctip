@@ -127,5 +127,6 @@ async def admin_me(
         internal_ext=admin_user.internal_ext,
         role=admin_user.role,
         mobile_phone=admin_user.mobile_phone,
+        is_salesperson=bool(admin_user.is_salesperson),
         sections=sections,
     )
