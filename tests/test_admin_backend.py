@@ -60,6 +60,7 @@ from app.services.device_intake import (
 )
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
+from app.services.form_handling_config import default_public_base_url
 from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
@@ -4277,6 +4278,25 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["public_base_url"], payload["public_base_url"])
         self.assertEqual(body["owner_sms_template"], payload["owner_sms_template"])
+
+    async def test_default_form_handling_config_returns_business_templates(self):
+        token, _ = await self._login()
+        response = await self.client.get(
+            "/admin/config/form-handling",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["public_base_url"], default_public_base_url())
+        self.assertIn("Ksero Partner", body["invite_sms_template"])
+        self.assertIn("formularza serwisowego", body["invite_email_subject"])
+        self.assertIn("{form_url}", body["invite_email_body"])
+        self.assertIn("{expires_at}", body["invite_email_body"])
+        self.assertEqual(
+            body["submission_email_subject"],
+            "Potwierdzenie przyjecia formularza serwisowego",
+        )
+        self.assertIn("{customer_name}", body["owner_sms_template"])
 
     async def test_update_form_handling_config_rejects_unknown_placeholder(self):
         token, _ = await self._login()

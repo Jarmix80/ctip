@@ -20,7 +20,7 @@
 | CTIP Live | Monitor protokołu, restart klienta, status handshake | Panel z WebSocket (lista zdarzeń), karty statusu, przyciski akcji |
 | Automatyzacje IVR | Mapowanie cyfr IVR na SMS i numery wewnętrzne | Lista reguł, formularz CRUD, audyt operacji, walidacja unikalności |
 | SerwerSMS | Parametry operatora, tryb demo, wysyłka testowa | Formularz, przełącznik demo, moduł wysyłki testowej, saldo |
-| Obsługa formularza | Publiczny adres formularza oraz treści interakcji po stronie klienta i operatora | Formularz konfiguracji, pola szablonów, lista dostepnych placeholderow |
+| Obsługa formularza | Publiczny adres formularza oraz treści interakcji po stronie klienta i operatora | Formularz konfiguracji, pola szablonów, lista dostepnych placeholderow, podglad renderu |
 | Książka adresowa | Kartoteka kontaktów, powiązanie z bazą Firebird | Lista kontaktów, formularz dodawania, edycja w modalach, wyszukiwarka |
 | Konsola SQL & Raporty | Sandbox `SELECT`, zapisane zapytania, wykresy SMS | Edytor tekstowy, wyniki tabelaryczne, eksport CSV |
 | Użytkownicy | Zarządzanie kontami, przypisanie numerów, statystyki | Tabela CRUD, modale, wykres słupkowy (SMS na użytkownika) |
@@ -59,6 +59,7 @@
 - Odczyt i zapis konfiguracji: `GET/PUT /admin/config/firebird`.
 - Test logowania: `POST /admin/firebird/test` (wynik prezentowany w sekcji statusowej formularza i zapisywany w audycie); endpoint testuje ścieżkę lokalną lub sieciową zgodnie z wybranym trybem, a dla trybu lokalnego wymusza host `127.0.0.1`.
 - Konfiguracja jest przechowywana w `admin_setting` pod namespace `firebird` z szyfrowaniem hasła analogicznie do SMTP/SerwerSMS.
+- Formularz posiada jawne atrybuty `data-save-endpoint` i `data-test-endpoint`, aby UI nie moglo pomylic tej sekcji z baza `v-maintenance`.
 
 ### 4. CTIP Live
 - Layout 70/30: lewa kolumna – strumień zdarzeń, prawa – karty statusu.
@@ -107,6 +108,7 @@
 - Sekcja renderuje podglad wszystkich szablonow na przykładowych danych (`customer_name`, `company_name`, `form_url`, `expires_at`, `sender_name`), aby administrator mogl zweryfikowac tresc bez tworzenia realnego formularza.
 - Dostepne placeholdery sa walidowane przy zapisie i obejmuja m.in. `form_url`, `expires_at`, `customer_name`, `company_name`, `sender_name`.
 - Konfiguracja trafia do `admin_setting` pod namespace `form_handling` i jest odczytywana przez `app.services.form_generator`.
+- Domyslne tresci po wdrozeniu sa przygotowane pod komunikacje z klientem Ksero Partner; administrator moze je nadpisac w panelu bez zmian w repo.
 
 ### 6. Konsola SQL & Raporty
 - Tabulator: `SQL sandbox` i `Raporty`.

@@ -179,6 +179,15 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="testing">' not in html
     assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
+    assert 'id="firebird-ms-config"' in html
+    assert 'x-data="firebirdMsConfig()"' in html
+    assert 'data-config-label="Menadżer Serwisu"' in html
+    assert 'data-save-endpoint="/admin/config/firebird"' in html
+    assert 'data-test-endpoint="/admin/firebird/test"' in html
+    assert 'data-save-endpoint="/admin/config/firebird-vmaintenance"' in html
+    assert 'data-test-endpoint="/admin/firebird/test-vmaintenance"' in html
+    assert "C:/MS/BAZA/MS.FDB" in html
+    assert "D:/bazavmantenance/BAZA_CPC.FDB" in html
 
 
 def test_firebird_partial_requires_authentication():
@@ -225,6 +234,10 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="testing">' not in html
     assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
+    assert 'x-data="firebirdMsConfig()"' in html
+    assert 'data-config-label="Menadżer Serwisu"' in html
+    assert 'data-save-endpoint="/admin/config/firebird"' in html
+    assert 'data-test-endpoint="/admin/firebird/test"' in html
     assert '<option value="network">Baza sieciowa</option>' in html
     assert '<option value="local">Baza lokalna</option>' in html
     assert ":disabled=\"mode === 'local'\"" in html

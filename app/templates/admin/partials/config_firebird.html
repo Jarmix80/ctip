@@ -1,14 +1,18 @@
 <section
   class="config-section"
-  x-data="firebirdConfig()"
+  x-data="firebirdMsConfig()"
   x-init="init()"
   x-on:admin:firebird-test.window="testConnection()"
   data-initial='{{ config | tojson | safe }}'
+  data-config-label="Menadżer Serwisu"
+  data-save-endpoint="/admin/config/firebird"
+  data-test-endpoint="/admin/firebird/test"
 >
   <header class="config-header">
     <div>
       <h2>Konfiguracja Firebird (Menadżer Serwisu)</h2>
       <p>Parametry połączenia do bazy programu Menadżer Serwisu oraz ścieżka lokalnej kopii roboczej.</p>
+      <p class="input-help">Sekcja zapisuje namespace <code>firebird</code> i testuje polaczenie przez <code>/admin/firebird/test</code>.</p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="testStatus"></span>

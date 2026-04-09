@@ -13,25 +13,29 @@ from app.core.config import settings
 from app.services.settings_store import build_store
 
 DEFAULT_INVITE_SMS_TEMPLATE = (
-    "CTIP: wygenerowano bezpieczny formularz. Link: {form_url} (wazny do {expires_at})."
+    "Ksero Partner: prosimy uzupelnic formularz do obslugi zgloszenia: "
+    "{form_url} Link wazny do {expires_at}."
 )
-DEFAULT_INVITE_EMAIL_SUBJECT = "Bezpieczny formularz do uzupelnienia"
+DEFAULT_INVITE_EMAIL_SUBJECT = "Prosba o uzupelnienie formularza serwisowego"
 DEFAULT_INVITE_EMAIL_BODY = (
-    "Dzien dobry,\n\n"
-    "Przygotowalismy bezpieczny formularz wymagany do obslugi zgloszenia.\n\n"
-    "Link: {form_url}\n"
-    "Waznosc linku: {expires_at}\n\n"
-    "Jesli nie oczekiwali Panstwo tej wiadomosci, prosimy o jej zignorowanie.\n\n"
+    "Dzien dobry {customer_name},\n\n"
+    "przesylamy formularz potrzebny do dalszej obslugi zgloszenia serwisowego.\n\n"
+    "Link do formularza:\n{form_url}\n\n"
+    "Link jest wazny do {expires_at}.\n"
+    "Po zapisaniu formularza dane trafia bezposrednio do obslugi w Ksero Partner.\n\n"
+    "W razie pytan prosimy o kontakt z naszym biurem.\n\n"
     "Pozdrawiamy,\n{sender_name}"
 )
-DEFAULT_SUBMISSION_EMAIL_SUBJECT = "Potwierdzenie przyjecia formularza"
+DEFAULT_SUBMISSION_EMAIL_SUBJECT = "Potwierdzenie przyjecia formularza serwisowego"
 DEFAULT_SUBMISSION_EMAIL_BODY = (
     "Dzien dobry,\n\n"
-    "Potwierdzamy poprawne przyjecie formularza dla firmy: {company_name}.\n"
-    "Dane zostaly zapisane w systemie CTIP.\n\n"
+    "potwierdzamy poprawne przyjecie formularza dla firmy {company_name}.\n"
+    "Dane zostaly zapisane i przekazane do dalszej obslugi.\n\n"
     "Pozdrawiamy,\n{sender_name}"
 )
-DEFAULT_OWNER_SMS_TEMPLATE = "CTIP: klient {company_name} wypelnil formularz."
+DEFAULT_OWNER_SMS_TEMPLATE = (
+    "CTIP: formularz klienta {company_name} ({customer_name}) zostal zapisany."
+)
 
 INVITE_SMS_PLACEHOLDERS = frozenset({"customer_name", "expires_at", "form_url"})
 INVITE_EMAIL_SUBJECT_PLACEHOLDERS = frozenset({"customer_name", "expires_at"})

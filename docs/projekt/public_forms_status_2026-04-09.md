@@ -90,6 +90,13 @@ Rozwiązanie:
 - sekcja pokazuje podglad renderu szablonow na przykladowych danych, aby administrator mogl sprawdzic link i tresc jeszcze przed zapisem lub wygenerowaniem prawdziwego formularza,
 - generator przestal polegac na twardo wpisanych tresciach i fallbackach do lokalnego adresu, jezeli konfiguracja zostala zapisana w `admin_setting.form_handling.*`.
 
+## Korekta w wersji 0.2.6
+- domyslne tresci SMS i e-mail zostaly dopasowane do komunikacji z klientem Ksero Partner,
+- sekcje Firebird w `/admin -> Konfiguracja bazy` dostaly jawne przypisanie endpointow:
+  - Menadzer Serwisu -> `firebird`, `PUT /admin/config/firebird`, `POST /admin/firebird/test`,
+  - v-maintenance -> `firebird_vmaintenance`, `PUT /admin/config/firebird-vmaintenance`, `POST /admin/firebird/test-vmaintenance`,
+- zmiana zamyka ryzyko pomylenia konfiguracji bazy glownej z baza `v-maintenance` w warstwie UI.
+
 ## Następny etap: rozbudowa możliwości formularza i jego interakcji
 Najbliższy krok produktowy powinien dotyczyć wyłącznie warstwy interakcji formularza `GET/POST /formularz/{token}`.
 

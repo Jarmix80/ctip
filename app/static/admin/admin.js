@@ -2112,7 +2112,7 @@ document.addEventListener("alpine:init", () => {
     },
   });
 
-  const firebirdConfig = () => ({
+  const firebirdMsConfig = () => ({
     mode: "network",
     host: "",
     networkHostCache: "",
@@ -2164,6 +2164,18 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    get configLabel() {
+      return this.$el.dataset.configLabel || "Menadżer Serwisu";
+    },
+
+    get saveEndpoint() {
+      return this.$el.dataset.saveEndpoint || "/admin/config/firebird";
+    },
+
+    get testEndpoint() {
+      return this.$el.dataset.testEndpoint || "/admin/firebird/test";
+    },
+
     _readInitial() {
       try {
         return JSON.parse(this.$el.dataset.initial || "{}");
@@ -2207,7 +2219,7 @@ document.addEventListener("alpine:init", () => {
         if (this.password) {
           payload.password = this.password;
         }
-        const response = await fetch("/admin/config/firebird", {
+        const response = await fetch(this.saveEndpoint, {
           method: "PUT",
           headers: this.headers,
           body: JSON.stringify(payload),
@@ -2231,7 +2243,7 @@ document.addEventListener("alpine:init", () => {
         this.localCopyPath = data.local_copy_path || "";
         this.password = "";
         this.passwordSet = Boolean(data.password_set);
-        this.success = "Konfiguracja Firebird została zapisana.";
+        this.success = `Konfiguracja Firebird (${this.configLabel}) została zapisana.`;
         showToast(this.success, "success");
         this.$el.dataset.initial = JSON.stringify(data);
       } catch (err) {
@@ -2265,7 +2277,7 @@ document.addEventListener("alpine:init", () => {
           charset: this.charset || null,
           role: this.role || null,
         };
-        const response = await fetch("/admin/firebird/test", {
+        const response = await fetch(this.testEndpoint, {
           method: "POST",
           headers: { "X-Admin-Session": token, "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -2275,18 +2287,23 @@ document.addEventListener("alpine:init", () => {
           throw new Error(data?.detail || "Błąd testu Firebird");
         }
         this.testStatus = data.success ? "success" : "warning";
-        this.testMessage = data.message || (data.success ? "Połączenie zakończone sukcesem." : "Serwer zwrócił błąd.");
+        const resultMessage =
+          data.message
+          || (data.success ? "Połączenie zakończone sukcesem." : "Serwer zwrócił błąd.");
+        this.testMessage = `${this.configLabel}: ${resultMessage}`;
         showToast(this.testMessage, data.success ? "success" : "warning");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Błąd testu Firebird";
         this.testStatus = "error";
-        this.testMessage = message;
+        this.testMessage = `${this.configLabel}: ${message}`;
         showToast(message, "error");
       } finally {
         this.testing = false;
       }
     },
   });
+
+  const firebirdConfig = firebirdMsConfig;
 
   const firebirdVMaintenanceConfig = () => ({
     host: "",
@@ -2314,6 +2331,18 @@ document.addEventListener("alpine:init", () => {
       this.role = initial.role || "";
       this.password = "";
       this.passwordSet = Boolean(initial.password_set);
+    },
+
+    get configLabel() {
+      return this.$el.dataset.configLabel || "v-maintenance";
+    },
+
+    get saveEndpoint() {
+      return this.$el.dataset.saveEndpoint || "/admin/config/firebird-vmaintenance";
+    },
+
+    get testEndpoint() {
+      return this.$el.dataset.testEndpoint || "/admin/firebird/test-vmaintenance";
     },
 
     _readInitial() {
@@ -2357,7 +2386,7 @@ document.addEventListener("alpine:init", () => {
         if (this.password) {
           payload.password = this.password;
         }
-        const response = await fetch("/admin/config/firebird-vmaintenance", {
+        const response = await fetch(this.saveEndpoint, {
           method: "PUT",
           headers: this.headers,
           body: JSON.stringify(payload),
@@ -2374,7 +2403,7 @@ document.addEventListener("alpine:init", () => {
         this.role = data.role || "";
         this.password = "";
         this.passwordSet = Boolean(data.password_set);
-        this.success = "Konfiguracja Firebird v-maintenance została zapisana.";
+        this.success = `Konfiguracja Firebird (${this.configLabel}) została zapisana.`;
         this.$el.dataset.initial = JSON.stringify(data);
         showToast(this.success, "success");
       } catch (err) {
@@ -2406,7 +2435,7 @@ document.addEventListener("alpine:init", () => {
           charset: this.charset || null,
           role: this.role || null,
         };
-        const response = await fetch("/admin/firebird/test-vmaintenance", {
+        const response = await fetch(this.testEndpoint, {
           method: "POST",
           headers: { "X-Admin-Session": token, "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -2416,12 +2445,15 @@ document.addEventListener("alpine:init", () => {
           throw new Error(data?.detail || "Błąd testu Firebird v-maintenance");
         }
         this.testStatus = data.success ? "success" : "warning";
-        this.testMessage = data.message || (data.success ? "Połączenie zakończone sukcesem." : "Serwer zwrócił błąd.");
+        const resultMessage =
+          data.message
+          || (data.success ? "Połączenie zakończone sukcesem." : "Serwer zwrócił błąd.");
+        this.testMessage = `${this.configLabel}: ${resultMessage}`;
         showToast(this.testMessage, data.success ? "success" : "warning");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Błąd testu Firebird v-maintenance";
         this.testStatus = "error";
-        this.testMessage = message;
+        this.testMessage = `${this.configLabel}: ${message}`;
         showToast(message, "error");
       } finally {
         this.testing = false;
@@ -3907,6 +3939,7 @@ document.addEventListener("alpine:init", () => {
 Alpine.data("adminApp", adminApp);
 Alpine.data("adminUsers", adminUsers);
 Alpine.data("databaseConfig", databaseConfig);
+Alpine.data("firebirdMsConfig", firebirdMsConfig);
 Alpine.data("firebirdConfig", firebirdConfig);
 Alpine.data("firebirdVMaintenanceConfig", firebirdVMaintenanceConfig);
 Alpine.data("kpRepairSourceConfig", kpRepairSourceConfig);
@@ -3921,6 +3954,7 @@ Alpine.data("emailConfig", emailConfig);
   window.adminApp = adminApp;
   window.adminUsers = adminUsers;
   window.databaseConfig = databaseConfig;
+  window.firebirdMsConfig = firebirdMsConfig;
   window.firebirdConfig = firebirdConfig;
 window.firebirdVMaintenanceConfig = firebirdVMaintenanceConfig;
 window.kpRepairSourceConfig = kpRepairSourceConfig;

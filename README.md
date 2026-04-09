@@ -388,6 +388,9 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - W razie odpowiedzi 401/403 podczas ładowania sekcji panel samoczynnie czyści token, wylogowuje użytkownika i sygnalizuje wygaśnięcie sesji.
 - Dashboard udostępnia aktywne akcje dla kafelków statusu: `Testuj połączenie` (baza danych), `Edytuj konfigurację` oraz `Diagnostyka` (CTIP i SerwerSMS). Diagnostyka pobiera dane z `/admin/status/<moduł>` i wyświetla je w panelu bocznym.
 - Formularze konfiguracji: PostgreSQL + Firebird Menadżer Serwisu + Firebird v-maintenance + źródło CSV (`/admin/partials/config/database`), CTIP (`/admin/partials/config/ctip`), SerwerSMS (`/admin/partials/config/sms`), E-mail (`/admin/partials/config/email`) oraz Obsługa formularza (`/admin/partials/config/form-handling`) zapisują dane przez `/admin/config/...` i zapewniają testy połączeń tam, gdzie ma to sens (`/admin/status/database`, `/admin/firebird/test`, `/admin/firebird/test-vmaintenance`, `/admin/sms/test`, `/admin/email/test`).
+- W sekcji `Konfiguracja bazy` oba formularze Firebird są jawnie rozdzielone:
+  - Menadżer Serwisu korzysta z namespace `firebird`, zapisu `PUT /admin/config/firebird` i testu `POST /admin/firebird/test`,
+  - v-maintenance korzysta z namespace `firebird_vmaintenance`, zapisu `PUT /admin/config/firebird-vmaintenance` i testu `POST /admin/firebird/test-vmaintenance`.
 - Sekcja SerwerSMS zawiera monitor pracy `sms_sender`: widok logu (`/admin/partials/sms/logs`) prezentuje końcówkę pliku `docs/LOG/sms/sms_sender_<YYYY-MM-DD>.log`, a tabela historii (`/admin/partials/sms/history`) odświeża ostatnie wysyłki z `ctip.sms_out` i pozwala filtrować je po statusach (`NEW`, `RETRY`, `SENT`, `ERROR`, `SIMULATED`). Formularz wysyłki testowej normalizuje numer do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`), a poprawna próba (w trybie testowym lub produkcyjnym) natychmiast pojawia się w logu i historii.
 - Sekcja CTIP udostępnia podgląd na żywo (`/admin/partials/ctip/live`) z filtrowaniem po wewnętrznych numerach oraz wbudowanym formularzem konfiguracji; kafelek na dashboardzie oferuje zarówno edycję parametrów, jak i szybkie przejście do widoku live. Aktualizacje są dostarczane kanałem WebSocket (`/admin/ctip/ws`), który pomija ramki keep-alive typu `T`.
 - Sekcja Automatyzacje IVR (`/admin/partials/ctip/ivr-map`) pozwala zarządzać mapowaniami cyfr IVR na numery wewnętrzne, treścią automatycznych SMS i ich aktywnością. Każda operacja (utworzenie, aktualizacja, usunięcie) jest audytowana i natychmiast dostępna dla kolektora bez restartu.
@@ -417,6 +420,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
   - e-mail do klienta z linkiem,
   - e-mail potwierdzający po zapisaniu formularza,
   - SMS do operatora/opiekuna po zapisaniu formularza.
+- Domyślne treści po instalacji są przygotowane pod komunikację z klientem Ksero Partner i nie zawierają fallbacku do lokalnego adresu; po zapisaniu własnej konfiguracji administrator może je nadpisać bez ingerencji w kod.
 - Szablony obsługują podstawienie zmiennych takich jak `form_url`, `expires_at`, `customer_name`, `company_name` i `sender_name`; walidacja odbywa się przy zapisie konfiguracji, a generator pobiera wartości z `ctip.admin_setting` (namespace `form_handling.*`).
 - Sekcja pokazuje również podgląd renderu każdej wiadomości na przykładowych danych, dzięki czemu można od razu wychwycić błędny link lub nieczytelny komunikat bez generowania realnego formularza.
 - API listy formularzy (`GET /admin/forms`) toleruje historyczne rekordy z niestandardową domeną e-mail (np. `*.local`) i nie przerywa pracy całego widoku przez pojedynczy wpis legacy.
@@ -528,7 +532,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Szybka wysyłka SMS oferuje przyciski aktywnych szablonów (globalnych i operatora), dwa predefiniowane komunikaty znane z prototypu („Aplikacja”, „Liczniki”) oraz tryb własnej wiadomości. Przed wysyłką można wymusić potwierdzenie, a dowolny tekst zapisać od razu jako nowy szablon operatora.
 - Moduł szybkich SMS normalizuje numer docelowy do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`) przed zapisaniem w kolejce `sms_out`.
 - Panel nagłówka prezentuje liczbę wysłanych SMS w bieżącym dniu i miesiącu (`GET /operator/api/stats`).
-- W prawym dolnym rogu panelu operatora widnieje wersja i data aktualizacji interfejsu (obecnie: 0.2.5 - Aktualizacja 2026-04-09).
+- W prawym dolnym rogu panelu operatora widnieje wersja i data aktualizacji interfejsu (obecnie: 0.2.6 - Aktualizacja 2026-04-09).
 - Operator może dodać lub edytować kontakt bezpośrednio z widoku połączenia (`POST/PUT /operator/api/contacts`), a dane logowania wysłane w wiadomościach SMS są ukrywane w historii dla bezpieczeństwa.
 - Strona `/operator/settings` udostępnia formularze: edycję profilu operatora (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmianę hasła oraz zarządzanie własnymi szablonami SMS (dodawanie, edycja, usuwanie). Szablony globalne są widoczne w trybie tylko do odczytu.
 - Opcja „Zapamiętaj mnie” przechowuje token sesji w `localStorage` i wydłuża ważność sesji (`ADMIN_SESSION_REMEMBER_HOURS`), natomiast standardowe logowanie używa `sessionStorage`.
