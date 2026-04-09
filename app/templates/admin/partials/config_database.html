@@ -150,6 +150,13 @@
         <label for="fb-local-copy">Ścieżka bazy lokalnej</label>
         <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb">
       </div>
+      <div class="form-field form-field-wide">
+        <label class="users-section-option users-flag-option" for="fb-allow-writes">
+          <input id="fb-allow-writes" type="checkbox" x-model="allowWrites">
+          Odblokuj zapis do Firebird
+        </label>
+        <p class="input-help">Opcja steruje automatycznym dopisywaniem klienta do Menadżera Serwisu po wysłaniu formularza i zastępuje ręczne ustawianie blokady w środowisku aktywnej usługi.</p>
+      </div>
     </div>
 
     <div class="form-actions">

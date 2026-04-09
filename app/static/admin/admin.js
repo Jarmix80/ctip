@@ -2145,6 +2145,7 @@ document.addEventListener("alpine:init", () => {
     charset: "WIN1250",
     role: "",
     localCopyPath: "",
+    allowWrites: false,
     passwordSet: false,
     saving: false,
     testing: false,
@@ -2164,6 +2165,7 @@ document.addEventListener("alpine:init", () => {
       this.charset = initial.charset || "WIN1250";
       this.role = initial.role || "";
       this.localCopyPath = initial.local_copy_path || "";
+      this.allowWrites = Boolean(initial.allow_writes);
       this.password = "";
       this.passwordSet = Boolean(initial.password_set);
 
@@ -2237,6 +2239,7 @@ document.addEventListener("alpine:init", () => {
           charset: this.charset,
           role: this.role || null,
           local_copy_path: this.localCopyPath,
+          allow_writes: Boolean(this.allowWrites),
         };
         if (this.password) {
           payload.password = this.password;
@@ -2263,6 +2266,7 @@ document.addEventListener("alpine:init", () => {
         this.charset = data.charset || "WIN1250";
         this.role = data.role || "";
         this.localCopyPath = data.local_copy_path || "";
+        this.allowWrites = Boolean(data.allow_writes);
         this.password = "";
         this.passwordSet = Boolean(data.password_set);
         this.success = `Konfiguracja Firebird (${this.configLabel}) została zapisana.`;

@@ -186,7 +186,7 @@ Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11`
 | `FB_CHARSET` | `UTF8` | Kodowanie sesji Firebird. |
 | `FB_ROLE` | *(puste)* | Rola Firebird (opcjonalnie). |
 | `FB_LOCAL_COPY_PATH` | `inbox/firebird/test_ms_local.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
-| `FB_ALLOW_WRITES` | `false` | Jawnie odblokowuje zapis do aktywnej konfiguracji Firebird. W repo lokalnym ustawiaj wyłącznie w środowisku testowym. |
+| `FB_ALLOW_WRITES` | `false` | Domyślna blokada zapisu do aktywnej konfiguracji Firebird. Panel administratora (`Konfiguracja Firebird`) może nadpisać tę wartość przełącznikiem `Odblokuj zapis do Firebird`. |
 | `FB_WAREHOUSE_CLIENT_ID` | `656` | Domyślny `ID_KLIENT` dla urządzeń magazynowych tworzonych z arkusza Google. |
 | `FB_WAREHOUSE_ID` | `28` | Domyślny `ID_MAGAZYN` dla pozycji magazynowych tworzonych przez synchronizację urządzeń. |
 
@@ -216,9 +216,9 @@ Biezacy stan modułu FLOW, formularzy testowych i decyzji architektonicznych zap
 
 Dla dashboardu `/contracts` oraz modalu workflow w `/flow` lista urzadzen z arkusza Google jest aktywna tylko wtedy, gdy w aktywnym srodowisku ustawiono `GOOGLE_APPLICATION_CREDENTIALS` oraz `GOOGLE_SHEETS_SPREADSHEET_ID`. Bez tych zmiennych widok nadal laduje formularze `SUBMITTED`, ale sekcja urzadzen zwraca `0` rekordow.
 
-Akcja `POST /admin/contracts/action`, endpoint workflow `POST /admin/contracts/forms/{id}/workflow/client` oraz automat `SUBMITTED` korzystaja z biezacej konfiguracji Firebird zapisanej w panelu administratora (`admin_setting -> firebird.*`). Zapis pozostaje zablokowany, dopoki aktywne srodowisko nie ma ustawionego `FB_ALLOW_WRITES=true`.
+Akcja `POST /admin/contracts/action`, endpoint workflow `POST /admin/contracts/forms/{id}/workflow/client` oraz automat `SUBMITTED` korzystaja z biezacej konfiguracji Firebird zapisanej w panelu administratora (`admin_setting -> firebird.*`). Zapis pozostaje zablokowany, dopoki w sekcji `Konfiguracja Firebird (Menadżer Serwisu)` nie zostanie wlaczona opcja `Odblokuj zapis do Firebird`; jezeli nie ma jeszcze wpisu w panelu, fallbackiem pozostaje `FB_ALLOW_WRITES`.
 
-Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` jako zrodlo numeru seryjnego, ewidencji i modelu. Przy aktywnym `FB_ALLOW_WRITES=true` potrafi dopisac brakujacy wpis `MASZYNA` oraz szkic pozycji `MAGAZYN` w lokalnej kopii Firebird, korzystajac z domyslnych identyfikatorow `FB_WAREHOUSE_CLIENT_ID` i `FB_WAREHOUSE_ID`. Osobny modal workflow w `/flow` zapisuje natomiast wybor urzadzen tylko w tabelach CTIP `form_workflow_case` i `form_workflow_device`, razem z recznie ustalanymi cenami `netto/brutto`, bez zmiany danych Menadzera Serwisu na etapie samego wyboru.
+Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` jako zrodlo numeru seryjnego, ewidencji i modelu. Przy odblokowanym zapisie Firebird potrafi dopisac brakujacy wpis `MASZYNA` oraz szkic pozycji `MAGAZYN` w lokalnej kopii Firebird, korzystajac z domyslnych identyfikatorow `FB_WAREHOUSE_CLIENT_ID` i `FB_WAREHOUSE_ID`. Osobny modal workflow w `/flow` zapisuje natomiast wybor urzadzen tylko w tabelach CTIP `form_workflow_case` i `form_workflow_device`, razem z recznie ustalanymi cenami `netto/brutto`, bez zmiany danych Menadzera Serwisu na etapie samego wyboru.
 
 ### Zmienne środowiskowe modułu e-mail (panel administratora)
 | Nazwa | Domyślna wartość | Opis |

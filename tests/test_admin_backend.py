@@ -617,6 +617,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "charset": "UTF8",
             "role": "RDB$ADMIN",
             "local_copy_path": "inbox/firebird/ms_local.fdb",
+            "allow_writes": True,
         }
         response = await self.client.put(
             "/admin/config/firebird",
@@ -631,6 +632,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["charset"], "UTF8")
         self.assertEqual(body["role"], "RDB$ADMIN")
         self.assertEqual(body["local_copy_path"], update_payload["local_copy_path"])
+        self.assertTrue(body["allow_writes"])
         self.assertTrue(body["password_set"])
 
         response = await self.client.get(
@@ -641,11 +643,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["user"], update_payload["user"])
         self.assertEqual(body["port"], update_payload["port"])
+        self.assertTrue(body["allow_writes"])
 
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "firebird.host")
             self.assertIsNotNone(setting)
             self.assertEqual(setting.value, update_payload["host"])
+            allow_writes_setting = await session.get(AdminSetting, "firebird.allow_writes")
+            self.assertIsNotNone(allow_writes_setting)
+            assert allow_writes_setting is not None
+            self.assertEqual(allow_writes_setting.value, "true")
 
     async def test_update_firebird_vmaintenance_config_persists_values(self):
         token, _ = await self._login()
@@ -727,6 +734,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "charset": "UTF8",
                 "role": None,
                 "local_copy_path": "inbox/firebird/ms_local.fdb",
+                "allow_writes": False,
             },
             headers={"X-Admin-Session": token},
         )
@@ -779,6 +787,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "charset": "WIN1250",
                 "role": None,
                 "local_copy_path": "/srv/firebird/local/BAZAMS_LOCAL.FDB",
+                "allow_writes": False,
             },
             headers={"X-Admin-Session": token},
         )
@@ -810,6 +819,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "charset": "WIN1250",
                 "role": "RDB$ADMIN",
                 "local_copy_path": "inbox/firebird/test_ms_local.fdb",
+                "allow_writes": True,
             },
             headers={"X-Admin-Session": token},
         )
@@ -817,6 +827,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.session_factory() as session:
             config = await load_firebird_runtime_config(session)
+
+        self.assertTrue(config.allow_writes)
 
         connect_calls: list[dict[str, object]] = []
 

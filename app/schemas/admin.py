@@ -74,6 +74,7 @@ class FirebirdConfigResponse(BaseModel):
     charset: str
     role: str | None
     local_copy_path: str
+    allow_writes: bool
     password_set: bool
 
 
@@ -88,6 +89,7 @@ class FirebirdConfigUpdate(BaseModel):
     charset: str = "WIN1250"
     role: str | None = None
     local_copy_path: str
+    allow_writes: bool | None = None
     password: str | None = None
 
 

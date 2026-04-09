@@ -123,6 +123,14 @@ def _coerce_firebird_port(value: str | int | None, default: int) -> int:
         return default
 
 
+def _coerce_firebird_bool(value: str | bool | None, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return value.strip().lower() in {"1", "true", "t", "yes", "on"}
+
+
 def _normalize_firebird_mode(value: str | None) -> str:
     mode = (value or "").strip().lower() or settings.fb_mode.lower()
     if mode not in {"network", "local"}:
@@ -167,7 +175,7 @@ async def load_firebird_runtime_config(session: AsyncSession) -> FirebirdRuntime
         role=role,
         local_copy_path=(stored.get("local_copy_path") or defaults.local_copy_path).strip()
         or defaults.local_copy_path,
-        allow_writes=defaults.allow_writes,
+        allow_writes=_coerce_firebird_bool(stored.get("allow_writes"), defaults.allow_writes),
     )
 
 
@@ -237,7 +245,7 @@ def firebird_writes_enabled() -> tuple[bool, str | None]:
     if not runtime.allow_writes:
         return (
             False,
-            "Zapis do Firebird jest zablokowany. Ustaw FB_ALLOW_WRITES=true w aktywnym srodowisku.",
+            'Zapis do Firebird jest zablokowany w panelu administratora. Wlacz opcje "Odblokuj zapis do Firebird" w konfiguracji Menadzera Serwisu.',
         )
 
     if runtime.mode == "network":

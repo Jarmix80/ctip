@@ -125,6 +125,7 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "charset": "WIN1250",
                 "role": None,
                 "local_copy_path": "inbox/firebird/ms_local.fdb",
+                "allow_writes": True,
                 "password_set": True,
             }
 
@@ -188,6 +189,8 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert 'data-test-endpoint="/admin/firebird/test-vmaintenance"' in html
     assert "C:/MS/BAZA/MS.FDB" in html
     assert "D:/bazavmantenance/BAZA_CPC.FDB" in html
+    assert 'id="fb-allow-writes"' in html
+    assert "Odblokuj zapis do Firebird" in html
 
 
 def test_firebird_partial_requires_authentication():
@@ -214,6 +217,7 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
                 "charset": "UTF8",
                 "role": None,
                 "local_copy_path": "inbox/firebird/ms_local.fdb",
+                "allow_writes": False,
                 "password_set": True,
             }
 
@@ -241,6 +245,8 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert '<option value="network">Baza sieciowa</option>' in html
     assert '<option value="local">Baza lokalna</option>' in html
     assert ":disabled=\"mode === 'local'\"" in html
+    assert 'id="fb-allow-writes"' in html
+    assert 'x-model="allowWrites"' in html
 
 
 def test_kp_repair_partial_requires_authentication():

@@ -108,6 +108,13 @@ async def load_firebird_config(session: AsyncSession) -> FirebirdConfigResponse:
         role = settings.fb_role
     else:
         role = raw_role.strip() or None
+    raw_allow_writes = stored.get("allow_writes")
+    if isinstance(raw_allow_writes, str):
+        allow_writes = _to_bool(raw_allow_writes)
+    elif raw_allow_writes is None:
+        allow_writes = settings.fb_allow_writes
+    else:
+        allow_writes = bool(raw_allow_writes)
     password_set = bool(stored.get("password") or settings.fb_password)
 
     return FirebirdConfigResponse(
@@ -119,6 +126,7 @@ async def load_firebird_config(session: AsyncSession) -> FirebirdConfigResponse:
         charset=charset,
         role=role,
         local_copy_path=local_copy_path,
+        allow_writes=allow_writes,
         password_set=password_set,
     )
 
@@ -357,6 +365,10 @@ async def update_firebird_config(
             status_code=400,
             detail="Ścieżka lokalnej kopii Firebird nie może być pusta.",
         )
+    current_config = await load_firebird_config(session)
+    allow_writes = (
+        payload.allow_writes if payload.allow_writes is not None else current_config.allow_writes
+    )
 
     values: dict[str, StoredValue] = {
         "mode": StoredValue(mode, False),
@@ -367,6 +379,7 @@ async def update_firebird_config(
         "charset": StoredValue(charset, False),
         "role": StoredValue(role, False),
         "local_copy_path": StoredValue(local_copy_path, False),
+        "allow_writes": StoredValue("true" if allow_writes else "false", False),
     }
     if payload.password is not None:
         values["password"] = StoredValue(payload.password, True)
@@ -386,6 +399,7 @@ async def update_firebird_config(
             "charset": charset,
             "role": role or None,
             "local_copy_path": local_copy_path,
+            "allow_writes": allow_writes,
             "password_changed": payload.password is not None,
         },
     )
