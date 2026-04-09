@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -278,6 +279,54 @@ class EmailConfigUpdate(BaseModel):
         if self.use_tls and self.use_ssl:
             raise ValueError("Nie można jednocześnie używać STARTTLS i SSL.")
         return self
+
+
+class FormHandlingConfigResponse(BaseModel):
+    """Widok konfiguracji obslugi formularza."""
+
+    public_base_url: str
+    invite_sms_template: str
+    invite_email_subject: str
+    invite_email_body: str
+    submission_email_subject: str
+    submission_email_body: str
+    owner_sms_template: str
+
+
+class FormHandlingConfigUpdate(BaseModel):
+    """Żądanie aktualizacji ustawień obsługi formularza."""
+
+    public_base_url: str = Field(min_length=1, max_length=500)
+    invite_sms_template: str = Field(min_length=1, max_length=600)
+    invite_email_subject: str = Field(min_length=1, max_length=200)
+    invite_email_body: str = Field(min_length=1, max_length=4000)
+    submission_email_subject: str = Field(min_length=1, max_length=200)
+    submission_email_body: str = Field(min_length=1, max_length=4000)
+    owner_sms_template: str = Field(min_length=1, max_length=600)
+
+    @field_validator(
+        "public_base_url",
+        "invite_sms_template",
+        "invite_email_subject",
+        "invite_email_body",
+        "submission_email_subject",
+        "submission_email_body",
+        "owner_sms_template",
+    )
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Pole nie może być puste.")
+        return normalized
+
+    @field_validator("public_base_url")
+    @classmethod
+    def validate_public_base_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Adres publiczny formularza musi być pełnym adresem HTTP lub HTTPS.")
+        return value.rstrip("/")
 
 
 class EmailTestRequest(BaseModel):

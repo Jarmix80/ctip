@@ -83,7 +83,8 @@ Pełna aplikacja panelowa (`app.main:app`) oraz `sms_sender.py` mogą działać 
    Get-Content -Tail 50 D:\CTIP\logs\sms\sms_stdout.log
    Get-Content -Tail 50 D:\CTIP\logs\forms_public\forms_stdout.log
    ```
-6. Reverse proxy lub firewall ma wystawiać na Internet wyłącznie `CTIP-FormsPublic`, nie pełny panel.
+6. Reverse proxy lub IIS ma wystawiać na Internet wyłącznie `CTIP-FormsPublic`, nie pełny panel. Dla wariantu zweryfikowanego na `form.ksero-partner.com.pl` użyto bindingów IIS `http *:80:` oraz `https *:443:form.ksero-partner.com.pl` (SNI) z lokalnym proxy do `127.0.0.1:8100`.
+7. Nie utrzymuj globalnej reguły `rewrite/globalRules` typu `forms_public_proxy` w `applicationHost.config` dla tego hosta. Taki wpis przechwytuje ruch przed regułami witryny i blokuje redirect `http -> https`.
 
 Szczegółowy runbook DNS, NAT i reverse proxy znajduje się w `docs/instal/public_forms_production.md`.
 

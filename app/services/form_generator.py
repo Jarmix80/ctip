@@ -20,6 +20,8 @@ from app.core.config import settings
 from app.models import FormRequest, SmsOut
 from app.services import admin_users
 from app.services.email_client import send_smtp_message
+from app.services.form_handling_config import FormHandlingConfig, load_form_handling_config
+from app.services.form_handling_config import render_template as render_form_template
 
 ACTIVE_STATUSES = {"GENERATED", "DISPATCHED"}
 
@@ -78,9 +80,13 @@ def _normalize_phone(value: str | None) -> str:
     return normalized
 
 
-def resolve_public_base_url(request_base_url: str | None = None) -> str:
+def resolve_public_base_url(
+    request_base_url: str | None = None,
+    *,
+    configured_base_url: str | None = None,
+) -> str:
     """Wylicza bazowy adres publiczny używany do budowy linków formularza."""
-    configured = (settings.form_public_base_url or "").strip()
+    configured = (configured_base_url or settings.form_public_base_url or "").strip()
     if configured:
         return configured.rstrip("/")
 
@@ -96,9 +102,17 @@ def resolve_public_base_url(request_base_url: str | None = None) -> str:
     return "http://localhost:8000"
 
 
-def build_form_url(token: str, *, request_base_url: str | None = None) -> str:
+def build_form_url(
+    token: str,
+    *,
+    request_base_url: str | None = None,
+    configured_base_url: str | None = None,
+) -> str:
     """Buduje publiczny adres formularza na podstawie jednorazowego tokenu."""
-    base_url = resolve_public_base_url(request_base_url)
+    base_url = resolve_public_base_url(
+        request_base_url,
+        configured_base_url=configured_base_url,
+    )
     return f"{base_url}/formularz/{token}"
 
 
@@ -217,13 +231,22 @@ async def _dispatch_notifications(
     *,
     form: FormRequest,
     form_url: str,
+    config: FormHandlingConfig,
 ) -> FormNotificationResult:
     result = FormNotificationResult()
     now = datetime.now(UTC)
     expires_local = _to_utc(form.token_expires_at).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
-    sms_text = (
-        f"CTIP: wygenerowano bezpieczny formularz. Link: {form_url} " f"(wazny do {expires_local})."
+    invite_context = {
+        "customer_name": form.customer_name,
+        "expires_at": expires_local,
+        "form_url": form_url,
+        "sender_name": "CTIP Administrator",
+    }
+
+    sms_text = render_form_template(
+        config.invite_sms_template,
+        invite_context,
     )
     sms = SmsOut(
         dest=form.customer_phone,
@@ -248,17 +271,11 @@ async def _dispatch_notifications(
     else:
         message = EmailMessage()
         sender_title = email_delivery.sender_name or "CTIP Administrator"
+        invite_context["sender_name"] = sender_title
         message["From"] = formataddr((sender_title, email_delivery.sender_address))
         message["To"] = form.customer_email
-        message["Subject"] = "Bezpieczny formularz do uzupełnienia"
-        message.set_content(
-            "Dzień dobry,\n\n"
-            "Przygotowaliśmy bezpieczny formularz wymagany do obsługi zgłoszenia.\n\n"
-            f"Link: {form_url}\n"
-            f"Ważność linku: {expires_local}\n\n"
-            "Jeśli nie oczekiwali Państwo tej wiadomości, prosimy o jej zignorowanie.\n\n"
-            "Pozdrawiamy,\nZespół CTIP"
-        )
+        message["Subject"] = render_form_template(config.invite_email_subject, invite_context)
+        message.set_content(render_form_template(config.invite_email_body, invite_context))
         send_result = await send_smtp_message(
             host=email_delivery.host,
             port=email_delivery.port,
@@ -302,6 +319,7 @@ async def _dispatch_submission_notifications(
     form: FormRequest,
     payload: dict,
     submitted_at: datetime,
+    config: FormHandlingConfig,
 ) -> FormSubmissionNotificationResult:
     result = FormSubmissionNotificationResult()
 
@@ -315,14 +333,22 @@ async def _dispatch_submission_notifications(
     elif target_email:
         message = EmailMessage()
         sender_title = email_delivery.sender_name or "CTIP Administrator"
+        submission_context = {
+            "company_name": company_name,
+            "customer_name": form.customer_name,
+            "sender_name": sender_title,
+        }
         message["From"] = formataddr((sender_title, email_delivery.sender_address))
         message["To"] = target_email
-        message["Subject"] = "Potwierdzenie przyjęcia formularza"
+        message["Subject"] = render_form_template(
+            config.submission_email_subject,
+            submission_context,
+        )
         message.set_content(
-            "Dzień dobry,\n\n"
-            f"Potwierdzamy poprawne przyjęcie formularza dla firmy: {company_name}.\n"
-            "Dane zostały zapisane w systemie CTIP.\n\n"
-            "Pozdrawiamy,\nZespół CTIP"
+            render_form_template(
+                config.submission_email_body,
+                submission_context,
+            )
         )
         send_result = await send_smtp_message(
             host=email_delivery.host,
@@ -352,7 +378,13 @@ async def _dispatch_submission_notifications(
                     "Nieprawidłowy numer telefonu użytkownika tworzącego formularz."
                 )
     if creator_phone:
-        sms_text = f"CTIP: klient {company_name} wypełnił formularz."
+        sms_text = render_form_template(
+            config.owner_sms_template,
+            {
+                "company_name": company_name,
+                "customer_name": form.customer_name,
+            },
+        )
         sms = SmsOut(
             dest=creator_phone,
             text=sms_text[:600],
@@ -424,8 +456,24 @@ async def create_form_request(
     session.add(form)
     await session.flush()
 
-    form_url = build_form_url(token, request_base_url=request_base_url)
-    notifications = await _dispatch_notifications(session, form=form, form_url=form_url)
+    try:
+        config = await load_form_handling_config(session)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Nieprawidłowa konfiguracja sekcji obsługi formularza. Sprawdź adres publiczny i szablony wiadomości."
+        ) from exc
+
+    form_url = build_form_url(
+        token,
+        request_base_url=request_base_url,
+        configured_base_url=config.public_base_url,
+    )
+    notifications = await _dispatch_notifications(
+        session,
+        form=form,
+        form_url=form_url,
+        config=config,
+    )
     return form, form_url, notifications
 
 
@@ -478,11 +526,13 @@ async def submit_form_payload(
     form.status = "SUBMITTED"
     form.updated_at = now
     try:
+        config = await load_form_handling_config(session)
         await _dispatch_submission_notifications(
             session,
             form=form,
             payload=payload,
             submitted_at=now,
+            config=config,
         )
     except Exception as exc:  # noqa: BLE001
         _merge_notification_warnings(

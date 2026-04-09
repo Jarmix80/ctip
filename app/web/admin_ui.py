@@ -22,6 +22,7 @@ from app.api.routes.admin_config import (
     load_email_config,
     load_firebird_config,
     load_firebird_vmaintenance_config,
+    load_form_handling_config,
     load_kp_repair_source_config,
     load_sms_config,
 )
@@ -42,6 +43,7 @@ from app.schemas.admin import (
     DatabaseConfigResponse,
     FirebirdConfigResponse,
     FirebirdVMaintenanceConfigResponse,
+    FormHandlingConfigResponse,
     KpRepairSourceConfigResponse,
     SmsConfigResponse,
 )
@@ -435,6 +437,23 @@ async def admin_email_config_partial(
             "request": request,
             "config": config.model_dump(),
             "admin_token": admin_token,
+        },
+    )
+
+
+@router.get("/admin/partials/config/form-handling", response_class=HTMLResponse)
+async def admin_form_handling_config_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> HTMLResponse:
+    """Formularz konfiguracji publicznego formularza i powiadomień."""
+    config: FormHandlingConfigResponse = await load_form_handling_config(session)
+    return templates.TemplateResponse(
+        "admin/partials/config_form_handling.html",
+        {
+            "request": request,
+            "config": config.model_dump(),
         },
     )
 

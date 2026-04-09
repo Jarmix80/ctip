@@ -1,0 +1,120 @@
+<section
+  class="config-section"
+  x-data="formHandlingConfig()"
+  x-init="init()"
+  data-initial='{{ config | tojson | safe }}'
+>
+  <header class="config-header">
+    <div>
+      <h2>Obsługa formularza</h2>
+      <p>Konfiguracja adresu publicznego oraz treści komunikatów wysyłanych do klienta i operatora.</p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="statusState"></span>
+      <span class="config-meta-text" x-text="statusMessage"></span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label for="form-public-base-url">Adres publiczny formularza</label>
+        <input id="form-public-base-url" type="url" x-model="publicBaseUrl" placeholder="https://form.ksero-partner.com.pl" required>
+        <p class="input-help">Ten adres jest używany do budowy linków <code>/formularz/{token}</code> w SMS i e-mailach. Zapisana wartość nadpisuje fallback oparty o zmienne środowiskowe.</p>
+      </div>
+    </div>
+
+    <div class="template-group">
+      <h3>Wiadomości po wygenerowaniu formularza</h3>
+      <div class="form-grid">
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label for="form-invite-sms-template">SMS do klienta</label>
+          <textarea id="form-invite-sms-template" rows="3" x-model="inviteSmsTemplate" required></textarea>
+          <p class="input-help">Dostępne zmienne: <code>{form_url}</code>, <code>{expires_at}</code>, <code>{customer_name}</code>.</p>
+        </div>
+        <div class="form-field">
+          <label for="form-invite-email-subject">Temat e-maila do klienta</label>
+          <input id="form-invite-email-subject" type="text" x-model="inviteEmailSubject" required>
+          <p class="input-help">Dostępne zmienne: <code>{customer_name}</code>, <code>{expires_at}</code>.</p>
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label for="form-invite-email-body">Treść e-maila do klienta</label>
+          <textarea id="form-invite-email-body" rows="8" x-model="inviteEmailBody" required></textarea>
+          <p class="input-help">Dostępne zmienne: <code>{form_url}</code>, <code>{expires_at}</code>, <code>{customer_name}</code>, <code>{sender_name}</code>.</p>
+        </div>
+      </div>
+      <div class="template-preview-grid">
+        <div class="template-preview-card">
+          <strong>Podgląd SMS do klienta</strong>
+          <pre x-text="inviteSmsPreview"></pre>
+        </div>
+        <div class="template-preview-card">
+          <strong>Podgląd e-maila do klienta</strong>
+          <div class="template-preview-meta">
+            <span>Temat</span>
+            <code x-text="inviteEmailSubjectPreview"></code>
+          </div>
+          <pre x-text="inviteEmailBodyPreview"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="template-group">
+      <h3>Interakcje po zapisaniu formularza</h3>
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="form-submission-email-subject">Temat potwierdzenia e-mail</label>
+          <input id="form-submission-email-subject" type="text" x-model="submissionEmailSubject" required>
+          <p class="input-help">Dostępne zmienne: <code>{company_name}</code>, <code>{customer_name}</code>.</p>
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label for="form-submission-email-body">Treść potwierdzenia e-mail</label>
+          <textarea id="form-submission-email-body" rows="7" x-model="submissionEmailBody" required></textarea>
+          <p class="input-help">Dostępne zmienne: <code>{company_name}</code>, <code>{customer_name}</code>, <code>{sender_name}</code>.</p>
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label for="form-owner-sms-template">SMS do opiekuna formularza</label>
+          <textarea id="form-owner-sms-template" rows="3" x-model="ownerSmsTemplate" required></textarea>
+          <p class="input-help">Dostępne zmienne: <code>{company_name}</code>, <code>{customer_name}</code>.</p>
+        </div>
+      </div>
+      <div class="template-preview-grid">
+        <div class="template-preview-card">
+          <strong>Podgląd potwierdzenia e-mail</strong>
+          <div class="template-preview-meta">
+            <span>Temat</span>
+            <code x-text="submissionEmailSubjectPreview"></code>
+          </div>
+          <pre x-text="submissionEmailBodyPreview"></pre>
+        </div>
+        <div class="template-preview-card">
+          <strong>Podgląd SMS do opiekuna</strong>
+          <pre x-text="ownerSmsPreview"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="config-help-panel">
+      <strong>Uwagi operacyjne</strong>
+      <ul class="placeholder-list">
+        <li>Adres publiczny powinien wskazywać subdomenę klienta dostępną z Internetu, najlepiej po <code>https://</code>.</li>
+        <li>Szablony zapisuj bez danych stałych środowiska lokalnego. Link jest podstawiany automatycznie ze skonfigurowanego adresu publicznego.</li>
+        <li><code>{sender_name}</code> korzysta z nazwy nadawcy ustawionej w sekcji SMTP; gdy jej brak, system użyje domyślnej nazwy CTIP.</li>
+        <li>Podgląd renderu korzysta z przykładowych danych klienta i jest odświeżany na bieżąco podczas edycji pól.</li>
+      </ul>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      </button>
+    </div>
+
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>

@@ -58,6 +58,8 @@ def test_admin_index_renders_layout():
     assert response.status_code == 200
     assert "Logowanie administratora" in response.text
     assert "login-form" in response.text
+    assert f"/static/admin/admin.js?v={app.version}" in response.text
+    assert f"/static/admin/styles.css?v={app.version}" in response.text
 
 
 def test_dashboard_partial_returns_cards():
@@ -321,6 +323,50 @@ def test_email_partial_requires_authentication():
     client = TestClient(app)
     response = client.get("/admin/partials/config/email")
     assert response.status_code == 401
+
+
+def test_form_handling_partial_requires_authentication():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/admin/partials/config/form-handling")
+    assert response.status_code == 401
+
+
+def test_form_handling_partial_renders_templates_and_public_url():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    app.dependency_overrides[deps.get_db_session] = _fake_db_session
+    client = TestClient(app)
+
+    class DummyConfig:
+        def model_dump(self) -> dict:
+            return {
+                "public_base_url": "https://form.example.com",
+                "invite_sms_template": "SMS: {form_url}",
+                "invite_email_subject": "Formularz dla {customer_name}",
+                "invite_email_body": "Link: {form_url}",
+                "submission_email_subject": "Potwierdzenie dla {company_name}",
+                "submission_email_body": "Firma: {company_name}",
+                "owner_sms_template": "Klient {company_name}",
+            }
+
+    with patch(
+        "app.web.admin_ui.load_form_handling_config",
+        AsyncMock(return_value=DummyConfig()),
+    ):
+        response = client.get(
+            "/admin/partials/config/form-handling",
+            headers={"X-Admin-Session": "token"},
+        )
+
+    assert response.status_code == 200
+    html = response.text
+    assert "Obsługa formularza" in html
+    assert "Adres publiczny formularza" in html
+    assert "Interakcje po zapisaniu formularza" in html
+    assert "Podgląd SMS do klienta" in html
+    assert "Podgląd potwierdzenia e-mail" in html
+    assert 'x-data="formHandlingConfig()"' in html
 
 
 def test_backups_partial_requires_authentication():

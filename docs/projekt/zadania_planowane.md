@@ -1,13 +1,19 @@
 # Zadania planowane (stan na 2026-03-13)
 
 ## Priorytet biezacy
-1. Ustalenie, czy cena z arkusza `Urzadzenia` dla proform ma byc traktowana jako
+1. Rozbudowac publiczny formularz `/formularz/{token}` o kolejny pakiet interakcji:
+   - walidacje inline w krokach,
+   - czytelne prowadzenie po etapach,
+   - szybszy powrot z podsumowania do edycji,
+   - dopracowanie obslugi listy reprezentantow i komunikatow bledow.
+   - utrzymac zgodnosc z nowa sekcja `/admin -> Obsluga formularza`, aby tresci komunikatow i link publiczny pozostawaly konfigurowalne bez zmian w kodzie.
+2. Ustalenie, czy cena z arkusza `Urzadzenia` dla proform ma byc traktowana jako
    brutto czy netto, i dopiecie tego jako stalej zasady lub ustawienia workflow.
-2. Zastapienie tymczasowego URL podgladu A4 realnym plikiem PDF zapisywanym do
+3. Zastapienie tymczasowego URL podgladu A4 realnym plikiem PDF zapisywanym do
    sprawy workflow po utworzeniu proformy.
-3. Ustalenie jednego zrodla prawdy dla urzadzen przeznaczonych do procesu
+4. Ustalenie jednego zrodla prawdy dla urzadzen przeznaczonych do procesu
    bankowego i dalszego wdrozenia.
-4. Dla automatycznego zakladania klienta dopisac na etapie formularza pola
+5. Dla automatycznego zakladania klienta dopisac na etapie formularza pola
    `nazwa skrocona` oraz `e-mail do faktur`, zasilane danymi klienta i
    zapisywane do Firebird dopiero po zatwierdzeniu docelowego workflow.
 

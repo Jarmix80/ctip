@@ -28,6 +28,7 @@ Uwagi:
 - `ADMIN_PANEL_URL` może wskazywać adres wewnętrzny panelu.
 - `FORM_PUBLIC_BASE_URL` musi wskazywać publiczną subdomenę z `https://`.
 - `genform` pozostaje w pełnej aplikacji panelowej i nie jest publikowane na subdomenie formularzy.
+- Po wdrozeniu warto zapisac te sama domenę w panelu `/admin -> Obsluga formularza`, aby generator i komunikaty klienta korzystaly z jednej konfiguracji runtime.
 
 ## DNS w home.pl
 W strefie DNS domeny dodaj rekord:
@@ -109,13 +110,77 @@ Ważne:
 - wymuszaj przekierowanie `http -> https`,
 - nie mieszaj publicznego hosta formularzy z hostem panelu.
 
+## Wariant zweryfikowany na Windows Server 2022 + IIS
+Na produkcji został zweryfikowany następujący układ:
+
+1. `CTIP-Web` działa jako pełna aplikacja na `:8000`.
+2. `CTIP-FormsPublic` działa lokalnie na `127.0.0.1:8100`.
+3. Witryna IIS `MyPHPApp` utrzymuje bindingi:
+   - `http *:80:`
+   - `https *:443:form.ksero-partner.com.pl` z `sslFlags=1` (SNI)
+4. W `D:\inetpub\wwwroot\web.config` są lokalne reguły witryny:
+   - `forms_http_to_https` - `Redirect` do `https://form.ksero-partner.com.pl/{R:1}`
+   - `forms_public_proxy` - `Rewrite` do `http://127.0.0.1:8100/{R:1}`
+5. W `applicationHost.config` nie może istnieć globalna reguła `rewrite/globalRules` o nazwie `forms_public_proxy` dla hosta formularzy, ponieważ przechwyci ruch przed regułami witryny i zablokuje redirect `http -> https`.
+
+Minimalny lokalny blok `rewrite` dla witryny:
+
+```xml
+<rewrite>
+  <rules>
+    <rule name="forms_http_to_https" stopProcessing="true">
+      <match url="(.*)" />
+      <conditions logicalGrouping="MatchAll">
+        <add input="{HTTP_HOST}" pattern="^form\.ksero-partner\.com\.pl$" />
+        <add input="{SERVER_PORT}" pattern="^80$" />
+      </conditions>
+      <action
+        type="Redirect"
+        url="https://form.ksero-partner.com.pl/{R:1}"
+        appendQueryString="true"
+        redirectType="Permanent" />
+    </rule>
+    <rule name="forms_public_proxy" stopProcessing="true">
+      <match url="(.*)" />
+      <conditions logicalGrouping="MatchAll">
+        <add input="{HTTP_HOST}" pattern="^form\.ksero-partner\.com\.pl$" />
+      </conditions>
+      <action
+        type="Rewrite"
+        url="http://127.0.0.1:8100/{R:1}"
+        appendQueryString="true" />
+    </rule>
+  </rules>
+</rewrite>
+```
+
+## Pułapki produkcyjne wykryte podczas wdrożenia
+### 1. Konflikt `443` z RRAS/SSTP
+Jeżeli `W3SVC` zgłasza błąd `1007` i nie może zarejestrować `https://form.ksero-partner.com.pl:443/`, sprawdź:
+
+- `netsh http show urlacl`
+- `netsh http show sslcert`
+- status usług `RemoteAccess`, `SstpSvc`, `RasMan`
+
+Jeżeli host nie ma świadczyć `SSTP/VPN`, trzeba usunąć rezerwacje `sra_*` na `443` należące do `SstpSvc`, a następnie ponownie uruchomić witrynę IIS.
+
+### 2. Globalna reguła ARR w `applicationHost.config`
+Jeżeli `HTTP` nadal zwraca `200` zamiast redirectu do `HTTPS`, a `HTTPS` działa, sprawdź:
+
+- `C:\Windows\System32\inetsrv\config\applicationHost.config`
+- sekcję `system.webServer/rewrite/globalRules`
+
+Globalna reguła `forms_public_proxy` z akcją `Rewrite` do `127.0.0.1:8100` spowoduje, że lokalne reguły witryny nie zostaną wykonane dla `HTTP`.
+
 ## Checklista odbioru
 1. `nslookup form.ksero-partner.com.pl` zwraca publiczny adres IP.
-2. Z Internetu `https://form.ksero-partner.com.pl/health` zwraca `200`.
-3. `https://form.ksero-partner.com.pl/` pokazuje stronę informacyjną, nie login panelu.
-4. `https://form.ksero-partner.com.pl/formularz/<token>` otwiera publiczny formularz.
-5. `https://form.ksero-partner.com.pl/admin` nie udostępnia panelu.
-6. Wygenerowany link z `/genform` wskazuje dokładnie `https://form.ksero-partner.com.pl/formularz/<token>`.
+2. Z Internetu `http://form.ksero-partner.com.pl/health` zwraca `301` i `Location: https://form.ksero-partner.com.pl/health`.
+3. Z Internetu `https://form.ksero-partner.com.pl/health` zwraca `200` dla `GET`.
+4. `https://form.ksero-partner.com.pl/` pokazuje stronę informacyjną, nie login panelu.
+5. `https://form.ksero-partner.com.pl/formularz/<token>` otwiera publiczny formularz.
+6. `https://form.ksero-partner.com.pl/admin` nie udostępnia panelu.
+7. Wygenerowany link z `/genform` wskazuje dokładnie `https://form.ksero-partner.com.pl/formularz/<token>`.
+8. Tresci SMS/e-mail wysylanych po wygenerowaniu i zapisaniu formularza nie zawieraja lokalnego adresu `localhost` ani adresu LAN serwera.
 
 ## Decyzja portowa
 Rekomendacja:

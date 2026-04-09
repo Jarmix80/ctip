@@ -20,6 +20,7 @@
 | CTIP Live | Monitor protokołu, restart klienta, status handshake | Panel z WebSocket (lista zdarzeń), karty statusu, przyciski akcji |
 | Automatyzacje IVR | Mapowanie cyfr IVR na SMS i numery wewnętrzne | Lista reguł, formularz CRUD, audyt operacji, walidacja unikalności |
 | SerwerSMS | Parametry operatora, tryb demo, wysyłka testowa | Formularz, przełącznik demo, moduł wysyłki testowej, saldo |
+| Obsługa formularza | Publiczny adres formularza oraz treści interakcji po stronie klienta i operatora | Formularz konfiguracji, pola szablonów, lista dostepnych placeholderow |
 | Książka adresowa | Kartoteka kontaktów, powiązanie z bazą Firebird | Lista kontaktów, formularz dodawania, edycja w modalach, wyszukiwarka |
 | Konsola SQL & Raporty | Sandbox `SELECT`, zapisane zapytania, wykresy SMS | Edytor tekstowy, wyniki tabelaryczne, eksport CSV |
 | Użytkownicy | Zarządzanie kontami, przypisanie numerów, statystyki | Tabela CRUD, modale, wykres słupkowy (SMS na użytkownika) |
@@ -94,6 +95,19 @@
 - Przyciski „Testuj połączenie” korzystają z `/admin/email/test`, który próbuje nawiązać połączenie z podanym serwerem (uwierzytelnianie + STARTTLS/SSL).
 - Dashboard pokazuje kartę „E-mail SMTP” z informacją o stanie konfiguracji i skrótami do sekcji oraz testu.
 
+### 5c. Obsluga formularza
+- Sekcja `/admin/partials/config/form-handling` sluzy do konfiguracji publicznego adresu formularza oraz wszystkich komunikatow zwiazanych z flow `/genform` i `/formularz/{token}`.
+- Generator formularzy pozostaje osobnym ekranem pod `/genform`; panel administratora nie przejmuje jego funkcji operacyjnych, a jedynie zarzadza konfiguracja runtime.
+- Formularz zapisuje:
+  - `public_base_url` dla linkow `/formularz/{token}`,
+  - tresc SMS do klienta po wygenerowaniu formularza,
+  - temat i tresc e-maila z linkiem,
+  - temat i tresc e-maila potwierdzajacego zapis formularza,
+  - tresc SMS do operatora/opiekuna po zapisie.
+- Sekcja renderuje podglad wszystkich szablonow na przykładowych danych (`customer_name`, `company_name`, `form_url`, `expires_at`, `sender_name`), aby administrator mogl zweryfikowac tresc bez tworzenia realnego formularza.
+- Dostepne placeholdery sa walidowane przy zapisie i obejmuja m.in. `form_url`, `expires_at`, `customer_name`, `company_name`, `sender_name`.
+- Konfiguracja trafia do `admin_setting` pod namespace `form_handling` i jest odczytywana przez `app.services.form_generator`.
+
 ### 6. Konsola SQL & Raporty
 - Tabulator: `SQL sandbox` i `Raporty`.
 - `SQL sandbox`: edytor (`textarea` lub integracja `CodeMirror`), informacje o limicie (`SELECT` max 200 wierszy), przycisk `Wykonaj`. Poniżej tabela wyników (z paginacją) oraz log wykonania.
@@ -131,6 +145,7 @@
 ### 8b. Generator formularzy (osobny flow)
 - Generator formularzy został wydzielony poza panel administratora i działa pod adresem `/genform`.
 - API pozostaje w module administracyjnym (`/admin/forms`), ale ekran operacyjny jest niezależny od `/admin`.
+- Konfiguracja tresci wiadomosci i domeny publicznej jest jednak utrzymywana w sekcji `/admin -> Obsluga formularza`, aby nie mieszac operacyjnego generowania linkow z ustawieniami systemowymi.
 - Publiczny formularz działa pod trasą `/formularz/{token}` i ma tryb etapowy:
   - krok 1: dane firmy dzierżawiącej sprzęt (adres siedziby i korespondencyjny rozbite na osobne pola, opcja „Taki sam jak adres siedziby”, obowiązkowe pole `E-mail do e-faktur` z opcją „Kopiuj e-mail”),
   - krok 2: dane reprezentanta z możliwością dodania kolejnych osób (PESEL + auto-uzupełnienie daty urodzenia, wybór rodzaju dokumentu z listy `Dowód osobisty`/`Paszport`, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub przez kalendarz),
@@ -164,6 +179,7 @@
 | Kopie | `/admin/backup/history`, `/admin/backup/run`, `/admin/backup/restore` |
 | CTIP Live | `/admin/partials/ctip/live`, `/admin/partials/ctip/events`, `/admin/ctip/events`, `/admin/ctip/ws`, `/admin/config/ctip`, `POST /admin/ctip/restart` (plan) |
 | SerwerSMS | `/admin/partials/config_sms`, `/admin/config/sms`, `/admin/sms/test`, `/sms/account`, `/sms/history?status=SENT&limit=20` |
+| Obsługa formularza | `/admin/partials/config/form-handling`, `/admin/config/form-handling` |
 | Książka adresowa | `/admin/partials/contacts`, `/admin/contacts`, `/admin/contacts/{id}`, `/admin/contacts/by-number/{number}` |
 | Logowanie centralne | `/`, `/choice`, `/auth/login`, `/auth/me`, `/auth/profile`, `/auth/profile/change-password`, `/auth/logout` |
 | Generator formularzy | `/genform`, `/admin/forms`, `/admin/forms/{id}`, `/formularz/{token}` |

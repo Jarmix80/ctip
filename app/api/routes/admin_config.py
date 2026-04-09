@@ -18,12 +18,21 @@ from app.schemas.admin import (
     FirebirdConfigUpdate,
     FirebirdVMaintenanceConfigResponse,
     FirebirdVMaintenanceConfigUpdate,
+    FormHandlingConfigResponse,
+    FormHandlingConfigUpdate,
     KpRepairSourceConfigResponse,
     KpRepairSourceConfigUpdate,
     SmsConfigResponse,
     SmsConfigUpdate,
 )
 from app.services.audit import record_audit
+from app.services.form_handling_config import (
+    load_form_handling_config as load_form_handling_runtime_config,
+)
+from app.services.form_handling_config import (
+    normalize_public_base_url,
+    validate_form_handling_templates,
+)
 from app.services.settings_store import StoredValue, build_store
 
 router = APIRouter(prefix="/admin/config", tags=["admin"])
@@ -229,6 +238,19 @@ async def load_email_config(session: AsyncSession) -> EmailConfigResponse:
         use_tls=use_tls,
         use_ssl=use_ssl,
         password_set=password_set,
+    )
+
+
+async def load_form_handling_config(session: AsyncSession) -> FormHandlingConfigResponse:
+    runtime = await load_form_handling_runtime_config(session)
+    return FormHandlingConfigResponse(
+        public_base_url=runtime.public_base_url,
+        invite_sms_template=runtime.invite_sms_template,
+        invite_email_subject=runtime.invite_email_subject,
+        invite_email_body=runtime.invite_email_body,
+        submission_email_subject=runtime.submission_email_subject,
+        submission_email_body=runtime.submission_email_body,
+        owner_sms_template=runtime.owner_sms_template,
     )
 
 
@@ -692,3 +714,79 @@ async def update_email_config(
     await session.commit()
 
     return await load_email_config(session)
+
+
+@router.get(
+    "/form-handling",
+    response_model=FormHandlingConfigResponse,
+    summary="Aktualna konfiguracja obsługi formularza",
+)
+async def get_form_handling_config(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FormHandlingConfigResponse:
+    """Zwraca aktywną konfigurację linków i komunikatów formularza."""
+    _, admin_user = admin_context
+    _assert_admin(admin_user.role)
+    return await load_form_handling_config(session)
+
+
+@router.put(
+    "/form-handling",
+    response_model=FormHandlingConfigResponse,
+    summary="Aktualizacja konfiguracji obsługi formularza",
+)
+async def update_form_handling_config(
+    payload: FormHandlingConfigUpdate,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FormHandlingConfigResponse:
+    """Zapisuje ustawienia publicznego linku i treści komunikatów formularza."""
+    admin_session, admin_user = admin_context
+    _assert_admin(admin_user.role)
+
+    public_base_url = normalize_public_base_url(payload.public_base_url)
+    text_values = {
+        "invite_sms_template": payload.invite_sms_template,
+        "invite_email_subject": payload.invite_email_subject,
+        "invite_email_body": payload.invite_email_body,
+        "submission_email_subject": payload.submission_email_subject,
+        "submission_email_body": payload.submission_email_body,
+        "owner_sms_template": payload.owner_sms_template,
+    }
+    try:
+        validate_form_handling_templates(text_values)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    values: dict[str, StoredValue] = {
+        "public_base_url": StoredValue(public_base_url, False),
+        "invite_sms_template": StoredValue(payload.invite_sms_template, False),
+        "invite_email_subject": StoredValue(payload.invite_email_subject, False),
+        "invite_email_body": StoredValue(payload.invite_email_body, False),
+        "submission_email_subject": StoredValue(payload.submission_email_subject, False),
+        "submission_email_body": StoredValue(payload.submission_email_body, False),
+        "owner_sms_template": StoredValue(payload.owner_sms_template, False),
+    }
+
+    await settings_store.set_namespace(session, "form_handling", values, user_id=admin_user.id)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="config_form_handling_update",
+        client_ip=admin_session.client_ip,
+        payload={
+            "public_base_url": public_base_url,
+            "invite_email_subject": payload.invite_email_subject,
+            "submission_email_subject": payload.submission_email_subject,
+            "templates": {
+                "invite_sms_template": payload.invite_sms_template,
+                "invite_email_body": payload.invite_email_body,
+                "submission_email_body": payload.submission_email_body,
+                "owner_sms_template": payload.owner_sms_template,
+            },
+        },
+    )
+    await session.commit()
+
+    return await load_form_handling_config(session)

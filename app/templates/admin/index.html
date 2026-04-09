@@ -4,12 +4,12 @@
     <meta charset="utf-8">
     <title>Panel administratora CTIP</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/admin/styles.css">
-    <link rel="stylesheet" href="/static/root/section_switcher.css">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg?v={{ request.app.version }}">
+    <link rel="stylesheet" href="/static/admin/styles.css?v={{ request.app.version }}">
+    <link rel="stylesheet" href="/static/root/section_switcher.css?v={{ request.app.version }}">
     <script defer src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
-    <script defer src="/static/admin/admin.js"></script>
-    <script defer src="/static/root/section_switcher.js"></script>
+    <script defer src="/static/admin/admin.js?v={{ request.app.version }}"></script>
+    <script defer src="/static/root/section_switcher.js?v={{ request.app.version }}"></script>
     <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
   </head>
   <body>
@@ -81,6 +81,10 @@
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'email' }" @click.prevent="openSection('email')">
             <span class="icon">📧</span>
             E-mail
+          </button>
+          <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'form-handling' }" @click.prevent="openSection('form-handling')">
+            <span class="icon">🧾</span>
+            Obsługa formularza
           </button>
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'sms' }" @click.prevent="openSection('sms')">
             <span class="icon">✉️</span>

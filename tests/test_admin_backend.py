@@ -2021,6 +2021,21 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             admin.mobile_phone = "+48600700800"
             await session.commit()
 
+        config_response = await self.client.put(
+            "/admin/config/form-handling",
+            headers={"X-Admin-Session": token},
+            json={
+                "public_base_url": "https://form.example.com",
+                "invite_sms_template": "Link: {form_url}",
+                "invite_email_subject": "Formularz dla {customer_name}",
+                "invite_email_body": "Adres: {form_url}",
+                "submission_email_subject": "Potwierdzenie dla {company_name}",
+                "submission_email_body": "Firma {company_name} zostala zapisana przez {sender_name}.",
+                "owner_sms_template": "Operator: klient {company_name} wypelnil formularz.",
+            },
+        )
+        self.assertEqual(config_response.status_code, 200)
+
         create_response = await self.client.post(
             "/admin/forms",
             headers={"X-Admin-Session": token},
@@ -2118,8 +2133,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     },
                 )
                 send_mock.assert_awaited_once()
+                submission_message = send_mock.call_args.kwargs["message"]
         self.assertEqual(submit_response.status_code, 200)
         self.assertIn("formularz został zapisany", submit_response.text.lower())
+        self.assertEqual(
+            submission_message["Subject"], "Potwierdzenie dla Firma Publiczna Sp. z o.o."
+        )
+        self.assertIn(
+            "Firma Firma Publiczna Sp. z o.o. zostala zapisana przez CTIP Test.",
+            submission_message.get_content(),
+        )
 
         list_response = await self.client.get(
             "/admin/forms",
@@ -2177,6 +2200,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(len(sms_rows), 1)
             self.assertEqual(sms_rows[0].dest, "+48600700800")
+            self.assertEqual(
+                sms_rows[0].text,
+                "Operator: klient Firma Publiczna Sp. z o.o. wypelnil formularz.",
+            )
 
     async def test_contracts_dashboard_returns_all_forms_for_flow(self):
         token, _ = await self._login_operator()
@@ -4215,6 +4242,134 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["host"], payload["host"])
         self.assertEqual(body["port"], payload["port"])
+
+    async def test_update_form_handling_config_persists_values(self):
+        token, _ = await self._login()
+        payload = {
+            "public_base_url": "https://form.example.com",
+            "invite_sms_template": "Link dla {customer_name}: {form_url} do {expires_at}",
+            "invite_email_subject": "Formularz dla {customer_name}",
+            "invite_email_body": "Link: {form_url}\nTermin: {expires_at}\nPodpis: {sender_name}",
+            "submission_email_subject": "Przyjeto formularz {company_name}",
+            "submission_email_body": "Firma: {company_name}\nOpiekun: {sender_name}",
+            "owner_sms_template": "Operator: formularz klienta {company_name} jest gotowy.",
+        }
+        response = await self.client.put(
+            "/admin/config/form-handling",
+            json=payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["public_base_url"], payload["public_base_url"])
+        self.assertEqual(body["invite_sms_template"], payload["invite_sms_template"])
+        self.assertEqual(body["invite_email_subject"], payload["invite_email_subject"])
+        self.assertEqual(body["invite_email_body"], payload["invite_email_body"])
+        self.assertEqual(body["submission_email_subject"], payload["submission_email_subject"])
+        self.assertEqual(body["submission_email_body"], payload["submission_email_body"])
+        self.assertEqual(body["owner_sms_template"], payload["owner_sms_template"])
+
+        response = await self.client.get(
+            "/admin/config/form-handling",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["public_base_url"], payload["public_base_url"])
+        self.assertEqual(body["owner_sms_template"], payload["owner_sms_template"])
+
+    async def test_update_form_handling_config_rejects_unknown_placeholder(self):
+        token, _ = await self._login()
+        response = await self.client.put(
+            "/admin/config/form-handling",
+            json={
+                "public_base_url": "https://form.example.com",
+                "invite_sms_template": "Link {unsupported}",
+                "invite_email_subject": "Formularz dla {customer_name}",
+                "invite_email_body": "Link: {form_url}",
+                "submission_email_subject": "Przyjeto formularz {company_name}",
+                "submission_email_body": "Firma: {company_name}",
+                "owner_sms_template": "Klient {company_name}",
+            },
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nieobslugiwana zmienna", response.json().get("detail", ""))
+
+    async def test_form_generation_uses_configured_public_base_url_and_templates(self):
+        token, _ = await self._login()
+        response = await self.client.put(
+            "/admin/config/form-handling",
+            json={
+                "public_base_url": "https://form.example.com",
+                "invite_sms_template": "SMS dla {customer_name}: {form_url}",
+                "invite_email_subject": "Link dla {customer_name}",
+                "invite_email_body": "Adres: {form_url}\nTermin: {expires_at}\nPodpis: {sender_name}",
+                "submission_email_subject": "Przyjeto formularz {company_name}",
+                "submission_email_body": "Firma: {company_name}\nPodpis: {sender_name}",
+                "owner_sms_template": "Klient {company_name} zakonczyl formularz.",
+            },
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        email_settings = EmailDeliverySettings(
+            host="smtp.test.local",
+            port=587,
+            username="smtp-user",
+            password="smtp-pass",
+            sender_name="Biuro Test",
+            sender_address="noreply@test.local",
+            use_tls=True,
+            use_ssl=False,
+        )
+        with (
+            patch(
+                "app.services.form_generator.admin_users.resolve_email_delivery_settings",
+                AsyncMock(return_value=email_settings),
+            ),
+            patch(
+                "app.services.form_generator.send_smtp_message",
+                AsyncMock(return_value=EmailSendResult(True, "Wyslano")),
+            ) as send_mock,
+        ):
+            response = await self.client.post(
+                "/admin/forms",
+                headers={"X-Admin-Session": token},
+                json={
+                    "customer_name": "Klient Link",
+                    "customer_email": "klient.link@example.com",
+                    "customer_phone": "+48 600 700 900",
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertTrue(body["sms_queued"])
+        self.assertTrue(body["email_sent"])
+        self.assertTrue(body["form_url"].startswith("https://form.example.com/formularz/"))
+
+        message = send_mock.call_args.kwargs["message"]
+        self.assertEqual(message["Subject"], "Link dla Klient Link")
+        self.assertIn("https://form.example.com/formularz/", message.get_content())
+        self.assertIn("Biuro Test", message.get_content())
+
+        async with self.session_factory() as session:
+            sms_row = (
+                (
+                    await session.execute(
+                        select(SmsOut)
+                        .where(SmsOut.origin == "form_link_generated")
+                        .order_by(SmsOut.created_at.desc())
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            self.assertIsNotNone(sms_row)
+            assert sms_row is not None
+            self.assertIn("SMS dla Klient Link:", sms_row.text)
+            self.assertIn("https://form.example.com/formularz/", sms_row.text)
 
     async def test_update_call_sms_config_persists_values(self):
         token, _ = await self._login()

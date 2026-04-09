@@ -212,6 +212,8 @@ document.addEventListener("alpine:init", () => {
           return "/admin/partials/config/ctip";
         case "email":
           return "/admin/partials/config/email";
+        case "form-handling":
+          return "/admin/partials/config/form-handling";
         case "sms":
           return "/admin/partials/config/sms";
         case "call-sms":
@@ -3498,6 +3500,160 @@ document.addEventListener("alpine:init", () => {
     },
   });
 
+  const formHandlingConfig = () => ({
+    publicBaseUrl: "",
+    inviteSmsTemplate: "",
+    inviteEmailSubject: "",
+    inviteEmailBody: "",
+    submissionEmailSubject: "",
+    submissionEmailBody: "",
+    ownerSmsTemplate: "",
+    saving: false,
+    error: null,
+    success: null,
+
+    init() {
+      const initial = this._readInitial();
+      this.publicBaseUrl = initial.public_base_url || "";
+      this.inviteSmsTemplate = initial.invite_sms_template || "";
+      this.inviteEmailSubject = initial.invite_email_subject || "";
+      this.inviteEmailBody = initial.invite_email_body || "";
+      this.submissionEmailSubject = initial.submission_email_subject || "";
+      this.submissionEmailBody = initial.submission_email_body || "";
+      this.ownerSmsTemplate = initial.owner_sms_template || "";
+    },
+
+    _readInitial() {
+      try {
+        return JSON.parse(this.$el.dataset.initial || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji obsługi formularza", err);
+        return {};
+      }
+    },
+
+    get headers() {
+      const token = localStorage.getItem("admin-session-token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Admin-Session"] = token;
+      }
+      return headers;
+    },
+
+    get statusState() {
+      if (!this.publicBaseUrl) {
+        return "warning";
+      }
+      return this.publicBaseUrl.startsWith("https://") ? "success" : "warning";
+    },
+
+    get statusMessage() {
+      if (!this.publicBaseUrl) {
+        return "Brak adresu publicznego";
+      }
+      if (this.publicBaseUrl.startsWith("https://")) {
+        return this.publicBaseUrl;
+      }
+      return `${this.publicBaseUrl} (zalecane HTTPS)`;
+    },
+
+    get previewValues() {
+      const baseUrl = (this.publicBaseUrl || "https://form.twoja-domena.pl")
+        .trim()
+        .replace(/\/+$/, "");
+      return {
+        form_url: `${baseUrl}/formularz/przykladowy-token-2026`,
+        expires_at: "2026-04-30 23:59:59 CEST",
+        customer_name: "Jan Kowalski",
+        company_name: "Ksero-Partner Sp. z o.o.",
+        sender_name: "Biuro Ksero-Partner",
+      };
+    },
+
+    renderPreview(template) {
+      let rendered = String(template || "");
+      const values = this.previewValues;
+      Object.entries(values).forEach(([key, value]) => {
+        rendered = rendered.replaceAll(`{${key}}`, value);
+      });
+      return rendered;
+    },
+
+    get inviteSmsPreview() {
+      return this.renderPreview(this.inviteSmsTemplate);
+    },
+
+    get inviteEmailSubjectPreview() {
+      return this.renderPreview(this.inviteEmailSubject);
+    },
+
+    get inviteEmailBodyPreview() {
+      return this.renderPreview(this.inviteEmailBody);
+    },
+
+    get submissionEmailSubjectPreview() {
+      return this.renderPreview(this.submissionEmailSubject);
+    },
+
+    get submissionEmailBodyPreview() {
+      return this.renderPreview(this.submissionEmailBody);
+    },
+
+    get ownerSmsPreview() {
+      return this.renderPreview(this.ownerSmsTemplate);
+    },
+
+    resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    async save() {
+      if (this.saving) {
+        return;
+      }
+      this.resetMessages();
+      this.saving = true;
+      try {
+        const payload = {
+          public_base_url: this.publicBaseUrl || "",
+          invite_sms_template: this.inviteSmsTemplate || "",
+          invite_email_subject: this.inviteEmailSubject || "",
+          invite_email_body: this.inviteEmailBody || "",
+          submission_email_subject: this.submissionEmailSubject || "",
+          submission_email_body: this.submissionEmailBody || "",
+          owner_sms_template: this.ownerSmsTemplate || "",
+        };
+        const response = await fetch("/admin/config/form-handling", {
+          method: "PUT",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się zapisać konfiguracji formularza.");
+        }
+        this.publicBaseUrl = data.public_base_url || "";
+        this.inviteSmsTemplate = data.invite_sms_template || "";
+        this.inviteEmailSubject = data.invite_email_subject || "";
+        this.inviteEmailBody = data.invite_email_body || "";
+        this.submissionEmailSubject = data.submission_email_subject || "";
+        this.submissionEmailBody = data.submission_email_body || "";
+        this.ownerSmsTemplate = data.owner_sms_template || "";
+        this.success = "Konfiguracja obsługi formularza została zapisana.";
+        this.$el.dataset.initial = JSON.stringify(data);
+        showToast(this.success, "success");
+      } catch (err) {
+        this.error =
+          err instanceof Error ? err.message : "Błąd zapisu konfiguracji formularza.";
+        showToast(this.error, "error");
+      } finally {
+        this.saving = false;
+      }
+    },
+  });
+
   const emailConfig = () => ({
     host: "",
     port: "587",
@@ -3759,6 +3915,7 @@ Alpine.data("ctipConfig", ctipConfig);
 Alpine.data("ctipIvrMap", ctipIvrMap);
 Alpine.data("smsConfig", smsConfig);
 Alpine.data("callSmsConfig", callSmsConfig);
+Alpine.data("formHandlingConfig", formHandlingConfig);
 Alpine.data("emailConfig", emailConfig);
 
   window.adminApp = adminApp;
@@ -3772,6 +3929,7 @@ window.ctipConfig = ctipConfig;
 window.ctipIvrMap = ctipIvrMap;
 window.smsConfig = smsConfig;
 window.callSmsConfig = callSmsConfig;
+window.formHandlingConfig = formHandlingConfig;
 window.emailConfig = emailConfig;
 });
 
