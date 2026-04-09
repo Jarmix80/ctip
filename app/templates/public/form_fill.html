@@ -470,7 +470,7 @@
             <div>
               <label for="rep_birth_date">Data urodzenia</label>
               <div class="date-input-wrap">
-                <input id="rep_birth_date" type="text" placeholder="dd-mm-rrrr">
+                <input id="rep_birth_date" type="text" inputmode="numeric" maxlength="10" placeholder="dd-mm-rrrr">
                 <button type="button" class="date-input-button" id="rep_birth_date_picker_btn" aria-label="Kalendarz daty urodzenia">📅</button>
                 <input id="rep_birth_date_picker" class="date-picker-native" type="date" tabindex="-1" aria-hidden="true">
               </div>
@@ -490,7 +490,7 @@
             <div>
               <label for="rep_document_issue_date">Data wydania dokumentu</label>
               <div class="date-input-wrap">
-                <input id="rep_document_issue_date" type="text" placeholder="dd-mm-rrrr">
+                <input id="rep_document_issue_date" type="text" inputmode="numeric" maxlength="10" placeholder="dd-mm-rrrr">
                 <button type="button" class="date-input-button" id="rep_document_issue_date_picker_btn" aria-label="Kalendarz daty wydania">📅</button>
                 <input id="rep_document_issue_date_picker" class="date-picker-native" type="date" tabindex="-1" aria-hidden="true">
               </div>
@@ -498,7 +498,7 @@
             <div>
               <label for="rep_document_expiry_date">Data ważności dokumentu</label>
               <div class="date-input-wrap">
-                <input id="rep_document_expiry_date" type="text" placeholder="dd-mm-rrrr">
+                <input id="rep_document_expiry_date" type="text" inputmode="numeric" maxlength="10" placeholder="dd-mm-rrrr">
                 <button type="button" class="date-input-button" id="rep_document_expiry_date_picker_btn" aria-label="Kalendarz daty ważności">📅</button>
                 <input id="rep_document_expiry_date_picker" class="date-picker-native" type="date" tabindex="-1" aria-hidden="true">
               </div>
@@ -596,6 +596,8 @@
             buttonId: "rep_document_expiry_date_picker_btn",
           },
         ];
+        const documentExpiryDatePicker = document.getElementById("rep_document_expiry_date_picker");
+        let lastAutoDocumentExpiryDate = "";
 
         const companyRequiredFields = [
           document.getElementById("company_name"),
@@ -676,12 +678,30 @@
           return normalized;
         }
 
+        function formatDateTyping(value) {
+          const digits = normalizeText(value).replace(/\D/g, "").slice(0, 8);
+          if (!digits) {
+            return "";
+          }
+          if (digits.length <= 2) {
+            return digits;
+          }
+          if (digits.length <= 4) {
+            return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+          }
+          return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+        }
+
         function parseDateInput(value) {
           const normalized = normalizeText(value);
           if (!normalized) {
             return "";
           }
-          let match = normalized.match(/^(\d{2})[:.\-](\d{2})[:.\-](\d{4})$/);
+          let match = normalized.match(/^(\d{2})(\d{2})(\d{4})$/);
+          if (match) {
+            return parseDateInput(`${match[1]}-${match[2]}-${match[3]}`);
+          }
+          match = normalized.match(/^(\d{2})[:.\-](\d{2})[:.\-](\d{4})$/);
           if (match) {
             const day = Number(match[1]);
             const month = Number(match[2]);
@@ -711,6 +731,20 @@
             }
           }
           return "";
+        }
+
+        function addYearsToDisplayDate(value, years) {
+          const normalized = parseDateInput(value);
+          const match = normalized.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+          if (!match) {
+            return "";
+          }
+          const day = Number(match[1]);
+          const month = Number(match[2]);
+          const year = Number(match[3]) + years;
+          const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+          const targetDay = Math.min(day, maxDay);
+          return `${String(targetDay).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
         }
 
         function parsePeselBirthDate(value) {
@@ -820,6 +854,59 @@
           return `${match[3]}-${match[2]}-${match[1]}`;
         }
 
+        function closeDatePicker(pickerInput, textInput) {
+          window.setTimeout(() => {
+            pickerInput.blur();
+            if (typeof textInput.focus === "function") {
+              try {
+                textInput.focus({ preventScroll: true });
+              } catch (_error) {
+                textInput.focus();
+              }
+            }
+            if (typeof textInput.setSelectionRange === "function") {
+              const length = textInput.value.length;
+              textInput.setSelectionRange(length, length);
+            }
+          }, 0);
+        }
+
+        function refreshDocumentExpiryAutoState() {
+          const issueDate = parseDateInput(repFields.document_issue_date?.value);
+          const expiryDate = parseDateInput(repFields.document_expiry_date?.value);
+          const suggestedExpiry = addYearsToDisplayDate(issueDate, 10);
+          lastAutoDocumentExpiryDate =
+            suggestedExpiry && expiryDate === suggestedExpiry ? suggestedExpiry : "";
+        }
+
+        function syncDocumentExpiryFromIssue(force = false) {
+          if (!repFields.document_issue_date || !repFields.document_expiry_date) {
+            return;
+          }
+          const issueDate = parseDateInput(repFields.document_issue_date.value);
+          const suggestedExpiry = addYearsToDisplayDate(issueDate, 10);
+          if (!suggestedExpiry) {
+            refreshDocumentExpiryAutoState();
+            return;
+          }
+          const expiryRaw = normalizeText(repFields.document_expiry_date.value);
+          const expiryDate = parseDateInput(expiryRaw);
+          if (
+            force ||
+            !expiryRaw ||
+            expiryRaw === lastAutoDocumentExpiryDate ||
+            expiryDate === lastAutoDocumentExpiryDate
+          ) {
+            repFields.document_expiry_date.value = suggestedExpiry;
+            if (documentExpiryDatePicker) {
+              documentExpiryDatePicker.value = toIsoFromDisplayDate(suggestedExpiry);
+            }
+            lastAutoDocumentExpiryDate = suggestedExpiry;
+            return;
+          }
+          refreshDocumentExpiryAutoState();
+        }
+
         function syncDatePickersFromText() {
           datePickerLinks.forEach(({ textId, pickerId }) => {
             const textInput = document.getElementById(textId);
@@ -828,9 +915,11 @@
               return;
             }
             const normalized = parseDateInput(textInput.value);
-            textInput.value = normalized || normalizeText(textInput.value);
+            textInput.value = normalized || formatDateTyping(textInput.value);
             pickerInput.value = toIsoFromDisplayDate(normalized);
           });
+          syncDocumentExpiryFromIssue();
+          refreshDocumentExpiryAutoState();
         }
 
         function updateInputCompletionState(input) {
@@ -1112,17 +1201,35 @@
             return;
           }
           textInput.addEventListener("input", () => {
+            textInput.value = formatDateTyping(textInput.value);
+            pickerInput.value = toIsoFromDisplayDate(parseDateInput(textInput.value));
+            if (textId === "rep_document_issue_date") {
+              syncDocumentExpiryFromIssue();
+            } else if (textId === "rep_document_expiry_date") {
+              refreshDocumentExpiryAutoState();
+            }
             refreshCompletionStates();
           });
           textInput.addEventListener("change", () => {
             const normalized = parseDateInput(textInput.value);
-            textInput.value = normalized || normalizeText(textInput.value);
+            textInput.value = normalized || formatDateTyping(textInput.value);
             pickerInput.value = toIsoFromDisplayDate(normalized);
+            if (textId === "rep_document_issue_date") {
+              syncDocumentExpiryFromIssue();
+            } else if (textId === "rep_document_expiry_date") {
+              refreshDocumentExpiryAutoState();
+            }
             refreshCompletionStates();
           });
           pickerInput.addEventListener("change", () => {
             textInput.value = toDisplayDate(pickerInput.value);
+            if (textId === "rep_document_issue_date") {
+              syncDocumentExpiryFromIssue();
+            } else if (textId === "rep_document_expiry_date") {
+              refreshDocumentExpiryAutoState();
+            }
             refreshCompletionStates();
+            closeDatePicker(pickerInput, textInput);
           });
           pickerButton.addEventListener("click", () => {
             if (typeof pickerInput.showPicker === "function") {

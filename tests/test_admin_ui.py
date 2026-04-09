@@ -652,3 +652,15 @@ def test_admin_users_modal_edit_form_is_not_hidden_by_x_cloak():
     template = Path("app/templates/admin/partials/users.html").read_text(encoding="utf-8")
     assert '@submit.prevent="saveModal()" x-show="canManage"' in template
     assert '@submit.prevent="saveModal()" x-show="canManage" x-cloak' not in template
+
+
+def test_public_form_template_has_date_mask_and_auto_expiry_logic():
+    template = Path("app/templates/public/form_fill.html").read_text(encoding="utf-8")
+    assert 'id="rep_document_issue_date" type="text" inputmode="numeric" maxlength="10"' in template
+    assert (
+        'id="rep_document_expiry_date" type="text" inputmode="numeric" maxlength="10"' in template
+    )
+    assert "function formatDateTyping(value)" in template
+    assert "function closeDatePicker(pickerInput, textInput)" in template
+    assert "function syncDocumentExpiryFromIssue(force = false)" in template
+    assert "addYearsToDisplayDate(issueDate, 10)" in template

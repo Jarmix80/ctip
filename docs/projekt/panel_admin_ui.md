@@ -151,7 +151,7 @@
 - Konfiguracja tresci wiadomosci i domeny publicznej jest jednak utrzymywana w sekcji `/admin -> Obsluga formularza`, aby nie mieszac operacyjnego generowania linkow z ustawieniami systemowymi.
 - Publiczny formularz działa pod trasą `/formularz/{token}` i ma tryb etapowy:
   - krok 1: dane firmy dzierżawiącej sprzęt (adres siedziby i korespondencyjny rozbite na osobne pola, opcja „Taki sam jak adres siedziby”, obowiązkowe pole `E-mail do e-faktur` z opcją „Kopiuj e-mail”),
-  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób (PESEL + auto-uzupełnienie daty urodzenia, wybór rodzaju dokumentu z listy `Dowód osobisty`/`Paszport`, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub przez kalendarz),
+  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób (PESEL + auto-uzupełnienie daty urodzenia, wybór rodzaju dokumentu z listy `Dowód osobisty`/`Paszport`, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub przez kalendarz; pola dat dokumentu maskują wpis `ddmmrrrr`, a data ważności domyślnie wylicza się jako `+10 lat` od daty wydania z możliwością ręcznej zmiany),
   - krok 3: podsumowanie i końcowe potwierdzenie.
 - Ekran `/genform` podczas tworzenia linku umożliwia ustawienie daty ważności formularza; domyślnie ustawiane jest 7 dni od daty wygenerowania.
 - Po wysyłce (dopiero po końcowym `Potwierdź`) dane są zapisywane jako szyfrowany payload (Fernet, klucz `ADMIN_SECRET_KEY`) i status zmieniany na `SUBMITTED`.
