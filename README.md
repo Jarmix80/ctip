@@ -452,7 +452,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Treści SMS zawierające link jednorazowy lub potwierdzenie wypełnienia formularza są maskowane w historii panelu (`Treść ukryta`), aby nie ujawniać danych wrażliwych.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP, Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów) oraz Generatora formularzy. Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
 - W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
-- Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta oraz po resecie hasła automatycznie wysyłany jest e-mail i SMS z danymi logowania. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
+- Sekcja Użytkowników wymaga podania telefonu komórkowego; udostępnia listę kont administratorów/operatorów, formularz tworzenia nowych użytkowników, edycję w modalach, reset hasła, zmianę statusu aktywności oraz usuwanie kont (blokada usunięcia własnego lub ostatniego administratora). Po utworzeniu konta oraz po resecie hasła automatycznie wysyłany jest e-mail i SMS z danymi logowania, a odpowiedź API zwraca pola `sms_queued` i `sms_recipient`, aby panel potwierdzał kolejkowanie wiadomości. Do panelu mogą logować się wyłącznie konta z rolą `admin`.
 - Aby uruchomić panel lokalnie:
   1. `source .venv/bin/activate`
   2. `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
@@ -532,7 +532,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Szybka wysyłka SMS oferuje przyciski aktywnych szablonów (globalnych i operatora), dwa predefiniowane komunikaty znane z prototypu („Aplikacja”, „Liczniki”) oraz tryb własnej wiadomości. Przed wysyłką można wymusić potwierdzenie, a dowolny tekst zapisać od razu jako nowy szablon operatora.
 - Moduł szybkich SMS normalizuje numer docelowy do formatu E.164 (obsluga prefiksu wyjscia na zewnetrzna linie `0`, prefiksu `00` oraz korekta `+0`) przed zapisaniem w kolejce `sms_out`.
 - Panel nagłówka prezentuje liczbę wysłanych SMS w bieżącym dniu i miesiącu (`GET /operator/api/stats`).
-- W prawym dolnym rogu panelu operatora widnieje wersja i data aktualizacji interfejsu (obecnie: 0.2.6 - Aktualizacja 2026-04-09).
+- W prawym dolnym rogu panelu operatora widnieje wersja i data aktualizacji interfejsu (obecnie: 0.2.7 - Aktualizacja 2026-04-09).
 - Operator może dodać lub edytować kontakt bezpośrednio z widoku połączenia (`POST/PUT /operator/api/contacts`), a dane logowania wysłane w wiadomościach SMS są ukrywane w historii dla bezpieczeństwa.
 - Strona `/operator/settings` udostępnia formularze: edycję profilu operatora (imię, nazwisko, e-mail, numer wewnętrzny, telefon), zmianę hasła oraz zarządzanie własnymi szablonami SMS (dodawanie, edycja, usuwanie). Szablony globalne są widoczne w trybie tylko do odczytu.
 - Opcja „Zapamiętaj mnie” przechowuje token sesji w `localStorage` i wydłuża ważność sesji (`ADMIN_SESSION_REMEMBER_HOURS`), natomiast standardowe logowanie używa `sessionStorage`.

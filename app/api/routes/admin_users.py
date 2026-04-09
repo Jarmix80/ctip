@@ -133,7 +133,7 @@ async def create_admin_user(
     panel_url_config = getattr(settings, "admin_panel_url", None)
     login_url = (panel_url_config or "").strip() or login_url_default
     email_delivery = await admin_users.resolve_email_delivery_settings(session)
-    await admin_users.queue_credentials_sms(
+    sms_queued = await admin_users.queue_credentials_sms(
         session,
         user,
         password,
@@ -160,6 +160,8 @@ async def create_admin_user(
     return AdminUserCreateResponse(
         user=_map_summary(summary_row, normalized_sections),
         password=password,
+        sms_queued=sms_queued,
+        sms_recipient=user.mobile_phone if sms_queued else None,
     )
 
 
@@ -249,7 +251,7 @@ async def reset_admin_password(
     panel_url_config = getattr(settings, "admin_panel_url", None)
     login_url = (panel_url_config or "").strip() or login_url_default
     email_delivery = await admin_users.resolve_email_delivery_settings(session)
-    await admin_users.queue_credentials_sms(
+    sms_queued = await admin_users.queue_credentials_sms(
         session,
         user,
         new_password,
@@ -274,7 +276,11 @@ async def reset_admin_password(
         login_url,
         reason="password_reset",
     )
-    return AdminUserResetPasswordResponse(password=new_password)
+    return AdminUserResetPasswordResponse(
+        password=new_password,
+        sms_queued=sms_queued,
+        sms_recipient=user.mobile_phone if sms_queued else None,
+    )
 
 
 @router.patch(

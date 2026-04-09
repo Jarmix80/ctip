@@ -646,3 +646,9 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     content = js_path.read_text(encoding="utf-8")
     assert 'document.execCommand("copy")' in content
     assert "window.isSecureContext" in content
+
+
+def test_admin_users_modal_edit_form_is_not_hidden_by_x_cloak():
+    template = Path("app/templates/admin/partials/users.html").read_text(encoding="utf-8")
+    assert '@submit.prevent="saveModal()" x-show="canManage"' in template
+    assert '@submit.prevent="saveModal()" x-show="canManage" x-cloak' not in template

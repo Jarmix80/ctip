@@ -121,6 +121,7 @@
 - Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli i przypisanych sekcji (`admin`, `operator`, `generator`).
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
 - Akcja `Reset hasła` generuje nowe hasło tymczasowe, unieważnia aktywne sesje użytkownika i automatycznie wysyła powiadomienie e-mail + SMS z nowymi danymi logowania.
+- API dla tworzenia użytkownika i resetu hasła zwraca pola `sms_queued` oraz `sms_recipient`, dzięki czemu interfejs potwierdza, czy SMS z danymi logowania został dodany do kolejki.
 - Modal szczegółów prezentuje dane profilu, listę sesji (z informacją o unieważnieniu) oraz umożliwia edycję.
 - Usuwanie blokuje własne konto administratora oraz ostatnie aktywne konto w roli `admin`.
 - Panel boczny: statystyka liczby wysłanych SMS per użytkownik (wykres słupkowy), przyciski eksportu CSV.

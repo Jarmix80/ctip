@@ -421,6 +421,8 @@ class AdminUserCreateResponse(BaseModel):
 
     user: AdminUserSummary
     password: str
+    sms_queued: bool
+    sms_recipient: str | None = None
 
 
 class AdminUserUpdate(BaseModel):
@@ -516,6 +518,8 @@ class AdminUserResetPasswordResponse(BaseModel):
     """Wynik resetu hasła."""
 
     password: str
+    sms_queued: bool
+    sms_recipient: str | None = None
 
 
 class AdminUserStatusUpdate(BaseModel):

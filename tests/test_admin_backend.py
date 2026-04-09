@@ -1566,7 +1566,25 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_user["mobile_phone"], "+48600700800")
         self.assertEqual(created_user["sections"], ["operator"])
         self.assertTrue(body["password"])
+        self.assertTrue(body["sms_queued"])
+        self.assertEqual(body["sms_recipient"], "+48600700800")
         self.send_email_mock.assert_awaited_once()
+
+        async with self.session_factory() as session:
+            sms_entries = await session.execute(select(SmsOut).order_by(SmsOut.id))
+            sms_rows = sms_entries.scalars().all()
+            matching = [
+                row
+                for row in sms_rows
+                if isinstance(row.meta, dict) and row.meta.get("type") == "admin_user_credentials"
+            ]
+            self.assertEqual(len(matching), 1)
+            self.assertEqual(matching[0].dest, "+48600700800")
+            self.assertEqual(matching[0].origin, "admin_user_credentials")
+            self.assertEqual(matching[0].status, "NEW")
+            self.assertEqual(matching[0].meta.get("action"), "create")
+            self.assertIn("Login: nowy.uzytkownik@example.com", matching[0].text)
+            self.assertIn("Hasło:", matching[0].text)
 
         response = await self.client.get(
             "/admin/users",
@@ -1620,6 +1638,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         reset_payload = response.json()
         self.assertGreaterEqual(len(reset_payload["password"]), 8)
+        self.assertTrue(reset_payload["sms_queued"])
+        self.assertEqual(reset_payload["sms_recipient"], "+48600111222")
 
         async with self.session_factory() as session:
             db_user = await session.get(AdminUser, user_id)

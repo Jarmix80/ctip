@@ -903,6 +903,21 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    buildCredentialsMessage(action, data) {
+      const base =
+        action === "reset"
+          ? "Hasło użytkownika zostało zresetowane."
+          : "Użytkownik został dodany.";
+      if (data?.sms_queued) {
+        const recipient = String(data.sms_recipient || "").trim();
+        if (recipient) {
+          return `${base} SMS z danymi logowania dodano do kolejki dla ${recipient}.`;
+        }
+        return `${base} SMS z danymi logowania dodano do kolejki.`;
+      }
+      return `${base} SMS z danymi logowania nie został dodany do kolejki. Sprawdź numer telefonu użytkownika.`;
+    },
+
     resetForm() {
       this.form.number = "";
       this.form.ext = "";
@@ -1743,8 +1758,8 @@ document.addEventListener("alpine:init", () => {
         await this.fetchUsers(false);
         this.formPassword = data.password || null;
         this.resetForm();
-        this.success = "Użytkownik został dodany.";
-        showToast(this.success, "success");
+        this.success = this.buildCredentialsMessage("create", data);
+        showToast(this.success, data?.sms_queued === false ? "warning" : "success");
       } catch (err) {
         this.error = err instanceof Error ? err.message : "Błąd tworzenia użytkownika.";
         showToast(this.error, "error");
@@ -1781,8 +1796,8 @@ document.addEventListener("alpine:init", () => {
           this.modalPassword = newPassword;
           this.modalSuccess = "Nowe hasło zostało wygenerowane.";
         }
-        this.success = "Hasło użytkownika zostało zresetowane.";
-        showToast(this.success, "success");
+        this.success = this.buildCredentialsMessage("reset", data);
+        showToast(this.success, data?.sms_queued === false ? "warning" : "success");
         this.formPassword = newPassword;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Błąd resetu hasła.";

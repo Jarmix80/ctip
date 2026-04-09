@@ -343,10 +343,10 @@ async def queue_credentials_sms(
     created_by: int | None,
     login_url: str,
     reason: str = "create",
-) -> None:
+) -> bool:
     """Dodaje SMS z danymi logowania do kolejki po utworzeniu konta lub resecie hasła."""
     if not user.mobile_phone:
-        return
+        return False
     reset_mode = reason == "password_reset"
     password_label = "Nowe hasło" if reset_mode else "Hasło"
     text = f"Panel CTIP: {login_url}\n" f"Login: {user.email}\n" f"{password_label}: {password}"
@@ -361,6 +361,7 @@ async def queue_credentials_sms(
         created_at=datetime.now(UTC).replace(tzinfo=None),
     )
     session.add(sms)
+    return True
 
 
 async def count_active_admins(session: AsyncSession, *, exclude_user_id: int | None = None) -> int:
