@@ -4,17 +4,18 @@
     <meta charset="utf-8">
     <title>CTIP – Generator formularzy</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/root/section_switcher.css">
-    <link rel="stylesheet" href="/static/root/genform.css">
-    <script defer src="/static/root/section_switcher.js"></script>
-    <script defer src="/static/root/genform.js"></script>
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg?v={{ request.app.version }}">
+    <link rel="stylesheet" href="/static/root/section_switcher.css?v={{ request.app.version }}">
+    <link rel="stylesheet" href="/static/root/genform.css?v={{ request.app.version }}">
+    <script defer src="/static/root/section_switcher.js?v={{ request.app.version }}"></script>
+    <script defer src="/static/root/genform.js?v={{ request.app.version }}"></script>
   </head>
   <body>
     <main class="genform-shell">
       <section id="genform-login" class="genform-card">
         <h1>Generator formularzy</h1>
         <p>Zaloguj się kontem z uprawnieniem „Generator”, aby wygenerować bezpieczny link dla klienta.</p>
+        <p class="genform-build-info">Wersja {{ request.app.version }}</p>
 
         <form id="genform-login-form" class="genform-form" autocomplete="on">
           <label for="genform-email">E-mail</label>
@@ -41,6 +42,7 @@
           <div>
             <h1>Generator formularzy</h1>
             <p id="genform-user-line"></p>
+            <p class="genform-build-info">Wersja {{ request.app.version }}</p>
           </div>
           <div class="genform-actions">
             <div class="section-switcher" data-section-switcher hidden>
@@ -112,22 +114,40 @@
       <section id="genform-detail-modal" class="genform-modal" hidden>
         <div class="genform-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-detail-title">
           <header class="genform-modal-header">
-            <h2 id="genform-detail-title">Szczegóły formularza</h2>
-            <button id="genform-detail-close" type="button" class="genform-btn-secondary">Zamknij</button>
+            <div>
+              <h2 id="genform-detail-title">Szczegóły formularza</h2>
+              <p id="genform-detail-status" class="genform-detail-status-text">Brak informacji o statusie.</p>
+            </div>
+            <div class="genform-actions genform-detail-actions">
+              <button id="genform-detail-print" type="button" class="genform-btn-secondary">Drukuj</button>
+              <button id="genform-detail-pdf" type="button" class="genform-btn-secondary">PDF</button>
+              <button id="genform-detail-close" type="button" class="genform-btn-secondary">Zamknij</button>
+            </div>
           </header>
-          <p id="genform-detail-status"></p>
-          <dl class="genform-detail-meta">
-            <div><dt>Nazwa</dt><dd id="genform-detail-name">—</dd></div>
-            <div><dt>E-mail</dt><dd id="genform-detail-email">—</dd></div>
-            <div><dt>Telefon</dt><dd id="genform-detail-phone">—</dd></div>
-            <div><dt>Status</dt><dd id="genform-detail-stage">—</dd></div>
-            <div><dt>Utworzono</dt><dd id="genform-detail-created">—</dd></div>
-            <div><dt>Wysłano</dt><dd id="genform-detail-submitted-at">—</dd></div>
-          </dl>
-          <div id="genform-detail-payload-box" class="genform-detail-payload" hidden>
-            <strong>Dane z formularza klienta</strong>
-            <pre id="genform-detail-payload"></pre>
-          </div>
+          <section class="genform-detail-section">
+            <div class="genform-detail-section-header">
+              <h3>Informacje o formularzu</h3>
+              <p>Dane operacyjne i status bieżącego wniosku.</p>
+            </div>
+            <div id="genform-detail-summary" class="genform-detail-grid"></div>
+          </section>
+          <section class="genform-detail-section">
+            <div class="genform-detail-section-header">
+              <h3>Dane z formularza klienta</h3>
+              <p>Układ zgodny z podsumowaniem widocznym przy końcowym potwierdzeniu po stronie klienta.</p>
+            </div>
+            <div id="genform-detail-empty" class="genform-detail-empty" hidden></div>
+            <div id="genform-detail-content" hidden>
+              <div class="genform-detail-block">
+                <h4>Dane firmy</h4>
+                <dl id="genform-detail-company" class="genform-detail-fields"></dl>
+              </div>
+              <div class="genform-detail-block">
+                <h4>Reprezentanci</h4>
+                <div id="genform-detail-representatives" class="genform-detail-representatives"></div>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
     </main>

@@ -357,12 +357,12 @@
               {% if errors.get("company_nip") %}<div class="error">{{ errors.get("company_nip") }}</div>{% endif %}
             </div>
             <div>
-              <label for="company_phone">Nr telefonu</label>
+              <label for="company_phone">Nr telefonu firmowy</label>
               <input id="company_phone" name="company_phone" type="tel" required value="{{ values.get('company_phone', '') }}">
               {% if errors.get("company_phone") %}<div class="error">{{ errors.get("company_phone") }}</div>{% endif %}
             </div>
             <div>
-              <label for="company_email">E-mail</label>
+              <label for="company_email">E-mail firmowy</label>
               <input id="company_email" name="company_email" type="email" required value="{{ values.get('company_email', '') }}">
               {% if errors.get("company_email") %}<div class="error">{{ errors.get("company_email") }}</div>{% endif %}
             </div>
@@ -462,6 +462,14 @@
             <div>
               <label for="rep_last_name">Nazwisko</label>
               <input id="rep_last_name" type="text">
+            </div>
+            <div>
+              <label for="rep_representative_email">E-mail reprezentanta</label>
+              <input id="rep_representative_email" type="email" placeholder="jan.kowalski@firma.pl">
+            </div>
+            <div>
+              <label for="rep_representative_phone">Telefon reprezentanta</label>
+              <input id="rep_representative_phone" type="tel" inputmode="tel" placeholder="+48 600 700 800">
             </div>
             <div>
               <label for="rep_pesel">PESEL</label>
@@ -571,6 +579,8 @@
         const repFields = {
           first_name: document.getElementById("rep_first_name"),
           last_name: document.getElementById("rep_last_name"),
+          representative_email: document.getElementById("rep_representative_email"),
+          representative_phone: document.getElementById("rep_representative_phone"),
           pesel: document.getElementById("rep_pesel"),
           birth_date: document.getElementById("rep_birth_date"),
           document_type: document.getElementById("rep_document_type"),
@@ -623,6 +633,8 @@
         const repLabels = {
           first_name: "Imię",
           last_name: "Nazwisko",
+          representative_email: "E-mail reprezentanta",
+          representative_phone: "Telefon reprezentanta",
           pesel: "PESEL",
           birth_date: "Data urodzenia",
           document_type: "Rodzaj dokumentu tożsamości",
@@ -646,6 +658,8 @@
           return {
             first_name: "",
             last_name: "",
+            representative_email: "",
+            representative_phone: "",
             pesel: "",
             birth_date: "",
             document_type: "",
@@ -1078,8 +1092,8 @@
           const fields = [
             ["Nazwa firmy", document.getElementById("company_name").value],
             ["NIP", document.getElementById("company_nip").value],
-            ["Nr telefonu", document.getElementById("company_phone").value],
-            ["E-mail", document.getElementById("company_email").value],
+            ["Nr telefonu firmowy", document.getElementById("company_phone").value],
+            ["E-mail firmowy", document.getElementById("company_email").value],
             ["E-mail do e-faktur", document.getElementById("billing_email").value || "—"],
             ["Adres siedziby", registeredAddress || "—"],
             ["Adres korespondencyjny", correspondenceAddress || "—"],
@@ -1096,6 +1110,8 @@
             const headline = `${index + 1}. ${item.first_name} ${item.last_name}`.trim();
             details += "<dl>";
             details += `<dt>Osoba</dt><dd>${escapeHtml(headline)}</dd>`;
+            details += `<dt>E-mail reprezentanta</dt><dd>${escapeHtml(item.representative_email || "—")}</dd>`;
+            details += `<dt>Telefon reprezentanta</dt><dd>${escapeHtml(item.representative_phone || "—")}</dd>`;
             details += `<dt>PESEL</dt><dd>${escapeHtml(item.pesel)}</dd>`;
             details += `<dt>Data urodzenia</dt><dd>${escapeHtml(item.birth_date)}</dd>`;
             details += `<dt>Dokument</dt><dd>${escapeHtml(item.document_type)}</dd>`;

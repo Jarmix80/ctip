@@ -56,6 +56,12 @@ body {
   color: var(--muted);
 }
 
+.genform-build-info {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .genform-form {
   margin-top: 18px;
   display: grid;
@@ -272,8 +278,8 @@ body {
 .genform-modal-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .genform-modal-header h2 {
@@ -282,48 +288,257 @@ body {
   color: var(--primary);
 }
 
-.genform-detail-meta {
+.genform-detail-actions {
+  flex-shrink: 0;
+}
+
+.genform-detail-status-text {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.genform-detail-section {
+  margin-top: 18px;
+}
+
+.genform-detail-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.genform-detail-section-header h3,
+.genform-detail-block h4 {
+  margin: 0;
+  color: var(--primary);
+}
+
+.genform-detail-section-header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.genform-detail-grid,
+.genform-detail-fields {
   margin: 14px 0 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
-.genform-detail-meta div {
+.genform-detail-summary-card,
+.genform-detail-field {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
   background: #f7f9fc;
 }
 
-.genform-detail-meta dt {
+.genform-detail-summary-card dt,
+.genform-detail-field dt {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
 }
 
-.genform-detail-meta dd {
+.genform-detail-summary-card dd,
+.genform-detail-field dd {
   margin: 6px 0 0;
   font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.genform-detail-payload {
-  margin-top: 14px;
+.genform-detail-field-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.genform-detail-field-row dd {
+  flex: 1;
+}
+
+.genform-copy-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(31, 63, 105, 0.18);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--primary);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.genform-copy-btn.is-copied {
+  border-color: rgba(46, 125, 50, 0.28);
+  color: var(--success);
+  background: rgba(46, 125, 50, 0.08);
+}
+
+.genform-detail-block + .genform-detail-block {
+  margin-top: 16px;
+}
+
+.genform-detail-representatives {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.genform-detail-representative {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px;
+  padding: 14px;
   background: #f7f9fc;
 }
 
-.genform-detail-payload pre {
-  margin: 10px 0 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: #fff;
-  border: 1px solid rgba(31, 63, 105, 0.14);
-  max-height: 250px;
-  overflow: auto;
+.genform-detail-representative-header {
+  margin-bottom: 10px;
+}
+
+.genform-detail-representative-header h5 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--primary);
+}
+
+.genform-detail-empty {
+  border: 1px dashed rgba(31, 63, 105, 0.22);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+@media print {
+  :root {
+    font-size: 13px;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 7mm;
+  }
+
+  body.genform-printing {
+    margin: 0;
+    background: #fff;
+    line-height: 1.2;
+  }
+
+  body.genform-printing .genform-shell {
+    width: auto;
+    margin: 0;
+    padding: 0;
+  }
+
+  body.genform-printing .genform-shell > :not(.genform-modal) {
+    display: none !important;
+  }
+
+  body.genform-printing .genform-modal {
+    position: static;
+    inset: auto;
+    display: block !important;
+    background: transparent;
+    padding: 0;
+  }
+
+  body.genform-printing .genform-modal-card {
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0 auto;
+    padding: 4mm 5mm 5mm;
+    font-size: 11px;
+  }
+
+  body.genform-printing .genform-actions,
+  body.genform-printing .genform-copy-btn {
+    display: none !important;
+  }
+
+  body.genform-printing .genform-modal-header {
+    gap: 6px;
+  }
+
+  body.genform-printing .genform-modal-header h2 {
+    font-size: 16px;
+  }
+
+  body.genform-printing .genform-detail-status-text,
+  body.genform-printing .genform-detail-section-header p {
+    margin-top: 2px;
+    font-size: 10px;
+  }
+
+  body.genform-printing .genform-detail-section {
+    margin-top: 8px;
+  }
+
+  body.genform-printing .genform-detail-section-header {
+    gap: 2px;
+    margin-bottom: 6px;
+  }
+
+  body.genform-printing #genform-detail-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  body.genform-printing #genform-detail-company {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.genform-printing .genform-detail-grid,
+  body.genform-printing .genform-detail-fields {
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  body.genform-printing .genform-detail-summary-card,
+  body.genform-printing .genform-detail-field,
+  body.genform-printing .genform-detail-representative {
+    break-inside: avoid;
+    background: #fff;
+    padding: 6px;
+    border-color: rgba(31, 63, 105, 0.16);
+  }
+
+  body.genform-printing .genform-detail-summary-card dt,
+  body.genform-printing .genform-detail-field dt {
+    font-size: 9px;
+  }
+
+  body.genform-printing .genform-detail-summary-card dd,
+  body.genform-printing .genform-detail-field dd {
+    margin-top: 3px;
+    font-size: 11px;
+  }
+
+  body.genform-printing .genform-detail-representative-header {
+    margin-bottom: 6px;
+  }
+
+  body.genform-printing .genform-detail-representative-header h5,
+  body.genform-printing .genform-detail-block h4,
+  body.genform-printing .genform-detail-section-header h3 {
+    font-size: 12px;
+  }
+
+  body.genform-printing #genform-detail-representatives .genform-detail-representative .genform-detail-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
 }
 
 .genform-status {
@@ -355,6 +570,15 @@ body {
 @media (max-width: 700px) {
   .genform-header {
     flex-direction: column;
+  }
+
+  .genform-modal-header {
+    flex-direction: column;
+  }
+
+  .genform-detail-field-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .genform-shell.is-auth {

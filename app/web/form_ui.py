@@ -24,6 +24,8 @@ router = APIRouter(tags=["form-ui"])
 REPRESENTATIVE_FIELDS = (
     "first_name",
     "last_name",
+    "representative_email",
+    "representative_phone",
     "pesel",
     "birth_date",
     "document_type",

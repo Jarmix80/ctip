@@ -635,10 +635,18 @@ def test_genform_page_renders_layout():
     response = client.get("/genform")
     assert response.status_code == 200
     assert "Generator formularzy" in response.text
+    assert f"/static/root/genform.js?v={app.version}" in response.text
+    assert f"/static/root/genform.css?v={app.version}" in response.text
     assert "genform-login-form" in response.text
     assert "genform-password-toggle" in response.text
     assert "genform-detail-modal" in response.text
+    assert "genform-detail-summary" in response.text
+    assert "genform-detail-company" in response.text
+    assert "genform-detail-representatives" in response.text
+    assert "genform-detail-print" in response.text
+    assert "genform-detail-pdf" in response.text
     assert "Utworzone przez" in response.text
+    assert f"Wersja {app.version}" in response.text
 
 
 def test_genform_js_has_copy_fallback_for_non_secure_context():
@@ -646,6 +654,24 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     content = js_path.read_text(encoding="utf-8")
     assert 'document.execCommand("copy")' in content
     assert "window.isSecureContext" in content
+    assert "function renderDetailSections(detailData)" in content
+    assert "button[data-copy-value]" in content
+    assert "window.print();" in content
+    assert '{ label: "Ważny do"' not in content
+    assert 'label: "E-mail firmowy"' in content
+    assert 'label: "Telefon reprezentanta"' in content
+
+
+def test_genform_print_css_keeps_first_page_compact_with_inner_margins():
+    css_path = Path("app/static/root/genform.css")
+    content = css_path.read_text(encoding="utf-8")
+    assert "size: A4 portrait;" in content
+    assert "#genform-detail-summary" in content
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr));" in content
+    assert "margin: 7mm;" in content
+    assert "padding: 4mm 5mm 5mm;" in content
+    assert "break-inside: avoid;" in content
+    assert "page-break-before: always;" not in content
 
 
 def test_admin_users_modal_edit_form_is_not_hidden_by_x_cloak():
@@ -660,6 +686,10 @@ def test_public_form_template_has_date_mask_and_auto_expiry_logic():
     assert (
         'id="rep_document_expiry_date" type="text" inputmode="numeric" maxlength="10"' in template
     )
+    assert "E-mail firmowy" in template
+    assert "Nr telefonu firmowy" in template
+    assert 'id="rep_representative_email"' in template
+    assert 'id="rep_representative_phone"' in template
     assert "function formatDateTyping(value)" in template
     assert "function closeDatePicker(pickerInput, textInput)" in template
     assert "function syncDocumentExpiryFromIssue(force = false)" in template

@@ -2093,6 +2093,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             {
                 "first_name": "Jan",
                 "last_name": "Kowalski",
+                "representative_email": "jan.kowalski@example.com",
+                "representative_phone": "+48600100100",
                 "pesel": "85010112345",
                 "birth_date": "01:01:1985",
                 "document_type": "Dowód osobisty",
@@ -2103,6 +2105,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             {
                 "first_name": "Anna",
                 "last_name": "Nowak",
+                "representative_email": "anna.nowak@example.com",
+                "representative_phone": "+48600200200",
                 "pesel": "02270803624",
                 "birth_date": "08:07:2002",
                 "document_type": "Paszport",
@@ -2184,6 +2188,22 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["submitted_payload"]["company_name"], "Firma Publiczna Sp. z o.o.")
         self.assertEqual(detail["submitted_payload"]["company_email"], "publiczny@example.com")
         self.assertEqual(len(detail["submitted_payload"]["representatives"]), 2)
+        self.assertEqual(
+            detail["submitted_payload"]["representatives"][0]["representative_email"],
+            "jan.kowalski@example.com",
+        )
+        self.assertEqual(
+            detail["submitted_payload"]["representatives"][0]["representative_phone"],
+            "+48600100100",
+        )
+        self.assertEqual(
+            detail["submitted_payload"]["representatives"][1]["representative_email"],
+            "anna.nowak@example.com",
+        )
+        self.assertEqual(
+            detail["submitted_payload"]["representatives"][1]["representative_phone"],
+            "+48600200200",
+        )
 
         history_response = await self.client.get(
             "/admin/sms/history?limit=20",

@@ -103,17 +103,17 @@ function initializeGenForm() {
   const detailModal = document.getElementById("genform-detail-modal");
   const detailCloseBtn = document.getElementById("genform-detail-close");
   const detailStatus = document.getElementById("genform-detail-status");
-  const detailName = document.getElementById("genform-detail-name");
-  const detailEmail = document.getElementById("genform-detail-email");
-  const detailPhone = document.getElementById("genform-detail-phone");
-  const detailStage = document.getElementById("genform-detail-stage");
-  const detailCreated = document.getElementById("genform-detail-created");
-  const detailSubmittedAt = document.getElementById("genform-detail-submitted-at");
-  const detailPayloadBox = document.getElementById("genform-detail-payload-box");
-  const detailPayload = document.getElementById("genform-detail-payload");
+  const detailSummary = document.getElementById("genform-detail-summary");
+  const detailContent = document.getElementById("genform-detail-content");
+  const detailEmpty = document.getElementById("genform-detail-empty");
+  const detailCompany = document.getElementById("genform-detail-company");
+  const detailRepresentatives = document.getElementById("genform-detail-representatives");
+  const detailPrintBtn = document.getElementById("genform-detail-print");
+  const detailPdfBtn = document.getElementById("genform-detail-pdf");
 
   let token = readToken();
   let openedFormId = null;
+  let currentDetailData = null;
   setDefaultExpiresOn();
 
   function setBusy(element, busy, labelBusy, labelIdle) {
@@ -139,6 +139,24 @@ function initializeGenForm() {
     }
     detailModal.hidden = true;
     openedFormId = null;
+    currentDetailData = null;
+    clearPrintMode();
+    if (detailSummary) {
+      detailSummary.innerHTML = "";
+    }
+    if (detailCompany) {
+      detailCompany.innerHTML = "";
+    }
+    if (detailRepresentatives) {
+      detailRepresentatives.innerHTML = "";
+    }
+    if (detailContent) {
+      detailContent.hidden = true;
+    }
+    if (detailEmpty) {
+      detailEmpty.hidden = true;
+      detailEmpty.textContent = "";
+    }
   }
 
   function showLogin(message = "") {
@@ -199,13 +217,6 @@ function initializeGenForm() {
     storeToken(null, false);
   }
 
-  function setNodeText(node, value) {
-    if (!node) {
-      return;
-    }
-    node.textContent = value || "—";
-  }
-
   function setDefaultExpiresOn() {
     if (!expiresOnInput) {
       return;
@@ -216,6 +227,196 @@ function initializeGenForm() {
     const mm = String(target.getMonth() + 1).padStart(2, "0");
     const dd = String(target.getDate()).padStart(2, "0");
     expiresOnInput.value = `${yyyy}-${mm}-${dd}`;
+  }
+
+  function normalizeText(value) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    return String(value).trim();
+  }
+
+  function escapeHtmlAttribute(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\r?\n/g, "&#10;");
+  }
+
+  function formatDetailValue(value) {
+    return normalizeText(value) || "—";
+  }
+
+  function buildAddress(data, prefix) {
+    const street = normalizeText(data?.[`${prefix}_street`]);
+    const buildingNo = normalizeText(data?.[`${prefix}_building_no`]);
+    const apartmentNo = normalizeText(data?.[`${prefix}_apartment_no`]);
+    const postalCode = normalizeText(data?.[`${prefix}_postal_code`]);
+    const city = normalizeText(data?.[`${prefix}_city`]);
+    const lineOne = [street, buildingNo, apartmentNo ? `lok. ${apartmentNo}` : ""]
+      .filter(Boolean)
+      .join(", ");
+    const lineTwo = [postalCode, city].filter(Boolean).join(" ");
+    return [lineOne, lineTwo].filter(Boolean).join("\n");
+  }
+
+  function renderCopyButton(value, label) {
+    const copyValue = normalizeText(value);
+    if (!copyValue) {
+      return "";
+    }
+    return `<button
+      type="button"
+      class="genform-copy-btn"
+      data-copy-value="${escapeHtmlAttribute(copyValue)}"
+      data-copy-label="${escapeHtmlAttribute(label)}"
+    >Kopiuj</button>`;
+  }
+
+  function renderFieldCards(fields, { itemClass = "genform-detail-field" } = {}) {
+    return fields
+      .map((field) => {
+        const value = formatDetailValue(field.value);
+        return `<div class="${itemClass}">
+          <dt>${escapeHtml(field.label)}</dt>
+          <div class="genform-detail-field-row">
+            <dd>${escapeHtml(value)}</dd>
+            ${renderCopyButton(value === "—" ? "" : value, field.label)}
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function buildSummaryFields(detailData) {
+    const item = detailData.item || {};
+    return [
+      { label: "ID formularza", value: item.id ? String(item.id) : "" },
+      { label: "Nazwa własna", value: item.customer_name },
+      { label: "E-mail kontaktowy", value: item.customer_email },
+      { label: "Telefon kontaktowy", value: item.customer_phone },
+      { label: "Utworzone przez", value: item.created_by_name || "—" },
+      { label: "Status", value: statusLabel(item.status) },
+      { label: "Utworzono", value: formatDate(item.created_at) },
+      {
+        label: "Wypełniono",
+        value: formatDate(detailData.submittedMeta?.submitted_at || item.submitted_at || ""),
+      },
+    ];
+  }
+
+  function buildCompanyFields(payload) {
+    return [
+      { label: "Nazwa firmy", value: payload.company_name },
+      { label: "NIP", value: payload.company_nip },
+      { label: "Nr telefonu firmowy", value: payload.company_phone },
+      { label: "E-mail firmowy", value: payload.company_email },
+      { label: "E-mail do e-faktur", value: payload.billing_email },
+      { label: "Adres siedziby", value: buildAddress(payload, "registered") },
+      { label: "Adres korespondencyjny", value: buildAddress(payload, "correspondence") },
+    ];
+  }
+
+  function buildRepresentativeTitle(item, index) {
+    const fullName = [normalizeText(item.first_name), normalizeText(item.last_name)]
+      .filter(Boolean)
+      .join(" ");
+    return fullName || `Reprezentant ${index + 1}`;
+  }
+
+  function buildRepresentativeFields(item, index) {
+    const representativeEmail =
+      item.representative_email || item.email || item.contact_email || "";
+    const representativePhone =
+      item.representative_phone || item.phone || item.contact_phone || item.telephone || "";
+    return {
+      title: buildRepresentativeTitle(item, index),
+      fields: [
+        { label: "Osoba", value: buildRepresentativeTitle(item, index) },
+        { label: "E-mail reprezentanta", value: representativeEmail },
+        { label: "Telefon reprezentanta", value: representativePhone },
+        { label: "PESEL", value: item.pesel },
+        { label: "Data urodzenia", value: item.birth_date },
+        { label: "Dokument", value: item.document_type },
+        { label: "Nr dokumentu", value: item.document_number },
+        { label: "Data wydania", value: item.document_issue_date },
+        { label: "Data ważności", value: item.document_expiry_date },
+      ],
+    };
+  }
+
+  function renderRepresentatives(items) {
+    if (!Array.isArray(items) || !items.length) {
+      return "<p class=\"genform-detail-empty\">Brak reprezentantów zapisanych w formularzu.</p>";
+    }
+    return items
+      .map((item, index) => {
+        const representative = buildRepresentativeFields(item, index);
+        return `<article class="genform-detail-representative">
+          <header class="genform-detail-representative-header">
+            <h5>${escapeHtml(representative.title)}</h5>
+          </header>
+          <dl class="genform-detail-fields">
+            ${renderFieldCards(representative.fields)}
+          </dl>
+        </article>`;
+      })
+      .join("");
+  }
+
+  function renderDetailSections(detailData) {
+    if (!detailSummary || !detailContent || !detailEmpty || !detailCompany || !detailRepresentatives) {
+      return;
+    }
+    detailSummary.innerHTML = renderFieldCards(buildSummaryFields(detailData), {
+      itemClass: "genform-detail-summary-card",
+    });
+
+    const payload =
+      detailData.submittedPayload && typeof detailData.submittedPayload === "object"
+        ? detailData.submittedPayload
+        : null;
+    if (!payload) {
+      detailCompany.innerHTML = "";
+      detailRepresentatives.innerHTML = "";
+      detailContent.hidden = true;
+      detailEmpty.hidden = false;
+      detailEmpty.textContent =
+        "Klient nie zakończył jeszcze wypełniania formularza. Dostępne są wyłącznie informacje operacyjne.";
+      return;
+    }
+
+    detailCompany.innerHTML = renderFieldCards(buildCompanyFields(payload));
+    detailRepresentatives.innerHTML = renderRepresentatives(payload.representatives);
+    detailContent.hidden = false;
+    detailEmpty.hidden = true;
+    detailEmpty.textContent = "";
+  }
+
+  function clearPrintMode() {
+    document.body.classList.remove("genform-printing");
+  }
+
+  function triggerDetailPrint(mode) {
+    if (!currentDetailData || !detailModal || detailModal.hidden) {
+      showError("Najpierw otwórz szczegóły formularza.");
+      return;
+    }
+    clearMessages();
+    document.body.classList.add("genform-printing");
+    if (mode === "pdf") {
+      showSuccess(
+        "Otworzono widok eksportu. W systemowym oknie drukowania wybierz „Zapisz jako PDF”."
+      );
+    } else {
+      showSuccess("Otworzono widok do druku formularza.");
+    }
+    window.setTimeout(() => {
+      window.print();
+    }, 60);
   }
 
   function renderItems(items) {
@@ -307,25 +508,21 @@ function initializeGenForm() {
       }
 
       const item = data.item || {};
-      setNodeText(detailName, item.customer_name);
-      setNodeText(detailEmail, item.customer_email);
-      setNodeText(detailPhone, item.customer_phone);
-      setNodeText(detailStage, statusLabel(item.status));
-      setNodeText(detailCreated, formatDate(item.created_at));
-      setNodeText(
-        detailSubmittedAt,
-        formatDate(data.submitted_meta?.submitted_at || item.submitted_at || null)
-      );
-      setNodeText(detailStatus, data.status_message || "Brak informacji o statusie.");
-
-      const payload = data.submitted_payload;
-      if (payload && typeof payload === "object") {
-        detailPayload.textContent = JSON.stringify(payload, null, 2);
-        detailPayloadBox.hidden = false;
-      } else {
-        detailPayload.textContent = "";
-        detailPayloadBox.hidden = true;
+      currentDetailData = {
+        item,
+        statusMessage: data.status_message || "Brak informacji o statusie.",
+        submittedPayload:
+          data.submitted_payload && typeof data.submitted_payload === "object"
+            ? data.submitted_payload
+            : null,
+        submittedMeta: data.submitted_meta && typeof data.submitted_meta === "object"
+          ? data.submitted_meta
+          : {},
+      };
+      if (detailStatus) {
+        detailStatus.textContent = currentDetailData.statusMessage;
       }
+      renderDetailSections(currentDetailData);
 
       openedFormId = formId;
       detailModal.hidden = false;
@@ -549,6 +746,35 @@ function initializeGenForm() {
     }
   }
 
+  function markCopiedButton(button) {
+    const originalLabel = button.dataset.originalLabel || button.textContent || "Kopiuj";
+    button.dataset.originalLabel = originalLabel;
+    button.textContent = "Skopiowano";
+    button.classList.add("is-copied");
+    window.setTimeout(() => {
+      button.textContent = originalLabel;
+      button.classList.remove("is-copied");
+    }, 1400);
+  }
+
+  async function handleCopyField(button) {
+    const value = button.dataset.copyValue || "";
+    const label = button.dataset.copyLabel || "Pole";
+    try {
+      const copied = await copyTextToClipboard(value);
+      clearMessages();
+      if (copied) {
+        markCopiedButton(button);
+        showSuccess(`Skopiowano pole: ${label}.`);
+      } else {
+        showError(`Nie udało się skopiować pola: ${label}.`);
+      }
+    } catch (err) {
+      clearMessages();
+      showError(`Nie udało się skopiować pola: ${label}.`);
+    }
+  }
+
   function togglePasswordVisibility() {
     if (!passwordInput || !passwordToggleBtn) {
       return;
@@ -565,9 +791,21 @@ function initializeGenForm() {
   copyLinkBtn?.addEventListener("click", handleCopyLink);
   passwordToggleBtn?.addEventListener("click", togglePasswordVisibility);
   detailCloseBtn?.addEventListener("click", closeDetailModal);
+  detailPrintBtn?.addEventListener("click", () => triggerDetailPrint("print"));
+  detailPdfBtn?.addEventListener("click", () => triggerDetailPrint("pdf"));
   detailModal?.addEventListener("click", (event) => {
     if (event.target === detailModal) {
       closeDetailModal();
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const copyButton = target.closest("button[data-copy-value]");
+    if (copyButton instanceof HTMLButtonElement) {
+      event.preventDefault();
+      handleCopyField(copyButton);
     }
   });
   document.addEventListener("keydown", (event) => {
@@ -575,6 +813,7 @@ function initializeGenForm() {
       closeDetailModal();
     }
   });
+  window.addEventListener("afterprint", clearPrintMode);
   window.addEventListener("pageshow", () => {
     closeDetailModal();
   });

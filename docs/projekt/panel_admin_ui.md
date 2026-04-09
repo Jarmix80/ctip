@@ -150,13 +150,14 @@
 - API pozostaje w module administracyjnym (`/admin/forms`), ale ekran operacyjny jest niezależny od `/admin`.
 - Konfiguracja tresci wiadomosci i domeny publicznej jest jednak utrzymywana w sekcji `/admin -> Obsluga formularza`, aby nie mieszac operacyjnego generowania linkow z ustawieniami systemowymi.
 - Publiczny formularz działa pod trasą `/formularz/{token}` i ma tryb etapowy:
-  - krok 1: dane firmy dzierżawiącej sprzęt (adres siedziby i korespondencyjny rozbite na osobne pola, opcja „Taki sam jak adres siedziby”, obowiązkowe pole `E-mail do e-faktur` z opcją „Kopiuj e-mail”),
-  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób (PESEL + auto-uzupełnienie daty urodzenia, wybór rodzaju dokumentu z listy `Dowód osobisty`/`Paszport`, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub przez kalendarz; pola dat dokumentu maskują wpis `ddmmrrrr`, a data ważności domyślnie wylicza się jako `+10 lat` od daty wydania z możliwością ręcznej zmiany),
+  - krok 1: dane firmy dzierżawiącej sprzęt (adres siedziby i korespondencyjny rozbite na osobne pola, pola `Nr telefonu firmowy` i `E-mail firmowy`, opcja „Taki sam jak adres siedziby”, obowiązkowe pole `E-mail do e-faktur` z opcją „Kopiuj e-mail”),
+  - krok 2: dane reprezentanta z możliwością dodania kolejnych osób (`E-mail reprezentanta`, `Telefon reprezentanta`, PESEL + auto-uzupełnienie daty urodzenia, wybór rodzaju dokumentu z listy `Dowód osobisty`/`Paszport`, daty dokumentu z wpisem ręcznym `dd-mm-rrrr` lub przez kalendarz; pola dat dokumentu maskują wpis `ddmmrrrr`, a data ważności domyślnie wylicza się jako `+10 lat` od daty wydania z możliwością ręcznej zmiany),
   - krok 3: podsumowanie i końcowe potwierdzenie.
 - Ekran `/genform` podczas tworzenia linku umożliwia ustawienie daty ważności formularza; domyślnie ustawiane jest 7 dni od daty wygenerowania.
 - Po wysyłce (dopiero po końcowym `Potwierdź`) dane są zapisywane jako szyfrowany payload (Fernet, klucz `ADMIN_SECRET_KEY`) i status zmieniany na `SUBMITTED`.
 - Po zapisie system wysyła e-mail potwierdzający do klienta oraz tworzy SMS do użytkownika, który wygenerował link formularza.
 - Lista formularzy zawiera akcje `Wyświetl` i `Usuń`.
+- `Wyświetl` otwiera modal szczegółów z czytelnym układem danych firmy i reprezentantów (zgodnym z końcowym podsumowaniem formularza klienta), bez pustej przestrzeni w widoku wydruku/PDF, z przyciskiem kopiowania przy każdym polu oraz akcjami `Drukuj` i `PDF` opartymi o systemowe okno drukowania; wariant wydruku ma wewnętrzne marginesy i zwarty układ, a kolejne strony są dobierane naturalnie przez silnik drukowania.
 - Modal pokazuje pełne dane klienta po statusie `SUBMITTED`, a dla statusów `GENERATED`/`DISPATCHED`/`EXPIRED` zwraca komunikat operacyjny („formularz został wysłany, ale nie został jeszcze wypełniony” itp.).
 - Lista generatora zawiera kolumnę `Utworzone przez`.
 

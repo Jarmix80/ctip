@@ -99,6 +99,8 @@ class PublicFormRepresentative(BaseModel):
 
     first_name: str = Field(min_length=2, max_length=120)
     last_name: str = Field(min_length=2, max_length=120)
+    representative_email: EmailStr
+    representative_phone: str = Field(min_length=6, max_length=32, pattern=PHONE_PATTERN)
     pesel: str = Field(min_length=11, max_length=11)
     birth_date: str = Field(min_length=10, max_length=10)
     document_type: str = Field(min_length=2, max_length=120)
@@ -109,6 +111,8 @@ class PublicFormRepresentative(BaseModel):
     @field_validator(
         "first_name",
         "last_name",
+        "representative_email",
+        "representative_phone",
         "document_type",
         "document_number",
         mode="before",
