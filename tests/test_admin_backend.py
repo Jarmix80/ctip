@@ -51,7 +51,9 @@ from app.services.contracts_dashboard import (
     FirebirdClientMatch,
     FirebirdClientWriteResult,
     FirebirdDeviceSyncResult,
+    FirebirdRuntimeConfig,
     find_client_in_firebird,
+    firebird_writes_enabled,
     load_firebird_runtime_config,
     use_firebird_runtime_config,
 )
@@ -869,6 +871,36 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connect_calls[0]["password"], "sekret-ms")
         self.assertEqual(connect_calls[0]["charset"], "WIN1250")
         self.assertEqual(connect_calls[0]["role"], "RDB$ADMIN")
+
+    def test_firebird_writes_enabled_accepts_existing_local_database_outside_repo(self):
+        runtime = FirebirdRuntimeConfig(
+            mode="local",
+            host="127.0.0.1",
+            port=3050,
+            database="D:/BAZA_MS_KP/BAZAMS.FDB",
+            user="SYSDBA",
+            password="masterkey",
+            charset="WIN1250",
+            role=None,
+            local_copy_path="D:/BAZA_MS_KP/BAZAMS.FDB",
+            allow_writes=True,
+        )
+
+        with (
+            patch(
+                "app.services.contracts_dashboard._resolve_firebird_runtime_config",
+                return_value=runtime,
+            ),
+            patch(
+                "app.services.contracts_dashboard._resolve_local_firebird_path",
+                return_value=Path("D:/BAZA_MS_KP/BAZAMS.FDB"),
+            ),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            enabled, reason = firebird_writes_enabled()
+
+        self.assertTrue(enabled)
+        self.assertIsNone(reason)
 
     @patch("app.api.routes.admin_firebird.test_firebird_connection")
     async def test_firebird_vmaintenance_test_endpoint_uses_current_configuration(self, mock_test):

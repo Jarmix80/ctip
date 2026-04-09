@@ -259,11 +259,6 @@ def firebird_writes_enabled() -> tuple[bool, str | None]:
     if not db_path.exists():
         return False, f"Brak lokalnej kopii Firebird do zapisu: {db_path}"
 
-    try:
-        db_path.resolve().relative_to(_repo_root().resolve())
-    except ValueError:
-        return False, f"Zapis jest dozwolony tylko do lokalnej kopii w repozytorium: {db_path}"
-
     return True, None
 
 
