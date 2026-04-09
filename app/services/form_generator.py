@@ -24,7 +24,9 @@ from app.services.contracts_dashboard import (
     create_client_from_submitted_payload,
     find_client_in_firebird,
     firebird_writes_enabled,
+    load_firebird_runtime_config,
     normalize_nip,
+    use_firebird_runtime_config,
 )
 from app.services.contracts_workflow import (
     WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
@@ -245,53 +247,55 @@ async def _sync_submitted_form_with_firebird_ms(
         )
         return
 
-    existing = await asyncio.to_thread(find_client_in_firebird, nip)
-    if existing.error:
-        form.ms_status = build_ms_status_message(
-            state="LOOKUP_ERROR",
-            event_at=submitted_at,
-            details=existing.error,
-        )
-        return
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        existing = await asyncio.to_thread(find_client_in_firebird, nip)
+        if existing.error:
+            form.ms_status = build_ms_status_message(
+                state="LOOKUP_ERROR",
+                event_at=submitted_at,
+                details=existing.error,
+            )
+            return
 
-    if existing.found and existing.id_klient:
-        await _store_ms_client_link(
-            session,
-            form=form,
-            payload=payload,
-            firebird_client_id=existing.id_klient,
-            firebird_client_status="linked",
-            updated_by=form.created_by,
-        )
-        form.ms_status = build_ms_status_message(
-            state="LINKED",
-            event_at=submitted_at,
-            client_id=existing.id_klient,
-        )
-        return
+        if existing.found and existing.id_klient:
+            await _store_ms_client_link(
+                session,
+                form=form,
+                payload=payload,
+                firebird_client_id=existing.id_klient,
+                firebird_client_status="linked",
+                updated_by=form.created_by,
+            )
+            form.ms_status = build_ms_status_message(
+                state="LINKED",
+                event_at=submitted_at,
+                client_id=existing.id_klient,
+            )
+            return
 
-    writes_enabled, reason = firebird_writes_enabled()
-    if not writes_enabled:
-        form.ms_status = build_ms_status_message(
-            state="BLOCKED",
-            event_at=submitted_at,
-            details=reason,
-        )
-        return
+        writes_enabled, reason = firebird_writes_enabled()
+        if not writes_enabled:
+            form.ms_status = build_ms_status_message(
+                state="BLOCKED",
+                event_at=submitted_at,
+                details=reason,
+            )
+            return
 
-    try:
-        result = await asyncio.to_thread(
-            create_client_from_submitted_payload,
-            payload,
-            source_name=f"CTIP formularz {form.id}",
-        )
-    except Exception as exc:  # noqa: BLE001
-        form.ms_status = build_ms_status_message(
-            state="CREATE_ERROR",
-            event_at=submitted_at,
-            details=str(exc),
-        )
-        return
+        try:
+            result = await asyncio.to_thread(
+                create_client_from_submitted_payload,
+                payload,
+                source_name=f"CTIP formularz {form.id}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            form.ms_status = build_ms_status_message(
+                state="CREATE_ERROR",
+                event_at=submitted_at,
+                details=str(exc),
+            )
+            return
 
     if result.match.id_klient:
         await _store_ms_client_link(

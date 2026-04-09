@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -13,6 +15,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import FormRequest
+from app.services.settings_store import build_store
+
+
+@dataclass(slots=True, frozen=True)
+class FirebirdRuntimeConfig:
+    """Aktywna konfiguracja Firebird pobrana z panelu administratora lub srodowiska."""
+
+    mode: str
+    host: str
+    port: int
+    database: str
+    user: str
+    password: str
+    charset: str
+    role: str | None
+    local_copy_path: str
+    allow_writes: bool
+
+
+_settings_store = build_store(settings.admin_secret_key)
+_firebird_runtime_config_var: ContextVar[FirebirdRuntimeConfig | None] = ContextVar(
+    "firebird_runtime_config",
+    default=None,
+)
 
 
 def normalize_nip(value: str | None) -> str:
@@ -90,6 +116,78 @@ class DeviceMatch:
     error: str | None = None
 
 
+def _coerce_firebird_port(value: str | int | None, default: int) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_firebird_mode(value: str | None) -> str:
+    mode = (value or "").strip().lower() or settings.fb_mode.lower()
+    if mode not in {"network", "local"}:
+        return (
+            settings.fb_mode.lower()
+            if settings.fb_mode.lower() in {"network", "local"}
+            else "local"
+        )
+    return mode
+
+
+def _default_firebird_runtime_config() -> FirebirdRuntimeConfig:
+    return FirebirdRuntimeConfig(
+        mode=_normalize_firebird_mode(settings.fb_mode),
+        host=(settings.fb_host or "").strip(),
+        port=_coerce_firebird_port(settings.fb_port, 3050),
+        database=(settings.fb_database or "").strip(),
+        user=(settings.fb_user or "").strip(),
+        password=settings.fb_password or "",
+        charset=(settings.fb_charset or "").strip() or "UTF8",
+        role=(settings.fb_role or "").strip() or None,
+        local_copy_path=(settings.fb_local_copy_path or "").strip()
+        or "inbox/firebird/test_ms_local.fdb",
+        allow_writes=bool(settings.fb_allow_writes),
+    )
+
+
+async def load_firebird_runtime_config(session: AsyncSession) -> FirebirdRuntimeConfig:
+    """Laduje biezaca konfiguracje Firebird z panelu administratora z fallbackiem do `.env`."""
+    defaults = _default_firebird_runtime_config()
+    stored = await _settings_store.get_namespace(session, "firebird")
+    raw_role = stored.get("role")
+    role = defaults.role if raw_role is None else (raw_role.strip() or None)
+    return FirebirdRuntimeConfig(
+        mode=_normalize_firebird_mode(stored.get("mode") or defaults.mode),
+        host=(stored.get("host") or defaults.host).strip(),
+        port=_coerce_firebird_port(stored.get("port"), defaults.port),
+        database=(stored.get("database") or defaults.database).strip(),
+        user=(stored.get("user") or defaults.user).strip(),
+        password=stored.get("password") or defaults.password,
+        charset=(stored.get("charset") or defaults.charset).strip() or defaults.charset,
+        role=role,
+        local_copy_path=(stored.get("local_copy_path") or defaults.local_copy_path).strip()
+        or defaults.local_copy_path,
+        allow_writes=defaults.allow_writes,
+    )
+
+
+def _resolve_firebird_runtime_config() -> FirebirdRuntimeConfig:
+    return _firebird_runtime_config_var.get() or _default_firebird_runtime_config()
+
+
+@contextmanager
+def use_firebird_runtime_config(config: FirebirdRuntimeConfig | None):
+    """Aktywuje runtime config Firebird dla biezacego kontekstu zadania/watku."""
+    if config is None:
+        yield
+        return
+    token = _firebird_runtime_config_var.set(config)
+    try:
+        yield
+    finally:
+        _firebird_runtime_config_var.reset(token)
+
+
 def _extract_submitted_payload(item: FormRequest) -> dict[str, Any] | None:
     from app.services import form_generator
 
@@ -126,19 +224,28 @@ def _repo_root() -> Path:
 
 
 def _resolve_local_firebird_path() -> Path:
-    db_path = Path(settings.fb_local_copy_path)
+    runtime = _resolve_firebird_runtime_config()
+    db_path = Path(runtime.local_copy_path)
     if not db_path.is_absolute():
         db_path = _repo_root() / db_path
     return db_path
 
 
 def firebird_writes_enabled() -> tuple[bool, str | None]:
-    """Sprawdza, czy zapis do lokalnej kopii Firebird jest jawnie odblokowany."""
-    if not settings.fb_allow_writes:
+    """Sprawdza, czy zapis do aktywnej bazy Firebird jest jawnie odblokowany."""
+    runtime = _resolve_firebird_runtime_config()
+    if not runtime.allow_writes:
         return (
             False,
-            "Zapis do lokalnej Firebird jest zablokowany. Ustaw FB_ALLOW_WRITES=true w srodowisku testowym.",
+            "Zapis do Firebird jest zablokowany. Ustaw FB_ALLOW_WRITES=true w aktywnym srodowisku.",
         )
+
+    if runtime.mode == "network":
+        if not runtime.host:
+            return False, "Brak hosta Firebird w aktywnej konfiguracji."
+        if not runtime.database:
+            return False, "Brak bazy Firebird w aktywnej konfiguracji."
+        return True, None
 
     db_path = _resolve_local_firebird_path()
     if not db_path.exists():
@@ -155,18 +262,34 @@ def firebird_writes_enabled() -> tuple[bool, str | None]:
 def _firebird_connection():
     import firebirdsql  # type: ignore[import-not-found]
 
-    fb_port = settings.fb_port
+    runtime = _resolve_firebird_runtime_config()
+    connect_kwargs: dict[str, Any] = {
+        "port": runtime.port,
+        "user": runtime.user,
+        "password": runtime.password,
+        "charset": runtime.charset,
+    }
+    if runtime.role:
+        connect_kwargs["role"] = runtime.role
+
+    if runtime.mode == "network":
+        if not runtime.host:
+            raise FileNotFoundError("Brak hosta Firebird w aktywnej konfiguracji.")
+        if not runtime.database:
+            raise FileNotFoundError("Brak bazy Firebird w aktywnej konfiguracji.")
+        return firebirdsql.connect(
+            host=runtime.host,
+            database=runtime.database,
+            **connect_kwargs,
+        )
+
     db_path = _resolve_local_firebird_path()
     if not db_path.exists():
         raise FileNotFoundError(f"Brak lokalnej kopii Firebird: {db_path}")
-
     return firebirdsql.connect(
         host="127.0.0.1",
-        port=fb_port,
         database=str(db_path),
-        user=settings.fb_user,
-        password=settings.fb_password,
-        charset=settings.fb_charset,
+        **connect_kwargs,
     )
 
 
@@ -237,7 +360,7 @@ def create_client_from_submitted_payload(
     source_name: str | None = None,
     kto: str = "CTIP",
 ) -> FirebirdClientWriteResult:
-    """Tworzy klienta w lokalnej kopii Firebird na podstawie formularza SUBMITTED."""
+    """Tworzy klienta w aktywnej bazie Firebird na podstawie formularza SUBMITTED."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
@@ -414,7 +537,7 @@ def synchronize_device_from_sheet_row(
     *,
     kto: str = "CTIP",
 ) -> FirebirdDeviceSyncResult:
-    """Synchronizuje urzadzenie z arkusza do lokalnej Firebird (MASZYNA + MAGAZYN)."""
+    """Synchronizuje urzadzenie z arkusza do aktywnej Firebird (MASZYNA + MAGAZYN)."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
@@ -566,7 +689,7 @@ def synchronize_device_from_sheet_row(
 
 
 def find_client_in_firebird(nip: str) -> FirebirdClientMatch:
-    """Wyszukuje klienta po NIP w lokalnej kopii Firebird."""
+    """Wyszukuje klienta po NIP w aktywnej konfiguracji Firebird."""
     cleaned = normalize_nip(nip)
     if not cleaned:
         return FirebirdClientMatch(found=False)
@@ -645,7 +768,7 @@ def find_client_in_firebird(nip: str) -> FirebirdClientMatch:
 
 
 def find_client_in_firebird_by_id(client_id: int | None) -> FirebirdClientMatch:
-    """Wyszukuje klienta po ID_KLIENT w lokalnej kopii Firebird."""
+    """Wyszukuje klienta po ID_KLIENT w aktywnej konfiguracji Firebird."""
     if not client_id:
         return FirebirdClientMatch(found=False)
 
@@ -839,6 +962,7 @@ __all__ = [
     "FirebirdClientMatch",
     "FirebirdDeviceSyncResult",
     "FirebirdModelMatch",
+    "FirebirdRuntimeConfig",
     "FirebirdWarehouseMatch",
     "create_client_from_submitted_payload",
     "find_model_in_firebird",
@@ -850,8 +974,10 @@ __all__ = [
     "load_contract_forms",
     "load_device_from_sheet_row",
     "load_devices_from_sheet",
+    "load_firebird_runtime_config",
     "load_submitted_forms",
     "normalize_device_key",
     "normalize_nip",
     "synchronize_device_from_sheet_row",
+    "use_firebird_runtime_config",
 ]

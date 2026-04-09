@@ -24,8 +24,10 @@ from app.services.contracts_dashboard import (
     load_contract_forms,
     load_device_from_sheet_row,
     load_devices_from_sheet,
+    load_firebird_runtime_config,
     normalize_nip,
     synchronize_device_from_sheet_row,
+    use_firebird_runtime_config,
 )
 from app.services.contracts_proforma import create_proforma_from_workflow
 from app.services.contracts_workflow import (
@@ -275,6 +277,7 @@ async def contracts_dashboard_data(
         session, form_request_ids=[item.id for item in forms]
     )
     await session.commit()
+    firebird_config = await load_firebird_runtime_config(session)
 
     from app.services import form_generator
 
@@ -287,60 +290,68 @@ async def contracts_dashboard_data(
     form_items: list[dict] = []
     firebird_client_cache: dict[str, object] = {}
 
-    async def resolve_client_match(nip: str):
-        if not nip:
-            return None
-        if nip not in firebird_client_cache:
-            firebird_client_cache[nip] = await asyncio.to_thread(find_client_in_firebird, nip)
-        return firebird_client_cache[nip]
+    with use_firebird_runtime_config(firebird_config):
 
-    for item in forms:
-        form_status_totals[item.status] = form_status_totals.get(item.status, 0) + 1
-        payload: dict = {}
-        meta: dict = {}
-        firebird_match = None
-        contract_action: str | None = None
+        async def resolve_client_match(nip: str):
+            if not nip:
+                return None
+            if nip not in firebird_client_cache:
+                firebird_client_cache[nip] = await asyncio.to_thread(find_client_in_firebird, nip)
+            return firebird_client_cache[nip]
 
-        if item.status == "SUBMITTED":
-            decoded_payload, decoded_meta = form_generator.decode_submitted_payload(item)
-            payload = decoded_payload or {}
-            meta = decoded_meta or {}
-            nip = normalize_nip(str(payload.get("company_nip") or ""))
-            if nip:
-                firebird_match = await resolve_client_match(nip)
-                contract_action = "podlacz_klienta" if firebird_match.found else "utworz_klienta"
-        else:
-            nip = ""
+        for item in forms:
+            form_status_totals[item.status] = form_status_totals.get(item.status, 0) + 1
+            payload: dict = {}
+            meta: dict = {}
+            firebird_match = None
+            contract_action: str | None = None
 
-        form_items.append(
-            {
-                "id": item.id,
-                "status": item.status,
-                "status_message": form_generator.build_status_message(item),
-                "created_at": _to_iso(item.created_at),
-                "submitted_at": _to_iso(item.submitted_at),
-                "token_expires_at": _to_iso(item.token_expires_at),
-                "customer_name": str(payload.get("company_name") or item.customer_name or ""),
-                "customer_nip": nip,
-                "customer_email": str(payload.get("company_email") or item.customer_email or ""),
-                "customer_phone": str(payload.get("company_phone") or item.customer_phone or ""),
-                "sms_status": item.sms_status,
-                "email_status": item.email_status,
-                "payload": payload,
-                "meta": meta,
-                "firebird": {
-                    "found": firebird_match.found if firebird_match else False,
-                    "id_klient": firebird_match.id_klient if firebird_match else None,
-                    "nazwa": firebird_match.nazwa if firebird_match else None,
-                    "nip": firebird_match.nip if firebird_match else None,
-                    "telefon": firebird_match.telefon if firebird_match else None,
-                    "email": firebird_match.email if firebird_match else None,
-                    "error": firebird_match.error if firebird_match else None,
-                },
-                "contract_action": contract_action,
-                "workflow": workflow_summaries.get(item.id, serialize_workflow_case(None)),
-            }
-        )
+            if item.status == "SUBMITTED":
+                decoded_payload, decoded_meta = form_generator.decode_submitted_payload(item)
+                payload = decoded_payload or {}
+                meta = decoded_meta or {}
+                nip = normalize_nip(str(payload.get("company_nip") or ""))
+                if nip:
+                    firebird_match = await resolve_client_match(nip)
+                    contract_action = (
+                        "podlacz_klienta" if firebird_match.found else "utworz_klienta"
+                    )
+            else:
+                nip = ""
+
+            form_items.append(
+                {
+                    "id": item.id,
+                    "status": item.status,
+                    "status_message": form_generator.build_status_message(item),
+                    "created_at": _to_iso(item.created_at),
+                    "submitted_at": _to_iso(item.submitted_at),
+                    "token_expires_at": _to_iso(item.token_expires_at),
+                    "customer_name": str(payload.get("company_name") or item.customer_name or ""),
+                    "customer_nip": nip,
+                    "customer_email": str(
+                        payload.get("company_email") or item.customer_email or ""
+                    ),
+                    "customer_phone": str(
+                        payload.get("company_phone") or item.customer_phone or ""
+                    ),
+                    "sms_status": item.sms_status,
+                    "email_status": item.email_status,
+                    "payload": payload,
+                    "meta": meta,
+                    "firebird": {
+                        "found": firebird_match.found if firebird_match else False,
+                        "id_klient": firebird_match.id_klient if firebird_match else None,
+                        "nazwa": firebird_match.nazwa if firebird_match else None,
+                        "nip": firebird_match.nip if firebird_match else None,
+                        "telefon": firebird_match.telefon if firebird_match else None,
+                        "email": firebird_match.email if firebird_match else None,
+                        "error": firebird_match.error if firebird_match else None,
+                    },
+                    "contract_action": contract_action,
+                    "workflow": workflow_summaries.get(item.id, serialize_workflow_case(None)),
+                }
+            )
 
     devices_output: list[dict] = []
     if include_devices:
@@ -349,28 +360,29 @@ async def contracts_dashboard_data(
         except Exception as exc:  # noqa: BLE001
             sheet_devices = []
             warnings.append(f"Blad odczytu arkusza Urzadzenia: {exc}")
-        for device in sheet_devices:
-            match = await asyncio.to_thread(
-                find_device_in_firebird, device.get("serial"), device.get("ewidencja")
-            )
-            devices_output.append(
-                {
-                    "row": int(device.get("row") or 0),
-                    "serial": device.get("serial") or "",
-                    "ewidencja": device.get("ewidencja") or "",
-                    "model": device.get("model") or "",
-                    "found_in_firebird": match.found_in_firebird,
-                    "id_maszyna": match.id_maszyna,
-                    "id_klient": match.id_klient,
-                    "id_umowacpc": match.id_umowacpc,
-                    "firebird_error": match.error,
-                    "sync_action": (
-                        "synchronizuj"
-                        if (device.get("serial") or device.get("ewidencja"))
-                        else "do_weryfikacji"
-                    ),
-                }
-            )
+        with use_firebird_runtime_config(firebird_config):
+            for device in sheet_devices:
+                match = await asyncio.to_thread(
+                    find_device_in_firebird, device.get("serial"), device.get("ewidencja")
+                )
+                devices_output.append(
+                    {
+                        "row": int(device.get("row") or 0),
+                        "serial": device.get("serial") or "",
+                        "ewidencja": device.get("ewidencja") or "",
+                        "model": device.get("model") or "",
+                        "found_in_firebird": match.found_in_firebird,
+                        "id_maszyna": match.id_maszyna,
+                        "id_klient": match.id_klient,
+                        "id_umowacpc": match.id_umowacpc,
+                        "firebird_error": match.error,
+                        "sync_action": (
+                            "synchronizuj"
+                            if (device.get("serial") or device.get("ewidencja"))
+                            else "do_weryfikacji"
+                        ),
+                    }
+                )
 
     matched_count = sum(1 for item in devices_output if item["found_in_firebird"])
     return {
@@ -422,7 +434,9 @@ async def contracts_form_workflow_detail(
     submitted_payload = form_payload or {}
     submitted_meta = form_meta or {}
     nip = normalize_nip(str(submitted_payload.get("company_nip") or ""))
-    firebird_match = await asyncio.to_thread(find_client_in_firebird, nip) if nip else None
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        firebird_match = await asyncio.to_thread(find_client_in_firebird, nip) if nip else None
 
     workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
     workflow_devices = (
@@ -897,42 +911,43 @@ async def contracts_form_workflow_client(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Formularz nie zawiera NIP klienta.",
         )
-
-    match = await asyncio.to_thread(find_client_in_firebird, nip)
-    if match.error:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad odczytu klienta z Firebird: {match.error}",
-        )
-
-    created = False
-    firebird_status = "linked"
-    if not match.found:
-        enabled, reason = firebird_writes_enabled()
-        if not enabled:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=reason or "Zapis do Firebird jest zablokowany.",
-            )
-        try:
-            result = await asyncio.to_thread(
-                create_client_from_submitted_payload,
-                form_payload,
-                source_name=f"CTIP formularz {item.id}",
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
-        except RuntimeError as exc:
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        match = await asyncio.to_thread(find_client_in_firebird, nip)
+        if match.error:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=str(exc),
-            ) from exc
-        created = result.created
-        match = result.match
-        firebird_status = "created" if result.created else "linked"
+                detail=f"Blad odczytu klienta z Firebird: {match.error}",
+            )
+
+        created = False
+        firebird_status = "linked"
+        if not match.found:
+            enabled, reason = firebird_writes_enabled()
+            if not enabled:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=reason or "Zapis do Firebird jest zablokowany.",
+                )
+            try:
+                result = await asyncio.to_thread(
+                    create_client_from_submitted_payload,
+                    form_payload,
+                    source_name=f"CTIP formularz {item.id}",
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=str(exc),
+                ) from exc
+            created = result.created
+            match = result.match
+            firebird_status = "created" if result.created else "linked"
 
     if not match.id_klient:
         raise HTTPException(
@@ -1162,7 +1177,7 @@ async def contracts_form_workflow_proforma(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Tworzy proforme w lokalnej Firebird dla formularza SUBMITTED."""
+    """Tworzy proforme w aktywnej konfiguracji Firebird dla formularza SUBMITTED."""
     payload_data = payload or WorkflowProformaRequest()
     admin_session, admin_user = admin_context
     if admin_user.role not in {"admin", "operator"}:
@@ -1250,40 +1265,42 @@ async def contracts_form_workflow_proforma(
         for device in workflow_devices
     ]
 
-    try:
-        recipient_client_id, recipient_label = await _resolve_proforma_recipient_client_id(
-            for_bank=payload_data.for_bank,
-            workflow_client_id=int(workflow_case.firebird_client_id),
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        try:
+            recipient_client_id, recipient_label = await _resolve_proforma_recipient_client_id(
+                for_bank=payload_data.for_bank,
+                workflow_client_id=int(workflow_case.firebird_client_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
 
-    try:
-        result = await asyncio.to_thread(
-            create_proforma_from_workflow,
-            form_request_id=item.id,
-            firebird_client_id=recipient_client_id,
-            selected_devices=selected_devices,
-            issuer_name=issuer_name,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+        try:
+            result = await asyncio.to_thread(
+                create_proforma_from_workflow,
+                form_request_id=item.id,
+                firebird_client_id=recipient_client_id,
+                selected_devices=selected_devices,
+                issuer_name=issuer_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
 
     workflow_case = await set_form_workflow_proforma(
         session,
@@ -1368,31 +1385,33 @@ async def contracts_dashboard_action(
 
         submitted_payload, _ = form_generator.decode_submitted_payload(item)
         form_payload = submitted_payload or {}
+        firebird_config = await load_firebird_runtime_config(session)
 
         if payload.action == "utworz_klienta":
-            enabled, reason = firebird_writes_enabled()
-            if not enabled:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=reason or "Zapis do Firebird jest zablokowany.",
-                )
+            with use_firebird_runtime_config(firebird_config):
+                enabled, reason = firebird_writes_enabled()
+                if not enabled:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=reason or "Zapis do Firebird jest zablokowany.",
+                    )
 
-            try:
-                result = await asyncio.to_thread(
-                    create_client_from_submitted_payload,
-                    form_payload,
-                    source_name=f"CTIP formularz {item.id}",
-                )
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(exc),
-                ) from exc
-            except RuntimeError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=str(exc),
-                ) from exc
+                try:
+                    result = await asyncio.to_thread(
+                        create_client_from_submitted_payload,
+                        form_payload,
+                        source_name=f"CTIP formularz {item.id}",
+                    )
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(exc),
+                    ) from exc
+                except RuntimeError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=str(exc),
+                    ) from exc
 
             workflow_case = await get_or_create_form_workflow_case(
                 session,
@@ -1435,7 +1454,7 @@ async def contracts_dashboard_action(
             await session.commit()
 
             if result.created:
-                message = f"Utworzono klienta w lokalnej Firebird: ID {result.match.id_klient}."
+                message = f"Utworzono klienta w Firebird: ID {result.match.id_klient}."
             else:
                 message = f"Klient juz istnieje w Firebird: ID {result.match.id_klient}."
             return {
@@ -1453,17 +1472,18 @@ async def contracts_dashboard_action(
                     detail="Formularz nie zawiera NIP klienta.",
                 )
 
-            match = await asyncio.to_thread(find_client_in_firebird, nip)
-            if match.error:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Blad odczytu klienta z Firebird: {match.error}",
-                )
-            if not match.found:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Klient nie istnieje w Firebird. Najpierw utworz klienta.",
-                )
+            with use_firebird_runtime_config(firebird_config):
+                match = await asyncio.to_thread(find_client_in_firebird, nip)
+                if match.error:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=f"Blad odczytu klienta z Firebird: {match.error}",
+                    )
+                if not match.found:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Klient nie istnieje w Firebird. Najpierw utworz klienta.",
+                    )
 
             workflow_case = await get_or_create_form_workflow_case(
                 session,
@@ -1532,28 +1552,30 @@ async def contracts_dashboard_action(
             )
 
         if payload.action in {"synchronizuj", "podlacz"}:
-            enabled, reason = firebird_writes_enabled()
-            if not enabled:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=reason or "Zapis do Firebird jest zablokowany.",
-                )
-            try:
-                result = await asyncio.to_thread(
-                    synchronize_device_from_sheet_row,
-                    payload.row,
-                    kto="CTIP",
-                )
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(exc),
-                ) from exc
-            except RuntimeError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=str(exc),
-                ) from exc
+            firebird_config = await load_firebird_runtime_config(session)
+            with use_firebird_runtime_config(firebird_config):
+                enabled, reason = firebird_writes_enabled()
+                if not enabled:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=reason or "Zapis do Firebird jest zablokowany.",
+                    )
+                try:
+                    result = await asyncio.to_thread(
+                        synchronize_device_from_sheet_row,
+                        payload.row,
+                        kto="CTIP",
+                    )
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(exc),
+                    ) from exc
+                except RuntimeError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=str(exc),
+                    ) from exc
 
             await record_audit(
                 session,

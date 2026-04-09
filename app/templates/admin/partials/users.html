@@ -197,173 +197,173 @@
           <div class="form-message error" x-text="modalError"></div>
         </template>
         <template x-if="!modalLoading && modalDetail">
-          <div class="users-modal-summary">
-            <div>
-              <span class="status-chip" :class="modalDetail.is_active ? 'success' : 'warning'" x-text="modalDetail.is_active ? 'Aktywny' : 'Zablokowany'"></span>
-              <dl>
-                <div>
-                  <dt>Utworzony</dt>
-                  <dd x-text="formatDate(modalDetail.created_at)"></dd>
+          <div class="users-modal-content">
+            <div class="users-modal-summary">
+              <div>
+                <span class="status-chip" :class="modalDetail.is_active ? 'success' : 'warning'" x-text="modalDetail.is_active ? 'Aktywny' : 'Zablokowany'"></span>
+                <dl>
+                  <div>
+                    <dt>Utworzony</dt>
+                    <dd x-text="formatDate(modalDetail.created_at)"></dd>
+                  </div>
+                  <div>
+                    <dt>Ostatnia modyfikacja</dt>
+                    <dd x-text="formatDate(modalDetail.updated_at)"></dd>
+                  </div>
+                  <div>
+                    <dt>Ostatnie logowanie</dt>
+                    <dd x-text="formatDate(modalDetail.last_login_at)"></dd>
+                  </div>
+                  <div>
+                    <dt>Telefon</dt>
+                    <dd x-text="formatPhone(modalDetail.mobile_phone)"></dd>
+                  </div>
+                  <div>
+                    <dt>Numer wewnętrzny</dt>
+                    <dd x-text="modalDetail.internal_ext || '—'"></dd>
+                  </div>
+                  <div>
+                    <dt>Sekcje</dt>
+                    <dd x-text="formatSections(modalDetail.sections, modalDetail.role)"></dd>
+                  </div>
+                  <div>
+                    <dt>Handlowiec</dt>
+                    <dd x-text="modalDetail.is_salesperson ? 'Tak' : 'Nie'"></dd>
+                  </div>
+                </dl>
+              </div>
+              <div>
+                <span class="badge" :class="modalDetail.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="modalDetail.role"></span>
+                <div class="users-modal-stat">
+                  <strong x-text="modalDetail.sessions_active"></strong>
+                  <span>Aktywnych sesji</span>
                 </div>
-                <div>
-                  <dt>Ostatnia modyfikacja</dt>
-                  <dd x-text="formatDate(modalDetail.updated_at)"></dd>
-                </div>
-                <div>
-                  <dt>Ostatnie logowanie</dt>
-                  <dd x-text="formatDate(modalDetail.last_login_at)"></dd>
-                </div>
-                <div>
-                  <dt>Telefon</dt>
-                  <dd x-text="formatPhone(modalDetail.mobile_phone)"></dd>
-                </div>
-                <div>
-                  <dt>Numer wewnętrzny</dt>
-                  <dd x-text="modalDetail.internal_ext || '—'"></dd>
-                </div>
-                <div>
-                  <dt>Sekcje</dt>
-                  <dd x-text="formatSections(modalDetail.sections, modalDetail.role)"></dd>
-                </div>
-                <div>
-                  <dt>Handlowiec</dt>
-                  <dd x-text="modalDetail.is_salesperson ? 'Tak' : 'Nie'"></dd>
-                </div>
-              </dl>
-            </div>
-            <div>
-              <span class="badge" :class="modalDetail.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="modalDetail.role"></span>
-              <div class="users-modal-stat">
-                <strong x-text="modalDetail.sessions_active"></strong>
-                <span>Aktywnych sesji</span>
               </div>
             </div>
-          </div>
 
-          <template x-if="modalPassword">
-            <div class="form-message success">
-              Nowe hasło: <code x-text="modalPassword"></code>
-            </div>
-          </template>
-          <template x-if="modalSuccess">
-            <div class="form-message success" x-text="modalSuccess"></div>
-          </template>
+            <template x-if="modalPassword">
+              <div class="form-message success">
+                Nowe hasło: <code x-text="modalPassword"></code>
+              </div>
+            </template>
+            <template x-if="modalSuccess">
+              <div class="form-message success" x-text="modalSuccess"></div>
+            </template>
 
-          <template x-if="canManage">
             <form class="config-form users-form" @submit.prevent="saveModal()">
-            <h5>Edycja danych użytkownika</h5>
-            <div class="form-grid">
-              <div class="form-field">
-                <label for="modal-user-email">E-mail</label>
-                <input id="modal-user-email" type="email" x-model="modalEdit.email" required>
-              </div>
-              <div class="form-field">
-                <label for="modal-user-first">Imię</label>
-                <input id="modal-user-first" type="text" x-model="modalEdit.firstName">
-              </div>
-              <div class="form-field">
-                <label for="modal-user-last">Nazwisko</label>
-                <input id="modal-user-last" type="text" x-model="modalEdit.lastName">
-              </div>
-              <div class="form-field">
-                <label for="modal-user-mobile">Telefon komórkowy</label>
-                <input id="modal-user-mobile" type="tel" x-model="modalEdit.mobilePhone" placeholder="np. +48 600 700 800">
-              </div>
-              <div class="form-field">
-                <label for="modal-user-ext">Numer wewnętrzny</label>
-                <input id="modal-user-ext" type="text" x-model="modalEdit.internalExt">
-              </div>
-              <div class="form-field">
-                <label for="modal-user-role">Rola</label>
-                <select id="modal-user-role" x-model="modalEdit.role" @change="onModalRoleChange()">
-                  <option value="operator">Operator</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-              <div class="form-field">
-                <label class="users-section-option users-flag-option" for="modal-user-is-salesperson">
-                  <input id="modal-user-is-salesperson" type="checkbox" x-model="modalEdit.isSalesperson">
-                  Handlowiec
-                </label>
-                <small>Użytkownik będzie odbiorcą grupowych powiadomień formularzy.</small>
-              </div>
-              <div class="form-field form-field-wide">
-                <label>Dostępne sekcje</label>
-                <div class="users-sections-grid">
-                  <label class="users-section-option">
-                    <input type="checkbox" value="admin" x-model="modalEdit.sections" :disabled="modalEdit.role !== 'admin'">
-                    Sekcja Admin
+              <h5>Edycja danych użytkownika</h5>
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="modal-user-email">E-mail</label>
+                  <input id="modal-user-email" type="email" x-model="modalEdit.email" required>
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-first">Imię</label>
+                  <input id="modal-user-first" type="text" x-model="modalEdit.firstName">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-last">Nazwisko</label>
+                  <input id="modal-user-last" type="text" x-model="modalEdit.lastName">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-mobile">Telefon komórkowy</label>
+                  <input id="modal-user-mobile" type="tel" x-model="modalEdit.mobilePhone" placeholder="np. +48 600 700 800">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-ext">Numer wewnętrzny</label>
+                  <input id="modal-user-ext" type="text" x-model="modalEdit.internalExt">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-role">Rola</label>
+                  <select id="modal-user-role" x-model="modalEdit.role" @change="onModalRoleChange()">
+                    <option value="operator">Operator</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label class="users-section-option users-flag-option" for="modal-user-is-salesperson">
+                    <input id="modal-user-is-salesperson" type="checkbox" x-model="modalEdit.isSalesperson">
+                    Handlowiec
                   </label>
-                  <label class="users-section-option">
-                    <input type="checkbox" value="operator" x-model="modalEdit.sections">
-                    Sekcja Operator
-                  </label>
-                  <label class="users-section-option">
-                    <input type="checkbox" value="generator" x-model="modalEdit.sections">
-                    Sekcja Generator
-                  </label>
+                  <small>Użytkownik będzie odbiorcą grupowych powiadomień formularzy.</small>
+                </div>
+                <div class="form-field form-field-wide">
+                  <label>Dostępne sekcje</label>
+                  <div class="users-sections-grid">
+                    <label class="users-section-option">
+                      <input type="checkbox" value="admin" x-model="modalEdit.sections" :disabled="modalEdit.role !== 'admin'">
+                      Sekcja Admin
+                    </label>
+                    <label class="users-section-option">
+                      <input type="checkbox" value="operator" x-model="modalEdit.sections">
+                      Sekcja Operator
+                    </label>
+                    <label class="users-section-option">
+                      <input type="checkbox" value="generator" x-model="modalEdit.sections">
+                      Sekcja Generator
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="form-actions">
-              <button type="submit" :disabled="modalSaving">
-                <span x-text="modalSaving ? 'Zapisywanie…' : 'Zapisz'">Zapisz</span>
-              </button>
-              <button
-                type="button"
-                class="btn-secondary"
-                @click.prevent="resetPassword(modalDetail)"
-                :disabled="modalSaving || actionUserId === modalDetail.id"
-              >
-                Reset hasła
-              </button>
-            </div>
-            </form>
-          </template>
-
-          <section class="users-sessions">
-            <header>
-              <h5>Sesje administracyjne</h5>
-              <p>Lista wygenerowanych tokenów wraz z datą ważności.</p>
-            </header>
-            <template x-if="modalDetail.sessions.length === 0">
-              <p class="users-sessions-empty">Brak aktywnych lub historycznych sesji.</p>
-            </template>
-            <template x-if="modalDetail.sessions.length > 0">
-              <div class="users-sessions-table-wrapper">
-                <table class="users-sessions-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Utworzona</th>
-                      <th>Wygasa</th>
-                      <th>Status</th>
-                      <th>Adres IP</th>
-                      <th>Przeglądarka</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template x-for="session in modalDetail.sessions" :key="session.id">
-                      <tr>
-                        <td x-text="session.id"></td>
-                        <td x-text="formatDate(session.created_at)"></td>
-                        <td x-text="formatDate(session.expires_at)"></td>
-                        <td>
-                          <span
-                            class="status-chip"
-                            :class="session.revoked_at ? 'warning' : 'success'"
-                            x-text="session.revoked_at ? `Unieważniona: ${formatDate(session.revoked_at)}` : 'Aktywna'"
-                          ></span>
-                        </td>
-                        <td x-text="session.client_ip || '—'"></td>
-                        <td x-text="session.user_agent || '—'"></td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
+              <div class="form-actions">
+                <button type="submit" :disabled="modalSaving">
+                  <span x-text="modalSaving ? 'Zapisywanie…' : 'Zapisz'">Zapisz</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  @click.prevent="resetPassword(modalDetail)"
+                  :disabled="modalSaving || actionUserId === modalDetail.id"
+                >
+                  Reset hasła
+                </button>
               </div>
-            </template>
-          </section>
+            </form>
+
+            <section class="users-sessions">
+              <header>
+                <h5>Sesje administracyjne</h5>
+                <p>Lista wygenerowanych tokenów wraz z datą ważności.</p>
+              </header>
+              <template x-if="modalDetail.sessions.length === 0">
+                <p class="users-sessions-empty">Brak aktywnych lub historycznych sesji.</p>
+              </template>
+              <template x-if="modalDetail.sessions.length > 0">
+                <div class="users-sessions-table-wrapper">
+                  <table class="users-sessions-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Utworzona</th>
+                        <th>Wygasa</th>
+                        <th>Status</th>
+                        <th>Adres IP</th>
+                        <th>Przeglądarka</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="session in modalDetail.sessions" :key="session.id">
+                        <tr>
+                          <td x-text="session.id"></td>
+                          <td x-text="formatDate(session.created_at)"></td>
+                          <td x-text="formatDate(session.expires_at)"></td>
+                          <td>
+                            <span
+                              class="status-chip"
+                              :class="session.revoked_at ? 'warning' : 'success'"
+                              x-text="session.revoked_at ? `Unieważniona: ${formatDate(session.revoked_at)}` : 'Aktywna'"
+                            ></span>
+                          </td>
+                          <td x-text="session.client_ip || '—'"></td>
+                          <td x-text="session.user_agent || '—'"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
+            </section>
+          </div>
         </template>
       </div>
       <footer class="users-modal-footer">

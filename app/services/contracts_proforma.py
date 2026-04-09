@@ -114,7 +114,7 @@ def create_proforma_from_workflow(
     selected_devices: list[dict[str, Any]],
     issuer_name: str,
 ) -> FirebirdProformaWriteResult:
-    """Tworzy proforme w lokalnej Firebird dla sprawy workflow."""
+    """Tworzy proforme w aktywnej konfiguracji Firebird dla sprawy workflow."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")

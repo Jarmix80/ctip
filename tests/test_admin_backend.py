@@ -51,6 +51,9 @@ from app.services.contracts_dashboard import (
     FirebirdClientMatch,
     FirebirdClientWriteResult,
     FirebirdDeviceSyncResult,
+    find_client_in_firebird,
+    load_firebird_runtime_config,
+    use_firebird_runtime_config,
 )
 from app.services.contracts_proforma import FirebirdProformaWriteResult
 from app.services.device_intake import (
@@ -792,6 +795,68 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         kwargs = mock_test.call_args.kwargs
         self.assertEqual(kwargs["host"], "127.0.0.1")
         self.assertEqual(kwargs["database"], "/srv/firebird/local/BAZAMS_LOCAL.FDB")
+
+    async def test_firebird_client_lookup_uses_runtime_configuration_from_admin_settings(self):
+        token, _ = await self._login()
+        response = await self.client.put(
+            "/admin/config/firebird",
+            json={
+                "mode": "network",
+                "host": "192.168.0.8",
+                "port": 3050,
+                "database": "D:/MS/BAZAMS.FDB",
+                "user": "SYSDBA",
+                "password": "sekret-ms",
+                "charset": "WIN1250",
+                "role": "RDB$ADMIN",
+                "local_copy_path": "inbox/firebird/test_ms_local.fdb",
+            },
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        async with self.session_factory() as session:
+            config = await load_firebird_runtime_config(session)
+
+        connect_calls: list[dict[str, object]] = []
+
+        class DummyCursor:
+            def execute(self, _query, _params=None):
+                return None
+
+            def fetchone(self):
+                return None
+
+            def close(self):
+                return None
+
+        class DummyConnection:
+            def cursor(self):
+                return DummyCursor()
+
+            def close(self):
+                return None
+
+        class DummyFirebirdSql:
+            @staticmethod
+            def connect(**kwargs):
+                connect_calls.append(kwargs)
+                return DummyConnection()
+
+        with patch.dict(sys.modules, {"firebirdsql": DummyFirebirdSql}):
+            with use_firebird_runtime_config(config):
+                match = find_client_in_firebird("525-000-11-11")
+
+        self.assertFalse(match.found)
+        self.assertIsNone(match.error)
+        self.assertEqual(len(connect_calls), 1)
+        self.assertEqual(connect_calls[0]["host"], "192.168.0.8")
+        self.assertEqual(connect_calls[0]["port"], 3050)
+        self.assertEqual(connect_calls[0]["database"], "D:/MS/BAZAMS.FDB")
+        self.assertEqual(connect_calls[0]["user"], "SYSDBA")
+        self.assertEqual(connect_calls[0]["password"], "sekret-ms")
+        self.assertEqual(connect_calls[0]["charset"], "WIN1250")
+        self.assertEqual(connect_calls[0]["role"], "RDB$ADMIN")
 
     @patch("app.api.routes.admin_firebird.test_firebird_connection")
     async def test_firebird_vmaintenance_test_endpoint_uses_current_configuration(self, mock_test):

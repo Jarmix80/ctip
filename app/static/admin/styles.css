@@ -1535,6 +1535,12 @@ a {
   gap: 20px;
 }
 
+.users-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .users-modal-status {
   margin: 0;
   font-size: 14px;
