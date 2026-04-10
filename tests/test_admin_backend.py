@@ -2378,7 +2378,6 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                         "registered_apartment_no": "2",
                         "registered_postal_code": "00-001",
                         "registered_city": "Warszawa",
-                        "correspondence_same_as_registered": "false",
                         "correspondence_street": "Korespondencyjna",
                         "correspondence_building_no": "2",
                         "correspondence_apartment_no": "3",

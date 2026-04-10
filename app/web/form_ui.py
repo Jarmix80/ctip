@@ -83,6 +83,12 @@ def _parse_representatives(raw_value: str | None) -> list[dict[str, str]]:
     return parsed
 
 
+def _coerce_checkbox_value(raw_value: str | None) -> bool:
+    if raw_value is None:
+        return False
+    return raw_value.strip().lower() in {"1", "true", "on", "yes"}
+
+
 def _payload_from_form(raw: Mapping[str, str]) -> dict[str, Any]:
     return {
         "company_name": raw.get("company_name", ""),
@@ -95,14 +101,16 @@ def _payload_from_form(raw: Mapping[str, str]) -> dict[str, Any]:
         "registered_apartment_no": raw.get("registered_apartment_no", ""),
         "registered_postal_code": raw.get("registered_postal_code", ""),
         "registered_city": raw.get("registered_city", ""),
-        "correspondence_same_as_registered": raw.get("correspondence_same_as_registered", ""),
+        "correspondence_same_as_registered": _coerce_checkbox_value(
+            raw.get("correspondence_same_as_registered")
+        ),
         "correspondence_street": raw.get("correspondence_street", ""),
         "correspondence_building_no": raw.get("correspondence_building_no", ""),
         "correspondence_apartment_no": raw.get("correspondence_apartment_no", ""),
         "correspondence_postal_code": raw.get("correspondence_postal_code", ""),
         "correspondence_city": raw.get("correspondence_city", ""),
         "representatives": _parse_representatives(raw.get("representatives_json")),
-        "consent": raw.get("consent", ""),
+        "consent": _coerce_checkbox_value(raw.get("consent")),
         "website": raw.get("website", ""),
     }
 
