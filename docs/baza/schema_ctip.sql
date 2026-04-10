@@ -524,6 +524,8 @@ CREATE TABLE ctip.admin_user (
     password_hash text NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     is_salesperson boolean DEFAULT false NOT NULL,
+    firebird_app_user_id integer,
+    firebird_app_user_login text,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT admin_user_pkey PRIMARY KEY (id),

@@ -372,6 +372,8 @@ class AdminUserSummary(BaseModel):
     internal_ext: str | None
     role: Literal["admin", "operator"]
     is_salesperson: bool = False
+    firebird_app_user_id: int | None = None
+    firebird_app_user_login: str | None = None
     sections: list[PanelSection] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
@@ -416,6 +418,7 @@ class AdminUserCreate(BaseModel):
     internal_ext: str | None = None
     role: Literal["admin", "operator"] = "operator"
     is_salesperson: bool = False
+    firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
     password: str | None = None
     mobile_phone: str = Field(min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$")
@@ -439,10 +442,27 @@ class AdminUserUpdate(BaseModel):
     internal_ext: str | None = None
     role: Literal["admin", "operator"] = "operator"
     is_salesperson: bool = False
+    firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
     mobile_phone: str | None = Field(
         default=None, min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$"
     )
+
+
+class FirebirdMsUserOption(BaseModel):
+    """Opcja użytkownika Menadżera Serwisu do mapowania konta CTIP."""
+
+    id: int
+    login_user: str
+    workstation: str | None = None
+    app_name: str | None = None
+    label: str
+
+
+class FirebirdMsUserListResponse(BaseModel):
+    """Lista użytkowników Menadżera Serwisu dostępnych do powiązania."""
+
+    items: list[FirebirdMsUserOption] = Field(default_factory=list)
 
 
 class PortalLoginResponse(BaseModel):

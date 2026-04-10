@@ -119,6 +119,7 @@
 ### 7. Użytkownicy
 - Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Handlowiec`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
 - Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli, znacznika `Handlowiec` i przypisanych sekcji (`admin`, `operator`, `generator`).
+- Formularz dodawania i edycji zawiera listę rozwijaną `Użytkownik MS`, ładowaną z aktywnej bazy Firebird z trwałej konfiguracji użytkowników (`CONFIG.WYSTAWIA` + `CONFIG.EMAIL`), aby przypisać konto CTIP do operatora Menadżera Serwisu.
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
 - Znacznik `Handlowiec` jest atrybutem biznesowym niezależnym od roli i sekcji; służy do grupowania powiadomień formularzy po statusie `SUBMITTED`.
 - Akcja `Reset hasła` generuje nowe hasło tymczasowe, unieważnia aktywne sesje użytkownika i automatycznie wysyła powiadomienie e-mail + SMS z nowymi danymi logowania.
@@ -126,7 +127,7 @@
 - Modal szczegółów prezentuje dane profilu, listę sesji (z informacją o unieważnieniu) oraz umożliwia edycję.
 - Usuwanie blokuje własne konto administratora oraz ostatnie aktywne konto w roli `admin`.
 - Panel boczny: statystyka liczby wysłanych SMS per użytkownik (wykres słupkowy), przyciski eksportu CSV.
-- API: `/admin/users`, `/admin/users/{id}`, `/admin/users/{id}/reset-password`, `/admin/users/{id}/status`, `/admin/users/{id}` (DELETE).
+- API: `/admin/users`, `/admin/users/firebird-ms-users`, `/admin/users/{id}`, `/admin/users/{id}/reset-password`, `/admin/users/{id}/status`, `/admin/users/{id}` (DELETE).
 - Sekcja E-mail oferuje formularz wysyłki wiadomości testowej na dowolny adres (`/admin/email/test`).
 - Logowanie do panelu wymaga roli `admin`; użytkownicy z rolą `operator` są odrzucani przy próbie logowania.
 
@@ -191,7 +192,7 @@
 | Generator formularzy | `/genform`, `/admin/forms`, `/admin/forms/{id}`, `/formularz/{token}` |
 | E-mail | `/admin/partials/config_email`, `/admin/config/email`, `/admin/email/test` |
 | Konsola SQL | `POST /admin/database/query`, `/admin/reports/*` |
-| Użytkownicy | `/admin/users`, `/admin/users/{id}`, `/admin/users/{id}/reset-password`, `/admin/reports/sms-summary` |
+| Użytkownicy | `/admin/users`, `/admin/users/firebird-ms-users`, `/admin/users/{id}`, `/admin/users/{id}/reset-password`, `/admin/reports/sms-summary` |
 
 ## Backlog UI
 1. Prototyp komponentów (Storybook lub katalog HTML) dla kart, tabel i formularzy.

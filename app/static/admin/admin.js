@@ -1454,6 +1454,9 @@ document.addEventListener("alpine:init", () => {
     error: null,
     success: null,
     formPassword: null,
+    msUsers: [],
+    msUsersLoading: false,
+    msUsersError: null,
     form: {
       email: "",
       firstName: "",
@@ -1462,6 +1465,8 @@ document.addEventListener("alpine:init", () => {
       role: "operator",
       isSalesperson: false,
       mobilePhone: "",
+      firebirdAppUserId: "",
+      firebirdAppUserLogin: "",
       sections: ["operator", "generator"],
     },
     modalOpen: false,
@@ -1479,6 +1484,8 @@ document.addEventListener("alpine:init", () => {
       role: "operator",
       isSalesperson: false,
       mobilePhone: "",
+      firebirdAppUserId: "",
+      firebirdAppUserLogin: "",
       sections: ["operator", "generator"],
     },
 
@@ -1486,6 +1493,9 @@ document.addEventListener("alpine:init", () => {
       this.users = this._readUsers(this.$el.dataset.users);
       this.canManage = this._readFlag(this.$el.dataset.canManage);
       this.currentUserId = Number(this.$el.dataset.currentId || 0) || null;
+      if (this.canManage) {
+        this.fetchMsUsers();
+      }
     },
 
     _readUsers(payload) {
@@ -1574,6 +1584,18 @@ document.addEventListener("alpine:init", () => {
       return value;
     },
 
+    formatMsUser(user) {
+      const login = String(user?.firebird_app_user_login || "").trim();
+      if (login) {
+        return login;
+      }
+      const id = this.normalizeMsUserId(user?.firebird_app_user_id);
+      if (id) {
+        return `ID ${id}`;
+      }
+      return "—";
+    },
+
     defaultSectionsForRole(role) {
       if (role === "admin") {
         return ["admin", "operator", "generator"];
@@ -1629,7 +1651,38 @@ document.addEventListener("alpine:init", () => {
       this.form.role = "operator";
       this.form.isSalesperson = false;
       this.form.mobilePhone = "";
+      this.form.firebirdAppUserId = "";
+      this.form.firebirdAppUserLogin = "";
       this.form.sections = this.defaultSectionsForRole("operator");
+    },
+
+    normalizeMsUserId(value) {
+      if (value === null || value === undefined || value === "") {
+        return null;
+      }
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return null;
+      }
+      return parsed;
+    },
+
+    availableMsUsers(selectedId, selectedLogin) {
+      const items = Array.isArray(this.msUsers) ? [...this.msUsers] : [];
+      const normalizedId = this.normalizeMsUserId(selectedId);
+      if (!normalizedId) {
+        return items;
+      }
+      const exists = items.some((item) => this.normalizeMsUserId(item?.id) === normalizedId);
+      if (exists) {
+        return items;
+      }
+      const login = String(selectedLogin || "").trim();
+      items.unshift({
+        id: normalizedId,
+        label: login ? `${login} (zapisane powiązanie)` : `ID ${normalizedId} (zapisane powiązanie)`,
+      });
+      return items;
     },
 
     onCreateRoleChange() {
@@ -1644,7 +1697,42 @@ document.addEventListener("alpine:init", () => {
     },
 
     async reload() {
+      await this.fetchMsUsers(false);
       await this.fetchUsers(true);
+    },
+
+    async fetchMsUsers(showMessage = false) {
+      const headers = this._headers(false);
+      if (!headers) {
+        this.msUsersError = "Brak aktywnej sesji administratora.";
+        return;
+      }
+      this.msUsersLoading = true;
+      this.msUsersError = null;
+      try {
+        const response = await fetch("/admin/users/firebird-ms-users", { headers });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 401 || response.status === 403) {
+          this.msUsersError = "Sesja administratora wygasła. Zaloguj się ponownie.";
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(
+            data?.detail || "Nie udało się pobrać listy użytkowników Menadżera Serwisu.",
+          );
+        }
+        this.msUsers = Array.isArray(data.items) ? data.items : [];
+        if (showMessage) {
+          showToast("Lista użytkowników Menadżera Serwisu została odświeżona.", "success");
+        }
+      } catch (err) {
+        this.msUsers = [];
+        this.msUsersError =
+          err instanceof Error ? err.message : "Błąd odczytu użytkowników Menadżera Serwisu.";
+        showToast(this.msUsersError, "warning");
+      } finally {
+        this.msUsersLoading = false;
+      }
     },
 
     async fetchUsers(showMessage = true) {
@@ -1697,6 +1785,7 @@ document.addEventListener("alpine:init", () => {
         role: source.role || "operator",
         is_salesperson: Boolean(source.isSalesperson),
         mobile_phone: mobile || null,
+        firebird_app_user_id: this.normalizeMsUserId(source.firebirdAppUserId),
         sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
       };
     },
@@ -1919,6 +2008,8 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.role = "operator";
       this.modalEdit.isSalesperson = false;
       this.modalEdit.mobilePhone = "";
+      this.modalEdit.firebirdAppUserId = "";
+      this.modalEdit.firebirdAppUserLogin = "";
       this.modalEdit.sections = this.defaultSectionsForRole("operator");
       this._loadModal(userId);
     },
@@ -1947,6 +2038,10 @@ document.addEventListener("alpine:init", () => {
         this.modalEdit.role = data.role || "operator";
         this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
         this.modalEdit.mobilePhone = data.mobile_phone || "";
+        this.modalEdit.firebirdAppUserId = data.firebird_app_user_id
+          ? String(data.firebird_app_user_id)
+          : "";
+        this.modalEdit.firebirdAppUserLogin = data.firebird_app_user_login || "";
         this.modalEdit.sections = this.normalizeSectionsForRole(
           data.sections,
           this.modalEdit.role,

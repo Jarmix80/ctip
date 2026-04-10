@@ -456,6 +456,7 @@ def test_users_partial_renders_listing():
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
     assert "Handlowiec" in response.text
+    assert "Użytkownik MS" in response.text
     assert "+48600900900" in response.text
 
 
@@ -688,12 +689,20 @@ def test_admin_users_modal_edit_form_is_not_hidden_by_x_cloak():
     template = Path("app/templates/admin/partials/users.html").read_text(encoding="utf-8")
     assert '@submit.prevent="saveModal()"' in template
     assert "modal-user-is-salesperson" in template
+    assert "modal-user-firebird-app-user" in template
     assert '@submit.prevent="saveModal()" x-show="canManage"' not in template
     assert 'class="users-modal-content"' in template
     assert (
         '<template x-if="canManage">\n            <form class="config-form users-form" @submit.prevent="saveModal()">'
         not in template
     )
+
+
+def test_admin_users_js_loads_firebird_ms_user_options():
+    content = Path("app/static/admin/admin.js").read_text(encoding="utf-8")
+    assert "/admin/users/firebird-ms-users" in content
+    assert "availableMsUsers" in content
+    assert "formatMsUser" in content
 
 
 def test_public_form_template_has_date_mask_and_auto_expiry_logic():

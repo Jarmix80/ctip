@@ -65,6 +65,7 @@ from app.services.device_intake import (
 )
 from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
+from app.services.firebird_ms_users import FirebirdMsUserOption
 from app.services.form_handling_config import default_public_base_url
 from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
 from app.services.security import hash_password
@@ -1819,6 +1820,106 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(self.send_email_mock.await_count, 2)
+
+    async def test_admin_user_can_store_firebird_ms_mapping(self):
+        token, _ = await self._login()
+        create_payload = {
+            "email": "ms.powiazanie@example.com",
+            "first_name": "Marek",
+            "last_name": "Serwis",
+            "role": "operator",
+            "mobile_phone": "+48600700800",
+            "firebird_app_user_id": 208,
+        }
+        firebird_user = FirebirdMsUserOption(
+            id=208,
+            login_user="Marcin",
+            workstation="MARCINJKP",
+            app_name="Menadżer Serwisu Ksero",
+        )
+        updated_firebird_user = FirebirdMsUserOption(
+            id=151,
+            login_user="JoannaG",
+            workstation="ROZLICZENIA",
+            app_name="Menadżer Serwisu Ksero",
+        )
+
+        with patch(
+            "app.api.routes.admin_users.firebird_ms_users.resolve_firebird_ms_user",
+            AsyncMock(return_value=firebird_user),
+        ):
+            response = await self.client.post(
+                "/admin/users",
+                json=create_payload,
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        user_id = body["user"]["id"]
+        self.assertEqual(body["user"]["firebird_app_user_id"], 208)
+        self.assertEqual(body["user"]["firebird_app_user_login"], "Marcin")
+
+        update_payload = {
+            "email": "ms.powiazanie@example.com",
+            "first_name": "Marek",
+            "last_name": "Serwis",
+            "role": "operator",
+            "mobile_phone": "+48600700800",
+            "firebird_app_user_id": 151,
+        }
+        with patch(
+            "app.api.routes.admin_users.firebird_ms_users.resolve_firebird_ms_user",
+            AsyncMock(return_value=updated_firebird_user),
+        ):
+            response = await self.client.put(
+                f"/admin/users/{user_id}",
+                json=update_payload,
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["firebird_app_user_id"], 151)
+        self.assertEqual(body["firebird_app_user_login"], "JoannaG")
+
+        async with self.session_factory() as session:
+            db_user = await session.get(AdminUser, user_id)
+            self.assertIsNotNone(db_user)
+            self.assertEqual(db_user.firebird_app_user_id, 151)
+            self.assertEqual(db_user.firebird_app_user_login, "JoannaG")
+
+    async def test_admin_can_load_firebird_ms_user_options(self):
+        token, _ = await self._login()
+        options = [
+            FirebirdMsUserOption(
+                id=208,
+                login_user="Marcin",
+                workstation="MARCINJKP",
+                app_name="Menadżer Serwisu Ksero",
+            ),
+            FirebirdMsUserOption(
+                id=151,
+                login_user="JoannaG",
+                workstation="ROZLICZENIA",
+                app_name="Menadżer Serwisu Ksero",
+            ),
+        ]
+        with patch(
+            "app.api.routes.admin_users.firebird_ms_users.list_firebird_ms_users",
+            AsyncMock(return_value=options),
+        ):
+            response = await self.client.get(
+                "/admin/users/firebird-ms-users",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body["items"]), 2)
+        self.assertEqual(body["items"][0]["id"], 208)
+        self.assertEqual(body["items"][0]["login_user"], "Marcin")
+        self.assertEqual(body["items"][0]["label"], "Marcin (MARCINJKP)")
 
     async def test_portal_user_can_update_own_profile(self):
         response = await self.client.post(

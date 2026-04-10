@@ -146,6 +146,8 @@ async def create_user(
     is_salesperson: bool = False,
     password: str | None = None,
     mobile_phone: str | None = None,
+    firebird_app_user_id: int | None = None,
+    firebird_app_user_login: str | None = None,
 ) -> tuple[AdminUser, str]:
     email_normalized = email.strip().lower()
     await ensure_unique_email(session, email_normalized)
@@ -164,6 +166,8 @@ async def create_user(
         is_active=True,
         is_salesperson=bool(is_salesperson),
         mobile_phone=normalized_phone,
+        firebird_app_user_id=firebird_app_user_id,
+        firebird_app_user_login=(firebird_app_user_login or "").strip() or None,
     )
     session.add(user)
     await session.flush()
@@ -181,6 +185,8 @@ async def update_user(
     role: str,
     is_salesperson: bool,
     mobile_phone: str | None,
+    firebird_app_user_id: int | None,
+    firebird_app_user_login: str | None,
 ) -> AdminUser:
     email_normalized = email.strip().lower()
     if email_normalized != user.email:
@@ -195,6 +201,8 @@ async def update_user(
     user.role = role
     user.is_salesperson = bool(is_salesperson)
     user.mobile_phone = normalized_phone
+    user.firebird_app_user_id = firebird_app_user_id
+    user.firebird_app_user_login = (firebird_app_user_login or "").strip() or None
     user.updated_at = datetime.now(UTC)
     return user
 

@@ -19,8 +19,10 @@ from app.schemas.admin import (
     AdminUserStatusUpdate,
     AdminUserSummary,
     AdminUserUpdate,
+    FirebirdMsUserListResponse,
+    FirebirdMsUserOption,
 )
-from app.services import admin_users, section_permissions
+from app.services import admin_users, firebird_ms_users, section_permissions
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
@@ -44,12 +46,26 @@ def _map_summary(row: admin_users.UserRow, sections: list[str]) -> AdminUserSumm
         internal_ext=user.internal_ext,
         role=user.role,
         is_salesperson=bool(user.is_salesperson),
+        firebird_app_user_id=user.firebird_app_user_id,
+        firebird_app_user_login=user.firebird_app_user_login,
         sections=sections,
         is_active=user.is_active,
         created_at=user.created_at,
         updated_at=user.updated_at,
         last_login_at=row.last_login_at,
         sessions_active=row.sessions_active,
+    )
+
+
+def _map_firebird_ms_user_option(
+    option: firebird_ms_users.FirebirdMsUserOption,
+) -> FirebirdMsUserOption:
+    return FirebirdMsUserOption(
+        id=option.id,
+        login_user=option.login_user,
+        workstation=option.workstation,
+        app_name=option.app_name,
+        label=option.label,
     )
 
 
@@ -95,6 +111,26 @@ async def list_admin_users(
     return AdminUserListResponse(items=items)
 
 
+@router.get(
+    "/firebird-ms-users",
+    response_model=FirebirdMsUserListResponse,
+    summary="Lista użytkowników Menadżera Serwisu",
+)
+async def list_firebird_ms_user_options(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FirebirdMsUserListResponse:
+    _, admin_user = admin_context
+    _ensure_admin(admin_user.role)
+    try:
+        items = await firebird_ms_users.list_firebird_ms_users(session)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    return FirebirdMsUserListResponse(items=[_map_firebird_ms_user_option(item) for item in items])
+
+
 @router.post(
     "",
     response_model=AdminUserCreateResponse,
@@ -110,6 +146,11 @@ async def create_admin_user(
     admin_session, admin_user = admin_context
     _ensure_admin(admin_user.role)
     try:
+        firebird_user = None
+        if payload.firebird_app_user_id is not None:
+            firebird_user = await firebird_ms_users.resolve_firebird_ms_user(
+                session, payload.firebird_app_user_id
+            )
         user, password = await admin_users.create_user(
             session,
             email=payload.email,
@@ -120,6 +161,8 @@ async def create_admin_user(
             is_salesperson=payload.is_salesperson,
             password=payload.password,
             mobile_phone=payload.mobile_phone,
+            firebird_app_user_id=firebird_user.id if firebird_user else None,
+            firebird_app_user_login=firebird_user.login_user if firebird_user else None,
         )
         normalized_sections = await section_permissions.set_user_sections(
             session,
@@ -153,6 +196,8 @@ async def create_admin_user(
             "email": user.email,
             "role": user.role,
             "is_salesperson": user.is_salesperson,
+            "firebird_app_user_id": user.firebird_app_user_id,
+            "firebird_app_user_login": user.firebird_app_user_login,
             "sections": normalized_sections,
         },
     )
@@ -194,6 +239,11 @@ async def update_admin_user(
             status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono użytkownika."
         )
     try:
+        firebird_user = None
+        if payload.firebird_app_user_id is not None:
+            firebird_user = await firebird_ms_users.resolve_firebird_ms_user(
+                session, payload.firebird_app_user_id
+            )
         await admin_users.update_user(
             session,
             user,
@@ -204,6 +254,8 @@ async def update_admin_user(
             role=payload.role,
             is_salesperson=payload.is_salesperson,
             mobile_phone=payload.mobile_phone,
+            firebird_app_user_id=firebird_user.id if firebird_user else None,
+            firebird_app_user_login=firebird_user.login_user if firebird_user else None,
         )
         normalized_sections = await section_permissions.set_user_sections(
             session,
@@ -225,6 +277,8 @@ async def update_admin_user(
             "email": user.email,
             "role": user.role,
             "is_salesperson": user.is_salesperson,
+            "firebird_app_user_id": user.firebird_app_user_id,
+            "firebird_app_user_login": user.firebird_app_user_login,
             "sections": normalized_sections,
         },
     )

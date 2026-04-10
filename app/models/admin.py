@@ -40,6 +40,8 @@ class AdminUser(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_salesperson: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mobile_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_app_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_app_user_login: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
     )

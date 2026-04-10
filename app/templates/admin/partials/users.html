@@ -43,6 +43,23 @@
           <input id="user-mobile" type="tel" x-model="form.mobilePhone" required placeholder="np. +48 600 700 800">
         </div>
         <div class="form-field">
+          <label for="user-firebird-app-user">Użytkownik MS</label>
+          <select
+            id="user-firebird-app-user"
+            x-model="form.firebirdAppUserId"
+            :disabled="msUsersLoading"
+          >
+            <option value="">Brak powiązania</option>
+            <template x-for="option in availableMsUsers(form.firebirdAppUserId, form.firebirdAppUserLogin)" :key="`create-${option.id}`">
+              <option :value="String(option.id)" x-text="option.label"></option>
+            </template>
+          </select>
+          <small x-text="msUsersLoading ? 'Trwa ładowanie listy użytkowników Menadżera Serwisu…' : 'Powiązanie będzie używane do personalizacji dokumentów MS.'"></small>
+          <template x-if="msUsersError">
+            <small class="form-message error" x-text="msUsersError"></small>
+          </template>
+        </div>
+        <div class="form-field">
           <label for="user-role">Rola</label>
           <select id="user-role" x-model="form.role" @change="onCreateRoleChange()">
             <option value="operator">Operator</option>
@@ -95,6 +112,7 @@
           <th>Imię i nazwisko</th>
           <th>Wewnętrzny</th>
           <th>Telefon</th>
+          <th>Użytkownik MS</th>
           <th>Rola</th>
           <th>Handlowiec</th>
           <th>Sekcje</th>
@@ -107,7 +125,7 @@
       <tbody>
         <template x-if="users.length === 0">
           <tr>
-            <td colspan="11" class="sms-history-empty">Brak użytkowników.</td>
+            <td colspan="12" class="sms-history-empty">Brak użytkowników.</td>
           </tr>
         </template>
         <template x-for="user in users" :key="user.id">
@@ -121,6 +139,7 @@
             </td>
             <td x-text="user.internal_ext || '—'"></td>
             <td x-text="formatPhone(user.mobile_phone)"></td>
+            <td x-text="formatMsUser(user)"></td>
             <td>
               <span class="badge" :class="user.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="user.role"></span>
             </td>
@@ -223,6 +242,10 @@
                     <dd x-text="modalDetail.internal_ext || '—'"></dd>
                   </div>
                   <div>
+                    <dt>Użytkownik MS</dt>
+                    <dd x-text="formatMsUser(modalDetail)"></dd>
+                  </div>
+                  <div>
                     <dt>Sekcje</dt>
                     <dd x-text="formatSections(modalDetail.sections, modalDetail.role)"></dd>
                   </div>
@@ -272,6 +295,23 @@
                 <div class="form-field">
                   <label for="modal-user-ext">Numer wewnętrzny</label>
                   <input id="modal-user-ext" type="text" x-model="modalEdit.internalExt">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-firebird-app-user">Użytkownik MS</label>
+                  <select
+                    id="modal-user-firebird-app-user"
+                    x-model="modalEdit.firebirdAppUserId"
+                    :disabled="msUsersLoading"
+                  >
+                    <option value="">Brak powiązania</option>
+                    <template x-for="option in availableMsUsers(modalEdit.firebirdAppUserId, modalEdit.firebirdAppUserLogin)" :key="`modal-${option.id}`">
+                      <option :value="String(option.id)" x-text="option.label"></option>
+                    </template>
+                  </select>
+                  <small x-text="msUsersLoading ? 'Trwa ładowanie listy użytkowników Menadżera Serwisu…' : 'Powiązanie będzie używane przy personalizacji dokumentów MS.'"></small>
+                  <template x-if="msUsersError">
+                    <small class="form-message error" x-text="msUsersError"></small>
+                  </template>
                 </div>
                 <div class="form-field">
                   <label for="modal-user-role">Rola</label>
