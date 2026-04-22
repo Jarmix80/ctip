@@ -1,4 +1,4 @@
-# Zadania planowane (stan na 2026-03-13)
+# Zadania planowane (stan na 2026-04-22)
 
 ## Priorytet biezacy
 1. Rozbudowac publiczny formularz `/formularz/{token}` o kolejny pakiet interakcji:
@@ -9,13 +9,14 @@
    - utrzymac zgodnosc z nowa sekcja `/admin -> Obsluga formularza`, aby tresci komunikatow i link publiczny pozostawaly konfigurowalne bez zmian w kodzie.
 2. Ustalenie, czy cena z arkusza `Urzadzenia` dla proform ma byc traktowana jako
    brutto czy netto, i dopiecie tego jako stalej zasady lub ustawienia workflow.
-3. Zastapienie tymczasowego URL podgladu A4 realnym plikiem PDF zapisywanym do
-   sprawy workflow po utworzeniu proformy.
-4. Ustalenie jednego zrodla prawdy dla urzadzen przeznaczonych do procesu
+3. Ustalenie jednego zrodla prawdy dla urzadzen przeznaczonych do procesu
    bankowego i dalszego wdrozenia.
-5. Dla automatycznego zakladania klienta dopisac na etapie formularza pola
+4. Dla automatycznego zakladania klienta dopisac na etapie formularza pola
    `nazwa skrocona` oraz `e-mail do faktur`, zasilane danymi klienta i
    zapisywane do Firebird dopiero po zatwierdzeniu docelowego workflow.
+5. Dodac pelna paginacje proformy PDF (A4), tak aby przy wielu pozycjach
+   dokument poprawnie lamal sie na kolejne strony bez nakladania tabel,
+   podsumowan i numeru rachunku.
 
 ## Stabilizacja techniczna
 6. Dodać konfigurację `pytest`, aby gołe `pytest` uruchamiało wyłącznie testy z
@@ -43,3 +44,10 @@
 14. Zaprojektowac zapis umowy i oplat do Menadzera Serwisu po powrocie
     dokumentow.
 15. Zaprojektowac wystawienie faktury VAT do banku.
+
+## Zrealizowane (ostatnie etapy FLOW)
+1. Zastapiono tymczasowy URL podgladu A4 realnym plikiem PDF proformy zapisywanym do sprawy workflow.
+2. Dopracowano generator proformy do zgodnosci z docelowym ukladem i formatem A4.
+3. Uporzadkowano domyslne nazewnictwo zapisywanego pliku proformy na bazie aliasu dokumentu (np. `20_proforma_2026.pdf`).
+4. Domknieto etap arkusza GRENKE i cache statusow urzadzen po stronie FLOW (odswiezanie, metadane synchronizacji, endpoint administracyjny).
+5. Dodano auto-start testowego Firebirda do startu uslug potrzebnych dla aplikacji w srodowisku testowym.
