@@ -738,12 +738,51 @@ CREATE TABLE ctip.form_workflow_device (
         REFERENCES ctip.form_workflow_case (id) MATCH SIMPLE
         ON UPDATE NO ACTION
         ON DELETE CASCADE,
-    CONSTRAINT form_workflow_device_source_type_check CHECK (source_type = ANY (ARRAY['google_sheet'::text, 'firebird_magazyn_28'::text]))
+    CONSTRAINT form_workflow_device_source_type_check CHECK (source_type = ANY (ARRAY['google_sheet'::text, 'firebird_magazyn_28'::text, 'firebird_serial'::text]))
 );
 
 ALTER TABLE ctip.form_workflow_device OWNER TO postgres;
 
 CREATE INDEX idx_form_workflow_device_case ON ctip.form_workflow_device USING btree (workflow_case_id);
+
+CREATE SEQUENCE ctip.workflow_sheet_status_cache_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE ctip.workflow_sheet_status_cache_id_seq OWNER TO postgres;
+ALTER SEQUENCE ctip.workflow_sheet_status_cache_id_seq OWNED BY ctip.workflow_sheet_status_cache.id;
+
+CREATE TABLE ctip.workflow_sheet_status_cache (
+    id integer NOT NULL DEFAULT nextval('ctip.workflow_sheet_status_cache_id_seq'::regclass),
+    source_key text,
+    source_type text DEFAULT 'firebird_magazyn_28'::text NOT NULL,
+    source_row integer,
+    device_index text,
+    device_index_normalized text,
+    sheet_row integer,
+    sheet_status text,
+    reservation_grenke text,
+    form_ctip text,
+    ctip_form_id integer,
+    ctip_workflow_case_id integer,
+    business_status_legacy text,
+    synced_at timestamp with time zone NOT NULL,
+    CONSTRAINT workflow_sheet_status_cache_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_workflow_sheet_status_cache_source_key UNIQUE (source_key),
+    CONSTRAINT workflow_sheet_status_cache_source_type_check CHECK (
+        source_type = ANY (
+            ARRAY['google_sheet'::text, 'firebird_magazyn_28'::text, 'firebird_serial'::text]
+        )
+    )
+);
+
+ALTER TABLE ctip.workflow_sheet_status_cache OWNER TO postgres;
+
+CREATE INDEX idx_workflow_sheet_status_cache_index_norm
+    ON ctip.workflow_sheet_status_cache USING btree (device_index_normalized);
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_user TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_session TO appuser;
@@ -752,12 +791,14 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_audit_log TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_request TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_case TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_device TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.workflow_sheet_status_cache TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_user_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_session_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_audit_log_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_request_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_workflow_case_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_workflow_device_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.workflow_sheet_status_cache_id_seq TO appuser;
 
 
 --

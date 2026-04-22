@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -12,18 +13,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.models import FormRequest, FormWorkflowCase
+from app.models import AdminUser, FormRequest, FormWorkflowCase, FormWorkflowDevice
 from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.contracts_dashboard import (
     create_client_from_submitted_payload,
     find_client_in_firebird,
     find_client_in_firebird_by_id,
-    find_device_in_firebird,
     firebird_writes_enabled,
+    load_available_devices_from_firebird_warehouse,
     load_contract_forms,
     load_device_from_sheet_row,
-    load_devices_from_sheet,
     load_firebird_runtime_config,
     normalize_nip,
     synchronize_device_from_sheet_row,
@@ -32,21 +32,39 @@ from app.services.contracts_dashboard import (
 from app.services.contracts_proforma import create_proforma_from_workflow
 from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_DRAFT,
+    WORKFLOW_BUSINESS_STATUS_REJECTED,
     WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
+    WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
     build_client_preview,
     build_sales_packet,
     build_workflow_business_status_options,
+    build_workflow_device_key,
     clear_form_workflow_delivery,
     get_form_workflow_case,
     get_or_create_form_workflow_case,
     list_form_workflow_devices,
     map_form_workflow_summaries,
+    normalize_workflow_device_source_type,
     replace_form_workflow_devices,
     serialize_workflow_case,
     set_form_workflow_business_status,
     set_form_workflow_client,
     set_form_workflow_delivery,
     set_form_workflow_proforma,
+    workflow_business_status_label,
+)
+from app.services.workflow_sheet_status_cache import (
+    load_workflow_sheet_status_cache_lookup,
+    refresh_workflow_sheet_status_cache,
+)
+from app.services.workflow_sheet_sync import (
+    list_workflow_sheet_assignee_options,
+    load_workflow_sheet_runtime_config,
+    release_workflow_devices_from_sheet,
+    resolve_workflow_sheet_assignee,
+    sync_workflow_devices_to_sheet,
+    use_workflow_sheet_runtime_config,
+    workflow_sheet_sync_configured,
 )
 
 router = APIRouter(prefix="/admin/contracts", tags=["admin-contracts"])
@@ -82,6 +100,14 @@ class WorkflowDeviceSelection(BaseModel):
     """Pojedyncze urzadzenie wybrane do sprawy workflow."""
 
     row: int = Field(ge=1)
+    source_type: (
+        Literal[
+            "google_sheet",
+            "firebird_magazyn_28",
+            "firebird_serial",
+        ]
+        | None
+    ) = None
     price_net: str | None = Field(default=None, max_length=32)
     price_gross: str | None = Field(default=None, max_length=32)
 
@@ -91,6 +117,7 @@ class WorkflowDevicesRequest(BaseModel):
 
     rows: list[int] = Field(default_factory=list, max_length=50)
     devices: list[WorkflowDeviceSelection] = Field(default_factory=list, max_length=50)
+    sheet_assignee_id: int | None = Field(default=None, ge=1)
 
 
 class WorkflowStatusRequest(BaseModel):
@@ -105,6 +132,13 @@ class WorkflowProformaRequest(BaseModel):
     """Zadanie utworzenia proformy dla klienta lub banku."""
 
     for_bank: bool = Field(default=True)
+    sheet_assignee_id: int | None = Field(default=None, ge=1)
+
+
+class WorkflowSheetSyncRequest(BaseModel):
+    """Zadanie synchronizacji arkusza urządzeń dla sprawy workflow."""
+
+    sheet_assignee_id: int | None = Field(default=None, ge=1)
 
 
 class WorkflowDeliveryRequest(BaseModel):
@@ -166,21 +200,39 @@ def _net_to_gross(value: Decimal, vat_rate: Decimal = WORKFLOW_DEFAULT_VAT) -> D
     return (value * multiplier).quantize(PRICE_PRECISION, rounding=ROUND_HALF_UP)
 
 
+def _workflow_device_sort_key(item: dict[str, Any]) -> tuple[str, int]:
+    source_type = normalize_workflow_device_source_type(item.get("source_type"))
+    try:
+        row_number = int(item.get("row") or 0)
+    except (TypeError, ValueError):
+        row_number = 0
+    return (source_type, row_number)
+
+
 def _build_selected_device_payloads(payload: WorkflowDevicesRequest) -> list[dict[str, str | int]]:
     if payload.devices:
-        selected_rows: dict[int, dict[str, str | int]] = {}
+        selected_rows: dict[str, dict[str, str | int]] = {}
         for item in payload.devices:
-            selected_rows[int(item.row)] = {
+            source_type = normalize_workflow_device_source_type(
+                item.source_type,
+                default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+            )
+            source_key = build_workflow_device_key(source_type, item.row)
+            if source_key is None:
+                continue
+            selected_rows[source_key] = {
                 "row": int(item.row),
+                "source_type": source_type,
                 "price_net": _normalize_price_text(item.price_net),
                 "price_gross": _normalize_price_text(item.price_gross),
             }
-        return [selected_rows[row] for row in sorted(selected_rows)]
+        return sorted(selected_rows.values(), key=_workflow_device_sort_key)
 
     selected_rows = sorted({int(row) for row in payload.rows if int(row) > 0})
     return [
         {
             "row": row,
+            "source_type": WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
             "price_net": "",
             "price_gross": "",
         }
@@ -196,6 +248,494 @@ def _delivery_label(delivery_date: date | None, delivery_time_window: str | None
     if not window:
         return base
     return f"{base} ({window})"
+
+
+def _build_saved_workflow_device_payload(device) -> dict[str, str | int | bool]:
+    snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
+    row_value = device.source_row if device.source_row is not None else snapshot.get("row") or 0
+    try:
+        row_number = int(row_value)
+    except (TypeError, ValueError):
+        row_number = 0
+
+    stored_gross_price = _normalize_price_text(device.price_gross) or _normalize_price_text(
+        snapshot.get("price_gross")
+    )
+    stored_price = (
+        stored_gross_price
+        or _normalize_price_text(device.price)
+        or _normalize_price_text(snapshot.get("price"))
+    )
+    stored_vat_rate = str(snapshot.get("vat_rate") or "23").strip() or "23"
+    computed_net_price = _normalize_price_text(device.price_net)
+    if not computed_net_price and stored_price:
+        parsed_stored_price = _parse_price(stored_price)
+        if parsed_stored_price is not None:
+            computed_net_price = _format_price(_gross_to_net(parsed_stored_price))
+
+    source_type = normalize_workflow_device_source_type(
+        snapshot.get("source_type") or device.source_type,
+        default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+    )
+    source_key = build_workflow_device_key(source_type, row_number) or ""
+    warehouse_id = snapshot.get("ms_id_magazyn_table") or (
+        row_number
+        if source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE and row_number > 0
+        else ""
+    )
+
+    return {
+        "row": row_number,
+        "source_key": source_key,
+        "producer": str(snapshot.get("producer") or device.producer or "").strip(),
+        "model": str(snapshot.get("model") or device.model or "").strip(),
+        "device_label": " ".join(
+            part.strip()
+            for part in [
+                str(snapshot.get("producer") or device.producer or "").strip(),
+                str(snapshot.get("model") or device.model or "").strip(),
+            ]
+            if part and part.strip()
+        ).strip(),
+        "serial": str(snapshot.get("serial") or device.serial or "").strip(),
+        "ewidencja": str(snapshot.get("ewidencja") or device.ewidencja or "").strip(),
+        "index": str(
+            snapshot.get("index") or snapshot.get("ewidencja") or device.ewidencja or ""
+        ).strip(),
+        "name": str(
+            snapshot.get("name") or snapshot.get("description") or device.model or ""
+        ).strip(),
+        "status": str(snapshot.get("status") or device.device_status or "").strip(),
+        "price": stored_price,
+        "price_net": computed_net_price,
+        "price_gross": stored_gross_price or stored_price,
+        "vat_rate": stored_vat_rate,
+        "reservation": str(snapshot.get("reservation") or "").strip(),
+        "reservation_status": str(
+            snapshot.get("reservation_status") or device.reservation_status or ""
+        ).strip(),
+        "reservation_filter_value": (
+            "Zarezerwowana"
+            if str(snapshot.get("reservation_status") or device.reservation_status or "").strip()
+            else "Brak rezerwacji"
+        ),
+        "reservation_form_id": _coerce_int(snapshot.get("ctip_form_id")),
+        "reservation_case_id": _coerce_int(snapshot.get("ctip_workflow_case_id")),
+        "reservation_initials": _build_person_initials(snapshot.get("sheet_assignee")),
+        "reservation_badge_class": (
+            "danger"
+            if str(snapshot.get("reservation_status") or device.reservation_status or "").strip()
+            else "soft"
+        ),
+        "locked_by_other": False,
+        "locked_reason": "",
+        "description": str(snapshot.get("description") or "").strip(),
+        "available_quantity": str(snapshot.get("available_quantity") or "").strip(),
+        "reserved_quantity": str(snapshot.get("reserved_quantity") or "").strip(),
+        "warehouse_quantity": str(snapshot.get("warehouse_quantity") or "").strip(),
+        "serial_required": str(snapshot.get("serial_required") or "").strip(),
+        "ms_id_maszyna": str(
+            device.firebird_machine_id or snapshot.get("ms_id_maszyna") or ""
+        ).strip(),
+        "ms_id_klient": str(
+            device.firebird_client_id or snapshot.get("ms_id_klient") or ""
+        ).strip(),
+        "ms_id_magazyn_table": str(warehouse_id).strip(),
+        "sheet_row": _coerce_int(snapshot.get("sheet_row")),
+        "source_type": source_type,
+        "selected": True,
+    }
+
+
+def _build_available_workflow_devices(
+    source_devices: list[dict[str, str]],
+    *,
+    saved_devices_by_key: dict[str, Any],
+    active_reservations_by_key: dict[str, dict[str, Any]] | None = None,
+    workflow_sheet_lookup: dict[str, Any] | None = None,
+) -> list[dict[str, str | int | bool]]:
+    available_devices: list[dict[str, str | int | bool]] = []
+    seen_keys: set[str] = set()
+    reservations = active_reservations_by_key or {}
+    sheet_lookup = workflow_sheet_lookup or {}
+
+    for source_device in source_devices:
+        source_type = normalize_workflow_device_source_type(
+            source_device.get("source_type"),
+            default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+        )
+        try:
+            row_number = int(source_device.get("row") or 0)
+        except (TypeError, ValueError):
+            row_number = 0
+        if row_number <= 0:
+            continue
+
+        source_key = build_workflow_device_key(source_type, row_number)
+        if source_key is None:
+            continue
+        saved_device = saved_devices_by_key.get(source_key)
+        saved_snapshot = (
+            saved_device.snapshot
+            if saved_device and isinstance(saved_device.snapshot, dict)
+            else {}
+        )
+        stored_price = _normalize_price_text(
+            source_device.get("price_gross") or source_device.get("price")
+        )
+        stored_net_price = _normalize_price_text(source_device.get("price_net"))
+        if saved_device is not None:
+            stored_net_price = _normalize_price_text(saved_device.price_net) or stored_net_price
+            stored_price = _normalize_price_text(saved_device.price_gross) or stored_price
+
+        if not stored_net_price and stored_price:
+            parsed_gross_price = _parse_price(stored_price)
+            if parsed_gross_price is not None:
+                stored_net_price = _format_price(_gross_to_net(parsed_gross_price))
+
+        reservation_entry = reservations.get(source_key)
+        sheet_entry = _resolve_workflow_sheet_entry(
+            sheet_lookup,
+            source_key=source_key,
+            index_value=source_device.get("index") or source_device.get("ewidencja"),
+        )
+        status_value = str(sheet_entry.get("status") or source_device.get("status") or "").strip()
+        reservation_form_id = _coerce_int(
+            sheet_entry.get("ctip_form_id")
+            or saved_snapshot.get("ctip_form_id")
+            or (reservation_entry or {}).get("form_request_id")
+        )
+        reservation_case_id = _coerce_int(
+            sheet_entry.get("ctip_workflow_case_id")
+            or saved_snapshot.get("ctip_workflow_case_id")
+            or (reservation_entry or {}).get("workflow_case_id")
+        )
+        reservation_person = str(
+            (reservation_entry or {}).get("reserved_by_label")
+            or sheet_entry.get("reservation_grenke")
+            or saved_snapshot.get("sheet_assignee")
+            or source_device.get("reservation")
+            or ""
+        ).strip()
+        reservation_initials = str(
+            (reservation_entry or {}).get("reserved_by_initials")
+            or _build_person_initials(reservation_person)
+            or ""
+        ).strip()
+        reservation_status = "Brak rezerwacji"
+        reservation_filter_value = "Brak rezerwacji"
+        reservation_badge_class = "soft"
+        if reservation_initials or reservation_form_id:
+            reservation_status = (
+                f"Zarezerwowana przez {reservation_initials}"
+                if reservation_initials
+                else "Zarezerwowana"
+            )
+            reservation_filter_value = "Zarezerwowana"
+            reservation_badge_class = "danger"
+        locked_by_other = reservation_entry is not None and saved_device is None
+
+        next_item = {
+            "row": row_number,
+            "source_key": source_key,
+            "producer": source_device.get("producer") or "",
+            "model": source_device.get("model") or "",
+            "device_label": " ".join(
+                part.strip()
+                for part in [
+                    str(source_device.get("producer") or "").strip(),
+                    str(source_device.get("model") or "").strip(),
+                ]
+                if part and str(part).strip()
+            ).strip(),
+            "serial": source_device.get("serial") or "",
+            "ewidencja": source_device.get("ewidencja") or "",
+            "index": source_device.get("index") or source_device.get("ewidencja") or "",
+            "name": source_device.get("name") or source_device.get("description") or "",
+            "status": status_value,
+            "price": source_device.get("price") or "",
+            "price_net": stored_net_price,
+            "price_gross": stored_price,
+            "vat_rate": source_device.get("vat_rate") or "23",
+            "reservation": reservation_person,
+            "reservation_status": reservation_status,
+            "reservation_filter_value": reservation_filter_value,
+            "reservation_form_id": reservation_form_id,
+            "reservation_case_id": reservation_case_id,
+            "reservation_initials": reservation_initials,
+            "reservation_badge_class": reservation_badge_class,
+            "locked_by_other": locked_by_other,
+            "locked_reason": (
+                f"Urzadzenie jest zapisane w formularzu {reservation_form_id}."
+                if locked_by_other and reservation_form_id
+                else (
+                    "Urzadzenie jest zapisane w innej aktywnej sprawie workflow."
+                    if locked_by_other
+                    else ""
+                )
+            ),
+            "description": source_device.get("description") or "",
+            "available_quantity": source_device.get("available_quantity") or "",
+            "reserved_quantity": source_device.get("reserved_quantity") or "",
+            "warehouse_quantity": source_device.get("warehouse_quantity") or "",
+            "serial_required": source_device.get("serial_required") or "",
+            "ms_id_maszyna": source_device.get("ms_id_maszyna") or "",
+            "ms_id_klient": source_device.get("ms_id_klient") or "",
+            "ms_id_magazyn_table": source_device.get("ms_id_magazyn_table")
+            or (
+                str(row_number) if source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE else ""
+            ),
+            "sheet_row": _coerce_int(sheet_entry.get("sheet_row")),
+            "source_type": source_type,
+            "selected": saved_device is not None,
+        }
+        available_devices.append(next_item)
+        seen_keys.add(source_key)
+
+    missing_saved_keys = sorted(set(saved_devices_by_key) - seen_keys)
+    for source_key in missing_saved_keys:
+        available_devices.append(
+            _build_saved_workflow_device_payload(saved_devices_by_key[source_key])
+        )
+
+    return sorted(available_devices, key=_workflow_device_sort_key)
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clean_person_label(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.split("(", 1)[0].strip() or text
+
+
+def _build_person_initials(value: str | None) -> str:
+    tokens = [token[:1].upper() for token in _clean_person_label(value).split() if token.strip()]
+    return "".join(tokens[:3])
+
+
+def _build_workflow_reservation_person(
+    case: FormWorkflowCase,
+    device: FormWorkflowDevice,
+    updated_by_user: AdminUser | None,
+) -> str:
+    snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
+    from_snapshot = _clean_person_label(snapshot.get("sheet_assignee"))
+    if from_snapshot:
+        return from_snapshot
+    if updated_by_user is not None:
+        full_name = " ".join(
+            part.strip()
+            for part in [
+                updated_by_user.first_name or "",
+                updated_by_user.last_name or "",
+            ]
+            if part and part.strip()
+        ).strip()
+        if full_name:
+            return full_name
+        return str(updated_by_user.email or "").strip()
+    return ""
+
+
+async def _load_active_workflow_device_reservations(
+    session: AsyncSession,
+    *,
+    exclude_workflow_case_id: int | None = None,
+) -> dict[str, dict[str, Any]]:
+    stmt = (
+        select(FormWorkflowDevice, FormWorkflowCase, FormRequest, AdminUser)
+        .join(FormWorkflowCase, FormWorkflowCase.id == FormWorkflowDevice.workflow_case_id)
+        .join(FormRequest, FormRequest.id == FormWorkflowCase.form_request_id)
+        .outerjoin(AdminUser, AdminUser.id == FormWorkflowCase.updated_by)
+        .where(
+            FormRequest.status == "SUBMITTED",
+            FormWorkflowCase.business_status != WORKFLOW_BUSINESS_STATUS_REJECTED,
+        )
+    )
+    if exclude_workflow_case_id:
+        stmt = stmt.where(FormWorkflowCase.id != exclude_workflow_case_id)
+
+    rows = (await session.execute(stmt)).all()
+    reservations: dict[str, dict[str, Any]] = {}
+    for device, workflow_case, form_request, updated_by_user in rows:
+        source_key = build_workflow_device_key(device.source_type, device.source_row)
+        if source_key is None:
+            continue
+        person_label = _build_workflow_reservation_person(workflow_case, device, updated_by_user)
+        initials = _build_person_initials(person_label) or "CTIP"
+        reservation_status = f"Zarezerwowana przez {initials}"
+        candidate = {
+            "source_key": source_key,
+            "workflow_case_id": workflow_case.id,
+            "form_request_id": form_request.id,
+            "business_status": workflow_case.business_status,
+            "business_status_label": workflow_business_status_label(workflow_case.business_status),
+            "reserved_by_label": person_label,
+            "reserved_by_initials": initials,
+            "reservation_status": reservation_status,
+            "updated_at": workflow_case.updated_at,
+            "updated_by_user_id": updated_by_user.id if updated_by_user is not None else None,
+        }
+        existing = reservations.get(source_key)
+        if existing is None or candidate["updated_at"] >= existing["updated_at"]:
+            reservations[source_key] = candidate
+
+    return reservations
+
+
+def _resolve_workflow_sheet_entry(
+    sheet_lookup: dict[str, Any],
+    *,
+    source_key: str | None,
+    index_value: str | None,
+) -> dict[str, str]:
+    by_source_key = sheet_lookup.get("by_source_key") if isinstance(sheet_lookup, dict) else {}
+    by_index = sheet_lookup.get("by_index") if isinstance(sheet_lookup, dict) else {}
+    if source_key and isinstance(by_source_key, dict):
+        match = by_source_key.get(source_key)
+        if isinstance(match, dict):
+            return match
+    normalized_index = str(index_value or "").strip().upper()
+    normalized_index = "".join(ch for ch in normalized_index if ch.isalnum())
+    if normalized_index and isinstance(by_index, dict):
+        match = by_index.get(normalized_index)
+        if isinstance(match, dict):
+            return match
+    return {}
+
+
+def _build_sheet_device_payload(device) -> dict[str, Any]:
+    snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
+    row_value = device.source_row if device.source_row is not None else snapshot.get("row")
+    source_type = normalize_workflow_device_source_type(
+        snapshot.get("source_type") or device.source_type,
+        default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+    )
+    return {
+        "source_row": _coerce_int(row_value),
+        "row": _coerce_int(row_value),
+        "source_type": source_type,
+        "source_key": build_workflow_device_key(source_type, row_value),
+        "sheet_row": _coerce_int(snapshot.get("sheet_row")),
+        "sheet_previous_status": str(snapshot.get("sheet_previous_status") or "").strip(),
+        "producer": str(snapshot.get("producer") or device.producer or "").strip(),
+        "model": str(snapshot.get("model") or device.model or "").strip(),
+        "serial": str(snapshot.get("serial") or device.serial or "").strip(),
+        "ewidencja": str(snapshot.get("ewidencja") or device.ewidencja or "").strip(),
+        "index": str(
+            snapshot.get("index") or snapshot.get("ewidencja") or device.ewidencja or ""
+        ).strip(),
+        "name": str(
+            snapshot.get("name") or snapshot.get("description") or device.model or ""
+        ).strip(),
+    }
+
+
+def _build_sheet_release_payloads(
+    workflow_devices: list[Any],
+    *,
+    include_all: bool = False,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for device in workflow_devices:
+        payload = _build_sheet_device_payload(device)
+        snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
+        status = str(snapshot.get("sheet_sync_status") or "").strip().lower()
+        if include_all or payload.get("sheet_row") or status in {"synced", "error", "released"}:
+            payloads.append(payload)
+    return payloads
+
+
+def _apply_sheet_sync_snapshot(
+    workflow_devices: list[Any],
+    *,
+    operation: str,
+    sheet_result: dict[str, Any] | None,
+    assignee_id: int | None,
+    assignee_label: str | None,
+    proforma_number: str | None,
+    error: str | None = None,
+) -> None:
+    rows_by_source: dict[int, dict[str, Any]] = {}
+    if isinstance(sheet_result, dict):
+        for item in sheet_result.get("rows", []):
+            if not isinstance(item, dict):
+                continue
+            source_row = _coerce_int(item.get("source_row"))
+            if source_row is None:
+                continue
+            rows_by_source[source_row] = item
+
+    updated_at = datetime.now(UTC).isoformat()
+    for device in workflow_devices:
+        snapshot = dict(device.snapshot or {})
+        source_row = _coerce_int(
+            device.source_row if device.source_row is not None else snapshot.get("row")
+        )
+        row_entry = rows_by_source.get(source_row) if source_row is not None else None
+        if row_entry and _coerce_int(row_entry.get("sheet_row")):
+            snapshot["sheet_row"] = _coerce_int(row_entry.get("sheet_row"))
+        previous_status = str(row_entry.get("previous_status") or "").strip() if row_entry else ""
+        if previous_status:
+            snapshot["sheet_previous_status"] = previous_status
+
+        if assignee_id is not None:
+            snapshot["sheet_assignee_id"] = assignee_id
+        if assignee_label:
+            snapshot["sheet_assignee"] = assignee_label
+        if proforma_number:
+            snapshot["sheet_proforma_number"] = proforma_number
+
+        snapshot["sheet_sync_updated_at"] = updated_at
+        if error:
+            snapshot["sheet_sync_status"] = "error"
+            snapshot["sheet_sync_error"] = error
+        else:
+            snapshot["sheet_sync_status"] = operation
+            snapshot["sheet_sync_error"] = None
+            if operation == "released":
+                snapshot["sheet_release_at"] = updated_at
+        device.snapshot = snapshot
+
+
+async def _resolve_sheet_assignee_selection(
+    *,
+    session: AsyncSession,
+    admin_user,
+    explicit_assignee_id: int | None,
+    fallback_label: str,
+) -> tuple[int | None, str]:
+    if explicit_assignee_id is not None:
+        option = await resolve_workflow_sheet_assignee(session, explicit_assignee_id)
+        return (
+            _coerce_int(option.get("id")),
+            str(option.get("label") or option.get("login_user") or "").strip(),
+        )
+
+    mapped_id = _coerce_int(getattr(admin_user, "firebird_app_user_id", None))
+    if mapped_id is not None:
+        try:
+            option = await resolve_workflow_sheet_assignee(session, mapped_id)
+            return (
+                _coerce_int(option.get("id")),
+                str(option.get("label") or option.get("login_user") or "").strip(),
+            )
+        except (RuntimeError, ValueError):
+            pass
+
+    mapped_login = str(getattr(admin_user, "firebird_app_user_login", "") or "").strip()
+    if mapped_login:
+        return mapped_id, mapped_login
+    return None, fallback_label
 
 
 def _normalize_schedule_range(
@@ -353,38 +893,39 @@ async def contracts_dashboard_data(
                 }
             )
 
-    devices_output: list[dict] = []
-    if include_devices:
-        try:
-            sheet_devices = await asyncio.to_thread(load_devices_from_sheet)
-        except Exception as exc:  # noqa: BLE001
-            sheet_devices = []
-            warnings.append(f"Blad odczytu arkusza Urzadzenia: {exc}")
-        with use_firebird_runtime_config(firebird_config):
-            for device in sheet_devices:
-                match = await asyncio.to_thread(
-                    find_device_in_firebird, device.get("serial"), device.get("ewidencja")
+        devices_output: list[dict] = []
+        if include_devices:
+            try:
+                firebird_devices = await asyncio.to_thread(
+                    load_available_devices_from_firebird_warehouse
                 )
+            except Exception as exc:  # noqa: BLE001
+                firebird_devices = []
+                warnings.append(f"Blad odczytu pozycji magazynowych Firebird: {exc}")
+            for device in firebird_devices:
                 devices_output.append(
                     {
                         "row": int(device.get("row") or 0),
                         "serial": device.get("serial") or "",
-                        "ewidencja": device.get("ewidencja") or "",
+                        "ewidencja": device.get("index") or device.get("ewidencja") or "",
                         "model": device.get("model") or "",
-                        "found_in_firebird": match.found_in_firebird,
-                        "id_maszyna": match.id_maszyna,
-                        "id_klient": match.id_klient,
-                        "id_umowacpc": match.id_umowacpc,
-                        "firebird_error": match.error,
-                        "sync_action": (
-                            "synchronizuj"
-                            if (device.get("serial") or device.get("ewidencja"))
-                            else "do_weryfikacji"
-                        ),
+                        "name": device.get("name") or "",
+                        "available_quantity": device.get("available_quantity") or "",
+                        "reservation_status": device.get("reservation_status") or "",
+                        "price_gross": device.get("price_gross") or device.get("price") or "",
+                        "found_in_firebird": True,
+                        "id_maszyna": None,
+                        "id_klient": None,
+                        "id_umowacpc": None,
+                        "firebird_error": None,
+                        "sync_action": "",
                     }
                 )
-
-    matched_count = sum(1 for item in devices_output if item["found_in_firebird"])
+        matched_count = sum(
+            1
+            for item in devices_output
+            if str(item.get("reservation_status") or "").strip().lower() == "brak rezerwacji"
+        )
     return {
         "forms_scope": forms_scope,
         "forms_total": len(form_items),
@@ -437,6 +978,7 @@ async def contracts_form_workflow_detail(
     firebird_config = await load_firebird_runtime_config(session)
     with use_firebird_runtime_config(firebird_config):
         firebird_match = await asyncio.to_thread(find_client_in_firebird, nip) if nip else None
+        source_devices = await asyncio.to_thread(load_available_devices_from_firebird_warehouse)
 
     workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
     workflow_devices = (
@@ -444,54 +986,40 @@ async def contracts_form_workflow_detail(
         if workflow_case is not None
         else []
     )
+    active_reservations = await _load_active_workflow_device_reservations(
+        session,
+        exclude_workflow_case_id=workflow_case.id if workflow_case is not None else None,
+    )
     saved_devices_by_row = {
-        int(device.source_row): device
+        device_key: device
         for device in workflow_devices
-        if device.source_row is not None
-    }
-    selected_rows = {
-        int(device.source_row) for device in workflow_devices if device.source_row is not None
-    }
-
-    available_devices = []
-    for device in await asyncio.to_thread(load_devices_from_sheet):
-        try:
-            row_number = int(device.get("row") or 0)
-        except ValueError:
-            row_number = 0
-        saved_device = saved_devices_by_row.get(row_number)
-        sheet_gross_price = _format_price(_parse_price(str(device.get("price") or "")))
-        saved_net_price = _normalize_price_text(saved_device.price_net) if saved_device else ""
-        saved_gross_price = _normalize_price_text(saved_device.price_gross) if saved_device else ""
-        computed_net_price = ""
-        computed_gross_price = saved_gross_price or sheet_gross_price
-        parsed_gross_price = _parse_price(computed_gross_price)
-        if saved_net_price:
-            computed_net_price = saved_net_price
-        elif parsed_gross_price is not None:
-            computed_net_price = _format_price(_gross_to_net(parsed_gross_price))
-        available_devices.append(
-            {
-                "row": row_number,
-                "producer": device.get("producer") or "",
-                "model": device.get("model") or "",
-                "serial": device.get("serial") or "",
-                "ewidencja": device.get("ewidencja") or "",
-                "status": device.get("status") or "",
-                "price": device.get("price") or "",
-                "price_net": computed_net_price,
-                "price_gross": computed_gross_price,
-                "vat_rate": "23",
-                "reservation": device.get("reservation") or "",
-                "reservation_status": device.get("reservation_status") or "",
-                "description": device.get("description") or "",
-                "ms_id_maszyna": device.get("ms_id_maszyna") or "",
-                "ms_id_klient": device.get("ms_id_klient") or "",
-                "ms_nazwa_klienta": device.get("ms_nazwa_klienta") or "",
-                "ms_nip": device.get("ms_nip") or "",
-                "selected": row_number in selected_rows,
-            }
+        if (
+            device.source_row is not None
+            and (device_key := build_workflow_device_key(device.source_type, device.source_row))
         )
+    }
+    sheet_config = await load_workflow_sheet_runtime_config(session)
+    sheet_lookup = await load_workflow_sheet_status_cache_lookup(session, config=sheet_config)
+
+    available_devices = _build_available_workflow_devices(
+        source_devices,
+        saved_devices_by_key=saved_devices_by_row,
+        active_reservations_by_key=active_reservations,
+        workflow_sheet_lookup=sheet_lookup,
+    )
+    workflow_payload = serialize_workflow_case(workflow_case, workflow_devices)
+    with use_workflow_sheet_runtime_config(sheet_config):
+        sheet_sync_enabled, sheet_sync_reason = workflow_sheet_sync_configured()
+    sheet_assignee_options: list[dict[str, Any]] = []
+    sheet_assignee_warning: str | None = None
+    try:
+        sheet_assignee_options = await list_workflow_sheet_assignee_options(session)
+    except RuntimeError as exc:
+        sheet_assignee_warning = str(exc)
+
+    selected_assignee_id = _coerce_int(workflow_payload.get("sheet_sync", {}).get("assignee_id"))
+    if selected_assignee_id is None:
+        selected_assignee_id = _coerce_int(getattr(admin_user, "firebird_app_user_id", None))
 
     return {
         "form": {
@@ -510,7 +1038,7 @@ async def contracts_form_workflow_detail(
             "meta": submitted_meta,
         },
         "client_preview": build_client_preview(submitted_payload),
-        "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+        "workflow": workflow_payload,
         "workflow_status_action": {
             "current": (
                 workflow_case.business_status
@@ -538,6 +1066,26 @@ async def contracts_form_workflow_detail(
                 else "Dodaj klienta do Menadzera Serwisu"
             ),
         },
+        "sheet_sync_config": {
+            "enabled": bool(sheet_sync_enabled),
+            "reason": sheet_sync_reason,
+            "warning": sheet_assignee_warning,
+            "source": sheet_config.source,
+        },
+        "sheet_status_cache": {
+            "enabled": bool(sheet_lookup.get("enabled")),
+            "reason": sheet_lookup.get("reason"),
+            "worksheet_title": sheet_lookup.get("worksheet_title"),
+            "last_sync_at": sheet_lookup.get("last_sync_at"),
+            "last_error": sheet_lookup.get("last_error"),
+            "stale": bool(sheet_lookup.get("stale")),
+            "row_count": int(sheet_lookup.get("row_count") or 0),
+            "refresh_enabled": bool(sheet_lookup.get("refresh_enabled")),
+            "refresh_reason": sheet_lookup.get("refresh_reason"),
+            "refresh_interval_seconds": int(sheet_lookup.get("refresh_interval_seconds") or 0),
+        },
+        "sheet_assignee_options": sheet_assignee_options,
+        "sheet_assignee_selected_id": selected_assignee_id,
         "available_devices": available_devices,
         "selection_capabilities": {
             "search": True,
@@ -546,14 +1094,64 @@ async def contracts_form_workflow_detail(
             "format_filter": False,
             "color_filter": False,
             "note": (
-                "Aktualne zrodlo urzadzen z arkusza nie zawiera wiarygodnych pol A4/A3 i mono/kolor. "
-                "Te filtry warto dolaczyc po przejsciu na Menadzer Serwisu lub po uzupelnieniu arkusza. "
-                "Ceny w FLOW mozna wpisywac recznie dla kazdego urzadzenia; przeliczenie netto/brutto "
-                "na tym etapie korzysta z domyslnej stawki VAT 23%."
+                "Biezace zrodlo urzadzen pochodzi z pozycji magazynowych Firebird dla magazynu 28. "
+                "Obecnie sa to wpisy handlowe producent + model + serial zapisane jako osobne pozycje MAGAZYN. "
+                "Na etapie handlowca pracujemy na bycie sprzedazowym MAGAZYN, a drugi wariant oparty stricte "
+                "o tabele SERIAL ma juz przygotowany tor `source_type`, ale nie jest jeszcze aktywnym "
+                "zrodlem listy handlowca. "
+                "Ceny w FLOW mozna wpisywac recznie dla kazdego urzadzenia; domyslnie podpowiadane sa "
+                "wartosci netto/brutto z Firebird."
             ),
         },
         "sales_packet": build_sales_packet(workflow_case, workflow_devices),
     }
+
+
+@router.post(
+    "/workflow/sheet-status-refresh",
+    summary="Odswieza lokalny cache statusow urzadzen z arkusza Google",
+)
+async def contracts_workflow_sheet_status_refresh(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Odswieza cache statusow arkusza wykorzystywany przez modal wyboru urzadzen."""
+
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    result = await refresh_workflow_sheet_status_cache(session, user_id=admin_user.id)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="workflow_sheet_status_cache_refresh",
+        client_ip=admin_session.client_ip,
+        payload={
+            "success": bool(result.get("success")),
+            "message": result.get("message"),
+            "worksheet_title": result.get("worksheet_title"),
+            "row_count": result.get("row_count"),
+            "refreshed_count": result.get("refreshed_count"),
+            "last_sync_at": result.get("last_sync_at"),
+            "last_error": result.get("last_error"),
+        },
+    )
+    await session.commit()
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=result.get("message") or "Nie udalo sie odswiezyc cache statusow arkusza.",
+        )
+    return result
 
 
 @router.post(
@@ -1044,32 +1642,234 @@ async def contracts_form_workflow_devices(
         user_id=admin_user.id,
         payload_snapshot=form_payload,
     )
+    previous_workflow_devices = await list_form_workflow_devices(
+        session, workflow_case_id=workflow_case.id
+    )
+    previous_devices_by_key = {
+        build_workflow_device_key(device.source_type, device.source_row): device
+        for device in previous_workflow_devices
+        if build_workflow_device_key(device.source_type, device.source_row)
+    }
 
     selected_payloads = _build_selected_device_payloads(payload)
     selected_rows = [int(item["row"]) for item in selected_payloads]
-    sheet_rows = {
-        int(item["row"]): item for item in await asyncio.to_thread(load_devices_from_sheet)
-    }
-    missing_rows = [row for row in selected_rows if row not in sheet_rows]
+    selected_devices_meta = [
+        {
+            "row": int(item["row"]),
+            "source_type": normalize_workflow_device_source_type(
+                item.get("source_type"),
+                default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+            ),
+            "source_key": build_workflow_device_key(item.get("source_type"), item.get("row")),
+        }
+        for item in selected_payloads
+    ]
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        available_rows = {
+            device_key: item
+            for item in await asyncio.to_thread(load_available_devices_from_firebird_warehouse)
+            if (
+                int(item.get("row") or 0) > 0
+                and (
+                    device_key := build_workflow_device_key(
+                        item.get("source_type") or WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+                        item.get("row"),
+                    )
+                )
+            )
+        }
+    missing_rows = [
+        item["source_key"] or f"{item['source_type']}:{item['row']}"
+        for item in selected_devices_meta
+        if item["source_key"] not in available_rows
+    ]
     if missing_rows:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Nie znaleziono w arkuszu Urzadzenia wierszy: {', '.join(map(str, missing_rows))}.",
+            detail=(
+                "Nie znaleziono w aktywnym zrodle workflow pozycji: "
+                f"{', '.join(map(str, missing_rows))}."
+            ),
+        )
+
+    active_reservations = await _load_active_workflow_device_reservations(
+        session,
+        exclude_workflow_case_id=workflow_case.id,
+    )
+    conflicting_reservations = []
+    for selected_item in selected_devices_meta:
+        source_key = str(selected_item.get("source_key") or "").strip()
+        reservation_entry = active_reservations.get(source_key)
+        if reservation_entry is None:
+            continue
+        conflicting_reservations.append(
+            {
+                "source_key": source_key,
+                "form_request_id": reservation_entry["form_request_id"],
+                "workflow_case_id": reservation_entry["workflow_case_id"],
+                "reserved_by_initials": reservation_entry["reserved_by_initials"],
+            }
+        )
+    if conflicting_reservations:
+        reservation_labels = ", ".join(
+            f"{item['source_key']} -> formularz {item['form_request_id']} ({item['reserved_by_initials']})"
+            for item in conflicting_reservations
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Wybrane urzadzenia sa juz zapisane w innych aktywnych formularzach workflow: "
+                f"{reservation_labels}."
+            ),
         )
 
     selected_devices = []
     for selected_item in selected_payloads:
-        row_number = int(selected_item["row"])
-        sheet_device = dict(sheet_rows[row_number])
-        sheet_device["price_net"] = selected_item["price_net"]
-        sheet_device["price_gross"] = selected_item["price_gross"]
-        selected_devices.append(sheet_device)
+        source_type = normalize_workflow_device_source_type(
+            selected_item.get("source_type"),
+            default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+        )
+        source_key = build_workflow_device_key(source_type, selected_item["row"])
+        assert source_key is not None
+        source_device = dict(available_rows[source_key])
+        source_device["price_net"] = selected_item["price_net"]
+        source_device["price_gross"] = selected_item["price_gross"]
+        source_device["source_type"] = source_type
+        source_device["source_key"] = source_key
+        selected_devices.append(source_device)
     workflow_devices = await replace_form_workflow_devices(
         session,
         workflow_case=workflow_case,
         selected_devices=selected_devices,
         updated_by=admin_user.id,
     )
+    current_devices_by_key = {
+        build_workflow_device_key(device.source_type, device.source_row): device
+        for device in workflow_devices
+        if build_workflow_device_key(device.source_type, device.source_row)
+    }
+    removed_workflow_devices = [
+        device
+        for source_key, device in previous_devices_by_key.items()
+        if source_key not in current_devices_by_key
+    ]
+
+    issuer_name = (
+        " ".join(
+            part.strip()
+            for part in [admin_user.first_name or "", admin_user.last_name or ""]
+            if part and part.strip()
+        ).strip()
+        or admin_user.email
+    )
+    try:
+        sheet_assignee_id, sheet_assignee_label = await _resolve_sheet_assignee_selection(
+            session=session,
+            admin_user=admin_user,
+            explicit_assignee_id=payload.sheet_assignee_id,
+            fallback_label=issuer_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    sheet_sync_result: dict[str, Any] | None = None
+    sheet_release_result: dict[str, Any] | None = None
+    sheet_sync_warning: str | None = None
+    sheet_sync_reason: str | None = None
+    sheet_release_warning: str | None = None
+    current_sheet_payloads = [_build_sheet_device_payload(device) for device in workflow_devices]
+    removed_sheet_payloads = _build_sheet_release_payloads(
+        removed_workflow_devices, include_all=True
+    )
+    sheet_config = await load_workflow_sheet_runtime_config(session)
+    try:
+        with use_workflow_sheet_runtime_config(sheet_config):
+            if removed_sheet_payloads:
+                sheet_release_result = await asyncio.to_thread(
+                    release_workflow_devices_from_sheet,
+                    devices=removed_sheet_payloads,
+                )
+            if current_sheet_payloads:
+                sheet_sync_result = await asyncio.to_thread(
+                    sync_workflow_devices_to_sheet,
+                    devices=current_sheet_payloads,
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number or "",
+                    form_request_id=item.id,
+                    workflow_case_id=workflow_case.id,
+                    business_status_label=workflow_business_status_label(
+                        workflow_case.business_status
+                    ),
+                )
+    except RuntimeError as exc:
+        sheet_sync_warning = str(exc)
+
+    if workflow_devices:
+        if sheet_sync_result is not None:
+            if sheet_sync_result.get("enabled"):
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="synced",
+                    sheet_result=sheet_sync_result,
+                    assignee_id=sheet_assignee_id,
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number,
+                )
+            else:
+                sheet_sync_reason = str(sheet_sync_result.get("reason") or "").strip() or None
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="pending",
+                    sheet_result=sheet_sync_result,
+                    assignee_id=sheet_assignee_id,
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number,
+                )
+        elif sheet_sync_warning:
+            _apply_sheet_sync_snapshot(
+                workflow_devices,
+                operation="error",
+                sheet_result=None,
+                assignee_id=sheet_assignee_id,
+                assignee_label=sheet_assignee_label,
+                proforma_number=workflow_case.proforma_number,
+                error=sheet_sync_warning,
+            )
+
+    message_parts = [
+        (
+            "Wybor urzadzen zapisany po stronie CTIP."
+            if workflow_devices
+            else "Usunieto powiazane urzadzenia ze sprawy CTIP."
+        )
+    ]
+    if sheet_sync_result and sheet_sync_result.get("enabled"):
+        synced_count = int(sheet_sync_result.get("synced_count") or 0)
+        if synced_count > 0:
+            message_parts.append(
+                f"Arkusz zsynchronizowany ({synced_count} urzadzen, rezerwacja: {sheet_assignee_label})."
+            )
+    elif sheet_sync_reason:
+        message_parts.append(f"Synchronizacja arkusza pominieta ({sheet_sync_reason}).")
+    if sheet_release_result and sheet_release_result.get("enabled"):
+        released_count = int(sheet_release_result.get("released_count") or 0)
+        if released_count > 0:
+            message_parts.append(f"Zwolniono rezerwacje arkusza dla {released_count} urzadzen.")
+    elif sheet_release_result and not sheet_release_result.get("enabled"):
+        sheet_release_warning = str(sheet_release_result.get("reason") or "").strip() or None
+    if sheet_sync_warning:
+        message_parts.append("Uwaga: nie udalo sie zsynchronizowac arkusza Google.")
+    elif sheet_release_warning:
+        message_parts.append("Uwaga: nie udalo sie zwolnic poprzednich rezerwacji arkusza.")
     await record_audit(
         session,
         user_id=admin_user.id,
@@ -1079,27 +1879,47 @@ async def contracts_form_workflow_devices(
             "form_request_id": item.id,
             "workflow_case_id": workflow_case.id,
             "rows": selected_rows,
+            "selected_devices": selected_devices_meta,
             "prices": [
                 {
                     "row": int(selected_item["row"]),
+                    "source_type": normalize_workflow_device_source_type(
+                        selected_item.get("source_type"),
+                        default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+                    ),
                     "price_net": selected_item["price_net"],
                     "price_gross": selected_item["price_gross"],
                 }
                 for selected_item in selected_payloads
             ],
+            "sheet_assignee_id": sheet_assignee_id,
+            "sheet_assignee_label": sheet_assignee_label,
+            "sheet_sync_enabled": bool(sheet_sync_result and sheet_sync_result.get("enabled")),
+            "sheet_sync_count": (
+                int(sheet_sync_result.get("synced_count") or 0) if sheet_sync_result else 0
+            ),
+            "sheet_sync_reason": sheet_sync_reason,
+            "sheet_sync_warning": sheet_sync_warning,
+            "sheet_release_count": (
+                int(sheet_release_result.get("released_count") or 0) if sheet_release_result else 0
+            ),
+            "sheet_release_warning": sheet_release_warning,
         },
     )
     await session.commit()
 
     return {
         "ok": True,
-        "message": (
-            "Wybor urzadzen zapisany po stronie CTIP."
-            if workflow_devices
-            else "Usunieto powiazane urzadzenia ze sprawy CTIP."
-        ),
+        "message": " ".join(part for part in message_parts if part),
         "workflow": serialize_workflow_case(workflow_case, workflow_devices),
         "selected_rows": selected_rows,
+        "selected_devices": selected_devices_meta,
+        "sheet_sync": sheet_sync_result,
+        "sheet_release": sheet_release_result,
+        "sheet_sync_warning": sheet_sync_warning,
+        "sheet_release_warning": sheet_release_warning,
+        "sheet_assignee_id": sheet_assignee_id,
+        "sheet_assignee_label": sheet_assignee_label,
     }
 
 
@@ -1151,6 +1971,57 @@ async def contracts_form_workflow_status(
         updated_by=admin_user.id,
     )
     workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    current_sheet_sync = serialize_workflow_case(workflow_case, workflow_devices).get(
+        "sheet_sync", {}
+    )
+    current_sheet_assignee_id = _coerce_int(current_sheet_sync.get("assignee_id"))
+    current_sheet_assignee_label = (
+        str(current_sheet_sync.get("assignee_label") or "").strip() or None
+    )
+    sheet_release_result: dict[str, Any] | None = None
+    sheet_release_warning: str | None = None
+    if payload.business_status == WORKFLOW_BUSINESS_STATUS_REJECTED and workflow_devices:
+        release_payloads = _build_sheet_release_payloads(workflow_devices, include_all=True)
+        if release_payloads:
+            sheet_config = await load_workflow_sheet_runtime_config(session)
+            try:
+                with use_workflow_sheet_runtime_config(sheet_config):
+                    sheet_release_result = await asyncio.to_thread(
+                        release_workflow_devices_from_sheet,
+                        devices=release_payloads,
+                    )
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="released",
+                    sheet_result=sheet_release_result,
+                    assignee_id=current_sheet_assignee_id,
+                    assignee_label=current_sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number,
+                )
+            except RuntimeError as exc:
+                sheet_release_warning = str(exc)
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="error",
+                    sheet_result=None,
+                    assignee_id=current_sheet_assignee_id,
+                    assignee_label=current_sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number,
+                    error=sheet_release_warning,
+                )
+
+    response_workflow = serialize_workflow_case(workflow_case, workflow_devices)
+    response_message = "Zapisano status sprawy FLOW."
+    if sheet_release_result and sheet_release_result.get("enabled"):
+        released_count = int(sheet_release_result.get("released_count") or 0)
+        if released_count > 0:
+            response_message = (
+                "Zapisano status sprawy FLOW. "
+                f"Zwolniono rezerwacje arkusza dla {released_count} urzadzen."
+            )
+    if sheet_release_warning:
+        response_message = f"{response_message} Uwaga: nie udalo sie zwolnic rezerwacji arkusza."
+
     await record_audit(
         session,
         user_id=admin_user.id,
@@ -1160,13 +2031,22 @@ async def contracts_form_workflow_status(
             "form_request_id": item.id,
             "workflow_case_id": workflow_case.id,
             "business_status": payload.business_status,
+            "sheet_release_enabled": bool(
+                sheet_release_result and sheet_release_result.get("enabled")
+            ),
+            "sheet_release_count": (
+                int(sheet_release_result.get("released_count") or 0) if sheet_release_result else 0
+            ),
+            "sheet_release_warning": sheet_release_warning,
         },
     )
     await session.commit()
     return {
         "ok": True,
-        "message": "Zapisano status sprawy FLOW.",
-        "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+        "message": response_message,
+        "workflow": response_workflow,
+        "sheet_release": sheet_release_result,
+        "sheet_release_warning": sheet_release_warning,
     }
 
 
@@ -1246,6 +2126,24 @@ async def contracts_form_workflow_proforma(
         ).strip()
         or admin_user.email
     )
+    try:
+        sheet_assignee_id, sheet_assignee_label = await _resolve_sheet_assignee_selection(
+            session=session,
+            admin_user=admin_user,
+            explicit_assignee_id=payload_data.sheet_assignee_id,
+            fallback_label=issuer_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
     selected_devices = [
         device.snapshot
         or {
@@ -1310,6 +2208,71 @@ async def contracts_form_workflow_proforma(
         proforma_pdf_path=result.pdf_path or result.preview_url,
         updated_by=admin_user.id,
     )
+    sheet_sync_result: dict[str, Any] | None = None
+    sheet_sync_warning: str | None = None
+    sheet_sync_reason: str | None = None
+    sheet_payloads = [_build_sheet_device_payload(device) for device in workflow_devices]
+    if sheet_payloads:
+        sheet_config = await load_workflow_sheet_runtime_config(session)
+        try:
+            with use_workflow_sheet_runtime_config(sheet_config):
+                sheet_sync_result = await asyncio.to_thread(
+                    sync_workflow_devices_to_sheet,
+                    devices=sheet_payloads,
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=result.document_number,
+                    form_request_id=item.id,
+                    workflow_case_id=workflow_case.id,
+                    business_status_label=workflow_business_status_label(
+                        workflow_case.business_status
+                    ),
+                )
+            if sheet_sync_result.get("enabled"):
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="synced",
+                    sheet_result=sheet_sync_result,
+                    assignee_id=sheet_assignee_id,
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=result.document_number,
+                )
+            else:
+                sheet_sync_reason = str(sheet_sync_result.get("reason") or "").strip() or None
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="pending",
+                    sheet_result=sheet_sync_result,
+                    assignee_id=sheet_assignee_id,
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=result.document_number,
+                )
+        except RuntimeError as exc:
+            sheet_sync_warning = str(exc)
+            _apply_sheet_sync_snapshot(
+                workflow_devices,
+                operation="error",
+                sheet_result=None,
+                assignee_id=sheet_assignee_id,
+                assignee_label=sheet_assignee_label,
+                proforma_number=result.document_number,
+                error=sheet_sync_warning,
+            )
+
+    message_parts = [
+        "Utworzono proforme w Menadzerze Serwisu: "
+        f"{result.document_number} (odbiorca: {recipient_label})."
+    ]
+    if sheet_sync_result and sheet_sync_result.get("enabled"):
+        synced_count = int(sheet_sync_result.get("synced_count") or 0)
+        if synced_count > 0:
+            message_parts.append(
+                f"Arkusz zsynchronizowany ({synced_count} urzadzen, rezerwacja: {sheet_assignee_label})."
+            )
+    elif sheet_sync_reason:
+        message_parts.append(f"Synchronizacja arkusza pominieta ({sheet_sync_reason}).")
+    if sheet_sync_warning:
+        message_parts.append("Uwaga: nie udalo sie zsynchronizowac arkusza Google.")
+
     await record_audit(
         session,
         user_id=admin_user.id,
@@ -1323,6 +2286,14 @@ async def contracts_form_workflow_proforma(
             "line_count": result.line_count,
             "for_bank": bool(payload_data.for_bank),
             "recipient_client_id": recipient_client_id,
+            "sheet_assignee_id": sheet_assignee_id,
+            "sheet_assignee_label": sheet_assignee_label,
+            "sheet_sync_enabled": bool(sheet_sync_result and sheet_sync_result.get("enabled")),
+            "sheet_sync_count": (
+                int(sheet_sync_result.get("synced_count") or 0) if sheet_sync_result else 0
+            ),
+            "sheet_sync_reason": sheet_sync_reason,
+            "sheet_sync_warning": sheet_sync_warning,
         },
     )
     await session.commit()
@@ -1330,15 +2301,279 @@ async def contracts_form_workflow_proforma(
     return {
         "ok": True,
         "created": True,
-        "message": (
-            "Utworzono proforme w Menadzerze Serwisu: "
-            f"{result.document_number} (odbiorca: {recipient_label})."
-        ),
+        "message": " ".join(part for part in message_parts if part),
         "proforma_firebird_id": result.id_faktura_table,
         "proforma_number": result.document_number,
         "preview_url": result.preview_url,
         "for_bank": bool(payload_data.for_bank),
         "recipient_client_id": recipient_client_id,
+        "sheet_assignee_id": sheet_assignee_id,
+        "sheet_assignee_label": sheet_assignee_label,
+        "sheet_sync": sheet_sync_result,
+        "sheet_sync_warning": sheet_sync_warning,
+        "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+    }
+
+
+@router.post(
+    "/forms/{form_id}/workflow/sheet-sync",
+    summary="Synchronizuj arkusz urzadzen dla sprawy workflow",
+)
+async def contracts_form_workflow_sheet_sync(
+    form_id: int,
+    payload: WorkflowSheetSyncRequest | None = None,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Wymusza synchronizacje rezerwacji urządzeń do arkusza Google."""
+    payload_data = payload or WorkflowSheetSyncRequest()
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Formularz nie istnieje.",
+        )
+    if item.status != "SUBMITTED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Workflow jest dostepny tylko dla formularzy ze statusem SUBMITTED.",
+        )
+
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak zapisanej sprawy workflow dla formularza.",
+        )
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    if not workflow_devices:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak urzadzen zapisanych w sprawie workflow.",
+        )
+    if not workflow_case.proforma_number:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Najpierw utworz proforme dla tej sprawy.",
+        )
+
+    issuer_name = (
+        " ".join(
+            part.strip()
+            for part in [admin_user.first_name or "", admin_user.last_name or ""]
+            if part and part.strip()
+        ).strip()
+        or admin_user.email
+    )
+    try:
+        sheet_assignee_id, sheet_assignee_label = await _resolve_sheet_assignee_selection(
+            session=session,
+            admin_user=admin_user,
+            explicit_assignee_id=payload_data.sheet_assignee_id,
+            fallback_label=issuer_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    sheet_payloads = [_build_sheet_device_payload(device) for device in workflow_devices]
+    sheet_config = await load_workflow_sheet_runtime_config(session)
+    try:
+        with use_workflow_sheet_runtime_config(sheet_config):
+            sheet_sync_result = await asyncio.to_thread(
+                sync_workflow_devices_to_sheet,
+                devices=sheet_payloads,
+                assignee_label=sheet_assignee_label,
+                proforma_number=workflow_case.proforma_number,
+                form_request_id=item.id,
+                workflow_case_id=workflow_case.id,
+                business_status_label=workflow_business_status_label(workflow_case.business_status),
+            )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Nie udalo sie zsynchronizowac arkusza: {exc}",
+        ) from exc
+
+    sync_reason = str(sheet_sync_result.get("reason") or "").strip() or None
+    operation = "synced" if sheet_sync_result.get("enabled") else "pending"
+    _apply_sheet_sync_snapshot(
+        workflow_devices,
+        operation=operation,
+        sheet_result=sheet_sync_result,
+        assignee_id=sheet_assignee_id,
+        assignee_label=sheet_assignee_label,
+        proforma_number=workflow_case.proforma_number,
+    )
+    synced_count = int(sheet_sync_result.get("synced_count") or 0)
+    message = "Arkusz zsynchronizowany."
+    if sheet_sync_result.get("enabled"):
+        message = f"Arkusz zsynchronizowany ({synced_count} urzadzen)."
+    elif sync_reason:
+        message = f"Synchronizacja arkusza pominieta ({sync_reason})."
+
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_flow_sheet_sync",
+        client_ip=admin_session.client_ip,
+        payload={
+            "form_request_id": item.id,
+            "workflow_case_id": workflow_case.id,
+            "sheet_assignee_id": sheet_assignee_id,
+            "sheet_assignee_label": sheet_assignee_label,
+            "sheet_sync_enabled": bool(sheet_sync_result.get("enabled")),
+            "sheet_sync_count": synced_count,
+            "sheet_sync_reason": sync_reason,
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": message,
+        "sheet_sync": sheet_sync_result,
+        "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+    }
+
+
+@router.post(
+    "/forms/{form_id}/workflow/sheet-release",
+    summary="Zwolnij rezerwacje arkusza dla sprawy workflow",
+)
+async def contracts_form_workflow_sheet_release(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Czyści rezerwację GRENKE dla urządzeń przypisanych do sprawy."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Formularz nie istnieje.",
+        )
+    if item.status != "SUBMITTED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Workflow jest dostepny tylko dla formularzy ze statusem SUBMITTED.",
+        )
+
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak zapisanej sprawy workflow dla formularza.",
+        )
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    if not workflow_devices:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak urzadzen zapisanych w sprawie workflow.",
+        )
+
+    sheet_payloads = _build_sheet_release_payloads(workflow_devices, include_all=True)
+    if not sheet_payloads:
+        return {
+            "ok": True,
+            "message": "Brak danych rezerwacji arkusza do zwolnienia.",
+            "sheet_release": {
+                "enabled": False,
+                "reason": "Brak danych synchronizacji w zapisanym snapshotcie urzadzen.",
+                "released_count": 0,
+                "rows": [],
+            },
+            "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+        }
+
+    sheet_config = await load_workflow_sheet_runtime_config(session)
+    try:
+        with use_workflow_sheet_runtime_config(sheet_config):
+            sheet_release_result = await asyncio.to_thread(
+                release_workflow_devices_from_sheet,
+                devices=sheet_payloads,
+            )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Nie udalo sie zwolnic rezerwacji arkusza: {exc}",
+        ) from exc
+
+    current_sheet_sync = serialize_workflow_case(workflow_case, workflow_devices).get(
+        "sheet_sync", {}
+    )
+    _apply_sheet_sync_snapshot(
+        workflow_devices,
+        operation="released",
+        sheet_result=sheet_release_result,
+        assignee_id=_coerce_int(current_sheet_sync.get("assignee_id")),
+        assignee_label=str(current_sheet_sync.get("assignee_label") or "").strip() or None,
+        proforma_number=workflow_case.proforma_number,
+    )
+    released_count = int(sheet_release_result.get("released_count") or 0)
+    release_reason = str(sheet_release_result.get("reason") or "").strip() or None
+    message = (
+        f"Zwolniono rezerwacje arkusza dla {released_count} urzadzen."
+        if sheet_release_result.get("enabled")
+        else (
+            f"Zwolnienie rezerwacji pominiete ({release_reason})."
+            if release_reason
+            else "Zwolnienie rezerwacji pominiete."
+        )
+    )
+
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_flow_sheet_release",
+        client_ip=admin_session.client_ip,
+        payload={
+            "form_request_id": item.id,
+            "workflow_case_id": workflow_case.id,
+            "sheet_release_enabled": bool(sheet_release_result.get("enabled")),
+            "sheet_release_count": released_count,
+            "sheet_release_reason": release_reason,
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": message,
+        "sheet_release": sheet_release_result,
         "workflow": serialize_workflow_case(workflow_case, workflow_devices),
     }
 

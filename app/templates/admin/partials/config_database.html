@@ -178,6 +178,102 @@
 </section>
 
 <section
+  id="google-sheets-flow-config"
+  class="config-section"
+  x-data="googleSheetsConfig()"
+  x-init="init()"
+  data-initial='{{ google_sheets_config | tojson | safe }}'
+  data-save-endpoint="/admin/config/google-sheets"
+  data-test-endpoint="/admin/google-sheets/test"
+  data-bootstrap-endpoint="/admin/google-sheets/bootstrap-headers"
+>
+  <header class="config-header">
+    <div>
+      <h2>Konfiguracja Google Sheets (FLOW)</h2>
+      <p>Arkusz używany do wpisywania rezerwacji GRENKE i numerów proform w module FLOW.</p>
+      <p class="input-help">
+        Aktywne źródło konfiguracji: <strong x-text="sourceLabel">env</strong>.
+        Wartość <code>admin</code> nadpisuje fallback środowiskowy.
+      </p>
+    </div>
+    <div class="config-meta">
+      <span class="config-dot" :class="testStatus"></span>
+      <span class="config-meta-text" x-text="testMessage || 'Brak testu połączenia'">Brak testu połączenia</span>
+    </div>
+  </header>
+
+  <form class="config-form" @submit.prevent="save">
+    <div class="form-grid">
+      <div class="form-field form-field-wide">
+        <label class="users-section-option users-flag-option" for="gs-enabled">
+          <input id="gs-enabled" type="checkbox" x-model="enabled">
+          Włącz synchronizację Google Sheets dla FLOW
+        </label>
+        <p class="input-help">Wyłączenie blokuje synchronizację arkusza niezależnie od wartości z pliku <code>.env</code>.</p>
+      </div>
+      <div class="form-field form-field-wide">
+        <label for="gs-credentials-path">Ścieżka do credentials JSON</label>
+        <input id="gs-credentials-path" type="text" x-model="credentialsPath" placeholder="/home/user/secrets/google-sheets.json">
+      </div>
+      <div class="form-field form-field-wide">
+        <label for="gs-spreadsheet-id">Spreadsheet ID</label>
+        <input id="gs-spreadsheet-id" type="text" x-model="spreadsheetId" placeholder="ID z URL arkusza Google">
+        <p class="input-help">Możesz wkleić samo ID albo pełny URL Google Sheets. System zapisze wyłącznie ID skoroszytu.</p>
+      </div>
+      <div class="form-field">
+        <label for="gs-workflow-worksheet">Zakładka urządzeń workflow</label>
+        <input id="gs-workflow-worksheet" type="text" x-model="workflowDevicesWorksheet" required placeholder="Urzadzenia_magazyn">
+        <p class="input-help">Wymagane nagłówki FLOW: <code>PRODUCENT</code>, <code>MODEL</code>, <code>INDEKS</code>, <code>SERIAL</code>, <code>STATUS</code>, <code>MS_ID_MAGAZYN_TABLE</code>, <code>REZERWACJA GRENKE</code>, <code>FAKTURA PROFORMA GRENKE</code>.</p>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" :disabled="saving">
+        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
+        <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
+      </button>
+      <button type="button" class="btn-secondary" :disabled="bootstrapping" @click.prevent="bootstrapHeaders">
+        <span x-text="bootstrapping ? 'Przygotowywanie…' : 'Przygotuj nagłówki FLOW'">Przygotuj nagłówki FLOW</span>
+      </button>
+    </div>
+
+    <template x-if="serviceAccountEmail || spreadsheetTitle || worksheetTitle">
+      <div class="form-message" style="background:#f5f7fb;border-color:#d9dfeb;color:#1f2937;">
+        <div><strong>Service account:</strong> <span x-text="serviceAccountEmail || 'brak danych'"></span></div>
+        <div><strong>Skoroszyt:</strong> <span x-text="spreadsheetTitle || 'brak danych'"></span></div>
+        <div><strong>Zakładka:</strong> <span x-text="worksheetTitle || 'brak danych'"></span></div>
+      </div>
+    </template>
+    <template x-if="missingHeaders.length">
+      <div class="form-message warning">
+        Brak wymaganych nagłówków FLOW:
+        <span x-text="missingHeaders.join(', ')"></span>
+      </div>
+    </template>
+    <template x-if="addedHeaders.length">
+      <div class="form-message success">
+        Dodane nagłówki:
+        <span x-text="addedHeaders.join(', ')"></span>
+      </div>
+    </template>
+    <template x-if="existingHeaders.length">
+      <div class="form-message" style="background:#f5f7fb;border-color:#d9dfeb;color:#1f2937;">
+        Nagłówki już obecne:
+        <span x-text="existingHeaders.join(', ')"></span>
+      </div>
+    </template>
+    <template x-if="error">
+      <div class="form-message error" x-text="error"></div>
+    </template>
+    <template x-if="success">
+      <div class="form-message success" x-text="success"></div>
+    </template>
+  </form>
+</section>
+
+<section
   id="firebird-vmaintenance-config"
   class="config-section"
   x-data="firebirdVMaintenanceConfig()"

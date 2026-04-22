@@ -296,6 +296,11 @@ button,
   color: var(--flow-warn);
 }
 
+.flow-badge.danger {
+  background: #fde8e8;
+  color: #b42318;
+}
+
 .flow-badge.soft {
   background: var(--flow-brand-soft);
   color: var(--flow-brand);
@@ -640,6 +645,47 @@ button,
   height: 16px;
 }
 
+.flow-proforma-devices {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.flow-proforma-devices-note {
+  margin: 0;
+}
+
+.flow-proforma-devices-table {
+  min-width: 860px;
+}
+
+.flow-proforma-device-label {
+  display: grid;
+  gap: 3px;
+}
+
+.flow-proforma-device-label strong {
+  font-size: 13px;
+  color: var(--flow-text);
+}
+
+.flow-proforma-device-label span {
+  font-size: 12px;
+  color: var(--flow-muted);
+}
+
+.flow-proforma-price-static {
+  display: inline-block;
+  min-width: 112px;
+  padding: 8px 10px;
+  border: 1px solid var(--flow-border);
+  border-radius: 10px;
+  background: #f4f6f8;
+  color: var(--flow-text);
+  text-align: right;
+  font-size: 13px;
+}
+
 .flow-device-picker-table {
   min-width: 1220px;
 }
@@ -647,6 +693,15 @@ button,
 .flow-device-picker-select {
   width: 18px;
   height: 18px;
+}
+
+.flow-row-locked td {
+  background: #fff6f0;
+}
+
+.flow-row-locked input[type="checkbox"],
+.flow-row-locked .flow-price-input {
+  cursor: not-allowed;
 }
 
 .flow-price-input {

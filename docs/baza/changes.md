@@ -32,3 +32,8 @@
 
 ## 2026-04-10
 - Rozszerzono `ctip.admin_user` o kolumny `firebird_app_user_id` i `firebird_app_user_login`, aby trwale mapować konto CTIP do wybranego użytkownika Menadżera Serwisu podczas tworzenia i edycji konta.
+- Rozszerzono ograniczenie `form_workflow_device_source_type_check` o wariant `firebird_serial` oraz doprecyzowano, że identyfikacja urządzenia workflow opiera się na parze `source_type + source_row`, co zabezpiecza przyszły drugi adapter źródła urządzeń bez kolizji numerów rekordów.
+
+## 2026-04-20
+- Dodano tabelę `ctip.workflow_sheet_status_cache`, która przechowuje lokalny cache statusów urządzeń z arkusza Google (`source_key`, indeks, status, rezerwację i znaczniki CTIP) na potrzeby szybkiego otwierania modalu `/flow` bez odczytu Google Sheets przy każdym żądaniu.
+- Dodano indeks `idx_workflow_sheet_status_cache_index_norm`, aby przyspieszyć fallbackowe dopasowanie po znormalizowanym indeksie urządzenia.

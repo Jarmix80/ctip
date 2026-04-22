@@ -23,6 +23,7 @@ from app.api.routes.admin_config import (
     load_firebird_config,
     load_firebird_vmaintenance_config,
     load_form_handling_config,
+    load_google_sheets_config,
     load_kp_repair_source_config,
     load_sms_config,
 )
@@ -44,6 +45,7 @@ from app.schemas.admin import (
     FirebirdConfigResponse,
     FirebirdVMaintenanceConfigResponse,
     FormHandlingConfigResponse,
+    GoogleSheetsConfigResponse,
     KpRepairSourceConfigResponse,
     SmsConfigResponse,
 )
@@ -139,6 +141,7 @@ async def admin_database_config_partial(
     """Formularz konfiguracji baz danych i źródeł CSV."""
     config: DatabaseConfigResponse = await load_database_config(session)
     firebird_config: FirebirdConfigResponse = await load_firebird_config(session)
+    google_sheets_config: GoogleSheetsConfigResponse = await load_google_sheets_config(session)
     firebird_v_config: FirebirdVMaintenanceConfigResponse = await load_firebird_vmaintenance_config(
         session
     )
@@ -149,6 +152,7 @@ async def admin_database_config_partial(
             "request": request,
             "config": config.model_dump(),
             "firebird_config": firebird_config.model_dump(),
+            "google_sheets_config": google_sheets_config.model_dump(),
             "firebird_v_config": firebird_v_config.model_dump(),
             "kp_source_config": kp_source_config.model_dump(),
         },

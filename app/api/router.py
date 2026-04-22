@@ -14,6 +14,7 @@ from app.api.routes import (
     admin_email,
     admin_firebird,
     admin_forms,
+    admin_google_sheets,
     admin_kp_repair,
     admin_sms,
     admin_status,
@@ -39,6 +40,7 @@ api_router.include_router(admin_contacts.router)
 api_router.include_router(admin_email.router)
 api_router.include_router(admin_forms.router)
 api_router.include_router(admin_firebird.router)
+api_router.include_router(admin_google_sheets.router)
 api_router.include_router(admin_kp_repair.router)
 api_router.include_router(admin_status.router)
 api_router.include_router(admin_sms.router)

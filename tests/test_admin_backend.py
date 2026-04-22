@@ -42,6 +42,7 @@ from app.models import (
     IvrMap,
     SmsOut,
     SmsTemplate,
+    WorkflowSheetStatusCache,
 )
 from app.models.base import Base
 from app.services import admin_ivr_map, section_permissions
@@ -70,6 +71,7 @@ from app.services.form_handling_config import default_public_base_url
 from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
+from app.services.workflow_sheet_sync import WorkflowSheetRuntimeConfig
 from log_utils import append_log, daily_log_path
 
 
@@ -103,6 +105,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     FormRequest.__table__,
                     FormWorkflowCase.__table__,
                     FormWorkflowDevice.__table__,
+                    WorkflowSheetStatusCache.__table__,
                     Call.__table__,
                     CallEvent.__table__,
                     Contact.__table__,
@@ -128,8 +131,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self._previous_admin_secret_key = settings.admin_secret_key
         self._previous_backup_scheduler_enabled = settings.backup_scheduler_enabled
+        self._previous_workflow_sheet_status_cache_scheduler_enabled = (
+            settings.workflow_sheet_status_cache_scheduler_enabled
+        )
         settings.admin_secret_key = Fernet.generate_key().decode("ascii")
         settings.backup_scheduler_enabled = False
+        settings.workflow_sheet_status_cache_scheduler_enabled = False
 
         async with self.session_factory() as session:
             now = datetime.now(UTC)
@@ -168,6 +175,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self._email_patch.stop()
         settings.admin_secret_key = self._previous_admin_secret_key
         settings.backup_scheduler_enabled = self._previous_backup_scheduler_enabled
+        settings.workflow_sheet_status_cache_scheduler_enabled = (
+            self._previous_workflow_sheet_status_cache_scheduler_enabled
+        )
         await self.engine.dispose()
 
     async def _login_as(self, email: str, password: str) -> tuple[str, dict]:
@@ -258,6 +268,43 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             await session.commit()
             await session.refresh(item)
             return item
+
+    @staticmethod
+    def _valid_public_form_post_data() -> dict[str, str]:
+        representatives = [
+            {
+                "first_name": "Anna",
+                "last_name": "Nowak",
+                "representative_email": "anna.nowak@example.com",
+                "representative_phone": "+48600111222",
+                "pesel": "02270803624",
+                "birth_date": "08:07:2002",
+                "document_type": "Dowod osobisty",
+                "document_number": "ABC123456",
+                "document_issue_date": "02:05:2019",
+                "document_expiry_date": "01:05:2029",
+            }
+        ]
+        return {
+            "company_name": "Firma Testowa Sp. z o.o.",
+            "company_nip": "5250000000",
+            "company_phone": "+48601122334",
+            "company_email": "firma@example.com",
+            "billing_email": "faktury@example.com",
+            "registered_street": "Testowa",
+            "registered_building_no": "1",
+            "registered_apartment_no": "2",
+            "registered_postal_code": "00-001",
+            "registered_city": "Warszawa",
+            "correspondence_street": "Korespondencyjna",
+            "correspondence_building_no": "2",
+            "correspondence_apartment_no": "3",
+            "correspondence_postal_code": "00-002",
+            "correspondence_city": "Warszawa",
+            "representatives_json": json.dumps(representatives),
+            "consent": "true",
+            "website": "",
+        }
 
     async def test_login_and_me_returns_user_info(self):
         token, payload = await self._login()
@@ -499,6 +546,64 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(new_password.status_code, 200)
 
+    async def test_sms_api_requires_x_user_id_header(self):
+        response = await self.client.get("/sms/templates")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Brak nagłówka X-User-Id")
+
+    @unittest.expectedFailure
+    async def test_sms_api_should_not_allow_spoofed_x_user_id_header(self):
+        response = await self.client.get("/sms/templates", headers={"X-User-Id": "1"})
+        self.assertIn(response.status_code, {401, 403})
+
+    async def test_public_form_double_submit_returns_already_submitted_without_mutation(self):
+        token, _ = await self._login()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Podwojny Submit",
+                "customer_email": "podwojny@example.com",
+                "customer_phone": "+48600123456",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+        form_url = create_response.json()["form_url"]
+        link_token = form_url.rsplit("/formularz/", maxsplit=1)[-1]
+
+        post_data = self._valid_public_form_post_data()
+        with (
+            patch(
+                "app.services.form_generator._sync_submitted_form_with_firebird_ms",
+                AsyncMock(),
+            ),
+            patch(
+                "app.services.form_generator._dispatch_submission_notifications",
+                AsyncMock(),
+            ),
+        ):
+            first_submit = await self.client.post(f"/formularz/{link_token}", data=post_data)
+            self.assertEqual(first_submit.status_code, 200)
+            self.assertIn("formularz został zapisany", first_submit.text.lower())
+
+            async with self.session_factory() as session:
+                form_after_first = await session.get(FormRequest, form_id)
+                self.assertIsNotNone(form_after_first)
+                assert form_after_first is not None
+                first_submitted_at = form_after_first.submitted_at
+                self.assertIsNotNone(first_submitted_at)
+
+            second_submit = await self.client.post(f"/formularz/{link_token}", data=post_data)
+            self.assertEqual(second_submit.status_code, 200)
+            self.assertIn("formularz został już wysłany", second_submit.text.lower())
+
+            async with self.session_factory() as session:
+                form_after_second = await session.get(FormRequest, form_id)
+                self.assertIsNotNone(form_after_second)
+                assert form_after_second is not None
+                self.assertEqual(form_after_second.submitted_at, first_submitted_at)
+
     async def test_operator_templates_crud(self):
         token, _ = await self._login_operator()
 
@@ -693,6 +798,133 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             setting = await session.get(AdminSetting, "firebird_vmaintenance.host")
             self.assertIsNotNone(setting)
             self.assertEqual(setting.value, update_payload["host"])
+
+    async def test_update_google_sheets_config_persists_values(self):
+        token, _ = await self._login()
+        update_payload = {
+            "enabled": True,
+            "credentials_path": "/home/marcin/projects/secrets/google-sheets.json",
+            "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-test-id/edit#gid=0",
+            "workflow_devices_worksheet": "Urzadzenia_magazyn",
+        }
+        response = await self.client.put(
+            "/admin/config/google-sheets",
+            json=update_payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["enabled"])
+        self.assertEqual(body["credentials_path"], update_payload["credentials_path"])
+        self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
+        self.assertEqual(
+            body["workflow_devices_worksheet"],
+            update_payload["workflow_devices_worksheet"],
+        )
+        self.assertEqual(body["source"], "admin")
+
+        response = await self.client.get(
+            "/admin/config/google-sheets",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
+
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "google_sheets.spreadsheet_id")
+            self.assertIsNotNone(setting)
+            self.assertEqual(setting.value, "spreadsheet-test-id")
+
+    @patch("app.api.routes.admin_google_sheets.test_workflow_sheet_connection")
+    async def test_google_sheets_test_endpoint_uses_current_configuration(self, mock_test):
+        mock_test.return_value = {
+            "success": True,
+            "message": "Połączenie z arkuszem Google dla FLOW zakończone sukcesem.",
+            "service_account_email": "bot@example.com",
+            "spreadsheet_title": "zerowki_testowy",
+            "worksheet_found": True,
+            "worksheet_title": "Urzadzenia_magazyn",
+            "missing_headers": [],
+        }
+        token, _ = await self._login()
+        await self.client.put(
+            "/admin/config/google-sheets",
+            json={
+                "enabled": True,
+                "credentials_path": "/srv/google/current.json",
+                "spreadsheet_id": "spreadsheet-current",
+                "workflow_devices_worksheet": "Urzadzenia_magazyn",
+            },
+            headers={"X-Admin-Session": token},
+        )
+
+        response = await self.client.post(
+            "/admin/google-sheets/test",
+            json={
+                "credentials_path": "/srv/google/override.json",
+                "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-override/edit",
+                "workflow_devices_worksheet": "Urzadzenia_magazyn",
+            },
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["spreadsheet_title"], "zerowki_testowy")
+        mock_test.assert_called_once()
+        config = mock_test.call_args.args[0]
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.credentials_path, "/srv/google/override.json")
+        self.assertEqual(config.spreadsheet_id, "spreadsheet-override")
+        self.assertEqual(config.workflow_devices_worksheet, "Urzadzenia_magazyn")
+
+    @patch("app.api.routes.admin_google_sheets.bootstrap_workflow_sheet_headers")
+    async def test_google_sheets_bootstrap_headers_endpoint_uses_current_configuration(
+        self,
+        mock_bootstrap,
+    ):
+        mock_bootstrap.return_value = {
+            "success": True,
+            "message": "Przygotowano nagłówki FLOW. Dodano: SERIAL.",
+            "service_account_email": "bot@example.com",
+            "spreadsheet_title": "zerowki_testowy",
+            "worksheet_title": "Urzadzenia_magazyn",
+            "added_headers": ["SERIAL"],
+            "existing_headers": ["PRODUCENT", "MODEL"],
+        }
+        token, _ = await self._login()
+        await self.client.put(
+            "/admin/config/google-sheets",
+            json={
+                "enabled": True,
+                "credentials_path": "/srv/google/current.json",
+                "spreadsheet_id": "spreadsheet-current",
+                "workflow_devices_worksheet": "Urzadzenia_magazyn",
+            },
+            headers={"X-Admin-Session": token},
+        )
+
+        response = await self.client.post(
+            "/admin/google-sheets/bootstrap-headers",
+            json={
+                "credentials_path": "/srv/google/override.json",
+                "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-bootstrap/edit",
+                "workflow_devices_worksheet": "Urzadzenia_magazyn",
+            },
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["added_headers"], ["SERIAL"])
+        self.assertEqual(body["existing_headers"], ["PRODUCENT", "MODEL"])
+        mock_bootstrap.assert_called_once()
+        config = mock_bootstrap.call_args.args[0]
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.credentials_path, "/srv/google/override.json")
+        self.assertEqual(config.spreadsheet_id, "spreadsheet-bootstrap")
+        self.assertEqual(config.workflow_devices_worksheet, "Urzadzenia_magazyn")
 
     async def test_update_kp_repair_source_config_persists_values(self):
         token, _ = await self._login()
@@ -2490,6 +2722,69 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "Operator: klient Firma Publiczna Sp. z o.o. wypelnil formularz.",
             )
 
+    async def test_public_form_validation_errors_are_localized_in_polish(self):
+        token, _ = await self._login_operator()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Walidacja Formularza",
+                "customer_email": "walidacja@example.com",
+                "customer_phone": "+48600123456",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_url = create_response.json()["form_url"]
+        link_token = form_url.rsplit("/formularz/", maxsplit=1)[-1]
+
+        submit_response = await self.client.post(
+            f"/formularz/{link_token}",
+            data={
+                "company_name": "A",
+                "company_nip": "5250000000",
+                "company_phone": "+48600111222",
+                "company_email": "firma@example.com",
+                "billing_email": "faktury@example.com",
+                "registered_street": "Testowa",
+                "registered_building_no": "1",
+                "registered_apartment_no": "",
+                "registered_postal_code": "00-001",
+                "registered_city": "Poznan",
+                "correspondence_same_as_registered": "true",
+                "correspondence_street": "Testowa",
+                "correspondence_building_no": "1",
+                "correspondence_apartment_no": "",
+                "correspondence_postal_code": "00-001",
+                "correspondence_city": "Poznan",
+                "representatives_json": json.dumps(
+                    [
+                        {
+                            "first_name": "A",
+                            "last_name": "Nowak",
+                            "representative_email": "anna.nowak@example.com",
+                            "representative_phone": "+48600111222",
+                            "pesel": "02270803624",
+                            "birth_date": "08:07:2002",
+                            "document_type": "Dowód osobisty",
+                            "document_number": "ABC123456",
+                            "document_issue_date": "02:05:2019",
+                            "document_expiry_date": "01:05:2029",
+                        }
+                    ]
+                ),
+                "consent": "true",
+                "website": "",
+            },
+        )
+
+        self.assertEqual(submit_response.status_code, 422)
+        self.assertIn("Pole „Nazwa firmy” musi mieć co najmniej 2 znaki.", submit_response.text)
+        self.assertIn(
+            "Reprezentant 1: pole „Imię” musi mieć co najmniej 2 znaki.",
+            submit_response.text,
+        )
+        self.assertNotIn("String should have at least 2 characters", submit_response.text)
+
     async def test_public_form_submission_links_existing_firebird_client_by_nip(self):
         token, _ = await self._login()
         create_response = await self.client.post(
@@ -2704,7 +2999,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "app.api.routes.admin_contracts.load_devices_from_sheet",
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
                 return_value=[],
             ),
             patch(
@@ -2741,8 +3036,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "app.api.routes.admin_contracts.load_devices_from_sheet",
-                side_effect=AssertionError("load_devices_from_sheet nie powinno byc wywolane"),
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                side_effect=AssertionError(
+                    "load_available_devices_from_firebird_warehouse nie powinno byc wywolane"
+                ),
             ),
             patch(
                 "app.api.routes.admin_contracts.find_client_in_firebird",
@@ -3551,41 +3848,68 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.api.routes.admin_contracts.load_devices_from_sheet",
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
                 return_value=[
                     {
                         "row": "14",
                         "producer": "Ricoh",
                         "model": "IM 350",
-                        "serial": "SN-14",
+                        "serial": "",
                         "ewidencja": "KP/14",
-                        "status": "01. Przed zerowka",
-                        "price": "1900",
-                        "reservation": "01.Magazyn KP",
+                        "index": "KP/14",
+                        "name": "Ricoh IM 350",
+                        "status": "Dostepne",
+                        "price": "1900.00",
+                        "price_net": "1544.72",
+                        "price_gross": "1900.00",
+                        "vat_rate": "23",
+                        "reservation": "",
                         "reservation_status": "brak rezerwacji",
-                        "description": "",
-                        "ms_id_maszyna": "7621",
-                        "ms_id_klient": "656",
-                        "ms_nazwa_klienta": "MAGAZYN",
-                        "ms_nip": "7780119742",
+                        "description": "Ricoh IM 350",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
                     },
                     {
                         "row": "15",
                         "producer": "Ricoh",
                         "model": "IMC 3000",
-                        "serial": "SN-15",
+                        "serial": "",
                         "ewidencja": "KP/15",
-                        "status": "02. Po zerowce",
-                        "price": "2500",
-                        "reservation": "01.Magazyn KP",
+                        "index": "KP/15",
+                        "name": "Ricoh IMC 3000",
+                        "status": "Dostepne",
+                        "price": "2500.00",
+                        "price_net": "2032.52",
+                        "price_gross": "2500.00",
+                        "vat_rate": "23",
+                        "reservation": "",
                         "reservation_status": "brak rezerwacji",
-                        "description": "",
-                        "ms_id_maszyna": "",
-                        "ms_id_klient": "",
-                        "ms_nazwa_klienta": "",
-                        "ms_nip": "",
+                        "description": "Ricoh IMC 3000",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
                     },
                 ],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_status_cache_lookup",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "last_sync_at": "2026-04-20T12:00:00+00:00",
+                    "last_error": None,
+                    "stale": False,
+                    "row_count": 0,
+                    "refresh_interval_seconds": 900,
+                    "by_source_key": {},
+                    "by_index": {},
+                },
             ),
         ):
             response = await self.client.get(
@@ -3601,10 +3925,432 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         selected = [item for item in body["available_devices"] if item["selected"]]
         self.assertEqual(len(selected), 1)
         self.assertEqual(selected[0]["row"], 14)
+        self.assertEqual(selected[0]["source_type"], "google_sheet")
+        self.assertEqual(selected[0]["source_key"], "google_sheet:14")
         self.assertEqual(selected[0]["price_net"], "1544.72")
         self.assertEqual(selected[0]["price_gross"], "1900.00")
+        warehouse_row = next(
+            item
+            for item in body["available_devices"]
+            if item["row"] == 14 and item["source_type"] == "firebird_magazyn_28"
+        )
+        self.assertFalse(warehouse_row["selected"])
         self.assertTrue(any(item["label"] == "NIP" for item in body["client_preview"]))
         self.assertEqual(body["sales_packet"]["devices"][0]["price_gross"], "1900.00")
+
+    async def test_contracts_form_workflow_detail_marks_device_reserved_by_other_form(self):
+        token, _ = await self._login_operator()
+        current_form = await self._create_submitted_form_request(
+            payload={
+                "company_name": "FLOW CURRENT",
+                "company_nip": "6112000001",
+                "company_phone": "+48600111111",
+                "company_email": "current@test.local",
+                "billing_email": "current-billing@test.local",
+                "registered_street": "Biezaca",
+                "registered_building_no": "1",
+                "registered_apartment_no": "",
+                "registered_postal_code": "60-100",
+                "registered_city": "Poznan",
+                "correspondence_same_as_registered": True,
+                "representatives": [],
+                "consent": True,
+            }
+        )
+        reserved_form = await self._create_submitted_form_request(
+            payload={
+                "company_name": "FLOW RESERVED",
+                "company_nip": "6112000002",
+                "company_phone": "+48600222222",
+                "company_email": "reserved@test.local",
+                "billing_email": "reserved-billing@test.local",
+                "registered_street": "Rezerwacyjna",
+                "registered_building_no": "2",
+                "registered_apartment_no": "",
+                "registered_postal_code": "60-101",
+                "registered_city": "Poznan",
+                "correspondence_same_as_registered": True,
+                "representatives": [],
+                "consent": True,
+            }
+        )
+
+        async with self.session_factory() as session:
+            reserved_case = FormWorkflowCase(
+                form_request_id=reserved_form.id,
+                created_by=2,
+                updated_by=2,
+                stage="DEVICES_SELECTED",
+                business_status="DRAFT",
+            )
+            session.add(reserved_case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=reserved_case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=15,
+                    producer="Ricoh",
+                    model="IMC 3000",
+                    ewidencja="KP/15",
+                    price_net="2032.52",
+                    price_gross="2500.00",
+                    snapshot={
+                        "source_type": "firebird_magazyn_28",
+                        "row": 15,
+                        "sheet_assignee": "Leszek Sprzedaz",
+                        "sheet_sync_status": "synced",
+                    },
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.find_client_in_firebird",
+                return_value=FirebirdClientMatch(found=False),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[
+                    {
+                        "row": "15",
+                        "producer": "Ricoh",
+                        "model": "IMC 3000",
+                        "serial": "",
+                        "ewidencja": "KP/15",
+                        "index": "KP/15",
+                        "name": "Ricoh IMC 3000",
+                        "status": "Dostepne",
+                        "price": "2500.00",
+                        "price_net": "2032.52",
+                        "price_gross": "2500.00",
+                        "vat_rate": "23",
+                        "reservation": "",
+                        "reservation_status": "brak rezerwacji",
+                        "description": "Ricoh IMC 3000",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
+                    }
+                ],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_status_cache_lookup",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "last_sync_at": "2026-04-20T12:00:00+00:00",
+                    "last_error": None,
+                    "stale": False,
+                    "row_count": 1,
+                    "refresh_interval_seconds": 900,
+                    "by_source_key": {
+                        "firebird_magazyn_28:15": {
+                            "sheet_row": "5",
+                            "status": "02. Po zerówce",
+                            "reservation_grenke": "Leszek Sprzedaz",
+                            "form_ctip": str(reserved_form.id),
+                            "ctip_form_id": str(reserved_form.id),
+                            "ctip_workflow_case_id": "1",
+                            "business_status_legacy": "Robocza",
+                            "ms_id_magazyn_table": "15",
+                            "index": "KP/15",
+                        }
+                    },
+                    "by_index": {},
+                },
+            ),
+        ):
+            response = await self.client.get(
+                f"/admin/contracts/forms/{current_form.id}/workflow",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        row = body["available_devices"][0]
+        self.assertEqual(row["device_label"], "Ricoh IMC 3000")
+        self.assertEqual(row["status"], "02. Po zerówce")
+        self.assertEqual(row["reservation_status"], "Zarezerwowana przez LS")
+        self.assertEqual(row["reservation_form_id"], reserved_form.id)
+        self.assertEqual(row["reservation_initials"], "LS")
+        self.assertTrue(row["locked_by_other"])
+
+    async def test_contracts_form_workflow_detail_reads_status_from_local_sheet_cache(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request(
+            payload={
+                "company_name": "FLOW CACHE",
+                "company_nip": "6112000010",
+                "company_phone": "+48600999999",
+                "company_email": "cache@test.local",
+                "billing_email": "cache-billing@test.local",
+                "registered_street": "Cache",
+                "registered_building_no": "10",
+                "registered_apartment_no": "",
+                "registered_postal_code": "60-110",
+                "registered_city": "Poznan",
+                "correspondence_same_as_registered": True,
+                "representatives": [],
+                "consent": True,
+            }
+        )
+        sync_time = datetime.now(UTC)
+        async with self.session_factory() as session:
+            session.add(
+                WorkflowSheetStatusCache(
+                    source_key="firebird_magazyn_28:33",
+                    source_type="firebird_magazyn_28",
+                    source_row=33,
+                    device_index="KP/33",
+                    device_index_normalized="KP33",
+                    sheet_row=8,
+                    sheet_status="02. Po zerowce",
+                    reservation_grenke="Anna Nowak",
+                    form_ctip="77",
+                    ctip_form_id=77,
+                    ctip_workflow_case_id=12,
+                    business_status_legacy="Robocza",
+                    synced_at=sync_time,
+                )
+            )
+            await settings_store.set_namespace(
+                session,
+                "workflow_sheet_status_cache",
+                {
+                    "last_sync_at": StoredValue(
+                        value=sync_time.isoformat(),
+                        is_secret=False,
+                    ),
+                    "worksheet_title": StoredValue(
+                        value="Urzadzenia_magazyn",
+                        is_secret=False,
+                    ),
+                    "row_count": StoredValue(value="1", is_secret=False),
+                    "last_error": StoredValue(value="", is_secret=False),
+                },
+                user_id=1,
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.find_client_in_firebird",
+                return_value=FirebirdClientMatch(found=False),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[
+                    {
+                        "row": "33",
+                        "producer": "Ricoh",
+                        "model": "IM 350",
+                        "serial": "",
+                        "ewidencja": "KP/33",
+                        "index": "KP/33",
+                        "name": "Ricoh IM 350",
+                        "status": "01. Przed zerowka",
+                        "price": "2500.00",
+                        "price_net": "2032.52",
+                        "price_gross": "2500.00",
+                        "vat_rate": "23",
+                        "reservation": "",
+                        "reservation_status": "brak rezerwacji",
+                        "description": "Ricoh IM 350",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
+                    }
+                ],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_runtime_config",
+                AsyncMock(
+                    return_value=WorkflowSheetRuntimeConfig(
+                        enabled=True,
+                        credentials_path="/tmp/google.json",
+                        spreadsheet_id="sheet-test",
+                        workflow_devices_worksheet="Urzadzenia_magazyn",
+                        source="admin",
+                    )
+                ),
+            ),
+            patch(
+                "app.services.workflow_sheet_status_cache.workflow_sheet_sync_configured",
+                return_value=(True, None),
+            ),
+        ):
+            response = await self.client.get(
+                f"/admin/contracts/forms/{form.id}/workflow",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        row = body["available_devices"][0]
+        self.assertEqual(row["status"], "02. Po zerowce")
+        self.assertEqual(body["sheet_status_cache"]["row_count"], 1)
+        self.assertEqual(body["sheet_status_cache"]["last_sync_at"], sync_time.isoformat())
+        self.assertFalse(body["sheet_status_cache"]["stale"])
+
+    async def test_contracts_workflow_sheet_status_refresh_endpoint_updates_local_cache(self):
+        token, _ = await self._login_operator()
+
+        with (
+            patch(
+                "app.services.workflow_sheet_status_cache.ensure_workflow_sheet_status_cache_table",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.workflow_sheet_status_cache.load_workflow_sheet_runtime_config",
+                AsyncMock(
+                    return_value=WorkflowSheetRuntimeConfig(
+                        enabled=True,
+                        credentials_path="/tmp/google.json",
+                        spreadsheet_id="sheet-test",
+                        workflow_devices_worksheet="Urzadzenia_magazyn",
+                        source="admin",
+                    )
+                ),
+            ),
+            patch(
+                "app.services.workflow_sheet_status_cache.workflow_sheet_sync_configured",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.workflow_sheet_status_cache.load_workflow_sheet_devices_lookup",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "by_source_key": {
+                        "firebird_magazyn_28:44": {
+                            "sheet_row": "11",
+                            "status": "01. Przed zerowka",
+                            "reservation_grenke": "",
+                            "form_ctip": "",
+                            "ctip_form_id": "",
+                            "ctip_workflow_case_id": "",
+                            "business_status_legacy": "",
+                            "ms_id_magazyn_table": "44",
+                            "index": "KP/44",
+                        }
+                    },
+                    "by_index": {},
+                },
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/contracts/workflow/sheet-status-refresh",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["refreshed_count"], 1)
+
+        async with self.session_factory() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(WorkflowSheetStatusCache).order_by(WorkflowSheetStatusCache.id.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].source_key, "firebird_magazyn_28:44")
+            self.assertEqual(rows[0].sheet_status, "01. Przed zerowka")
+            stored = await settings_store.get_namespace(session, "workflow_sheet_status_cache")
+            self.assertEqual(stored.get("worksheet_title"), "Urzadzenia_magazyn")
+            self.assertEqual(stored.get("row_count"), "1")
+            self.assertTrue(stored.get("last_sync_at"))
+
+    async def test_contracts_form_workflow_devices_rejects_rows_reserved_by_other_form(self):
+        token, _ = await self._login_operator()
+        reserved_form = await self._create_submitted_form_request()
+        target_form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            reserved_case = FormWorkflowCase(
+                form_request_id=reserved_form.id,
+                created_by=2,
+                updated_by=2,
+                stage="DEVICES_SELECTED",
+                business_status="DRAFT",
+            )
+            session.add(reserved_case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=reserved_case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=21,
+                    producer="Ricoh",
+                    model="IM 350",
+                    ewidencja="KP/21",
+                    snapshot={
+                        "source_type": "firebird_magazyn_28",
+                        "row": 21,
+                        "sheet_assignee": "Leszek Sprzedaz",
+                        "sheet_sync_status": "synced",
+                    },
+                )
+            )
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+            return_value=[
+                {
+                    "row": "21",
+                    "producer": "Ricoh",
+                    "model": "IM 350",
+                    "serial": "",
+                    "ewidencja": "KP/21",
+                    "index": "KP/21",
+                    "name": "Ricoh IM 350",
+                    "status": "Dostepne",
+                    "price": "1900.00",
+                    "price_net": "1544.72",
+                    "price_gross": "1900.00",
+                    "vat_rate": "23",
+                    "reservation": "",
+                    "reservation_status": "brak rezerwacji",
+                    "description": "Ricoh IM 350",
+                    "available_quantity": "1",
+                    "reserved_quantity": "0",
+                    "warehouse_quantity": "1",
+                    "serial_required": "TAK",
+                    "source_type": "firebird_magazyn_28",
+                }
+            ],
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{target_form.id}/workflow/devices",
+                headers={"X-Admin-Session": token},
+                json={
+                    "devices": [
+                        {
+                            "row": 21,
+                            "source_type": "firebird_magazyn_28",
+                            "price_net": "1544.72",
+                            "price_gross": "1900.00",
+                        }
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn(f"formularz {reserved_form.id}", response.json()["detail"])
 
     async def test_contracts_form_workflow_client_creates_case_and_client(self):
         token, _ = await self._login_operator()
@@ -3685,59 +4431,134 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()
 
-        with patch(
-            "app.api.routes.admin_contracts.load_devices_from_sheet",
-            return_value=[
-                {
-                    "row": "21",
-                    "producer": "Ricoh",
-                    "model": "IM 350",
-                    "serial": "SN-21",
-                    "ewidencja": "KP/21",
-                    "status": "01. Przed zerowka",
-                    "price": "1900",
-                    "reservation": "01.Magazyn KP",
-                    "reservation_status": "brak rezerwacji",
-                    "description": "",
-                    "ms_id_maszyna": "7621",
-                    "ms_id_klient": "656",
-                    "ms_nazwa_klienta": "MAGAZYN",
-                    "ms_nip": "7780119742",
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[
+                    {
+                        "row": "21",
+                        "producer": "Ricoh",
+                        "model": "IM 350",
+                        "serial": "",
+                        "ewidencja": "KP/21",
+                        "index": "KP/21",
+                        "name": "Ricoh IM 350",
+                        "status": "Dostepne",
+                        "price": "1900.00",
+                        "price_net": "1544.72",
+                        "price_gross": "1900.00",
+                        "vat_rate": "23",
+                        "reservation": "",
+                        "reservation_status": "brak rezerwacji",
+                        "description": "Ricoh IM 350",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
+                    },
+                    {
+                        "row": "22",
+                        "producer": "Ricoh",
+                        "model": "IMC 3000",
+                        "serial": "",
+                        "ewidencja": "KP/22",
+                        "index": "KP/22",
+                        "name": "Ricoh IMC 3000",
+                        "status": "Dostepne",
+                        "price": "2500.00",
+                        "price_net": "2032.52",
+                        "price_gross": "2500.00",
+                        "vat_rate": "23",
+                        "reservation": "",
+                        "reservation_status": "brak rezerwacji",
+                        "description": "Ricoh IMC 3000",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
+                    },
+                ],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.resolve_workflow_sheet_assignee",
+                new=AsyncMock(
+                    return_value={"id": 17, "login_user": "ls", "label": "Leszek Sprzedaz"}
+                ),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_runtime_config",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "synced_count": 2,
+                    "rows": [
+                        {"source_row": 21, "sheet_row": 11, "action": "updated"},
+                        {"source_row": 22, "sheet_row": 12, "action": "updated"},
+                    ],
+                    "added_headers": [],
                 },
-                {
-                    "row": "22",
-                    "producer": "Ricoh",
-                    "model": "IMC 3000",
-                    "serial": "SN-22",
-                    "ewidencja": "KP/22",
-                    "status": "02. Po zerowce",
-                    "price": "2500",
-                    "reservation": "01.Magazyn KP",
-                    "reservation_status": "brak rezerwacji",
-                    "description": "",
-                    "ms_id_maszyna": "",
-                    "ms_id_klient": "",
-                    "ms_nazwa_klienta": "",
-                    "ms_nip": "",
+            ) as sync_mock,
+            patch(
+                "app.api.routes.admin_contracts.release_workflow_devices_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "released_count": 0,
+                    "rows": [],
+                    "added_headers": [],
                 },
-            ],
+            ) as release_mock,
         ):
             response = await self.client.post(
                 f"/admin/contracts/forms/{form.id}/workflow/devices",
                 headers={"X-Admin-Session": token},
                 json={
                     "devices": [
-                        {"row": 21, "price_net": "1544.72", "price_gross": "1900.00"},
-                        {"row": 22, "price_net": "2032.52", "price_gross": "2500.00"},
-                    ]
+                        {
+                            "row": 21,
+                            "source_type": "firebird_magazyn_28",
+                            "price_net": "1544.72",
+                            "price_gross": "1900.00",
+                        },
+                        {
+                            "row": 22,
+                            "source_type": "firebird_magazyn_28",
+                            "price_net": "2032.52",
+                            "price_gross": "2500.00",
+                        },
+                    ],
+                    "sheet_assignee_id": 17,
                 },
             )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body["ok"])
+        self.assertIn(
+            "Arkusz zsynchronizowany (2 urzadzen, rezerwacja: Leszek Sprzedaz).", body["message"]
+        )
         self.assertEqual(body["selected_rows"], [21, 22])
+        self.assertEqual(
+            [item["source_key"] for item in body["selected_devices"]],
+            ["firebird_magazyn_28:21", "firebird_magazyn_28:22"],
+        )
         self.assertEqual(body["workflow"]["devices_selected_count"], 2)
+        self.assertEqual(body["sheet_assignee_id"], 17)
+        self.assertEqual(body["sheet_assignee_label"], "Leszek Sprzedaz")
+        release_mock.assert_not_called()
+        sync_mock.assert_called_once()
+        _, sync_kwargs = sync_mock.call_args
+        self.assertEqual(sync_kwargs["assignee_label"], "Leszek Sprzedaz")
+        self.assertEqual(sync_kwargs["proforma_number"], "")
+        self.assertEqual(sync_kwargs["form_request_id"], form.id)
 
         async with self.session_factory() as session:
             workflow_case = (
@@ -3763,10 +4584,126 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(devices), 2)
             self.assertEqual(sorted(device.source_row for device in devices), [21, 22])
             devices_by_row = {device.source_row: device for device in devices}
+            self.assertEqual(devices_by_row[21].source_type, "firebird_magazyn_28")
             self.assertEqual(devices_by_row[21].price_net, "1544.72")
             self.assertEqual(devices_by_row[21].price_gross, "1900.00")
             self.assertEqual(devices_by_row[22].price_net, "2032.52")
             self.assertEqual(devices_by_row[22].price_gross, "2500.00")
+            self.assertEqual(devices_by_row[21].snapshot["sheet_sync_status"], "synced")
+            self.assertEqual(devices_by_row[21].snapshot["sheet_row"], 11)
+            self.assertEqual(devices_by_row[21].snapshot["sheet_assignee"], "Leszek Sprzedaz")
+            self.assertEqual(devices_by_row[22].snapshot["sheet_row"], 12)
+
+        self.assertEqual(sync_kwargs["workflow_case_id"], workflow_case.id)
+        self.assertEqual(sync_kwargs["business_status_label"], "Robocza")
+
+    async def test_contracts_form_workflow_devices_releases_removed_rows_from_sheet(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            workflow_case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="DEVICES_SELECTED",
+                business_status="DRAFT",
+            )
+            session.add(workflow_case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=workflow_case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=21,
+                    producer="Ricoh",
+                    model="IM 350",
+                    ewidencja="KP/21",
+                    price_net="1544.72",
+                    price_gross="1900.00",
+                    snapshot={
+                        "row": 21,
+                        "source_type": "firebird_magazyn_28",
+                        "producer": "Ricoh",
+                        "model": "IM 350",
+                        "ewidencja": "KP/21",
+                        "sheet_row": 11,
+                        "sheet_sync_status": "synced",
+                    },
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_runtime_config",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.release_workflow_devices_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "released_count": 1,
+                    "rows": [{"source_row": 21, "sheet_row": 11, "action": "released"}],
+                    "added_headers": [],
+                },
+            ) as release_mock,
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "synced_count": 0,
+                    "rows": [],
+                    "added_headers": [],
+                },
+            ) as sync_mock,
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/devices",
+                headers={"X-Admin-Session": token},
+                json={"devices": []},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("Zwolniono rezerwacje arkusza dla 1 urzadzen.", body["message"])
+        release_mock.assert_called_once()
+        released_payload = release_mock.call_args.kwargs["devices"]
+        self.assertEqual(len(released_payload), 1)
+        self.assertEqual(released_payload[0]["source_row"], 21)
+        sync_mock.assert_not_called()
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form.id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            devices = (
+                (
+                    await session.execute(
+                        select(FormWorkflowDevice).where(
+                            FormWorkflowDevice.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(devices, [])
 
     async def test_contracts_form_workflow_status_updates_business_status(self):
         token, _ = await self._login_operator()
@@ -3956,16 +4893,29 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             await session.commit()
 
-        with patch(
-            "app.api.routes.admin_contracts.create_proforma_from_workflow",
-            return_value=FirebirdProformaWriteResult(
-                id_faktura_table=70001,
-                document_number="4/proforma/2026",
-                preview_url="/flow/proforma/70001/pdf",
-                line_count=1,
-                pdf_path="inbox/faktura/generated/proforma_70001.pdf",
+        with (
+            patch(
+                "app.api.routes.admin_contracts.create_proforma_from_workflow",
+                return_value=FirebirdProformaWriteResult(
+                    id_faktura_table=70001,
+                    document_number="4/proforma/2026",
+                    preview_url="/flow/proforma/70001/pdf",
+                    line_count=1,
+                    pdf_path="inbox/faktura/generated/proforma_70001.pdf",
+                ),
+            ) as create_proforma_mock,
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "synced_count": 1,
+                    "rows": [{"source_row": 23, "sheet_row": 7, "action": "updated"}],
+                    "added_headers": [],
+                },
             ),
-        ) as create_proforma_mock:
+        ):
             response = await self.client.post(
                 f"/admin/contracts/forms/{form.id}/workflow/proforma",
                 headers={"X-Admin-Session": token},
@@ -4002,6 +4952,64 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "inbox/faktura/generated/proforma_70001.pdf",
             )
             self.assertEqual(workflow_case.business_status, "PENDING_APPROVAL")
+
+    async def test_contracts_form_workflow_proforma_returns_400_when_device_has_no_price(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="DEVICES_SELECTED",
+                business_status="DRAFT",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                firebird_client_status="created",
+                client_payload_snapshot={"company_name": "FLOW TEST"},
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=18078,
+                    producer="Ricoh",
+                    model="IMC 5500",
+                    serial="3139M330149",
+                    ewidencja="KP/5060",
+                    reservation_status="brak rezerwacji",
+                    price="0.00",
+                    price_net="0.00",
+                    price_gross="0.00",
+                    snapshot={
+                        "row": 18078,
+                        "source_row": 18078,
+                        "source_type": "firebird_magazyn_28",
+                        "producer": "Ricoh",
+                        "model": "IMC 5500",
+                        "serial": "3139M330149",
+                        "ewidencja": "KP/5060",
+                        "index": "KP/5060",
+                        "price": "0.00",
+                        "price_net": "0.00",
+                        "price_gross": "0.00",
+                        "ms_id_magazyn_table": 18078,
+                    },
+                )
+            )
+            await session.commit()
+
+        response = await self.client.post(
+            f"/admin/contracts/forms/{form.id}/workflow/proforma",
+            headers={"X-Admin-Session": token},
+            json={"for_bank": False},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Brak ceny dla urzadzenia KP/5060.", response.json()["detail"])
 
     async def test_contracts_form_workflow_proforma_defaults_to_bank_client(self):
         token, _ = await self._login_operator()
@@ -4051,16 +5059,17 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             await session.commit()
 
-        with patch(
-            "app.api.routes.admin_contracts.find_client_in_firebird_by_id",
-            return_value=FirebirdClientMatch(
-                found=True,
-                id_klient=855,
-                nazwa="GRENKELEASING Sp. z o.o.",
-                nip="782-22-75-815",
+        with (
+            patch(
+                "app.api.routes.admin_contracts.find_client_in_firebird_by_id",
+                return_value=FirebirdClientMatch(
+                    found=True,
+                    id_klient=855,
+                    nazwa="GRENKELEASING Sp. z o.o.",
+                    nip="782-22-75-815",
+                ),
             ),
-        ):
-            with patch(
+            patch(
                 "app.api.routes.admin_contracts.create_proforma_from_workflow",
                 return_value=FirebirdProformaWriteResult(
                     id_faktura_table=70011,
@@ -4069,11 +5078,23 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     line_count=1,
                     pdf_path="inbox/faktura/generated/proforma_70011.pdf",
                 ),
-            ) as create_proforma_mock:
-                response = await self.client.post(
-                    f"/admin/contracts/forms/{form.id}/workflow/proforma",
-                    headers={"X-Admin-Session": token},
-                )
+            ) as create_proforma_mock,
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "synced_count": 1,
+                    "rows": [{"source_row": 23, "sheet_row": 7, "action": "updated"}],
+                    "added_headers": [],
+                },
+            ),
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/proforma",
+                headers={"X-Admin-Session": token},
+            )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -4082,6 +5103,269 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["recipient_client_id"], 855)
         self.assertIn("odbiorca: bank", body["message"])
         self.assertEqual(create_proforma_mock.call_args.kwargs["firebird_client_id"], 855)
+
+    async def test_contracts_form_workflow_sheet_sync_endpoint_updates_device_snapshot(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70001,
+                proforma_number="4/proforma/2026",
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=23,
+                    producer="Ricoh",
+                    model="IMC 3500",
+                    serial="",
+                    ewidencja="KP/5032",
+                    snapshot={"row": 23, "index": "KP/5032"},
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.resolve_workflow_sheet_assignee",
+                AsyncMock(
+                    return_value={
+                        "id": 208,
+                        "login_user": "Marcin",
+                        "label": "Marcin",
+                    }
+                ),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia magazyn",
+                    "synced_count": 1,
+                    "rows": [{"source_row": 23, "sheet_row": 77, "action": "updated"}],
+                    "added_headers": [],
+                },
+            ) as sync_mock,
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/sheet-sync",
+                headers={"X-Admin-Session": token},
+                json={"sheet_assignee_id": 208},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["sheet_sync"]["synced_count"], 1)
+        self.assertEqual(sync_mock.call_args.kwargs["assignee_label"], "Marcin")
+
+        async with self.session_factory() as session:
+            workflow_device = (
+                (
+                    await session.execute(
+                        select(FormWorkflowDevice).where(FormWorkflowDevice.source_row == 23)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            snapshot = workflow_device.snapshot or {}
+            self.assertEqual(snapshot.get("sheet_sync_status"), "synced")
+            self.assertEqual(snapshot.get("sheet_row"), 77)
+            self.assertEqual(snapshot.get("sheet_assignee_id"), 208)
+
+    async def test_contracts_form_workflow_sheet_release_endpoint_marks_release(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70001,
+                proforma_number="4/proforma/2026",
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=23,
+                    producer="Ricoh",
+                    model="IMC 3500",
+                    ewidencja="KP/5032",
+                    snapshot={
+                        "row": 23,
+                        "index": "KP/5032",
+                        "sheet_row": 77,
+                        "sheet_sync_status": "synced",
+                        "sheet_assignee_id": 208,
+                        "sheet_assignee": "Marcin",
+                    },
+                )
+            )
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_contracts.release_workflow_devices_from_sheet",
+            return_value={
+                "enabled": True,
+                "reason": None,
+                "worksheet_title": "Urzadzenia magazyn",
+                "released_count": 1,
+                "rows": [{"source_row": 23, "sheet_row": 77, "action": "released"}],
+                "added_headers": [],
+            },
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/sheet-release",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["sheet_release"]["released_count"], 1)
+
+        async with self.session_factory() as session:
+            workflow_device = (
+                (
+                    await session.execute(
+                        select(FormWorkflowDevice).where(FormWorkflowDevice.source_row == 23)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            snapshot = workflow_device.snapshot or {}
+            self.assertEqual(snapshot.get("sheet_sync_status"), "released")
+
+    async def test_contracts_form_workflow_status_rejected_triggers_sheet_release(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70001,
+                proforma_number="4/proforma/2026",
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=21,
+                    producer="Ricoh",
+                    model="IM 350",
+                    ewidencja="KP/21",
+                    snapshot={
+                        "row": 21,
+                        "index": "KP/21",
+                        "sheet_row": 91,
+                        "sheet_sync_status": "synced",
+                    },
+                )
+            )
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_contracts.release_workflow_devices_from_sheet",
+            return_value={
+                "enabled": True,
+                "reason": None,
+                "worksheet_title": "Urzadzenia magazyn",
+                "released_count": 1,
+                "rows": [{"source_row": 21, "sheet_row": 91, "action": "released"}],
+                "added_headers": [],
+            },
+        ) as release_mock:
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/status",
+                headers={"X-Admin-Session": token},
+                json={"business_status": "REJECTED"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["workflow"]["business_status"], "REJECTED")
+        self.assertEqual(body["sheet_release"]["released_count"], 1)
+        release_mock.assert_called_once()
+
+    async def test_delete_form_releases_sheet_reservation_when_workflow_exists(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70001,
+                proforma_number="4/proforma/2026",
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=23,
+                    producer="Ricoh",
+                    model="IMC 3500",
+                    ewidencja="KP/5032",
+                    snapshot={"row": 23, "index": "KP/5032", "sheet_row": 77},
+                )
+            )
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_forms.release_workflow_devices_from_sheet",
+            return_value={
+                "enabled": True,
+                "reason": None,
+                "worksheet_title": "Urzadzenia magazyn",
+                "released_count": 1,
+                "rows": [{"source_row": 23, "sheet_row": 77, "action": "released"}],
+            },
+        ) as release_mock:
+            response = await self.client.delete(
+                f"/admin/forms/{form.id}",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 204)
+        release_mock.assert_called_once()
 
     async def test_admin_users_duplicate_email_returns_400(self):
         token, _ = await self._login()

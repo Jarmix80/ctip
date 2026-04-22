@@ -9,6 +9,11 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.api.routes.admin_backup import start_backup_scheduler, stop_backup_scheduler
 from app.core.config import settings
+from app.services.workflow_sheet_status_cache import (
+    ensure_workflow_sheet_status_cache_table,
+    start_workflow_sheet_status_cache_scheduler,
+    stop_workflow_sheet_status_cache_scheduler,
+)
 from app.web.admin_ui import router as admin_ui_router
 from app.web.contracts_ui import router as contracts_ui_router
 from app.web.device_ui import router as device_ui_router
@@ -22,15 +27,22 @@ from app.web.root_ui import router as root_ui_router
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI):
     """Obsługuje zadania startowe i zamknięcie aplikacji."""
-    scheduler_started = False
+    backup_scheduler_started = False
+    workflow_sheet_status_scheduler_started = False
+    await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
-        scheduler_started = True
+        backup_scheduler_started = True
+    if settings.workflow_sheet_status_cache_scheduler_enabled:
+        await start_workflow_sheet_status_cache_scheduler()
+        workflow_sheet_status_scheduler_started = True
     try:
         yield
     finally:
-        if scheduler_started:
+        if backup_scheduler_started:
             await stop_backup_scheduler()
+        if workflow_sheet_status_scheduler_started:
+            await stop_workflow_sheet_status_cache_scheduler()
 
 
 def create_app() -> FastAPI:

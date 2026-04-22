@@ -56,9 +56,12 @@
 
 ### 3a. Baza Firebird (Menadżer Serwisu)
 - Formularz HTMX/Alpine z polami `Aktywna baza` (`sieciowa` / `lokalna`), `Host`, `Port`, `Ścieżka bazy sieciowej`, `Użytkownik`, `Hasło`, `Kodowanie`, `Rola`, `Ścieżka bazy lokalnej`.
+- Formularz posiada dodatkowy przelacznik `Odblokuj zapis do Firebird`, zapisujacy flage `admin_setting -> firebird.allow_writes`.
 - Odczyt i zapis konfiguracji: `GET/PUT /admin/config/firebird`.
 - Test logowania: `POST /admin/firebird/test` (wynik prezentowany w sekcji statusowej formularza i zapisywany w audycie); endpoint testuje ścieżkę lokalną lub sieciową zgodnie z wybranym trybem, a dla trybu lokalnego wymusza host `127.0.0.1`.
 - Konfiguracja jest przechowywana w `admin_setting` pod namespace `firebird` z szyfrowaniem hasła analogicznie do SMTP/SerwerSMS.
+- Runtime tej sekcji jest zrodlem prawdy dla automatu MS, workflow formularzy i akcji `/contracts`; `.env` pozostaje fallbackiem tylko wtedy, gdy wpis nie istnieje jeszcze w `admin_setting`.
+- W trybie `local` pole `Ścieżka bazy lokalnej` moze wskazywac zarowno sciezke wzgledna w repozytorium, jak i absolutna sciezke testowa hosta Windows, o ile plik `.FDB` istnieje.
 - Formularz posiada jawne atrybuty `data-save-endpoint` i `data-test-endpoint`, aby UI nie moglo pomylic tej sekcji z baza `v-maintenance`.
 
 ### 4. CTIP Live
@@ -120,6 +123,7 @@
 - Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Handlowiec`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
 - Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli, znacznika `Handlowiec` i przypisanych sekcji (`admin`, `operator`, `generator`).
 - Formularz dodawania i edycji zawiera listę rozwijaną `Użytkownik MS`, ładowaną z aktywnej bazy Firebird z trwałej konfiguracji użytkowników (`CONFIG.WYSTAWIA` + `CONFIG.EMAIL`), aby przypisać konto CTIP do operatora Menadżera Serwisu.
+- Modal edycji laduje pelny edytowalny formularz, a nie tylko widok szczegolow; zmiany sa zapisywane bez opuszczania listy uzytkownikow.
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
 - Znacznik `Handlowiec` jest atrybutem biznesowym niezależnym od roli i sekcji; służy do grupowania powiadomień formularzy po statusie `SUBMITTED`.
 - Akcja `Reset hasła` generuje nowe hasło tymczasowe, unieważnia aktywne sesje użytkownika i automatycznie wysyła powiadomienie e-mail + SMS z nowymi danymi logowania.
@@ -158,6 +162,8 @@
 - Ekran `/genform` podczas tworzenia linku umożliwia ustawienie daty ważności formularza; domyślnie ustawiane jest 7 dni od daty wygenerowania.
 - Po wysyłce (dopiero po końcowym `Potwierdź`) dane są zapisywane jako szyfrowany payload (Fernet, klucz `ADMIN_SECRET_KEY`) i status zmieniany na `SUBMITTED`.
 - Po zapisaniu statusu `SUBMITTED` backend automatycznie sprawdza bazę Menadżera Serwisu po NIP klienta; przy znalezionym rekordzie zapisuje powiązanie sprawy workflow, a przy braku rekordu może utworzyć klienta w Firebird i zapisuje czytelny wynik operacji w polu `ms_status`.
+- Zapis do Firebird jest sterowany aktywna konfiguracja runtime z `/admin -> Konfiguracja bazy -> Firebird`; jezeli przelacznik `Odblokuj zapis do Firebird` nie jest wlaczony, `ms_status` zachowuje komunikat o zablokowanym auto-dodaniu.
+- Synchronizacja rezerwacji FLOW do Google Sheets jest sterowana konfiguracja runtime z `/admin -> Konfiguracja bazy -> Google Sheets (FLOW)`; panel zapisuje namespace `google_sheets` (`enabled`, `credentials_path`, `spreadsheet_id`, `workflow_devices_worksheet`), akceptuje w polu `spreadsheet_id` surowe ID albo pelny URL Google Sheets, udostepnia test polaczenia przez `POST /admin/google-sheets/test` oraz przygotowanie brakujacych naglowkow FLOW przez `POST /admin/google-sheets/bootstrap-headers`; dla arkusza legacy bez prawdziwego naglowka bootstrap umie wstawic nowy pierwszy wiersz naglowkow, przesunac dane w dol i sformatowac naglowek (zamrozenie, filtr, kolory, szerokosci). Statusy urzadzen do modalu `/flow` nie sa juz pobierane na zywo przy kazdym otwarciu: backend utrzymuje lokalny cache w tabeli `ctip.workflow_sheet_status_cache`, odswiezany recznie przez `POST /admin/contracts/workflow/sheet-status-refresh` i automatycznie schedulerem w tle.
 - Po zapisie system wysyła e-mail potwierdzający do klienta oraz tworzy SMS do wszystkich aktywnych użytkowników oznaczonych jako `Handlowiec`.
 - Lista formularzy zawiera akcje `Wyświetl` i `Usuń`.
 - `Wyświetl` otwiera modal szczegółów z czytelnym układem danych firmy i reprezentantów (zgodnym z końcowym podsumowaniem formularza klienta), bez pustej przestrzeni w widoku wydruku/PDF, z przyciskiem kopiowania przy każdym polu oraz akcjami `Drukuj` i `PDF` opartymi o systemowe okno drukowania; wariant wydruku ma wewnętrzne marginesy i zwarty układ, a kolejne strony są dobierane naturalnie przez silnik drukowania.
@@ -182,7 +188,7 @@
 | Widok | Endpointy (obecne/planowane) |
 |-------|------------------------------|
 | Dashboard | `/admin/status/summary`, `/admin/status/database`, `/admin/auth/me` |
-| Konfiguracja | `/admin/partials/config/database`, `/admin/config/database`, `/admin/partials/config/firebird`, `/admin/config/firebird`, `/admin/firebird/test`, `/admin/partials/config/ctip`, `/admin/config/ctip`, `/admin/partials/config/sms`, `/admin/config/sms`, `/admin/status/database` |
+| Konfiguracja | `/admin/partials/config/database`, `/admin/config/database`, `/admin/partials/config/firebird`, `/admin/config/firebird`, `/admin/firebird/test`, `/admin/config/google-sheets`, `/admin/google-sheets/test`, `/admin/partials/config/ctip`, `/admin/config/ctip`, `/admin/partials/config/sms`, `/admin/config/sms`, `/admin/status/database` |
 | Kopie | `/admin/backup/history`, `/admin/backup/run`, `/admin/backup/restore` |
 | CTIP Live | `/admin/partials/ctip/live`, `/admin/partials/ctip/events`, `/admin/ctip/events`, `/admin/ctip/ws`, `/admin/config/ctip`, `POST /admin/ctip/restart` (plan) |
 | SerwerSMS | `/admin/partials/config_sms`, `/admin/config/sms`, `/admin/sms/test`, `/sms/account`, `/sms/history?status=SENT&limit=20` |

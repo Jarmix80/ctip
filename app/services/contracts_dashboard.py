@@ -1,4 +1,4 @@
-"""Logika dashboardu obslugi umow (formularze + Firebird + Google Sheets)."""
+"""Logika dashboardu obslugi umow (formularze + Firebird + legacy Google Sheets)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -813,6 +814,121 @@ def _sheet_headers_map(headers: list[str]) -> dict[str, int]:
     return mapped
 
 
+def _decimal_or_zero(value: Any) -> Decimal:
+    if value in (None, ""):
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _format_decimal_text(value: Any, *, precision: str = "0.01") -> str:
+    decimal_value = _decimal_or_zero(value).quantize(Decimal(precision))
+    return format(decimal_value, "f")
+
+
+def _format_quantity_text(value: Any) -> str:
+    decimal_value = _decimal_or_zero(value)
+    normalized = decimal_value.normalize()
+    return format(normalized, "f").rstrip("0").rstrip(".") or "0"
+
+
+def _extract_vat_rate_text(value: Any) -> str:
+    raw = str(value or "").strip().replace(",", ".")
+    match = re.search(r"(\d+(?:\.\d+)?)", raw)
+    if not match:
+        return "23"
+    return match.group(1).rstrip("0").rstrip(".") or "23"
+
+
+def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[dict[str, str]]:
+    """Pobiera dostepne pozycje magazynowe z Firebird jako zrodlo wyboru urzadzen dla FLOW."""
+    safe_limit = max(1, min(int(limit), 2000))
+    try:
+        connection = _firebird_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT FIRST {safe_limit}
+                    ID_MAGAZYN_TABLE,
+                    INDEKS,
+                    NAZWA,
+                    MARKA,
+                    MODEL,
+                    ILOSC,
+                    IL_REZ,
+                    CENA_NETTO,
+                    CENA_BRUTTO,
+                    VAT_STAWKA,
+                    SERIAL
+                FROM MAGAZYN
+                WHERE COALESCE(ID_MAGAZYN, 0) = ?
+                  AND COALESCE(ILOSC, 0) > 0
+                ORDER BY ID_MAGAZYN_TABLE DESC
+                """,
+                (settings.fb_warehouse_id,),
+            )
+
+            output: list[dict[str, str]] = []
+            for row in cursor.fetchall():
+                total_qty = _decimal_or_zero(row[5])
+                reserved_qty = _decimal_or_zero(row[6])
+                available_qty = total_qty - reserved_qty
+                if available_qty <= 0:
+                    continue
+
+                if reserved_qty > 0:
+                    reservation_status = (
+                        f"czesciowa rezerwacja ({_format_quantity_text(reserved_qty)} z "
+                        f"{_format_quantity_text(total_qty)})"
+                    )
+                    status = "Dostepne czesciowo"
+                else:
+                    reservation_status = "brak rezerwacji"
+                    status = "Dostepne"
+
+                index_value = _truncate_text(str(row[1] or ""), 100) or ""
+                name_value = _truncate_text(str(row[2] or ""), 250) or ""
+                model_value = _truncate_text(str(row[4] or ""), 50) or name_value
+                serial_required = _truncate_text(str(row[10] or ""), 10) or ""
+
+                output.append(
+                    {
+                        "row": str(int(row[0])) if row[0] is not None else "",
+                        "ms_id_magazyn_table": str(int(row[0])) if row[0] is not None else "",
+                        "producer": _truncate_text(str(row[3] or ""), 50) or "",
+                        "model": model_value,
+                        "serial": "",
+                        "ewidencja": index_value,
+                        "index": index_value,
+                        "name": name_value,
+                        "status": status,
+                        "price": _format_decimal_text(row[8]),
+                        "price_net": _format_decimal_text(row[7]),
+                        "price_gross": _format_decimal_text(row[8]),
+                        "vat_rate": _extract_vat_rate_text(row[9]),
+                        "reservation": "",
+                        "reservation_status": reservation_status,
+                        "description": name_value,
+                        "available_quantity": _format_quantity_text(available_qty),
+                        "reserved_quantity": _format_quantity_text(reserved_qty),
+                        "warehouse_quantity": _format_quantity_text(total_qty),
+                        "serial_required": serial_required,
+                        "source_type": "firebird_magazyn_28",
+                    }
+                )
+            return output
+        finally:
+            cursor.close()
+            connection.close()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Nie udalo sie pobrac listy urzadzen z Firebird: {exc}") from exc
+
+
 def load_devices_from_sheet() -> list[dict[str, str]]:
     """Pobiera urzadzenia z arkusza Urzadzenia."""
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
@@ -975,6 +1091,7 @@ __all__ = [
     "find_device_in_firebird",
     "firebird_writes_enabled",
     "load_contract_forms",
+    "load_available_devices_from_firebird_warehouse",
     "load_device_from_sheet_row",
     "load_devices_from_sheet",
     "load_firebird_runtime_config",

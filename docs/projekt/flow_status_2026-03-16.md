@@ -15,6 +15,7 @@ Ten plik utrwala stan modułu `/flow`, aby po restarcie sesji można było szybk
   - reczne ceny `netto` i `brutto` dla kazdego wybranego urzadzenia,
   - realne wystawienie proformy w lokalnej Firebird,
   - opcje wystawienia proformy `na bank` (domyslnie wlaczona) albo na klienta z formularza,
+  - lista wybranych urzadzen w sekcji `Proforma`, z mozliwoscia korekty cen do momentu wystawienia dokumentu i trybem tylko do odczytu po zapisaniu proformy,
   - link do podgladu A4 wygenerowanej proformy,
   - widoczny etap sprawy workflow,
   - reczny status biznesowy sprawy (`Robocza`, `Oczekuje na akceptacje`, `Zaakceptowano`, `Zerowka`, `Odrzucono`),
@@ -26,7 +27,8 @@ Ten plik utrwala stan modułu `/flow`, aby po restarcie sesji można było szybk
   - trzyma etap, status biznesowy, `firebird_client_id`, tryb klienta, dane proformy.
 - `ctip.form_workflow_device`
   - trzyma urządzenia wybrane do sprawy po stronie CTIP,
-  - obecnie źródło: arkusz Google `Urzadzenia`,
+  - obecnie źródło: Firebird `MAGAZYN` dla magazynu `28`,
+  - identyfikator pozycji magazynowej trafia do `source_row`,
   - przechowuje tez reczna wycene `price_net` i `price_gross`.
 
 ## Migracja
@@ -48,7 +50,7 @@ Ten plik utrwala stan modułu `/flow`, aby po restarcie sesji można było szybk
   - tworzy realna proforme w lokalnej Firebird,
   - przyjmuje opcjonalne body `{ "for_bank": true|false }` (domyslnie `true`),
   - przy `for_bank=true` dokument jest wystawiany na klienta bankowego `GRENKELEASING Sp. z o.o.` (priorytetowo `ID_KLIENT=855`),
-  - generuje fizyczny plik PDF w `inbox/faktura/generated/proforma_<ID>.pdf`,
+  - generuje fizyczny plik PDF w `inbox/faktura/generated/proforma_<ID>.pdf` w ukladzie wzorowanym na `inbox/FPROFORMA.pdf`,
   - zapisuje numer dokumentu i sciezke PDF w sprawie CTIP,
   - udostepnia plik przez `GET /flow/proforma/{id}/pdf`
 
@@ -72,15 +74,15 @@ Ten plik utrwala stan modułu `/flow`, aby po restarcie sesji można było szybk
   - nowy klient, brak w Menadżerze Serwisu
   - `3` reprezentantow
 
-## Otwarta decyzja architektoniczna
-Najważniejsza nierozstrzygnięta decyzja dotyczy źródła urządzeń dla workflow:
-- wariant 1: nadal arkusz Google,
-- wariant 2: przejście na Menadżer Serwisu magazyn `28`.
+## Aktualna decyzja architektoniczna
+Źródłem urządzeń dla workflow jest Menadżer Serwisu `MAGAZYN` dla magazynu `28`.
 
-Od tej decyzji zależy:
-- czy filtry `A4/A3` i `mono/kolor` mają sens już teraz,
-- czy wybór urządzenia będzie oparty o dane arkusza, czy o byt magazynowy Firebird,
-- jak później wystawić proformę bez ręcznego przepisywania danych.
+Wnioski z tej decyzji:
+- etap handlowca pracuje na bycie sprzedazowym `MAGAZYN`, a nie na tabeli `MASZYNA`,
+- obecny katalog wyboru obejmuje wpisy handlowe producent + model + serial zapisane jako osobne pozycje `MAGAZYN`,
+- pozycja magazynowa jest identyfikowana po `ID_MAGAZYN_TABLE`,
+- statusy i rezerwacje pomocnicze z arkusza Google sa cache'owane lokalnie w `ctip.workflow_sheet_status_cache`, zeby otwarcie modalu `/flow` nie zależało od czasu odpowiedzi Google Sheets,
+- wariant oparty stricte o `SERIAL` pozostaje nieaktywnym źródłem wyboru, ale warstwa workflow ma juz przygotowany identyfikator `source_type + source_row`, zeby drugi adapter nie kolidowal numeracyjnie z bieżącym torem `MAGAZYN`.
 
 ## Rzeczy jeszcze niegotowe
 - rozpoznawanie rozbieżności danych klienta przy zgodnym NIP,
@@ -91,11 +93,11 @@ Od tej decyzji zależy:
   - `/flow/proforma-wizualizacja`
 - Dodano też wariant bliższy oryginalnemu wydrukowi:
   - `/flow/proforma-wizualizacja1`
-- Strona jest oparta o realny dokument z `inbox/faktura`:
-  - numer `2/proforma/2026`
-  - klient `ZANOX SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ`
-  - pozycja `IMCTEST`
-  - numer seryjny `test12345`
+- Strona jest oparta o wzorzec `inbox/FPROFORMA.pdf`:
+  - numer `18/proforma/2026`
+  - klient bankowy `GRENKELEASING`
+  - pozycja `Ricoh MP 401`
+  - numer seryjny `T605H900327`
 
 To nie sa backendowe szablony PDF. To wzorce wizualne do dalszego spięcia z danymi z Firebird i workflow CTIP:
 - wariant bazowy: bardziej nowoczesny i czytelny,
@@ -108,9 +110,9 @@ To nie sa backendowe szablony PDF. To wzorce wizualne do dalszego spięcia z dan
 
 ## Zalozenie cenowe biezacej implementacji
 - Dla proformy tworzonej z `/flow` backend preferuje recznie zapisane ceny `price_gross` lub `price_net`.
-- Jezeli operator nie wpisze ceny recznej, fallbackiem pozostaje cena z arkusza Google `Urzadzenia`, nadal interpretowana jako brutto.
+- Jezeli operator nie wpisze ceny recznej, fallbackiem pozostaje cena pozycji `MAGAZYN` w Firebird.
 - Backend rozbija wartosc na `netto` i `VAT` wedlug `VAT_STAWKA` pozycji `MAGAZYN`.
-- Jezeli w arkuszu brakuje ceny, backend probuje uzyc `MAGAZYN.CENA_BRUTTO`.
+- Dla pozycji magazynowej preferowane sa zapisane ceny `MAGAZYN.CENA_NETTO` / `MAGAZYN.CENA_BRUTTO`.
 
 ## Najbliższy sensowny krok
 1. Rozbudowac workflow o rozpoznawanie rozbieznosci danych klienta przy zgodnym NIP.

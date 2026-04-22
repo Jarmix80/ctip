@@ -216,7 +216,7 @@ class FormWorkflowDevice(Base):
     __tablename__ = "form_workflow_device"
     __table_args__ = (
         CheckConstraint(
-            "source_type in ('google_sheet','firebird_magazyn_28')",
+            "source_type in ('google_sheet','firebird_magazyn_28','firebird_serial')",
             name="form_workflow_device_source_type_check",
         ),
         UniqueConstraint(
@@ -252,6 +252,34 @@ class FormWorkflowDevice(Base):
     workflow_case: Mapped[FormWorkflowCase] = relationship(back_populates="devices")
 
 
+class WorkflowSheetStatusCache(Base):
+    """Lokalny cache statusów urządzeń z arkusza Google dla modalu FLOW."""
+
+    __tablename__ = "workflow_sheet_status_cache"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type in ('google_sheet','firebird_magazyn_28','firebird_serial')",
+            name="workflow_sheet_status_cache_source_type_check",
+        ),
+        UniqueConstraint("source_key", name="uq_workflow_sheet_status_cache_source_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False, default="firebird_magazyn_28")
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    device_index: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_index_normalized: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sheet_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sheet_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reservation_grenke: Mapped[str | None] = mapped_column(Text, nullable=True)
+    form_ctip: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ctip_form_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ctip_workflow_case_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    business_status_legacy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 Index("idx_form_request_status_created", FormRequest.status, FormRequest.created_at.desc())
 Index("idx_form_request_created_by", FormRequest.created_by, FormRequest.created_at.desc())
 Index(
@@ -261,6 +289,10 @@ Index(
 Index(
     "idx_form_workflow_device_case",
     FormWorkflowDevice.workflow_case_id,
+)
+Index(
+    "idx_workflow_sheet_status_cache_index_norm",
+    WorkflowSheetStatusCache.device_index_normalized,
 )
 
 
@@ -272,4 +304,5 @@ __all__ = [
     "FormRequest",
     "FormWorkflowCase",
     "FormWorkflowDevice",
+    "WorkflowSheetStatusCache",
 ]

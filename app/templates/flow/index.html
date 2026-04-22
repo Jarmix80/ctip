@@ -62,8 +62,8 @@
           <section class="flow-sidebar-card">
             <h2>Aktualne zalozenie</h2>
             <p>
-              Formularze pochodza z generatora, a lista urzadzen jest tymczasowo ladowana z arkusza
-              Google. Zrodlo urzadzen mozna pozniej przelaczyc na Menadzer Serwisu magazyn `28`.
+              Formularze pochodza z generatora, a wybor urzadzen dla handlowca opiera sie teraz na
+              pozycjach magazynowych Firebird z magazynu `28`.
             </p>
           </section>
 
@@ -143,23 +143,23 @@
                 <p class="flow-panel-kicker">Sekcja 2</p>
                 <h2>Obsluga urzadzen</h2>
                 <p class="flow-panel-lead">
-                  Tymczasowo lista operacyjna z arkusza Google, z kontrola dopasowania do Menadzera Serwisu i
-                  akcjami synchronizacji.
+                  Podglad dostepnych pozycji magazynowych Firebird wykorzystywanych jako zrodlo
+                  wyboru urzadzen dla procesu handlowego.
                 </p>
               </div>
             </div>
 
             <section class="flow-stats flow-stats-devices">
               <article>
-                <span>Urzadzenia w zrodle</span>
+                <span>Pozycje magazynowe</span>
                 <strong id="flow-devices-total">0</strong>
               </article>
               <article>
-                <span>Potwierdzone w Menadzerze Serwisu</span>
+                <span>Bez rezerwacji</span>
                 <strong id="flow-devices-matched">0</strong>
               </article>
               <article>
-                <span>Do synchronizacji</span>
+                <span>Z rezerwacja</span>
                 <strong id="flow-devices-pending">0</strong>
               </article>
             </section>
@@ -168,22 +168,22 @@
               <div class="flow-card-head">
                 <h3>Urzadzenia robocze</h3>
                 <p class="flow-note">
-                  Zrodlo tymczasowe: arkusz Google. Docelowo ta sekcja moze przejsc na liste Menadzera Serwisu
-                  magazyn `28`.
+                  Zrodlo podstawowe: pozycje magazynowe Firebird z dodatnim stanem i obsluga
+                  numeru seryjnego.
                 </p>
               </div>
               <div class="flow-table-wrap">
                 <table class="flow-table">
                   <thead>
                     <tr>
-                      <th>Wiersz</th>
-                      <th>Serial</th>
-                      <th>Ewidencja</th>
+                      <th>ID pozycji</th>
+                      <th>Indeks</th>
                       <th>Model</th>
-                      <th>Status Menadzera Serwisu</th>
-                      <th>ID maszyny</th>
-                      <th>ID klienta</th>
-                      <th>Akcja</th>
+                      <th>Nazwa</th>
+                      <th>Dostepne</th>
+                      <th>Rezerwacja</th>
+                      <th>Cena brutto</th>
+                      <th>Uwagi</th>
                     </tr>
                   </thead>
                   <tbody id="flow-devices-body"></tbody>
@@ -356,6 +356,13 @@
                   >
                     Zapisz wybor urzadzen
                   </button>
+                  <button
+                    id="flow-workflow-sheet-status-refresh"
+                    type="button"
+                    class="flow-action-btn flow-action-btn-secondary"
+                  >
+                    Odswiez statusy z arkusza
+                  </button>
                 </div>
               </div>
 
@@ -365,7 +372,7 @@
                   <input
                     id="flow-workflow-device-search"
                     type="search"
-                    placeholder="Serial, nr wewnetrzny, model, producent"
+                    placeholder="Indeks, model, producent, nazwa"
                   >
                 </label>
                 <label class="flow-filter-field">
@@ -383,6 +390,7 @@
               </div>
 
               <p id="flow-workflow-device-note" class="flow-note"></p>
+              <p id="flow-workflow-device-cache-note" class="flow-note"></p>
               <p id="flow-workflow-selection-summary" class="flow-subtle">Brak wybranych urzadzen.</p>
               <p class="flow-note">
                 Handlowiec wpisuje cene recznie dla kazdego wybranego urzadzenia. Na tym etapie
@@ -394,11 +402,10 @@
                   <thead>
                     <tr>
                       <th>Wybierz</th>
-                      <th>Wiersz</th>
-                      <th>Producent</th>
-                      <th>Model</th>
-                      <th>Serial</th>
-                      <th>Nr wewnetrzny</th>
+                      <th>ID pozycji</th>
+                      <th>Urzadzenie</th>
+                      <th>Indeks</th>
+                      <th>Dostepne</th>
                       <th>Status</th>
                       <th>Rezerwacja</th>
                       <th>Cena netto</th>
@@ -420,11 +427,28 @@
                   </p>
                   <label class="flow-proforma-bank-toggle">
                     <input id="flow-workflow-proforma-bank" type="checkbox" checked>
-                    <span>Proforma na bank (domyslnie aktywna)</span>
+                    <span>Proforma na bank</span>
                   </label>
+                  <p class="flow-note">
+                    Przy pierwszym otwarciu opcja jest wlaczona; przed zapisem proformy system zawsze poprosi o potwierdzenie odbiorcy.
+                  </p>
                   <p class="flow-note">
                     Bank: GRENKELEASING Sp. z o.o., ul. Abpa A. Baraniaka 88, 61-131 Poznan,
                     NIP 782-22-75-815.
+                  </p>
+                  <div id="flow-workflow-proforma-devices" class="flow-proforma-devices">
+                    <p class="flow-note">Brak wybranych urzadzen do proformy.</p>
+                  </div>
+                  <div class="flow-filter-bar">
+                    <label class="flow-filter-field">
+                      <span>Uzytkownik MS</span>
+                      <select id="flow-workflow-sheet-assignee">
+                        <option value="">Brak powiazania</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p id="flow-workflow-sheet-note" class="flow-note">
+                    Synchronizacja arkusza urzadzen wykona sie po zapisaniu proformy.
                   </p>
                 </div>
                 <div class="flow-inline-actions flow-inline-actions-tight">
@@ -434,6 +458,20 @@
                     class="flow-action-btn"
                   >
                     Utworz proforme
+                  </button>
+                  <button
+                    id="flow-workflow-sheet-sync"
+                    type="button"
+                    class="flow-action-btn flow-action-btn-secondary"
+                  >
+                    Synchronizuj arkusz
+                  </button>
+                  <button
+                    id="flow-workflow-sheet-release"
+                    type="button"
+                    class="flow-action-btn flow-action-btn-secondary"
+                  >
+                    Zwolnij rezerwacje
                   </button>
                   <a
                     id="flow-workflow-proforma-preview"
@@ -557,10 +595,10 @@
                     <table class="flow-detail-table flow-sales-devices-table">
                       <thead>
                         <tr>
-                          <th>Wiersz</th>
+                          <th>ID pozycji</th>
                           <th>Model</th>
-                          <th>Serial</th>
-                          <th>Nr wewnetrzny</th>
+                          <th>Indeks</th>
+                          <th>Dostepne</th>
                           <th>Netto</th>
                           <th>Brutto</th>
                         </tr>

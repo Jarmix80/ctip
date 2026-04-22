@@ -90,3 +90,44 @@ def test_firebird_connection_fallbacks_when_fbclient_is_missing():
         )
     assert result.success is True
     assert result.engine_version == "2.5.9"
+
+
+def test_firebird_connection_reports_tcp_timeout():
+    with patch("socket.create_connection", side_effect=TimeoutError("timed out")):
+        result = firebird_client.test_firebird_connection(
+            host="192.168.0.8",
+            port=3050,
+            database="D:/BAZA_MS_KP/BAZAMS.FDB",
+            user="SYSDBA",
+            password="masterkey",
+            timeout=0.01,
+        )
+
+    assert result.success is False
+    assert "Błąd połączenia TCP z Firebird" in result.message
+    assert "timed out" in result.message
+
+
+def test_firebird_connection_reports_timeout_in_firebirdsql_fallback():
+    with (
+        patch("socket.create_connection", return_value=contextlib.nullcontext()),
+        patch(
+            "app.services.firebird_client._test_with_fdb",
+            side_effect=ModuleNotFoundError("No module named 'fdb'"),
+        ),
+        patch(
+            "app.services.firebird_client._test_with_firebirdsql",
+            side_effect=TimeoutError("timed out"),
+        ),
+    ):
+        result = firebird_client.test_firebird_connection(
+            host="192.168.0.8",
+            port=3050,
+            database="D:/BAZA_MS_KP/BAZAMS.FDB",
+            user="SYSDBA",
+            password="masterkey",
+        )
+
+    assert result.success is False
+    assert "fallback firebirdsql" in result.message
+    assert "timed out" in result.message

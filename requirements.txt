@@ -45,6 +45,7 @@ python-multipart==0.0.20
 pypdf==6.7.3
 pytokens==0.1.10
 PyYAML==6.0.3
+reportlab==4.4.4
 pywin32==306; sys_platform == "win32"
 rich==14.2.0
 rich-toolkit==0.15.1

@@ -20,6 +20,8 @@ from app.schemas.admin import (
     FirebirdVMaintenanceConfigUpdate,
     FormHandlingConfigResponse,
     FormHandlingConfigUpdate,
+    GoogleSheetsConfigResponse,
+    GoogleSheetsConfigUpdate,
     KpRepairSourceConfigResponse,
     KpRepairSourceConfigUpdate,
     SmsConfigResponse,
@@ -34,6 +36,10 @@ from app.services.form_handling_config import (
     validate_form_handling_templates,
 )
 from app.services.settings_store import StoredValue, build_store
+from app.services.workflow_sheet_sync import (
+    load_workflow_sheet_runtime_config,
+    normalize_workflow_sheet_spreadsheet_id,
+)
 
 router = APIRouter(prefix="/admin/config", tags=["admin"])
 
@@ -155,6 +161,17 @@ async def load_firebird_vmaintenance_config(
         charset=charset,
         role=role,
         password_set=password_set,
+    )
+
+
+async def load_google_sheets_config(session: AsyncSession) -> GoogleSheetsConfigResponse:
+    runtime = await load_workflow_sheet_runtime_config(session)
+    return GoogleSheetsConfigResponse(
+        enabled=runtime.enabled,
+        credentials_path=runtime.credentials_path,
+        spreadsheet_id=runtime.spreadsheet_id,
+        workflow_devices_worksheet=runtime.workflow_devices_worksheet,
+        source="admin" if runtime.source == "admin" else "env",
     )
 
 
@@ -423,6 +440,22 @@ async def get_firebird_vmaintenance_config(
     return await load_firebird_vmaintenance_config(session)
 
 
+@router.get(
+    "/google-sheets",
+    response_model=GoogleSheetsConfigResponse,
+    summary="Aktualna konfiguracja Google Sheets dla FLOW",
+)
+async def get_google_sheets_config(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> GoogleSheetsConfigResponse:
+    """Zwraca aktywną konfigurację Google Sheets dla synchronizacji FLOW."""
+
+    _, admin_user = admin_context
+    _assert_admin(admin_user.role)
+    return await load_google_sheets_config(session)
+
+
 @router.put(
     "/firebird-vmaintenance",
     response_model=FirebirdVMaintenanceConfigResponse,
@@ -493,6 +526,64 @@ async def update_firebird_vmaintenance_config(
     await session.commit()
 
     return await load_firebird_vmaintenance_config(session)
+
+
+@router.put(
+    "/google-sheets",
+    response_model=GoogleSheetsConfigResponse,
+    summary="Aktualizacja konfiguracji Google Sheets dla FLOW",
+)
+async def update_google_sheets_config(
+    payload: GoogleSheetsConfigUpdate,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> GoogleSheetsConfigResponse:
+    """Zapisuje konfigurację Google Sheets używaną przez synchronizację FLOW."""
+
+    admin_session, admin_user = admin_context
+    _assert_admin(admin_user.role)
+
+    credentials_path = payload.credentials_path.strip()
+    spreadsheet_id = normalize_workflow_sheet_spreadsheet_id(payload.spreadsheet_id)
+    workflow_devices_worksheet = payload.workflow_devices_worksheet.strip() or "Urzadzenia_magazyn"
+    if payload.enabled and not credentials_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ścieżka do credentials Google Sheets nie może być pusta.",
+        )
+    if payload.enabled and not spreadsheet_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Spreadsheet ID Google Sheets nie może być pusty.",
+        )
+
+    values: dict[str, StoredValue] = {
+        "enabled": StoredValue("true" if payload.enabled else "false", False),
+        "credentials_path": StoredValue(credentials_path, False),
+        "spreadsheet_id": StoredValue(spreadsheet_id, False),
+        "workflow_devices_worksheet": StoredValue(workflow_devices_worksheet, False),
+    }
+    await settings_store.set_namespace(
+        session,
+        "google_sheets",
+        values,
+        user_id=admin_user.id,
+    )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="config_google_sheets_update",
+        client_ip=admin_session.client_ip,
+        payload={
+            "enabled": payload.enabled,
+            "credentials_path": credentials_path,
+            "spreadsheet_id": spreadsheet_id,
+            "workflow_devices_worksheet": workflow_devices_worksheet,
+        },
+    )
+    await session.commit()
+
+    return await load_google_sheets_config(session)
 
 
 @router.get(

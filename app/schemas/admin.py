@@ -115,6 +115,71 @@ class FirebirdTestResponse(BaseModel):
     engine_version: str | None = None
 
 
+class GoogleSheetsConfigResponse(BaseModel):
+    """Widok konfiguracji Google Sheets dla synchronizacji FLOW."""
+
+    enabled: bool
+    credentials_path: str
+    spreadsheet_id: str
+    workflow_devices_worksheet: str
+    source: Literal["admin", "env"]
+
+
+class GoogleSheetsConfigUpdate(BaseModel):
+    """Żądanie aktualizacji konfiguracji Google Sheets dla FLOW."""
+
+    enabled: bool = True
+    credentials_path: str = Field(default="")
+    spreadsheet_id: str = Field(default="")
+    workflow_devices_worksheet: str = Field(default="Urzadzenia_magazyn", max_length=200)
+
+    @field_validator("credentials_path", "spreadsheet_id", "workflow_devices_worksheet")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class GoogleSheetsTestRequest(BaseModel):
+    """Parametry testu Google Sheets (opcjonalne nadpisania)."""
+
+    enabled: bool | None = None
+    credentials_path: str | None = Field(default=None, max_length=1000)
+    spreadsheet_id: str | None = Field(default=None, max_length=500)
+    workflow_devices_worksheet: str | None = Field(default=None, max_length=200)
+
+    @field_validator("credentials_path", "spreadsheet_id", "workflow_devices_worksheet")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class GoogleSheetsTestResponse(BaseModel):
+    """Rezultat testu połączenia z Google Sheets dla FLOW."""
+
+    success: bool
+    message: str
+    service_account_email: str | None = None
+    spreadsheet_title: str | None = None
+    worksheet_found: bool = False
+    worksheet_title: str | None = None
+    missing_headers: list[str] = Field(default_factory=list)
+
+
+class GoogleSheetsBootstrapResponse(BaseModel):
+    """Rezultat przygotowania nagłówków FLOW w Google Sheets."""
+
+    success: bool
+    message: str
+    service_account_email: str | None = None
+    spreadsheet_title: str | None = None
+    worksheet_title: str | None = None
+    added_headers: list[str] = Field(default_factory=list)
+    existing_headers: list[str] = Field(default_factory=list)
+
+
 class FirebirdVMaintenanceConfigResponse(BaseModel):
     """Widok konfiguracji połączenia z bazą Firebird v-maintenance."""
 

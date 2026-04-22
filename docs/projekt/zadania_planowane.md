@@ -23,12 +23,23 @@
 7. Uporządkować warningi frameworka (`TemplateResponse`, `python_multipart`) i
    przygotować czystszy raport testów.
 8. Dopiac aktualizacje dokumentacji operacyjnej po kazdej zmianie workflow.
+9. Bezpieczenstwo i hardening API/formularzy (do wdrozenia pozniej):
+   - rotacja sekretow i porzadek wokol plikow srodowiskowych,
+   - zastapienie mechanizmu `X-User-Id` realna autoryzacja sesji/tokenu,
+   - naprawa sciezki transakcyjnej formularza przy scenariuszu `ValueError`,
+   - dodanie CSRF dla publicznego formularza,
+   - dodanie rate limitingu na endpointach publicznych,
+   - zaostrzenie polityki CORS (`allow_headers` ograniczone do wymaganych naglowkow).
+10. Wydajnosc i utrzymanie (do wdrozenia pozniej):
+   - przeglad i ewentualna eliminacja ryzyk N+1 przy listowaniu kontaktow,
+   - dodanie indeksow dla `admin_audit_log.user_id` i `form_workflow_device.workflow_case_id`,
+   - podzial `contracts_dashboard.py` na mniejsze, testowalne moduly.
 
 ## Dalsze etapy
-9. Przygotowac model procesu bankowego po akceptacji dokumentow.
-10. Zaprojektowac etap planowania dowozu, protokolu zdawczo-odbiorczego i
+11. Przygotowac model procesu bankowego po akceptacji dokumentow.
+12. Zaprojektowac etap planowania dowozu, protokolu zdawczo-odbiorczego i
    powiadomienia klienta.
-11. Zaprojektowac archiwizacje kompletu dokumentow lokalnie i w chmurze.
-12. Zaprojektowac zapis umowy i oplat do Menadzera Serwisu po powrocie
+13. Zaprojektowac archiwizacje kompletu dokumentow lokalnie i w chmurze.
+14. Zaprojektowac zapis umowy i oplat do Menadzera Serwisu po powrocie
     dokumentow.
-13. Zaprojektowac wystawienie faktury VAT do banku.
+15. Zaprojektowac wystawienie faktury VAT do banku.

@@ -85,6 +85,31 @@ class Settings(BaseSettings):
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
     email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
 
+    google_application_credentials: str | None = Field(
+        default=None,
+        alias="GOOGLE_APPLICATION_CREDENTIALS",
+    )
+    google_sheets_spreadsheet_id: str | None = Field(
+        default=None,
+        alias="GOOGLE_SHEETS_SPREADSHEET_ID",
+    )
+    google_sheets_workflow_devices_sheet: str = Field(
+        default="Urzadzenia_magazyn",
+        alias="GOOGLE_SHEETS_WORKFLOW_DEVICES_SHEET",
+    )
+    workflow_sheet_status_cache_scheduler_enabled: bool = Field(
+        default=True,
+        alias="WORKFLOW_SHEET_STATUS_CACHE_SCHEDULER_ENABLED",
+    )
+    workflow_sheet_status_cache_refresh_interval_seconds: int = Field(
+        default=900,
+        alias="WORKFLOW_SHEET_STATUS_CACHE_REFRESH_INTERVAL_SECONDS",
+    )
+    workflow_sheet_status_cache_stale_after_seconds: int = Field(
+        default=1800,
+        alias="WORKFLOW_SHEET_STATUS_CACHE_STALE_AFTER_SECONDS",
+    )
+
     mailbox_email_address: str | None = Field(default=None, alias="MAILBOX_EMAIL_ADDRESS")
     mailbox_email_password: str | None = Field(default=None, alias="MAILBOX_EMAIL_PASSWORD")
     mailbox_imap_host: str | None = Field(default=None, alias="MAILBOX_IMAP_HOST")

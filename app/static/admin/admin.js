@@ -2426,6 +2426,220 @@ document.addEventListener("alpine:init", () => {
 
   const firebirdConfig = firebirdMsConfig;
 
+  const googleSheetsConfig = () => ({
+    enabled: true,
+    credentialsPath: "",
+    spreadsheetId: "",
+    workflowDevicesWorksheet: "Urzadzenia_magazyn",
+    source: "env",
+    saving: false,
+    testing: false,
+    bootstrapping: false,
+    error: null,
+    success: null,
+    testStatus: "neutral",
+    testMessage: "",
+    serviceAccountEmail: "",
+    spreadsheetTitle: "",
+    worksheetTitle: "",
+    missingHeaders: [],
+    addedHeaders: [],
+    existingHeaders: [],
+
+    init() {
+      const initial = this._readInitial();
+      this.enabled = initial.enabled !== false;
+      this.credentialsPath = initial.credentials_path || "";
+      this.spreadsheetId = initial.spreadsheet_id || "";
+      this.workflowDevicesWorksheet = initial.workflow_devices_worksheet || "Urzadzenia_magazyn";
+      this.source = initial.source || "env";
+      this.resetResultDetails();
+    },
+
+    get saveEndpoint() {
+      return this.$el.dataset.saveEndpoint || "/admin/config/google-sheets";
+    },
+
+    get testEndpoint() {
+      return this.$el.dataset.testEndpoint || "/admin/google-sheets/test";
+    },
+
+    get bootstrapEndpoint() {
+      return this.$el.dataset.bootstrapEndpoint || "/admin/google-sheets/bootstrap-headers";
+    },
+
+    get sourceLabel() {
+      return this.source === "admin" ? "panel admin" : "env (fallback)";
+    },
+
+    _readInitial() {
+      try {
+        return JSON.parse(this.$el.dataset.initial || "{}");
+      } catch (err) {
+        console.error("Nie można zdekodować konfiguracji Google Sheets", err);
+        return {};
+      }
+    },
+
+    get headers() {
+      const token = localStorage.getItem("admin-session-token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) {
+        headers["X-Admin-Session"] = token;
+      }
+      return headers;
+    },
+
+    resetMessages() {
+      this.error = null;
+      this.success = null;
+    },
+
+    resetResultDetails() {
+      this.serviceAccountEmail = "";
+      this.spreadsheetTitle = "";
+      this.worksheetTitle = "";
+      this.missingHeaders = [];
+      this.addedHeaders = [];
+      this.existingHeaders = [];
+    },
+
+    applyResponse(data) {
+      this.enabled = data.enabled !== false;
+      this.credentialsPath = data.credentials_path || "";
+      this.spreadsheetId = data.spreadsheet_id || "";
+      this.workflowDevicesWorksheet = data.workflow_devices_worksheet || "Urzadzenia_magazyn";
+      this.source = data.source || "admin";
+      this.$el.dataset.initial = JSON.stringify(data);
+    },
+
+    async save() {
+      if (this.saving) {
+        return;
+      }
+      this.resetMessages();
+      this.saving = true;
+      try {
+        const payload = {
+          enabled: Boolean(this.enabled),
+          credentials_path: this.credentialsPath,
+          spreadsheet_id: this.spreadsheetId,
+          workflow_devices_worksheet: this.workflowDevicesWorksheet,
+        };
+        const response = await fetch(this.saveEndpoint, {
+          method: "PUT",
+          headers: this.headers,
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Nie udało się zapisać konfiguracji Google Sheets");
+        }
+        this.applyResponse(data);
+        this.success = "Konfiguracja Google Sheets dla FLOW została zapisana.";
+        showToast(this.success, "success");
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : "Błąd zapisu";
+        showToast(this.error, "error");
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async testConnection() {
+      if (this.testing) {
+        return;
+      }
+      this.testing = true;
+      this.resetMessages();
+      this.resetResultDetails();
+      this.testStatus = "info";
+      this.testMessage = "Testowanie połączenia…";
+      try {
+        const token = localStorage.getItem("admin-session-token");
+        if (!token) {
+          throw new Error("Brak aktywnej sesji administratora.");
+        }
+        const payload = {
+          enabled: Boolean(this.enabled),
+          credentials_path: this.credentialsPath || null,
+          spreadsheet_id: this.spreadsheetId || null,
+          workflow_devices_worksheet: this.workflowDevicesWorksheet || null,
+        };
+        const response = await fetch(this.testEndpoint, {
+          method: "POST",
+          headers: { "X-Admin-Session": token, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Błąd testu Google Sheets");
+        }
+        this.testStatus = data.success ? "success" : "warning";
+        this.testMessage = data.message || "";
+        this.serviceAccountEmail = data.service_account_email || "";
+        this.spreadsheetTitle = data.spreadsheet_title || "";
+        this.worksheetTitle = data.worksheet_title || "";
+        this.missingHeaders = Array.isArray(data.missing_headers) ? data.missing_headers : [];
+        showToast(this.testMessage, data.success ? "success" : "warning");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd testu Google Sheets";
+        this.testStatus = "error";
+        this.testMessage = message;
+        showToast(message, "error");
+      } finally {
+        this.testing = false;
+      }
+    },
+
+    async bootstrapHeaders() {
+      if (this.bootstrapping) {
+        return;
+      }
+      this.bootstrapping = true;
+      this.resetMessages();
+      this.resetResultDetails();
+      this.testStatus = "info";
+      this.testMessage = "Przygotowywanie nagłówków FLOW…";
+      try {
+        const token = localStorage.getItem("admin-session-token");
+        if (!token) {
+          throw new Error("Brak aktywnej sesji administratora.");
+        }
+        const payload = {
+          enabled: Boolean(this.enabled),
+          credentials_path: this.credentialsPath || null,
+          spreadsheet_id: this.spreadsheetId || null,
+          workflow_devices_worksheet: this.workflowDevicesWorksheet || null,
+        };
+        const response = await fetch(this.bootstrapEndpoint, {
+          method: "POST",
+          headers: { "X-Admin-Session": token, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.detail || "Błąd przygotowania nagłówków FLOW");
+        }
+        this.testStatus = data.success ? "success" : "warning";
+        this.testMessage = data.message || "";
+        this.serviceAccountEmail = data.service_account_email || "";
+        this.spreadsheetTitle = data.spreadsheet_title || "";
+        this.worksheetTitle = data.worksheet_title || "";
+        this.addedHeaders = Array.isArray(data.added_headers) ? data.added_headers : [];
+        this.existingHeaders = Array.isArray(data.existing_headers) ? data.existing_headers : [];
+        showToast(this.testMessage, data.success ? "success" : "warning");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Błąd przygotowania nagłówków FLOW";
+        this.testStatus = "error";
+        this.testMessage = message;
+        showToast(message, "error");
+      } finally {
+        this.bootstrapping = false;
+      }
+    },
+  });
+
   const firebirdVMaintenanceConfig = () => ({
     host: "",
     port: "",
@@ -4062,6 +4276,7 @@ Alpine.data("adminUsers", adminUsers);
 Alpine.data("databaseConfig", databaseConfig);
 Alpine.data("firebirdMsConfig", firebirdMsConfig);
 Alpine.data("firebirdConfig", firebirdConfig);
+Alpine.data("googleSheetsConfig", googleSheetsConfig);
 Alpine.data("firebirdVMaintenanceConfig", firebirdVMaintenanceConfig);
 Alpine.data("kpRepairSourceConfig", kpRepairSourceConfig);
 Alpine.data("kpRepairTool", kpRepairTool);
@@ -4077,6 +4292,7 @@ Alpine.data("emailConfig", emailConfig);
   window.databaseConfig = databaseConfig;
   window.firebirdMsConfig = firebirdMsConfig;
   window.firebirdConfig = firebirdConfig;
+window.googleSheetsConfig = googleSheetsConfig;
 window.firebirdVMaintenanceConfig = firebirdVMaintenanceConfig;
 window.kpRepairSourceConfig = kpRepairSourceConfig;
 window.kpRepairTool = kpRepairTool;

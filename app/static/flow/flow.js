@@ -107,6 +107,39 @@ function workflowBusinessStatusLabel(status) {
   return mapped[status] || status || "Robocza";
 }
 
+function workflowSheetSyncStateLabel(state) {
+  const mapped = {
+    synced: "Arkusz: zsynchronizowany",
+    released: "Arkusz: rezerwacja zwolniona",
+    error: "Arkusz: blad synchronizacji",
+    pending: "Arkusz: oczekuje na synchronizacje",
+  };
+  return mapped[state] || "Arkusz: brak synchronizacji";
+}
+
+function workflowDeviceSourceType(item) {
+  return String(item?.source_type || "firebird_magazyn_28");
+}
+
+function workflowDeviceKey(item) {
+  if (!item) {
+    return "";
+  }
+  const explicitKey = String(item.source_key || "").trim();
+  if (explicitKey) {
+    return explicitKey;
+  }
+  const row = Number(item.row || 0);
+  if (!Number.isFinite(row) || row <= 0) {
+    return "";
+  }
+  return `${workflowDeviceSourceType(item)}:${row}`;
+}
+
+function workflowDeviceSortValue(item) {
+  return `${workflowDeviceSourceType(item)}:${String(Number(item?.row || 0)).padStart(12, "0")}`;
+}
+
 function humanizeValue(value) {
   if (value === null || value === undefined || value === "") {
     return "—";
@@ -205,6 +238,9 @@ function workflowSummaryLines(workflow) {
   if (workflow.delivery_label) {
     lines.push(`Dowoz: ${workflow.delivery_label}`);
   }
+  if (workflow.sheet_sync?.state) {
+    lines.push(workflowSheetSyncStateLabel(workflow.sheet_sync.state));
+  }
   return lines;
 }
 
@@ -255,6 +291,15 @@ function uniqueValues(items, key) {
     }
   });
   return Array.from(values).sort((left, right) => left.localeCompare(right, "pl"));
+}
+
+function workflowReservationBadgeClass(item) {
+  return item?.reservation_badge_class || "soft";
+}
+
+function workflowReservationLabel(item) {
+  const status = String(item?.reservation_status || "").trim();
+  return status || "Brak rezerwacji";
 }
 
 function toIsoDate(value) {
@@ -324,13 +369,22 @@ async function initializeFlowPage() {
     "flow-workflow-device-reservation-filter",
   );
   const workflowDeviceNote = document.getElementById("flow-workflow-device-note");
+  const workflowDeviceCacheNote = document.getElementById("flow-workflow-device-cache-note");
   const workflowSelectionSummary = document.getElementById("flow-workflow-selection-summary");
   const workflowDevicePickerBody = document.getElementById("flow-workflow-device-picker-body");
   const workflowDevicesSaveBtn = document.getElementById("flow-workflow-devices-save");
+  const workflowSheetStatusRefreshBtn = document.getElementById(
+    "flow-workflow-sheet-status-refresh",
+  );
   const workflowProformaCreateBtn = document.getElementById("flow-workflow-proforma-create");
   const workflowProformaBank = document.getElementById("flow-workflow-proforma-bank");
+  const workflowSheetAssignee = document.getElementById("flow-workflow-sheet-assignee");
+  const workflowSheetSyncBtn = document.getElementById("flow-workflow-sheet-sync");
+  const workflowSheetReleaseBtn = document.getElementById("flow-workflow-sheet-release");
+  const workflowSheetNote = document.getElementById("flow-workflow-sheet-note");
   const workflowProformaPreviewLink = document.getElementById("flow-workflow-proforma-preview");
   const workflowProformaNote = document.getElementById("flow-workflow-proforma-note");
+  const workflowProformaDevices = document.getElementById("flow-workflow-proforma-devices");
   const workflowDeliverySection = document.getElementById("flow-workflow-delivery-section");
   const workflowDeliveryDate = document.getElementById("flow-workflow-delivery-date");
   const workflowDeliveryTimeWindow = document.getElementById("flow-workflow-delivery-time-window");
@@ -398,11 +452,17 @@ async function initializeFlowPage() {
     !workflowDeviceStatusFilter ||
     !workflowDeviceReservationFilter ||
     !workflowDeviceNote ||
+    !workflowDeviceCacheNote ||
     !workflowSelectionSummary ||
     !workflowDevicePickerBody ||
     !workflowDevicesSaveBtn ||
+    !workflowSheetStatusRefreshBtn ||
     !workflowProformaCreateBtn ||
     !workflowProformaBank ||
+    !workflowSheetAssignee ||
+    !workflowSheetSyncBtn ||
+    !workflowSheetReleaseBtn ||
+    !workflowSheetNote ||
     !workflowProformaPreviewLink ||
     !workflowProformaNote ||
     !workflowDeliverySection ||
@@ -450,6 +510,7 @@ async function initializeFlowPage() {
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
   let currentUser = null;
+  let workflowProformaForBank = true;
 
   const setError = (message) => {
     errorBox.textContent = message || "";
@@ -561,7 +622,70 @@ async function initializeFlowPage() {
     }
     return activeWorkflowData.available_devices
       .filter((item) => item.selected)
-      .sort((left, right) => Number(left.row || 0) - Number(right.row || 0));
+      .sort((left, right) => workflowDeviceSortValue(left).localeCompare(workflowDeviceSortValue(right)));
+  };
+
+  const workflowDeviceLabel = (item) => {
+    const index = String(item?.index || item?.ewidencja || "").trim();
+    if (index) {
+      return index;
+    }
+    const combinedName = [item?.producer, item?.model].filter(Boolean).join(" ").trim();
+    if (combinedName) {
+      return combinedName;
+    }
+    const row = Number(item?.row || 0);
+    if (Number.isFinite(row) && row > 0) {
+      return `wiersz ${row}`;
+    }
+    return "wybrane urzadzenie";
+  };
+
+  const getWorkflowDevicesMissingPrice = () => {
+    return getSelectedWorkflowDevices().filter((item) => {
+      const gross = parsePriceValue(item.price_gross || item.price || "");
+      const net = parsePriceValue(item.price_net || "");
+      return !(gross > 0 || net > 0);
+    });
+  };
+
+  const formatWorkflowMissingPriceMessage = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      return "";
+    }
+    const labels = items.map((item) => workflowDeviceLabel(item));
+    const preview = labels.slice(0, 3).join(", ");
+    const suffix = labels.length > 3 ? ` i ${labels.length - 3} kolejne` : "";
+    return `Uzupelnij cene netto lub brutto dla: ${preview}${suffix}.`;
+  };
+
+  const refreshWorkflowProformaState = () => {
+    if (!activeWorkflowData) {
+      return;
+    }
+    const workflow = activeWorkflowData.workflow || {};
+    const hasClient = Boolean(workflow.firebird_client_id);
+    const hasDevices = Number(workflow.devices_selected_count || 0) > 0;
+    const hasProforma = Boolean(workflow.proforma_number);
+    const missingPriceDevices = getWorkflowDevicesMissingPrice();
+    const hasUnsavedDeviceChanges = Boolean(activeWorkflowData.workflow_devices_dirty);
+    const canCreateProforma =
+      hasClient &&
+      hasDevices &&
+      !hasProforma &&
+      !hasUnsavedDeviceChanges &&
+      missingPriceDevices.length === 0;
+
+    workflowProformaCreateBtn.disabled = !canCreateProforma;
+    workflowProformaCreateBtn.textContent = hasProforma
+      ? "Proforma zapisana"
+      : !hasClient || !hasDevices
+        ? "Najpierw klient i urzadzenia"
+        : hasUnsavedDeviceChanges
+          ? "Najpierw zapisz urzadzenia"
+          : missingPriceDevices.length > 0
+            ? "Uzupelnij ceny"
+            : "Utworz proforme";
   };
 
   const ensureWorkflowDevicePrices = () => {
@@ -597,6 +721,7 @@ async function initializeFlowPage() {
         ? `Wybrano 1 urzadzenie: wiersz ${selectedRows[0]}.`
         : `Wybrano ${selectedRows.length} urzadzenia: ${selectedRows.join(", ")}.`;
     workflowSelectionSummary.textContent = `${baseSummary} Suma brutto: ${formatPriceValue(grossTotal)} PLN.`;
+    refreshWorkflowProformaState();
   };
 
   const renderSalesPacket = () => {
@@ -638,8 +763,8 @@ async function initializeFlowPage() {
               <tr>
                 <td>${escapeHtml(item.row || "—")}</td>
                 <td>${escapeHtml([item.producer, item.model].filter(Boolean).join(" ") || "—")}</td>
-                <td>${escapeHtml(item.serial || "—")}</td>
-                <td>${escapeHtml(item.ewidencja || "—")}</td>
+                <td>${escapeHtml(item.index || item.ewidencja || "—")}</td>
+                <td>${escapeHtml(item.available_quantity || "—")}</td>
                 <td>${escapeHtml(item.price_net || "—")}</td>
                 <td>${escapeHtml(item.price_gross || "—")}</td>
               </tr>
@@ -681,10 +806,15 @@ async function initializeFlowPage() {
     }
     const selectedDevices = getSelectedWorkflowDevices().map((item) => ({
       row: item.row,
+      source_type: workflowDeviceSourceType(item),
+      source_key: workflowDeviceKey(item),
       producer: item.producer || "",
       model: item.model || "",
       serial: item.serial || "",
       ewidencja: item.ewidencja || "",
+      index: item.index || item.ewidencja || "",
+      name: item.name || item.description || "",
+      available_quantity: item.available_quantity || "",
       price_net: item.price_net || "",
       price_gross: item.price_gross || "",
     }));
@@ -695,10 +825,109 @@ async function initializeFlowPage() {
     renderSalesPacket();
   };
 
+  const renderWorkflowProformaDevices = () => {
+    if (!workflowProformaDevices) {
+      return;
+    }
+    if (!activeWorkflowData) {
+      workflowProformaDevices.innerHTML = "<p class='flow-note'>Brak wybranych urzadzen do proformy.</p>";
+      return;
+    }
+
+    const workflow = activeWorkflowData.workflow || {};
+    const selectedDevices = getSelectedWorkflowDevices();
+    const hasProforma = Boolean(workflow.proforma_number);
+
+    if (selectedDevices.length === 0) {
+      workflowProformaDevices.innerHTML = "<p class='flow-note'>Brak wybranych urzadzen do proformy.</p>";
+      return;
+    }
+
+    const summaryNote = hasProforma
+      ? "Lista urzadzen jest zablokowana po wystawieniu proformy."
+      : 'Mozesz skorygowac ceny w tym miejscu. Zmiany zostana uwzglednione po kliknieciu "Zapisz wybor urzadzen".';
+
+    workflowProformaDevices.innerHTML = `
+      <p class="flow-note flow-proforma-devices-note">${escapeHtml(summaryNote)}</p>
+      <div class="flow-table-wrap">
+        <table class="flow-table flow-proforma-devices-table">
+          <thead>
+            <tr>
+              <th>Lp.</th>
+              <th>Urzadzenie</th>
+              <th>Nr wew.</th>
+              <th>Cena netto</th>
+              <th>Cena brutto</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${selectedDevices
+              .map((item, index) => {
+                const deviceName =
+                  [item.producer, item.model].filter(Boolean).join(" ").trim() ||
+                  item.name ||
+                  item.description ||
+                  "Wybrane urzadzenie";
+                const serialNumber = String(item.serial || "").trim();
+                const serialLine = serialNumber ? `S/N: ${serialNumber}` : "Brak numeru seryjnego";
+                const internalNumber = item.index || item.ewidencja || "—";
+                return `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>
+                      <div class="flow-proforma-device-label">
+                        <strong>${escapeHtml(deviceName)}</strong>
+                        <span>${escapeHtml(serialLine)}</span>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(internalNumber)}</td>
+                    <td>
+                      ${
+                        hasProforma
+                          ? `<span class="flow-proforma-price-static">${escapeHtml(item.price_net || "—")}</span>`
+                          : `
+                            <input
+                              type="text"
+                              inputmode="decimal"
+                              class="flow-price-input"
+                              data-workflow-device-price-net-key="${escapeHtml(workflowDeviceKey(item))}"
+                              value="${escapeHtml(item.price_net || "")}"
+                              placeholder="0.00"
+                            >
+                          `
+                      }
+                    </td>
+                    <td>
+                      ${
+                        hasProforma
+                          ? `<span class="flow-proforma-price-static">${escapeHtml(item.price_gross || item.price || "—")}</span>`
+                          : `
+                            <input
+                              type="text"
+                              inputmode="decimal"
+                              class="flow-price-input"
+                              data-workflow-device-price-gross-key="${escapeHtml(workflowDeviceKey(item))}"
+                              value="${escapeHtml(item.price_gross || item.price || "")}"
+                              placeholder="0.00"
+                            >
+                          `
+                      }
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  };
+
   const renderWorkflowDevicePicker = () => {
     if (!activeWorkflowData?.available_devices) {
-      workflowDevicePickerBody.innerHTML = "<tr><td colspan='10'>Brak danych urzadzen.</td></tr>";
+      workflowDevicePickerBody.innerHTML = "<tr><td colspan='9'>Brak danych urzadzen.</td></tr>";
       updateWorkflowSelectionSummary();
+      renderWorkflowProformaDevices();
       return;
     }
 
@@ -709,7 +938,7 @@ async function initializeFlowPage() {
       if (statusFilter && item.status !== statusFilter) {
         return false;
       }
-      if (reservationFilter && item.reservation_status !== reservationFilter) {
+      if (reservationFilter && item.reservation_filter_value !== reservationFilter) {
         return false;
       }
       if (!phrase) {
@@ -718,6 +947,8 @@ async function initializeFlowPage() {
       const haystack = [
         item.producer,
         item.model,
+        item.index,
+        item.name,
         item.serial,
         item.ewidencja,
         item.status,
@@ -730,38 +961,51 @@ async function initializeFlowPage() {
 
     if (filtered.length === 0) {
       workflowDevicePickerBody.innerHTML =
-        "<tr><td colspan='10'>Brak urzadzen dla podanych filtrow.</td></tr>";
+        "<tr><td colspan='9'>Brak urzadzen dla podanych filtrow.</td></tr>";
       updateWorkflowSelectionSummary();
+      renderWorkflowProformaDevices();
       return;
     }
 
     workflowDevicePickerBody.innerHTML = filtered
-      .map(
-        (item) => `
-          <tr>
+      .map((item) => {
+        const lockedByOther = Boolean(item.locked_by_other);
+        const reservationLabel = workflowReservationLabel(item);
+        const reservationBadgeClass = workflowReservationBadgeClass(item);
+        const reservationMeta = item.reservation_form_id
+          ? `<div class="flow-subtle">Formularz ${escapeHtml(item.reservation_form_id)}</div>`
+          : "";
+        const deviceLabel = item.device_label || [item.producer, item.model].filter(Boolean).join(" ");
+        return `
+          <tr class="${lockedByOther ? "flow-row-locked" : ""}">
             <td>
               <input
                 type="checkbox"
                 class="flow-device-picker-select"
-                data-workflow-device-row="${escapeHtml(item.row)}"
+                data-workflow-device-key="${escapeHtml(workflowDeviceKey(item))}"
                 ${item.selected ? "checked" : ""}
+                ${lockedByOther ? "disabled" : ""}
+                title="${escapeHtml(item.locked_reason || "")}"
               >
             </td>
             <td>${escapeHtml(item.row)}</td>
-            <td>${escapeHtml(item.producer || "—")}</td>
-            <td>${escapeHtml(item.model || "—")}</td>
-            <td>${escapeHtml(item.serial || "—")}</td>
-            <td>${escapeHtml(item.ewidencja || "—")}</td>
+            <td>${escapeHtml(deviceLabel || "—")}</td>
+            <td>${escapeHtml(item.index || item.ewidencja || "—")}</td>
+            <td>${escapeHtml(item.available_quantity || "—")}</td>
             <td>${escapeHtml(item.status || "—")}</td>
-            <td>${escapeHtml(item.reservation_status || "—")}</td>
+            <td>
+              <span class="flow-badge ${reservationBadgeClass}">${escapeHtml(reservationLabel)}</span>
+              ${reservationMeta}
+            </td>
             <td>
               <input
                 type="text"
                 inputmode="decimal"
                 class="flow-price-input"
-                data-workflow-device-price-net="${escapeHtml(item.row)}"
+                data-workflow-device-price-net-key="${escapeHtml(workflowDeviceKey(item))}"
                 value="${escapeHtml(item.price_net || "")}"
                 placeholder="0.00"
+                ${lockedByOther ? "disabled" : ""}
               >
             </td>
             <td>
@@ -769,21 +1013,129 @@ async function initializeFlowPage() {
                 type="text"
                 inputmode="decimal"
                 class="flow-price-input"
-                data-workflow-device-price-gross="${escapeHtml(item.row)}"
+                data-workflow-device-price-gross-key="${escapeHtml(workflowDeviceKey(item))}"
                 value="${escapeHtml(item.price_gross || item.price || "")}"
                 placeholder="0.00"
+                ${lockedByOther ? "disabled" : ""}
               >
             </td>
           </tr>
-        `,
-      )
+        `;
+      })
       .join("");
 
     updateWorkflowSelectionSummary();
+    renderWorkflowProformaDevices();
+  };
+
+  const renderWorkflowSheetAssigneeField = (data) => {
+    const options = Array.isArray(data.sheet_assignee_options) ? data.sheet_assignee_options : [];
+    const selectedId = Number(data.sheet_assignee_selected_id || 0);
+    workflowSheetAssignee.innerHTML =
+      '<option value="">Brak powiazania</option>' +
+      options
+        .map((item) => {
+          const optionId = Number(item.id || 0);
+          const isSelected = selectedId > 0 && optionId === selectedId;
+          return `
+            <option value="${escapeHtml(optionId)}" ${isSelected ? "selected" : ""}>
+              ${escapeHtml(item.label || item.login_user || `ID ${optionId}`)}
+            </option>
+          `;
+        })
+        .join("");
+  };
+
+  const updateWorkflowDeviceCacheNote = () => {
+    if (!activeWorkflowData) {
+      return;
+    }
+    const syncConfig = activeWorkflowData.sheet_sync_config || {};
+    const cache = activeWorkflowData.sheet_status_cache || {};
+    workflowSheetStatusRefreshBtn.disabled = !syncConfig.enabled;
+
+    if (!syncConfig.enabled) {
+      const reason = syncConfig.reason || "brak konfiguracji";
+      workflowDeviceCacheNote.textContent =
+        `Statusy z arkusza sa nieaktywne (${reason}).`;
+      return;
+    }
+
+    const worksheetTitle = cache.worksheet_title || "Urzadzenia_magazyn";
+    const rowCount = Number(cache.row_count || 0);
+    const lastSyncLabel = cache.last_sync_at ? formatDate(cache.last_sync_at) : "brak";
+
+    if (cache.last_error) {
+      workflowDeviceCacheNote.textContent = cache.last_sync_at
+        ? `Statusy z arkusza: ostatnia udana synchronizacja ${lastSyncLabel} (${rowCount} pozycji, zakladka ${worksheetTitle}). Ostatni blad: ${cache.last_error}`
+        : `Statusy z arkusza nie zostaly jeszcze zsynchronizowane. Ostatni blad: ${cache.last_error}`;
+      return;
+    }
+
+    if (!cache.last_sync_at) {
+      workflowDeviceCacheNote.textContent =
+        'Statusy z arkusza nie zostaly jeszcze zsynchronizowane. Uzyj przycisku "Odswiez statusy z arkusza".';
+      return;
+    }
+
+    workflowDeviceCacheNote.textContent = cache.stale
+      ? `Statusy z arkusza: ${lastSyncLabel} (${rowCount} pozycji, zakladka ${worksheetTitle}, dane nie sa juz swieze).`
+      : `Statusy z arkusza: ${lastSyncLabel} (${rowCount} pozycji, zakladka ${worksheetTitle}).`;
+  };
+
+  const updateWorkflowSheetNote = () => {
+    if (!activeWorkflowData) {
+      return;
+    }
+    const workflow = activeWorkflowData.workflow || {};
+    const sheetSync = workflow.sheet_sync || {};
+    const syncConfig = activeWorkflowData.sheet_sync_config || {};
+
+    if (!syncConfig.enabled) {
+      const reason = syncConfig.reason || "brak konfiguracji";
+      workflowSheetNote.textContent = `Synchronizacja arkusza jest nieaktywna (${reason}).`;
+      return;
+    }
+    if (syncConfig.warning) {
+      workflowSheetNote.textContent = `Uwaga: ${syncConfig.warning}`;
+      return;
+    }
+
+    if (sheetSync.state === "synced") {
+      const rowCount = Array.isArray(sheetSync.sheet_rows) ? sheetSync.sheet_rows.length : 0;
+      const assigneeText = sheetSync.assignee_label ? `, rezerwuje: ${sheetSync.assignee_label}` : "";
+      workflowSheetNote.textContent =
+        `Arkusz zsynchronizowany (${rowCount} wierszy${assigneeText}).`;
+      return;
+    }
+    if (sheetSync.state === "released") {
+      workflowSheetNote.textContent = "Rezerwacja arkusza zostala zwolniona.";
+      return;
+    }
+    if (sheetSync.state === "error") {
+      workflowSheetNote.textContent =
+        sheetSync.last_error || "Wystapil blad synchronizacji arkusza.";
+      return;
+    }
+
+    if (Boolean(activeWorkflowData.workflow_devices_dirty)) {
+      workflowSheetNote.textContent =
+        "Zapisz wybor urzadzen, aby zarezerwowac je w arkuszu.";
+      return;
+    }
+
+    if (Number(workflow.devices_selected_count || 0) > 0) {
+      workflowSheetNote.textContent =
+        "Zapis wyboru urzadzen aktualizuje rezerwacje w arkuszu. Proforma dopisze numer dokumentu.";
+      return;
+    }
+
+    workflowSheetNote.textContent = "Brak zapisanych urzadzen do synchronizacji z arkuszem.";
   };
 
   const renderWorkflowModal = (data) => {
     activeWorkflowData = data;
+    activeWorkflowData.workflow_devices_dirty = false;
     ensureWorkflowDevicePrices();
     const workflow = data.workflow || {};
     const clientAction = data.client_action || {};
@@ -814,18 +1166,15 @@ async function initializeFlowPage() {
       ? `Klient jest juz zapisany po stronie CTIP jako Menadzer Serwisu ID ${workflow.firebird_client_id}.`
       : "Najpierw potwierdz dane klienta do podstawowego tworzenia na potrzeby proformy.";
     const hasProforma = Boolean(workflow.proforma_number);
-    const canCreateProforma =
-      Boolean(workflow.firebird_client_id) &&
-      Number(workflow.devices_selected_count || 0) > 0 &&
-      !hasProforma;
-    workflowProformaCreateBtn.disabled = !canCreateProforma;
-    workflowProformaCreateBtn.textContent = hasProforma
-      ? "Proforma zapisana"
-      : canCreateProforma
-        ? "Utworz proforme"
-        : "Najpierw klient i urzadzenia";
-    workflowProformaBank.checked = true;
+    workflowProformaBank.checked = Boolean(workflowProformaForBank);
     workflowProformaBank.disabled = hasProforma;
+    workflowSheetSyncBtn.disabled = !hasProforma;
+    workflowSheetReleaseBtn.disabled = !hasProforma;
+    renderWorkflowSheetAssigneeField(data);
+    const selectedAssigneeId = Number(workflowSheetAssignee.value || 0);
+    if (selectedAssigneeId > 0) {
+      data.sheet_assignee_selected_id = selectedAssigneeId;
+    }
     if (workflow.proforma_preview_url) {
       workflowProformaPreviewLink.hidden = false;
       workflowProformaPreviewLink.href = workflow.proforma_preview_url;
@@ -834,6 +1183,9 @@ async function initializeFlowPage() {
       workflowProformaPreviewLink.href = "#";
     }
     updateWorkflowProformaNote();
+    renderWorkflowProformaDevices();
+    updateWorkflowDeviceCacheNote();
+    updateWorkflowSheetNote();
     workflowStatusSelect.innerHTML = Array.isArray(statusAction.options)
       ? statusAction.options
           .map(
@@ -874,7 +1226,7 @@ async function initializeFlowPage() {
         .join("");
     workflowDeviceReservationFilter.innerHTML =
       '<option value="">Wszystkie</option>' +
-      uniqueValues(availableDevices, "reservation_status")
+      uniqueValues(availableDevices, "reservation_filter_value")
         .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
         .join("");
     renderWorkflowDevicePicker();
@@ -966,8 +1318,10 @@ async function initializeFlowPage() {
       return;
     }
 
+    const selectedAssigneeId = Number(workflowSheetAssignee.value || 0);
     const selectedDevices = getSelectedWorkflowDevices().map((item) => ({
       row: Number(item.row),
+      source_type: workflowDeviceSourceType(item),
       price_net: item.price_net || "",
       price_gross: item.price_gross || "",
     }));
@@ -984,7 +1338,10 @@ async function initializeFlowPage() {
             ...headers(),
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ devices: selectedDevices }),
+          body: JSON.stringify({
+            devices: selectedDevices,
+            sheet_assignee_id: selectedAssigneeId > 0 ? selectedAssigneeId : null,
+          }),
         },
       );
       const data = await response.json().catch(() => ({}));
@@ -997,9 +1354,41 @@ async function initializeFlowPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Blad zapisu urzadzen.");
     } finally {
-      if (workflowModal.hidden) {
+      if (!workflowModal.hidden) {
         workflowDevicesSaveBtn.disabled = false;
         workflowDevicesSaveBtn.textContent = "Zapisz wybor urzadzen";
+      }
+    }
+  };
+
+  const refreshWorkflowSheetStatuses = async () => {
+    if (!activeWorkflowFormId) {
+      setError("Nie wybrano formularza.");
+      return;
+    }
+
+    workflowSheetStatusRefreshBtn.disabled = true;
+    workflowSheetStatusRefreshBtn.textContent = "Odswiezanie...";
+    setError("");
+    setInfo("");
+    try {
+      const response = await fetch("/admin/contracts/workflow/sheet-status-refresh", {
+        method: "POST",
+        headers: headers(),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udalo sie odswiezyc statusow z arkusza.");
+      }
+      setInfo(data.message || "Statusy z arkusza odswiezone.");
+      await loadData();
+      await openWorkflowModal(activeWorkflowFormId, "devices");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Blad odswiezania statusow z arkusza.");
+    } finally {
+      if (!workflowModal.hidden) {
+        workflowSheetStatusRefreshBtn.disabled = false;
+        workflowSheetStatusRefreshBtn.textContent = "Odswiez statusy z arkusza";
       }
     }
   };
@@ -1048,6 +1437,34 @@ async function initializeFlowPage() {
       setError("Nie wybrano formularza.");
       return;
     }
+    if (activeWorkflowData?.workflow_devices_dirty) {
+      setError("Najpierw zapisz wybor urzadzen i ceny.");
+      updateWorkflowProformaNote();
+      return;
+    }
+    const missingPriceDevices = getWorkflowDevicesMissingPrice();
+    if (missingPriceDevices.length > 0) {
+      setError(formatWorkflowMissingPriceMessage(missingPriceDevices));
+      updateWorkflowProformaNote();
+      return;
+    }
+
+    const selectedAssigneeId = Number(workflowSheetAssignee.value || 0);
+    const forBank = Boolean(workflowProformaBank.checked);
+    const recipientLabel = forBank
+      ? "bank GRENKELEASING Sp. z o.o. (ID 855)"
+      : "klient z formularza";
+    const assigneeLabel =
+      selectedAssigneeId > 0
+        ? workflowSheetAssignee.options[workflowSheetAssignee.selectedIndex]?.text || "wybrany"
+        : "brak powiazania";
+    const confirmed = window.confirm(
+      `Czy na pewno utworzyc proforme?\nOdbiorca: ${recipientLabel}\nUzytkownik MS: ${assigneeLabel}`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    workflowProformaForBank = forBank;
 
     workflowProformaCreateBtn.disabled = true;
     workflowProformaCreateBtn.textContent = "Tworzenie...";
@@ -1063,7 +1480,8 @@ async function initializeFlowPage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            for_bank: Boolean(workflowProformaBank.checked),
+            for_bank: forBank,
+            sheet_assignee_id: selectedAssigneeId > 0 ? selectedAssigneeId : null,
           }),
         },
       );
@@ -1078,6 +1496,89 @@ async function initializeFlowPage() {
       setError(err instanceof Error ? err.message : "Blad tworzenia proformy.");
       workflowProformaCreateBtn.disabled = false;
       workflowProformaCreateBtn.textContent = "Utworz proforme";
+    }
+  };
+
+  const saveWorkflowSheetSync = async () => {
+    if (!activeWorkflowFormId) {
+      setError("Nie wybrano formularza.");
+      return;
+    }
+
+    const selectedAssigneeId = Number(workflowSheetAssignee.value || 0);
+    workflowSheetSyncBtn.disabled = true;
+    workflowSheetSyncBtn.textContent = "Synchronizacja...";
+    setError("");
+    setInfo("");
+    try {
+      const response = await fetch(
+        `/admin/contracts/forms/${activeWorkflowFormId}/workflow/sheet-sync`,
+        {
+          method: "POST",
+          headers: {
+            ...headers(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sheet_assignee_id: selectedAssigneeId > 0 ? selectedAssigneeId : null,
+          }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udalo sie zsynchronizowac arkusza.");
+      }
+      setInfo(data.message || "Arkusz zsynchronizowany.");
+      await loadData();
+      await openWorkflowModal(activeWorkflowFormId, "devices");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Blad synchronizacji arkusza.");
+    } finally {
+      if (!workflowModal.hidden) {
+        workflowSheetSyncBtn.disabled = false;
+        workflowSheetSyncBtn.textContent = "Synchronizuj arkusz";
+      }
+    }
+  };
+
+  const saveWorkflowSheetRelease = async () => {
+    if (!activeWorkflowFormId) {
+      setError("Nie wybrano formularza.");
+      return;
+    }
+    const confirmed = window.confirm(
+      "Czy na pewno zwolnic rezerwacje arkusza dla tej sprawy?",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    workflowSheetReleaseBtn.disabled = true;
+    workflowSheetReleaseBtn.textContent = "Zwalnianie...";
+    setError("");
+    setInfo("");
+    try {
+      const response = await fetch(
+        `/admin/contracts/forms/${activeWorkflowFormId}/workflow/sheet-release`,
+        {
+          method: "POST",
+          headers: headers(),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udalo sie zwolnic rezerwacji arkusza.");
+      }
+      setInfo(data.message || "Zwolniono rezerwacje arkusza.");
+      await loadData();
+      await openWorkflowModal(activeWorkflowFormId, "devices");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Blad zwalniania rezerwacji.");
+    } finally {
+      if (!workflowModal.hidden) {
+        workflowSheetReleaseBtn.disabled = false;
+        workflowSheetReleaseBtn.textContent = "Zwolnij rezerwacje";
+      }
     }
   };
 
@@ -1177,19 +1678,33 @@ async function initializeFlowPage() {
     }
     const workflow = activeWorkflowData.workflow || {};
     const hasProforma = Boolean(workflow.proforma_number);
+    const hasClient = Boolean(workflow.firebird_client_id);
+    const hasDevices = Number(workflow.devices_selected_count || 0) > 0;
+    const hasUnsavedDeviceChanges = Boolean(activeWorkflowData.workflow_devices_dirty);
+    const missingPriceDevices = getWorkflowDevicesMissingPrice();
     const canCreateProforma =
-      Boolean(workflow.firebird_client_id) &&
-      Number(workflow.devices_selected_count || 0) > 0 &&
+      hasClient &&
+      hasDevices &&
+      !hasUnsavedDeviceChanges &&
+      missingPriceDevices.length === 0 &&
       !hasProforma;
     const recipientLabel = workflowProformaBank.checked
       ? "bank GRENKELEASING Sp. z o.o."
       : "klienta z formularza";
+    const assigneeText = workflowSheetAssignee.value
+      ? ` Uzytkownik MS: ${workflowSheetAssignee.options[workflowSheetAssignee.selectedIndex]?.text || "wybrany"}.`
+      : "";
 
     workflowProformaNote.textContent = workflow.proforma_number
       ? `Zapisana proforma: ${workflow.proforma_number}.`
-      : canCreateProforma
-        ? `Mozesz teraz utworzyc proforme. Odbiorca: ${recipientLabel}.`
-        : "Dla tego formularza nie ma jeszcze zapisanej proformy.";
+      : hasUnsavedDeviceChanges
+        ? 'Masz niezapisane zmiany w wyborze urzadzen lub cenach. Najpierw kliknij "Zapisz wybor urzadzen".'
+        : missingPriceDevices.length > 0
+          ? formatWorkflowMissingPriceMessage(missingPriceDevices)
+          : canCreateProforma
+            ? `Mozesz teraz utworzyc proforme. Odbiorca: ${recipientLabel}.${assigneeText}`
+            : "Dla tego formularza nie ma jeszcze zapisanej proformy.";
+    refreshWorkflowProformaState();
   };
 
   const activateSection = (sectionName) => {
@@ -1318,27 +1833,21 @@ async function initializeFlowPage() {
 
     devicesBody.innerHTML = items
       .map((item) => {
-        const statusClass = item.found_in_firebird ? "ok" : "warn";
-        const statusLabel = item.found_in_firebird ? "Potwierdzone" : "Brak w Menadzerze Serwisu";
+        const hasReservation = String(item.reservation_status || "")
+          .trim()
+          .toLowerCase() !== "brak rezerwacji";
+        const statusClass = hasReservation ? "warn" : "ok";
         return `
           <tr>
             <td>${escapeHtml(item.row)}</td>
-            <td>${escapeHtml(item.serial)}</td>
-            <td>${escapeHtml(item.ewidencja)}</td>
+            <td>${escapeHtml(item.ewidencja || "—")}</td>
             <td>${escapeHtml(item.model)}</td>
-            <td><span class="flow-badge ${statusClass}">${statusLabel}</span></td>
-            <td>${escapeHtml(item.id_maszyna || "—")}</td>
-            <td>${escapeHtml(item.id_klient || "—")}</td>
+            <td>${escapeHtml(item.name || "—")}</td>
+            <td>${escapeHtml(item.available_quantity || "—")}</td>
+            <td><span class="flow-badge ${statusClass}">${escapeHtml(item.reservation_status || "—")}</span></td>
+            <td>${escapeHtml(item.price_gross || "—")}</td>
             <td>
-              <button
-                type="button"
-                class="flow-action-btn"
-                data-entity="device"
-                data-action="${escapeHtml(item.sync_action || "do_weryfikacji")}"
-                data-row="${escapeHtml(item.row || 0)}"
-              >
-                ${escapeHtml(deviceActionLabel(item.sync_action || "do_weryfikacji"))}
-              </button>
+              <span class="flow-subtle">Pozycja magazynowa Firebird</span>
             </td>
           </tr>
         `;
@@ -1870,15 +2379,17 @@ async function initializeFlowPage() {
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    if (target instanceof HTMLInputElement && target.matches("[data-workflow-device-row]")) {
+    if (target instanceof HTMLInputElement && target.matches("[data-workflow-device-key]")) {
       if (!activeWorkflowData?.available_devices) {
         return;
       }
-      const row = Number(target.dataset.workflowDeviceRow || 0);
+      const deviceKey = String(target.dataset.workflowDeviceKey || "");
       activeWorkflowData.available_devices = activeWorkflowData.available_devices.map((item) =>
-        Number(item.row) === row ? { ...item, selected: target.checked } : item,
+        workflowDeviceKey(item) === deviceKey ? { ...item, selected: target.checked } : item,
       );
+      activeWorkflowData.workflow_devices_dirty = true;
       updateWorkflowSelectionSummary();
+      updateWorkflowProformaNote();
       syncSalesPacketDevicesFromSelection();
       return;
     }
@@ -1911,8 +2422,20 @@ async function initializeFlowPage() {
     saveWorkflowDevices();
   });
 
+  workflowSheetStatusRefreshBtn.addEventListener("click", () => {
+    refreshWorkflowSheetStatuses();
+  });
+
   workflowProformaCreateBtn.addEventListener("click", () => {
     saveWorkflowProforma();
+  });
+
+  workflowSheetSyncBtn.addEventListener("click", () => {
+    saveWorkflowSheetSync();
+  });
+
+  workflowSheetReleaseBtn.addEventListener("click", () => {
+    saveWorkflowSheetRelease();
   });
 
   workflowDeliverySaveBtn.addEventListener("click", () => {
@@ -1924,7 +2447,16 @@ async function initializeFlowPage() {
   });
 
   workflowProformaBank.addEventListener("change", () => {
+    workflowProformaForBank = Boolean(workflowProformaBank.checked);
     updateWorkflowProformaNote();
+  });
+
+  workflowSheetAssignee.addEventListener("change", () => {
+    if (activeWorkflowData) {
+      activeWorkflowData.sheet_assignee_selected_id = Number(workflowSheetAssignee.value || 0);
+    }
+    updateWorkflowProformaNote();
+    updateWorkflowSheetNote();
   });
 
   workflowStatusSaveBtn.addEventListener("click", () => {
@@ -1945,10 +2477,10 @@ async function initializeFlowPage() {
       return;
     }
 
-    if (target.dataset.workflowDevicePriceNet) {
-      const row = Number(target.dataset.workflowDevicePriceNet || 0);
+    if (target.dataset.workflowDevicePriceNetKey) {
+      const deviceKey = String(target.dataset.workflowDevicePriceNetKey || "");
       activeWorkflowData.available_devices = activeWorkflowData.available_devices.map((item) => {
-        if (Number(item.row) !== row) {
+        if (workflowDeviceKey(item) !== deviceKey) {
           return item;
         }
         const vatRate = Number(item.vat_rate || 23);
@@ -1958,16 +2490,18 @@ async function initializeFlowPage() {
           price_gross: netToGross(target.value, vatRate),
         };
       });
+      activeWorkflowData.workflow_devices_dirty = true;
       renderWorkflowDevicePicker();
       updateWorkflowSelectionSummary();
+      updateWorkflowProformaNote();
       syncSalesPacketDevicesFromSelection();
       return;
     }
 
-    if (target.dataset.workflowDevicePriceGross) {
-      const row = Number(target.dataset.workflowDevicePriceGross || 0);
+    if (target.dataset.workflowDevicePriceGrossKey) {
+      const deviceKey = String(target.dataset.workflowDevicePriceGrossKey || "");
       activeWorkflowData.available_devices = activeWorkflowData.available_devices.map((item) => {
-        if (Number(item.row) !== row) {
+        if (workflowDeviceKey(item) !== deviceKey) {
           return item;
         }
         const vatRate = Number(item.vat_rate || 23);
@@ -1977,8 +2511,10 @@ async function initializeFlowPage() {
           price_net: grossToNet(target.value, vatRate),
         };
       });
+      activeWorkflowData.workflow_devices_dirty = true;
       renderWorkflowDevicePicker();
       updateWorkflowSelectionSummary();
+      updateWorkflowProformaNote();
       syncSalesPacketDevicesFromSelection();
     }
   });

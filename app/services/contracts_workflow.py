@@ -18,6 +18,13 @@ WORKFLOW_STAGE_PROFORMA_CREATED = "PROFORMA_CREATED"
 
 WORKFLOW_CLIENT_MODE_BASIC_PROFORMA = "basic_proforma"
 WORKFLOW_DEVICE_SOURCE_GOOGLE_SHEET = "google_sheet"
+WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE = "firebird_magazyn_28"
+WORKFLOW_DEVICE_SOURCE_FIREBIRD_SERIAL = "firebird_serial"
+WORKFLOW_DEVICE_SOURCES = (
+    WORKFLOW_DEVICE_SOURCE_GOOGLE_SHEET,
+    WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+    WORKFLOW_DEVICE_SOURCE_FIREBIRD_SERIAL,
+)
 
 WORKFLOW_BUSINESS_STATUS_DRAFT = "DRAFT"
 WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL = "PENDING_APPROVAL"
@@ -39,6 +46,30 @@ def build_workflow_proforma_preview_url(proforma_firebird_id: int | None) -> str
     if not proforma_firebird_id:
         return None
     return f"/flow/proforma/{proforma_firebird_id}?variant=v1"
+
+
+def normalize_workflow_device_source_type(
+    value: str | None,
+    *,
+    default: str = WORKFLOW_DEVICE_SOURCE_GOOGLE_SHEET,
+) -> str:
+    """Normalizuje typ źródła urządzenia do jednego z obsługiwanych wariantów."""
+    normalized = str(value or "").strip()
+    if normalized in WORKFLOW_DEVICE_SOURCES:
+        return normalized
+    return default
+
+
+def build_workflow_device_key(source_type: str | None, row: Any) -> str | None:
+    """Buduje stabilny klucz urządzenia workflow z typu źródła i numeru rekordu."""
+    try:
+        row_number = int(row) if row not in (None, "") else 0
+    except (TypeError, ValueError):
+        row_number = 0
+    if row_number <= 0:
+        return None
+    normalized_source = normalize_workflow_device_source_type(source_type)
+    return f"{normalized_source}:{row_number}"
 
 
 def build_workflow_proforma_pdf_url(proforma_firebird_id: int | None) -> str | None:
@@ -161,6 +192,7 @@ def build_sales_packet(
 
     device_rows = []
     for device in selected_devices:
+        snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
         device_rows.append(
             {
                 "row": device.source_row,
@@ -168,6 +200,11 @@ def build_sales_packet(
                 "model": device.model or "",
                 "serial": device.serial or "",
                 "ewidencja": device.ewidencja or "",
+                "index": str(snapshot.get("index") or device.ewidencja or "").strip(),
+                "name": str(
+                    snapshot.get("name") or snapshot.get("description") or device.model or ""
+                ).strip(),
+                "available_quantity": str(snapshot.get("available_quantity") or "").strip(),
                 "price_net": _normalize_price_text(device.price_net),
                 "price_gross": _normalize_price_text(device.price_gross),
             }
@@ -219,6 +256,7 @@ def serialize_workflow_case(
             "client_mode": None,
             "devices_selected_count": 0,
             "selected_device_rows": [],
+            "selected_devices": [],
             "proforma_firebird_id": None,
             "proforma_number": None,
             "proforma_pdf_path": None,
@@ -230,6 +268,7 @@ def serialize_workflow_case(
             "delivery_contact_phone": None,
             "delivery_notes": None,
             "delivery_label": None,
+            "sheet_sync": _build_sheet_sync_state([]),
         }
 
     preview_url = _resolve_proforma_preview_url(workflow_case)
@@ -255,6 +294,15 @@ def serialize_workflow_case(
         "selected_device_rows": [
             device.source_row for device in case_devices if device.source_row is not None
         ],
+        "selected_devices": [
+            {
+                "row": device.source_row,
+                "source_type": normalize_workflow_device_source_type(device.source_type),
+                "source_key": build_workflow_device_key(device.source_type, device.source_row),
+            }
+            for device in case_devices
+            if device.source_row is not None
+        ],
         "proforma_firebird_id": workflow_case.proforma_firebird_id,
         "proforma_number": workflow_case.proforma_number,
         "proforma_pdf_path": workflow_case.proforma_pdf_path,
@@ -268,6 +316,7 @@ def serialize_workflow_case(
         "delivery_contact_phone": workflow_case.delivery_contact_phone,
         "delivery_notes": workflow_case.delivery_notes,
         "delivery_label": delivery_label,
+        "sheet_sync": _build_sheet_sync_state(case_devices),
     }
 
 
@@ -370,7 +419,7 @@ async def replace_form_workflow_devices(
 
         mapped = FormWorkflowDevice(
             workflow_case_id=workflow_case.id,
-            source_type=WORKFLOW_DEVICE_SOURCE_GOOGLE_SHEET,
+            source_type=normalize_workflow_device_source_type(device.get("source_type")),
             source_row=source_row,
             producer=str(device.get("producer") or "").strip() or None,
             model=str(device.get("model") or "").strip() or None,
@@ -639,8 +688,59 @@ def _build_delivery_label(
     return f"{base} ({time_window})"
 
 
+def _build_sheet_sync_state(devices: list[FormWorkflowDevice]) -> dict[str, Any]:
+    statuses: set[str] = set()
+    sheet_rows: list[int] = []
+    assignee_label = ""
+    assignee_id: int | None = None
+    proforma_number = ""
+    last_sync_at = ""
+    last_error = ""
+
+    for device in devices:
+        snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
+        status = str(snapshot.get("sheet_sync_status") or "").strip().lower()
+        if status:
+            statuses.add(status)
+        row_number = _coerce_int(snapshot.get("sheet_row"))
+        if row_number:
+            sheet_rows.append(row_number)
+        if not assignee_label:
+            assignee_label = str(snapshot.get("sheet_assignee") or "").strip()
+        if assignee_id is None:
+            assignee_id = _coerce_int(snapshot.get("sheet_assignee_id"))
+        if not proforma_number:
+            proforma_number = str(snapshot.get("sheet_proforma_number") or "").strip()
+        candidate_sync_at = str(snapshot.get("sheet_sync_updated_at") or "").strip()
+        if candidate_sync_at and candidate_sync_at > last_sync_at:
+            last_sync_at = candidate_sync_at
+        if not last_error:
+            last_error = str(snapshot.get("sheet_sync_error") or "").strip()
+
+    state = "none"
+    if "error" in statuses:
+        state = "error"
+    elif "released" in statuses:
+        state = "released"
+    elif "synced" in statuses:
+        state = "synced"
+
+    return {
+        "state": state,
+        "sheet_rows": sorted(set(sheet_rows)),
+        "assignee_label": assignee_label or None,
+        "assignee_id": assignee_id,
+        "proforma_number": proforma_number or None,
+        "last_sync_at": last_sync_at or None,
+        "last_error": last_error or None,
+    }
+
+
 __all__ = [
     "WORKFLOW_CLIENT_MODE_BASIC_PROFORMA",
+    "WORKFLOW_DEVICE_SOURCE_FIREBIRD_SERIAL",
+    "WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE",
+    "WORKFLOW_DEVICE_SOURCES",
     "WORKFLOW_DEVICE_SOURCE_GOOGLE_SHEET",
     "WORKFLOW_BUSINESS_STATUS_APPROVED",
     "WORKFLOW_BUSINESS_STATUS_DRAFT",
@@ -652,6 +752,7 @@ __all__ = [
     "WORKFLOW_STAGE_FORM_SUBMITTED",
     "WORKFLOW_STAGE_PROFORMA_CREATED",
     "build_sales_packet",
+    "build_workflow_device_key",
     "build_workflow_proforma_preview_url",
     "build_workflow_business_status_options",
     "build_client_preview",
@@ -660,6 +761,7 @@ __all__ = [
     "get_or_create_form_workflow_case",
     "list_form_workflow_devices",
     "map_form_workflow_summaries",
+    "normalize_workflow_device_source_type",
     "replace_form_workflow_devices",
     "serialize_workflow_case",
     "set_form_workflow_delivery",
