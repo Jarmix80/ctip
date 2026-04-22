@@ -6,6 +6,11 @@ function initializeInvoicePrint() {
 
   printButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      const backendPdfUrl = button.getAttribute("data-pdf-url");
+      if (backendPdfUrl) {
+        window.location.href = backendPdfUrl;
+        return;
+      }
       window.print();
     });
   });

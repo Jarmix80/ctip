@@ -87,9 +87,19 @@ body.invoice-v1-body {
   box-shadow: 0 24px 56px rgba(14, 22, 30, 0.14);
 }
 
+.invoice-v1-top-sheet {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  align-items: start;
+}
+
 .invoice-v1-head {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  align-self: start;
 }
 
 .invoice-v1-title-wrap {
@@ -112,16 +122,17 @@ body.invoice-v1-body {
 .invoice-v1-head::after {
   content: "";
   display: block;
-  width: 100%;
+  width: 62%;
+  align-self: flex-end;
   border-top: 2px solid var(--invoice-v1-line);
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .invoice-v1-meta {
   display: grid;
   grid-template-columns: 1.1fr 1.4fr 1fr 1fr 1fr;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .invoice-v1-meta article {
@@ -130,14 +141,15 @@ body.invoice-v1-body {
 
 .invoice-v1-meta span {
   display: block;
-  min-height: 30px;
-  font-size: 11px;
+  min-height: 22px;
+  font-size: 10.5px;
+  line-height: 1.15;
   font-style: italic;
 }
 
 .invoice-v1-meta strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 12px;
   font-weight: 700;
 }
@@ -294,6 +306,7 @@ body.invoice-v1-body {
   grid-template-columns: 280px 1fr;
   gap: 28px;
   margin-top: 24px;
+  align-items: start;
 }
 
 .invoice-v1-payment-left {
@@ -321,11 +334,13 @@ body.invoice-v1-body {
 .invoice-v1-payment-right {
   font-size: 11px;
   font-style: italic;
+  padding-top: 2px;
 }
 
 .invoice-v1-payment-right strong {
   display: block;
   margin-top: 6px;
+  line-height: 1.4;
 }
 
 .invoice-v1-bank {
@@ -374,13 +389,20 @@ body.invoice-v1-body {
 }
 
 .invoice-v1-notes strong {
-  display: block;
+  display: inline-block;
   margin-bottom: 6px;
   font-style: italic;
 }
 
 .invoice-v1-notes-box {
   min-height: 118px;
+  display: inline-block;
+  vertical-align: top;
+  width: calc(100% - 48px);
+}
+
+.invoice-v1-notes-box p {
+  margin: 0 0 6px;
 }
 
 .invoice-v1-footer {
@@ -425,6 +447,7 @@ body.invoice-v1-body {
     flex-direction: column;
   }
 
+  .invoice-v1-top-sheet,
   .invoice-v1-meta,
   .invoice-v1-parties,
   .invoice-v1-payment,
@@ -454,19 +477,22 @@ body.invoice-v1-body {
 
 @page {
   size: A4 portrait;
-  margin: 10mm;
+  margin: 7mm;
 }
 
 @media print {
   body.invoice-v1-body {
+    margin: 0;
     background: #ffffff;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
   .invoice-v1-shell {
-    width: auto;
+    width: 100%;
     margin: 0;
+    display: block;
+    gap: 0;
   }
 
   .invoice-v1-topbar {
@@ -474,9 +500,70 @@ body.invoice-v1-body {
   }
 
   .invoice-v1-page {
-    width: 190mm;
-    min-height: 277mm;
-    margin: 0 auto;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
     box-shadow: none;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .invoice-v1-body,
+  .invoice-v1-page {
+    font-size: 95%;
+  }
+
+  .invoice-v1-meta {
+    margin-top: 10px;
+  }
+
+  .invoice-v1-parties {
+    margin-top: 14px;
+    gap: 28px;
+  }
+
+  .invoice-v1-lines {
+    margin-top: 16px;
+  }
+
+  .invoice-v1-table thead th {
+    padding: 6px 4px;
+    font-size: 10px;
+  }
+
+  .invoice-v1-table td {
+    padding: 5px 4px;
+    font-size: 10px;
+  }
+
+  .invoice-v1-totals {
+    margin-top: 12px;
+  }
+
+  .invoice-v1-payment {
+    margin-top: 14px;
+  }
+
+  .invoice-v1-bank {
+    margin-top: 12px;
+  }
+
+  .invoice-v1-signatures {
+    margin-top: 14px;
+  }
+
+  .invoice-v1-notes {
+    margin-top: 10px;
+  }
+
+  .invoice-v1-notes-box {
+    min-height: 0;
+  }
+
+  .invoice-v1-footer {
+    margin-top: 6px;
+    padding-top: 6px;
   }
 }

@@ -19,7 +19,14 @@
           </p>
         </div>
         <div class="invoice-v1-topbar-actions">
-          <button type="button" class="invoice-v1-link" data-print-a4>Zapisz PDF A4</button>
+          <button
+            type="button"
+            class="invoice-v1-link"
+            data-print-a4
+            {% if backend_pdf_url %}data-pdf-url="{{ backend_pdf_url }}"{% endif %}
+          >
+            Zapisz PDF A4
+          </button>
           {% if alternate_url %}
           <a href="{{ alternate_url }}" class="invoice-v1-link">{{ alternate_label or "Wariant bazowy" }}</a>
           {% endif %}
@@ -28,12 +35,14 @@
       </header>
 
       <section class="invoice-v1-page">
-        <header class="invoice-v1-head">
-          <div class="invoice-v1-title-wrap">
-            <span class="invoice-v1-title-label">{{ invoice.document_title }} nr:</span>
-            <strong class="invoice-v1-title-number">{{ invoice.document_number }}</strong>
-          </div>
-        </header>
+        <section class="invoice-v1-top-sheet">
+          <header class="invoice-v1-head">
+            <div class="invoice-v1-title-wrap">
+              <span class="invoice-v1-title-label">{{ invoice.document_title }} nr:</span>
+              <strong class="invoice-v1-title-number">{{ invoice.document_number }}</strong>
+            </div>
+          </header>
+        </section>
 
         <section class="invoice-v1-meta">
           <article>
@@ -41,7 +50,7 @@
             <strong>{{ invoice.place_of_issue }}</strong>
           </article>
           <article>
-            <span>Data zakończenia dostaw / usług</span>
+            <span>Data zakończenia dostaw</span>
             <strong>{{ invoice.service_date }}</strong>
           </article>
           <article>
@@ -60,21 +69,21 @@
 
         <section class="invoice-v1-parties">
           <article class="invoice-v1-party">
+            <h2>Nabywca</h2>
+            <div class="invoice-v1-rule"></div>
+            <strong>{{ invoice.buyer.name }}</strong>
+            <p>{{ invoice.buyer.street }}</p>
+            <p>{{ invoice.buyer.postal_code }} {{ invoice.buyer.city }}</p>
+            <p>NIP: {{ invoice.buyer.nip }}</p>
+          </article>
+
+          <article class="invoice-v1-party">
             <h2>Sprzedawca</h2>
             <div class="invoice-v1-rule"></div>
             <strong>{{ invoice.seller.name }}</strong>
             <p>{{ invoice.seller.street }}</p>
             <p>{{ invoice.seller.postal_code }} {{ invoice.seller.city }}</p>
             <p>NIP: {{ invoice.seller.nip }}</p>
-          </article>
-
-          <article class="invoice-v1-party">
-            <h2>Nabywca</h2>
-            <div class="invoice-v1-rule"></div>
-            <strong>{{ invoice.buyer.name }}</strong>
-            <p>{{ invoice.buyer.street }}</p>
-            <p>{{ invoice.buyer.postal_code }} {{ invoice.buyer.city }}</p>
-            <p>NIP: {{ invoice.buyer.country_code }} {{ invoice.buyer.nip }}</p>
           </article>
         </section>
 
@@ -97,7 +106,15 @@
               {% for item in invoice.line_items %}
               <tr>
                 <td>{{ item.lp }}.</td>
-                <td>{{ item.name }}</td>
+                <td>
+                  {{ item.name }}
+                  {% if item.serial_number and item.serial_number != "—" and ("S/N:" not in item.name) %}
+                    S/N: {{ item.serial_number }}
+                  {% endif %}
+                  {% if item.internal_number %}
+                    , nr.wew: {{ item.internal_number }}
+                  {% endif %}
+                </td>
                 <td class="is-right">{{ item.quantity }}</td>
                 <td class="is-center">{{ item.unit }}</td>
                 <td class="is-right">{{ item.net_price }}</td>
@@ -105,10 +122,6 @@
                 <td class="is-center">{{ item.vat_rate }}</td>
                 <td class="is-right">{{ item.vat_value }}</td>
                 <td class="is-right">{{ item.gross_value }}</td>
-              </tr>
-              <tr class="invoice-v1-serial-row">
-                <td></td>
-                <td colspan="8">Nr seryjny: {{ item.serial_number }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -173,7 +186,15 @@
 
         <section class="invoice-v1-notes">
           <strong>Uwagi:</strong>
-          <div class="invoice-v1-notes-box"></div>
+          <div class="invoice-v1-notes-box">
+            {% if invoice.notes %}
+              {% for note in invoice.notes %}
+              <p>{{ note }}</p>
+              {% endfor %}
+            {% else %}
+              <p>&nbsp;</p>
+            {% endif %}
+          </div>
         </section>
 
         <footer class="invoice-v1-footer">
@@ -182,7 +203,7 @@
             <p>do czasu całkowitej zapłaty. Za zwłokę naliczamy odsetki.</p>
           </div>
           <div class="invoice-v1-footer-meta">
-            <span>Strona 1 z 1</span>
+            <span>1 z 1 Strona</span>
             <span>Menadżer Serwisu i Fakturka - Serwisoft.pl</span>
           </div>
         </footer>

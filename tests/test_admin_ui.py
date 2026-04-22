@@ -141,6 +141,16 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "password_set": True,
             }
 
+    class DummyGoogleSheetsConfig:
+        def model_dump(self) -> dict:
+            return {
+                "enabled": True,
+                "credentials_path": "/srv/google/test.json",
+                "spreadsheet_id": "spreadsheet-test-id",
+                "workflow_devices_worksheet": "Urzadzenia_magazyn",
+                "source": "admin",
+            }
+
     class DummyKpSourceConfig:
         def model_dump(self) -> dict:
             return {
@@ -157,6 +167,10 @@ def test_database_partial_uses_span_labels_in_action_buttons():
         patch(
             "app.web.admin_ui.load_firebird_config",
             AsyncMock(return_value=DummyFirebirdConfig()),
+        ),
+        patch(
+            "app.web.admin_ui.load_google_sheets_config",
+            AsyncMock(return_value=DummyGoogleSheetsConfig()),
         ),
         patch(
             "app.web.admin_ui.load_firebird_vmaintenance_config",
@@ -185,6 +199,13 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert 'data-config-label="Menadżer Serwisu"' in html
     assert 'data-save-endpoint="/admin/config/firebird"' in html
     assert 'data-test-endpoint="/admin/firebird/test"' in html
+    assert 'id="google-sheets-flow-config"' in html
+    assert 'x-data="googleSheetsConfig()"' in html
+    assert 'data-save-endpoint="/admin/config/google-sheets"' in html
+    assert 'data-test-endpoint="/admin/google-sheets/test"' in html
+    assert 'data-bootstrap-endpoint="/admin/google-sheets/bootstrap-headers"' in html
+    assert "Przygotuj nagłówki FLOW" in html
+    assert "Urzadzenia_magazyn" in html
     assert 'data-save-endpoint="/admin/config/firebird-vmaintenance"' in html
     assert 'data-test-endpoint="/admin/firebird/test-vmaintenance"' in html
     assert "C:/MS/BAZA/MS.FDB" in html
@@ -496,7 +517,8 @@ def test_flow_page_renders_sections_layout():
     assert "Podglad formularza" in response.text
     assert "flow-workflow-modal" in response.text
     assert "Workflow formularza" in response.text
-    assert "Proforma na bank (domyslnie aktywna)" in response.text
+    assert "Proforma na bank" in response.text
+    assert 'id="flow-workflow-proforma-devices"' in response.text
     assert "Status sprawy po proformie" in response.text
     assert "Uzgodnienia dostawy" in response.text
     assert "Dane dla handlowca" in response.text
@@ -536,9 +558,10 @@ def test_flow_invoice_preview_page_renders_sample_document():
     response = client.get("/flow/proforma-wizualizacja")
     assert response.status_code == 200
     assert "Faktura Pro Forma" in response.text
-    assert "2/proforma/2026" in response.text
-    assert "ZANOX SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ" in response.text
-    assert "IMCTEST" in response.text
+    assert "18/proforma/2026" in response.text
+    assert "GRENKELEASING" in response.text
+    assert "782-22-75-815" in response.text
+    assert "Ricoh MP 401" in response.text
     assert "Zapisz PDF A4" in response.text
     assert "data-print-a4" in response.text
 
@@ -550,9 +573,11 @@ def test_flow_invoice_preview_page_v1_renders_original_like_layout():
     assert response.status_code == 200
     assert "Wizualizacja 1" in response.text
     assert "Faktura Pro Forma nr:" in response.text
-    assert "Strona 1 z 1" in response.text
+    assert "ul. abpa Antoniego Baraniaka 88" in response.text
+    assert "1 z 1 Strona" in response.text
     assert "Menadżer Serwisu i Fakturka - Serwisoft.pl" in response.text
     assert "ZMIANA NUMERU KONTA ! UWAGA:" in response.text
+    assert "FLOW formularz 24" in response.text
     assert "Zapisz PDF A4" in response.text
     assert "data-print-a4" in response.text
 
@@ -589,6 +614,7 @@ def test_flow_invoice_preview_live_page_renders_document_from_firebird_data():
                 "lp": 1,
                 "name": "RICOH IMC 3500",
                 "serial_number": "3111RB80109",
+                "internal_number": "KP/5032",
                 "quantity": "1,00",
                 "unit": "szt.",
                 "net_price": "3 024,39 zł",
@@ -617,7 +643,10 @@ def test_flow_invoice_preview_live_page_renders_document_from_firebird_data():
     assert "4/proforma/2026" in response.text
     assert "FLOW TEST NOWY KLIENT SP. Z O.O." in response.text
     assert "RICOH IMC 3500" in response.text
+    assert "KP/5032" in response.text
+    assert "FLOW formularz 4" in response.text
     assert "Zapisz PDF A4" in response.text
+    assert 'data-pdf-url="/flow/proforma/70001/pdf"' in response.text
 
 
 def test_flow_invoice_pdf_file_returns_backend_pdf():
@@ -628,13 +657,20 @@ def test_flow_invoice_pdf_file_returns_backend_pdf():
     pdf_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n")
 
     try:
-        with patch("app.web.flow_ui.ensure_proforma_pdf_file", return_value=pdf_path):
+        with (
+            patch("app.web.flow_ui.ensure_proforma_pdf_file", return_value=pdf_path),
+            patch(
+                "app.web.flow_ui.load_proforma_preview_data",
+                return_value={"document_number": "20/proforma/2026"},
+            ),
+        ):
             response = client.get("/flow/proforma/70001/pdf")
     finally:
         pdf_path.unlink(missing_ok=True)
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
+    assert "20_proforma_2026.pdf" in response.headers.get("content-disposition", "")
     assert response.content.startswith(b"%PDF")
 
 

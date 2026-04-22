@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +18,11 @@ from app.services.contracts_dashboard import (
     firebird_writes_enabled,
     normalize_device_key,
     synchronize_device_from_sheet_row,
+)
+from app.services.contracts_workflow import (
+    WORKFLOW_DEVICE_SOURCE_FIREBIRD_SERIAL,
+    WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+    normalize_workflow_device_source_type,
 )
 
 MONEY_PRECISION = Decimal("0.0001")
@@ -105,6 +113,22 @@ def build_proforma_pdf_url(proforma_firebird_id: int) -> str:
 def build_proforma_pdf_storage_path(proforma_firebird_id: int) -> Path:
     """Zwraca docelowa sciezke zapisu PDF proformy."""
     return PROFORMA_PDF_DIR / f"proforma_{proforma_firebird_id}.pdf"
+
+
+def build_proforma_download_filename(
+    document_number: str | None, *, fallback_id: int | None = None
+) -> str:
+    """Buduje bezpieczna nazwe pliku PDF na podstawie numeru dokumentu."""
+    raw_value = str(document_number or "").strip()
+    if raw_value:
+        sanitized = re.sub(r'[\\/:*?"<>|]+', "_", raw_value)
+        sanitized = re.sub(r"\s+", "_", sanitized)
+        sanitized = re.sub(r"_+", "_", sanitized).strip("._ ")
+        if sanitized:
+            return f"{sanitized}.pdf"
+    if fallback_id and fallback_id > 0:
+        return f"proforma_{fallback_id}.pdf"
+    return "proforma.pdf"
 
 
 def create_proforma_from_workflow(
@@ -346,7 +370,6 @@ def load_proforma_preview_data(proforma_firebird_id: int) -> dict[str, Any]:
         uwagi = _truncate_text(str(faktura.get("UWAGI") or ""), 2000)
         if uwagi:
             notes.append(uwagi)
-        notes.append("Podglad odczytany z lokalnej Firebird testowej.")
 
         payment_method = str(faktura.get("PLATNOSC") or DEFAULT_PAYMENT_METHOD).strip()
         document_kind = str(faktura.get("RODZAJ_DOK") or "proforma").strip().lower()
@@ -394,18 +417,306 @@ def load_proforma_preview_data(proforma_firebird_id: int) -> dict[str, Any]:
         connection.close()
 
 
-def ensure_proforma_pdf_file(proforma_firebird_id: int) -> Path:
+def ensure_proforma_pdf_file(
+    proforma_firebird_id: int, *, invoice: dict[str, Any] | None = None
+) -> Path:
     """Generuje fizyczny plik PDF proformy i zwraca sciezke pliku."""
-    invoice = load_proforma_preview_data(proforma_firebird_id)
+    invoice_payload = (
+        invoice if invoice is not None else load_proforma_preview_data(proforma_firebird_id)
+    )
     output_path = build_proforma_pdf_storage_path(proforma_firebird_id)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(_render_proforma_pdf(invoice))
+    output_path.write_bytes(_render_proforma_pdf(invoice_payload))
     return output_path
 
 
 def _render_proforma_pdf(invoice: dict[str, Any]) -> bytes:
+    try:
+        return _render_proforma_pdf_reportlab(invoice)
+    except Exception:
+        # Fallback zachowuje dzialanie endpointu nawet wtedy, gdy biblioteka PDF
+        # albo fonty nie sa chwilowo dostepne w srodowisku uruchomieniowym.
+        pass
     lines = _build_proforma_pdf_lines(invoice)
     return _build_simple_pdf(lines)
+
+
+def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.utils import simpleSplit
+    from reportlab.pdfgen import canvas
+
+    width, height = A4
+    font_regular, font_bold = _resolve_reportlab_font_names()
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    pdf.setTitle(str(invoice.get("document_number") or "proforma"))
+
+    page_margin = 34
+    content_width = width - (page_margin * 2)
+    buyer = invoice.get("buyer") if isinstance(invoice.get("buyer"), dict) else {}
+    seller = invoice.get("seller") if isinstance(invoice.get("seller"), dict) else {}
+    totals = invoice.get("totals") if isinstance(invoice.get("totals"), dict) else {}
+    line_items = invoice.get("line_items") if isinstance(invoice.get("line_items"), list) else []
+    notes = invoice.get("notes") if isinstance(invoice.get("notes"), list) else []
+    document_title = str(invoice.get("document_title") or "Dokument handlowy").strip()
+    document_number = str(invoice.get("document_number") or "").strip()
+
+    buyer_lines = [
+        str(buyer.get("name") or "").strip(),
+        str(buyer.get("street") or "").strip(),
+        " ".join(
+            part.strip()
+            for part in [str(buyer.get("postal_code") or ""), str(buyer.get("city") or "")]
+            if part and part.strip()
+        ).strip(),
+        f"NIP: {str(buyer.get('nip') or '').strip()}",
+    ]
+    seller_lines = [
+        str(seller.get("name") or "").strip(),
+        str(seller.get("street") or "").strip(),
+        " ".join(
+            part.strip()
+            for part in [str(seller.get("postal_code") or ""), str(seller.get("city") or "")]
+            if part and part.strip()
+        ).strip(),
+        f"NIP: {str(seller.get('nip') or '').strip()}",
+    ]
+
+    title_y = height - 62
+    pdf.setFont(font_bold, 15)
+    pdf.drawRightString(
+        width - page_margin,
+        title_y,
+        f"{document_title} nr: {document_number}",
+    )
+    pdf.setLineWidth(1.2)
+    pdf.line(page_margin + 210, title_y - 12, width - page_margin, title_y - 12)
+
+    meta_titles = [
+        "Miejsce wystawienia",
+        "Data zakończenia dostaw",
+        "Data wystawienia",
+        "Termin płatności",
+        "Forma płatności",
+    ]
+    meta_values = [
+        str(invoice.get("place_of_issue") or ""),
+        str(invoice.get("service_date") or ""),
+        str(invoice.get("issue_date") or ""),
+        str(invoice.get("payment_due_date") or ""),
+        str(invoice.get("payment_method") or ""),
+    ]
+    meta_y = height - 112
+    meta_widths = [92, 128, 88, 96, 85]
+    current_x = page_margin
+    for title, value, block_width in zip(meta_titles, meta_values, meta_widths, strict=False):
+        wrapped_title = simpleSplit(title, font_regular, 8, block_width)
+        pdf.setFont(font_regular, 8)
+        title_y = meta_y
+        for wrapped_line in wrapped_title[:2]:
+            pdf.drawCentredString(current_x + (block_width / 2), title_y, wrapped_line)
+            title_y -= 8
+        pdf.setFont(font_bold, 9.5)
+        pdf.drawCentredString(current_x + (block_width / 2), meta_y - 20, value)
+        current_x += block_width
+
+    parties_top = meta_y - 44
+    party_gap = 28
+    party_width = (content_width - party_gap) / 2
+    party_bottoms: list[float] = []
+    for title, lines, column_x in [
+        ("Nabywca", buyer_lines, page_margin),
+        ("Sprzedawca", seller_lines, page_margin + party_width + party_gap),
+    ]:
+        pdf.setFont(font_bold, 11)
+        pdf.drawString(column_x, parties_top, title)
+        pdf.setLineWidth(1)
+        pdf.line(column_x, parties_top - 7, column_x + party_width, parties_top - 7)
+        line_y = parties_top - 20
+        pdf.setFont(font_regular, 9.5)
+        for line in lines:
+            if not line:
+                continue
+            wrapped_line_parts = simpleSplit(line, font_regular, 9.5, party_width - 4)
+            for wrapped_line in wrapped_line_parts:
+                pdf.drawString(column_x, line_y, wrapped_line)
+                line_y -= 11
+        party_bottoms.append(line_y)
+
+    lowest_party_content_y = min(party_bottoms) if party_bottoms else parties_top - 62
+    table_top = lowest_party_content_y - 14
+    row_left = page_margin
+    col_widths = [28, 150, 44, 34, 56, 56, 46, 56, 57]
+    col_titles = [
+        "Lp.",
+        "Nazwa towaru / usługi",
+        "Ilość",
+        "Jm.",
+        "Cena netto",
+        "Wartość netto",
+        "Stawka VAT",
+        "Kwota VAT",
+        "Wartość brutto",
+    ]
+    current_x = row_left
+    pdf.setFont(font_bold, 8)
+    pdf.setLineWidth(1)
+    pdf.line(row_left, table_top + 10, row_left + sum(col_widths), table_top + 10)
+    pdf.line(row_left, table_top - 12, row_left + sum(col_widths), table_top - 12)
+    for title, col_width in zip(col_titles, col_widths, strict=False):
+        wrapped = simpleSplit(title, font_regular, 7.5, col_width - 4)
+        title_y = table_top + 2
+        for line in wrapped[:2]:
+            pdf.drawCentredString(current_x + (col_width / 2), title_y, line)
+            title_y -= 8
+        current_x += col_width
+
+    row_y = table_top - 26
+    row_font_size = 9.2
+    row_line_step = 12
+    pdf.setFont(font_regular, row_font_size)
+    for item in line_items:
+        if not isinstance(item, dict):
+            continue
+        line_label = _build_preview_line_label(item)
+        wrapped_label = simpleSplit(line_label, font_regular, row_font_size, col_widths[1] - 4)
+        predicted_row_height = max(36, len(wrapped_label) * row_line_step + 14)
+        if row_y - predicted_row_height < 150:
+            break
+
+        values = [
+            f"{item.get('lp')}.",
+            None,
+            str(item.get("quantity") or ""),
+            str(item.get("unit") or ""),
+            str(item.get("net_price") or ""),
+            str(item.get("net_value") or ""),
+            str(item.get("vat_rate") or ""),
+            str(item.get("vat_value") or ""),
+            str(item.get("gross_value") or ""),
+        ]
+        row_baseline_y = row_y - 4
+        lowest_text_y = row_baseline_y
+        current_x = row_left
+        for index, (value, col_width) in enumerate(zip(values, col_widths, strict=False)):
+            if index == 1:
+                label_y = row_baseline_y
+                for wrapped_line in wrapped_label:
+                    pdf.drawString(current_x + 2, label_y, wrapped_line)
+                    label_y -= row_line_step
+                if wrapped_label:
+                    lowest_text_y = min(lowest_text_y, label_y + row_line_step)
+            elif index in {2, 4, 5, 7, 8}:
+                pdf.drawRightString(current_x + col_width - 2, row_baseline_y, value)
+            elif index in {0, 3, 6}:
+                pdf.drawCentredString(current_x + (col_width / 2), row_baseline_y, value)
+            current_x += col_width
+        pdf.setLineWidth(0.4)
+        row_separator_y = lowest_text_y - 10
+        pdf.line(row_left, row_separator_y, row_left + sum(col_widths), row_separator_y)
+        row_y = row_separator_y - 10
+
+    totals_y = row_y - 4
+    right_table_left = row_left + sum(col_widths[:4])
+    net_total_right = row_left + sum(col_widths[:6]) - 2
+    vat_total_right = row_left + sum(col_widths[:8]) - 2
+    gross_total_right = row_left + sum(col_widths) - 2
+    pdf.setLineWidth(1)
+    pdf.line(right_table_left, totals_y + 6, row_left + sum(col_widths), totals_y + 6)
+    pdf.setFont(font_bold, 9)
+    pdf.drawString(right_table_left, totals_y - 6, "Razem:")
+    pdf.drawRightString(net_total_right, totals_y - 6, str(totals.get("net") or ""))
+    pdf.drawRightString(vat_total_right, totals_y - 6, str(totals.get("vat") or ""))
+    pdf.drawRightString(gross_total_right, totals_y - 6, str(totals.get("gross") or ""))
+
+    pdf.setFont(font_regular, 8)
+    pdf.drawString(right_table_left, totals_y - 19, "wg stawki 23 %")
+    pdf.drawRightString(net_total_right, totals_y - 19, str(totals.get("net") or ""))
+    pdf.drawRightString(vat_total_right, totals_y - 19, str(totals.get("vat") or ""))
+    pdf.drawRightString(gross_total_right, totals_y - 19, str(totals.get("gross") or ""))
+
+    payment_y = totals_y - 44
+    pdf.setFont(font_bold, 9)
+    pdf.drawString(row_left, payment_y, "Razem do zapłaty:")
+    pdf.drawRightString(row_left + 200, payment_y, str(totals.get("gross") or ""))
+    pdf.drawString(row_left, payment_y - 14, "Zapłacono:")
+    pdf.drawRightString(row_left + 200, payment_y - 14, str(totals.get("paid") or ""))
+    pdf.drawString(row_left, payment_y - 28, "Pozostało do zapłaty:")
+    pdf.drawRightString(row_left + 200, payment_y - 28, str(totals.get("remaining") or ""))
+
+    pdf.setFont(font_bold, 9)
+    pdf.drawString(row_left + 236, payment_y, "Słownie:")
+    gross_words = str(totals.get("gross_words") or "")
+    wrapped_words = simpleSplit(gross_words, font_regular, 8.5, 240)
+    pdf.setFont(font_regular, 8.5)
+    words_y = payment_y - 12
+    for wrapped_line in wrapped_words[:2]:
+        pdf.drawString(row_left + 236, words_y, wrapped_line)
+        words_y -= 10
+
+    bank_y = payment_y - 60
+    pdf.setFont(font_bold, 9)
+    pdf.drawString(row_left, bank_y, "Numer rachunku bankowego:")
+    pdf.setFont(font_regular, 9)
+    pdf.drawString(row_left, bank_y - 14, str(seller.get("bank_account") or ""))
+
+    issuer_y = bank_y - 60
+    pdf.setFont(font_regular, 9)
+    pdf.drawString(row_left, issuer_y, str(invoice.get("issuer") or ""))
+    pdf.line(row_left, issuer_y - 12, row_left + 210, issuer_y - 12)
+    pdf.line(row_left + 280, issuer_y - 12, row_left + 490, issuer_y - 12)
+    pdf.setFont(font_regular, 7.5)
+    pdf.drawCentredString(row_left + 105, issuer_y - 24, "(podpis osoby wystawiającej fakturę)")
+    pdf.drawCentredString(row_left + 385, issuer_y - 24, "(podpis osoby odbierającej fakturę)")
+
+    notes_y = issuer_y - 42
+    note_text = " | ".join(str(note).strip() for note in notes if str(note).strip())
+    pdf.setFont(font_bold, 9)
+    pdf.drawString(row_left, notes_y, "Uwagi:")
+    if note_text:
+        pdf.setFont(font_regular, 8.5)
+        wrapped_notes = simpleSplit(note_text, font_regular, 8.5, 340)
+        draw_y = notes_y
+        for wrapped_line in wrapped_notes[:3]:
+            pdf.drawString(row_left + 42, draw_y, wrapped_line)
+            draw_y -= 10
+
+    footer_y = 86
+    pdf.setFont(font_regular, 8.5)
+    pdf.drawString(
+        row_left,
+        footer_y,
+        "ZMIANA NUMERU KONTA ! UWAGA: Towar pozostaje własnością KSERO-PARTNER SK",
+    )
+    pdf.drawString(
+        row_left,
+        footer_y - 11,
+        "do czasu całkowitej zapłaty. Za zwłokę naliczamy odsetki.",
+    )
+    pdf.setFont(font_regular, 7)
+    pdf.drawString(row_left, footer_y - 27, "Menadżer Serwisu i Fakturka - Serwisoft.pl")
+    pdf.drawRightString(width - page_margin, footer_y - 27, "1 z 1 Strona")
+
+    pdf.showPage()
+    pdf.save()
+    return buffer.getvalue()
+
+
+@lru_cache(maxsize=1)
+def _resolve_reportlab_font_names() -> tuple[str, str]:
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    regular_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    bold_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+    if regular_path.exists() and bold_path.exists():
+        if "DejaVuSansCTIP" not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont("DejaVuSansCTIP", str(regular_path)))
+        if "DejaVuSansCTIP-Bold" not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont("DejaVuSansCTIP-Bold", str(bold_path)))
+        return "DejaVuSansCTIP", "DejaVuSansCTIP-Bold"
+    return "Helvetica", "Helvetica-Bold"
 
 
 def _build_proforma_pdf_lines(invoice: dict[str, Any]) -> list[str]:
@@ -442,14 +753,14 @@ def _build_proforma_pdf_lines(invoice: dict[str, Any]) -> list[str]:
         if not isinstance(item, dict):
             continue
         lp = str(item.get("lp") or "")
-        name = str(item.get("name") or "")
-        serial = str(item.get("serial_number") or "")
+        name = _build_preview_line_label(item)
         quantity = str(item.get("quantity") or "")
         unit = str(item.get("unit") or "")
+        net_price = str(item.get("net_price") or "")
         net_value = str(item.get("net_value") or "")
         gross_value = str(item.get("gross_value") or "")
-        rows.append(f"{lp}. {name} | SN: {serial} | Ilosc: {quantity} {unit}")
-        rows.append(f"    Netto: {net_value} | Brutto: {gross_value}")
+        rows.append(f"{lp}. {name} | Ilosc: {quantity} {unit}")
+        rows.append(f"    Cena netto: {net_price} | Netto: {net_value} | Brutto: {gross_value}")
 
     rows.extend(
         [
@@ -478,6 +789,18 @@ def _build_proforma_pdf_lines(invoice: dict[str, Any]) -> list[str]:
         else:
             output.append("")
     return output
+
+
+def _build_preview_line_label(item: dict[str, Any]) -> str:
+    name = str(item.get("name") or "").strip()
+    serial_number = str(item.get("serial_number") or "").strip()
+    internal_number = str(item.get("internal_number") or "").strip()
+    parts = [name] if name else []
+    if serial_number and serial_number != "—" and serial_number not in name:
+        parts.append(f"S/N: {serial_number}")
+    if internal_number and internal_number not in name:
+        parts.append(f"nr.wew: {internal_number}")
+    return ", ".join(part for part in parts if part).strip() or "Pozycja proformy"
 
 
 def _wrap_pdf_line(text: str, *, width: int) -> list[str]:
@@ -570,6 +893,29 @@ def _ascii_pdf_text(value: str) -> str:
     return "".join(ch if 32 <= ord(ch) <= 126 else " " for ch in value).strip()
 
 
+def _coerce_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_workflow_device_warehouse_id(
+    device: dict[str, Any], *, source_type: str
+) -> int | None:
+    """Ustala ID_MAGAZYN_TABLE dla urządzenia workflow niezależnie od typu źródła."""
+    if source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE:
+        return _coerce_int(device.get("row"))
+
+    for key in ("ms_id_magazyn_table", "warehouse_id_magazyn_table", "id_magazyn_table"):
+        warehouse_id = _coerce_int(device.get(key))
+        if warehouse_id is not None:
+            return warehouse_id
+    return None
+
+
 def _build_line_item(cursor, *, device: dict[str, Any], form_request_id: int) -> dict[str, Any]:
     row_value = device.get("row")
     try:
@@ -578,28 +924,48 @@ def _build_line_item(cursor, *, device: dict[str, Any], form_request_id: int) ->
         source_row = 0
 
     ewidencja = _truncate_text(device.get("ewidencja"), 100)
-    warehouse_match = find_warehouse_item_in_firebird(ewidencja)
-    if warehouse_match.error:
-        raise RuntimeError(
-            f"Nie udalo sie odczytac pozycji magazynowej dla wiersza {source_row}: {warehouse_match.error}"
-        )
-    if not warehouse_match.found or warehouse_match.id_magazyn_table is None:
+    source_type = normalize_workflow_device_source_type(
+        device.get("source_type"),
+        default=WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+    )
+    if source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE:
         if source_row <= 0:
+            raise ValueError("Wybrane urzadzenie Firebird nie ma ID pozycji magazynowej.")
+        warehouse = _fetch_warehouse_details(cursor, source_row)
+        if not ewidencja:
+            ewidencja = _truncate_text(warehouse.indeks, 100)
+    elif source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_SERIAL:
+        warehouse_id = _resolve_workflow_device_warehouse_id(device, source_type=source_type)
+        if warehouse_id is None:
             raise ValueError(
-                "Wybrane urzadzenie nie ma pozycji magazynowej i nie zawiera numeru wiersza arkusza do synchronizacji."
+                "Wybrane urzadzenie z toru SERIAL nie ma powiazania z ID_MAGAZYN_TABLE."
             )
-        synchronize_device_from_sheet_row(source_row, kto="CTIP/FLOW")
+        warehouse = _fetch_warehouse_details(cursor, warehouse_id)
+        if not ewidencja:
+            ewidencja = _truncate_text(device.get("index") or warehouse.indeks, 100)
+    else:
         warehouse_match = find_warehouse_item_in_firebird(ewidencja)
-        if (
-            warehouse_match.error
-            or not warehouse_match.found
-            or warehouse_match.id_magazyn_table is None
-        ):
+        if warehouse_match.error:
             raise RuntimeError(
-                f"Po synchronizacji nadal brak pozycji magazynowej dla wiersza {source_row}."
+                f"Nie udalo sie odczytac pozycji magazynowej dla wiersza {source_row}: {warehouse_match.error}"
             )
+        if not warehouse_match.found or warehouse_match.id_magazyn_table is None:
+            if source_row <= 0:
+                raise ValueError(
+                    "Wybrane urzadzenie nie ma pozycji magazynowej i nie zawiera numeru wiersza arkusza do synchronizacji."
+                )
+            synchronize_device_from_sheet_row(source_row, kto="CTIP/FLOW")
+            warehouse_match = find_warehouse_item_in_firebird(ewidencja)
+            if (
+                warehouse_match.error
+                or not warehouse_match.found
+                or warehouse_match.id_magazyn_table is None
+            ):
+                raise RuntimeError(
+                    f"Po synchronizacji nadal brak pozycji magazynowej dla wiersza {source_row}."
+                )
+        warehouse = _fetch_warehouse_details(cursor, warehouse_match.id_magazyn_table)
 
-    warehouse = _fetch_warehouse_details(cursor, warehouse_match.id_magazyn_table)
     available_qty = _decimal_or_zero(warehouse.ilosc)
     if available_qty <= 0:
         raise ValueError(
@@ -865,6 +1231,7 @@ def _load_preview_line_items(cursor, proforma_firebird_id: int) -> list[dict[str
             p.ID_FPOZYCJA_TABLE,
             p.ID_SERIAL,
             p.NAZWA,
+            p.INDEKS,
             p.ILOSC,
             p.JM,
             p.CENA_NETTO,
@@ -885,14 +1252,15 @@ def _load_preview_line_items(cursor, proforma_firebird_id: int) -> list[dict[str
             {
                 "lp": index,
                 "name": str(row[2] or ""),
+                "internal_number": str(row[3] or ""),
                 "serial_number": _load_serial_number(cursor, serial_id),
-                "quantity": _format_quantity(_decimal_or_zero(row[3])),
-                "unit": str(row[4] or ""),
-                "net_price": _format_currency(_decimal_or_zero(row[5])),
-                "net_value": _format_currency(_decimal_or_zero(row[6])),
-                "vat_rate": str(row[7] or ""),
-                "vat_value": _format_currency(_decimal_or_zero(row[8])),
-                "gross_value": _format_currency(_decimal_or_zero(row[9])),
+                "quantity": _format_quantity(_decimal_or_zero(row[4])),
+                "unit": str(row[5] or ""),
+                "net_price": _format_currency(_decimal_or_zero(row[6])),
+                "net_value": _format_currency(_decimal_or_zero(row[7])),
+                "vat_rate": str(row[8] or ""),
+                "vat_value": _format_currency(_decimal_or_zero(row[9])),
+                "gross_value": _format_currency(_decimal_or_zero(row[10])),
             }
         )
     return output
@@ -1127,6 +1495,7 @@ def _zloty_form(value: int) -> str:
 __all__ = [
     "FirebirdProformaWriteResult",
     "amount_to_polish_words",
+    "build_proforma_download_filename",
     "build_proforma_pdf_url",
     "build_proforma_preview_url",
     "ensure_proforma_pdf_file",

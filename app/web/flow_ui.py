@@ -10,7 +10,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette import status
 
-from app.services.contracts_proforma import ensure_proforma_pdf_file, load_proforma_preview_data
+from app.services.contracts_proforma import (
+    build_proforma_download_filename,
+    ensure_proforma_pdf_file,
+    load_proforma_preview_data,
+)
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -18,19 +22,19 @@ router = APIRouter(tags=["flow-ui"])
 
 INVOICE_PREVIEW_SAMPLE = {
     "document_title": "Faktura Pro Forma",
-    "document_number": "2/proforma/2026",
+    "document_number": "18/proforma/2026",
     "place_of_issue": "Komorniki",
-    "service_date": "13.03.2026",
-    "issue_date": "13.03.2026",
-    "payment_due_date": "27.03.2026",
+    "service_date": "20.04.2026",
+    "issue_date": "20.04.2026",
+    "payment_due_date": "04.05.2026",
     "payment_method": "Gotówka",
     "buyer": {
-        "name": "ZANOX SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ",
-        "street": "ul. Grzybowska 80/82/700",
-        "postal_code": "00-844",
-        "city": "Warszawa",
+        "name": '"GRENKELEASING" SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ',
+        "street": "ul. abpa Antoniego Baraniaka 88",
+        "postal_code": "61-131",
+        "city": "Poznań",
         "country_code": "PL",
-        "nip": "5272917850",
+        "nip": "782-22-75-815",
     },
     "seller": {
         "name": "KSERO - PARTNER MIKOŁAJ FRĄSZCZAK SPÓŁKA KOMANDYTOWA",
@@ -43,30 +47,27 @@ INVOICE_PREVIEW_SAMPLE = {
     "line_items": [
         {
             "lp": 1,
-            "name": "IMCTEST",
-            "serial_number": "test12345",
+            "name": "Ricoh MP 401",
+            "serial_number": "T605H900327",
+            "internal_number": "KP/4066",
             "quantity": "1,00",
             "unit": "szt.",
-            "net_price": "111,00 zł",
-            "net_value": "111,00 zł",
+            "net_price": "1 920,00 zł",
+            "net_value": "1 920,00 zł",
             "vat_rate": "23 %",
-            "vat_value": "25,53 zł",
-            "gross_value": "136,53 zł",
+            "vat_value": "441,60 zł",
+            "gross_value": "2 361,60 zł",
         }
     ],
     "totals": {
-        "net": "111,00 zł",
-        "vat": "25,53 zł",
-        "gross": "136,53 zł",
+        "net": "1 920,00 zł",
+        "vat": "441,60 zł",
+        "gross": "2 361,60 zł",
         "paid": "0,00 zł",
-        "remaining": "136,53 zł",
-        "gross_words": "sto trzydzieści sześć złotych 53/100 gr.",
+        "remaining": "2 361,60 zł",
+        "gross_words": "dwa tysiące trzysta sześćdziesiąt jeden złotych 60/100 gr.",
     },
-    "notes": [
-        "Towar pozostaje własnością KSERO-PARTNER SK do czasu całkowitej zapłaty.",
-        "Za zwłokę naliczane są odsetki ustawowe.",
-        "Wizualizacja została przygotowana na podstawie dokumentu z inbox/faktura.",
-    ],
+    "notes": ["FLOW formularz 24"],
     "issuer": "Marcin Jarmuszkiewicz",
 }
 
@@ -79,7 +80,7 @@ async def flow_page(request: Request) -> HTMLResponse:
 
 @router.get("/flow/proforma-wizualizacja", response_class=HTMLResponse)
 async def flow_invoice_preview_page(request: Request) -> HTMLResponse:
-    """Podglad wizualny proformy na podstawie przykladowych danych z inbox/faktura."""
+    """Podglad wizualny proformy na podstawie wzorca z inbox/FPROFORMA.pdf."""
     return templates.TemplateResponse(
         "flow/invoice_preview.html",
         {
@@ -88,7 +89,7 @@ async def flow_invoice_preview_page(request: Request) -> HTMLResponse:
             "preview_kicker": "FLOW / Wizualizacja dokumentu",
             "preview_title": INVOICE_PREVIEW_SAMPLE["document_title"],
             "preview_lead": (
-                "Podglad oparty o rzeczywisty dokument z katalogu `inbox/faktura`. "
+                "Podglad oparty o rzeczywisty wzorzec z pliku `inbox/FPROFORMA.pdf`. "
                 "To jest wzorzec wizualny do dalszego podpiecia pod dane Firebird i PDF."
             ),
             "back_url": "/flow",
@@ -109,8 +110,8 @@ async def flow_invoice_preview_page_v1(request: Request) -> HTMLResponse:
             "preview_kicker": "FLOW / Proforma",
             "preview_title": "Wizualizacja 1",
             "preview_lead": (
-                "Ten wariant jest celowo blizszy oryginalnemu wydrukowi Menadzera Serwisu: "
-                "wezsza kartka, uklad kolumnowy, lekkie kursywy i blok podsumowania po prawej."
+                "Ten wariant jest celowo blizszy oryginalnemu wydrukowi z `inbox/FPROFORMA.pdf`: "
+                "blok nabywcy u gory, wąska kartka, uklad metadanych, podpisy i blok ostrzeżenia w stopce."
             ),
             "back_url": "/flow",
             "alternate_url": "/flow/proforma-wizualizacja",
@@ -151,6 +152,7 @@ async def flow_invoice_preview_live_page(
                     "Dokument zostal odczytany z lokalnej Firebird i moze byc zapisany do PDF A4 "
                     "z poziomu przegladarki."
                 ),
+                "backend_pdf_url": f"/flow/proforma/{proforma_firebird_id}/pdf",
                 "back_url": "/flow",
                 "alternate_url": f"/flow/proforma/{proforma_firebird_id}?variant=v1",
                 "alternate_label": "Wariant bardziej oryginalny",
@@ -168,6 +170,7 @@ async def flow_invoice_preview_live_page(
                 "Dokument zostal odczytany z lokalnej Firebird i moze byc zapisany do PDF A4 "
                 "z poziomu przegladarki."
             ),
+            "backend_pdf_url": f"/flow/proforma/{proforma_firebird_id}/pdf",
             "back_url": "/flow",
             "alternate_url": f"/flow/proforma/{proforma_firebird_id}?variant=base",
             "alternate_label": "Wariant bazowy",
@@ -179,7 +182,8 @@ async def flow_invoice_preview_live_page(
 async def flow_invoice_pdf_file(proforma_firebird_id: int) -> FileResponse:
     """Zwraca backendowy plik PDF wygenerowanej proformy."""
     try:
-        pdf_path = await _ensure_invoice_pdf_file(proforma_firebird_id)
+        invoice = await _load_invoice_preview_data(proforma_firebird_id)
+        pdf_path = await _ensure_invoice_pdf_file(proforma_firebird_id, invoice=invoice)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -194,7 +198,10 @@ async def flow_invoice_pdf_file(proforma_firebird_id: int) -> FileResponse:
     return FileResponse(
         path=pdf_path,
         media_type="application/pdf",
-        filename=f"proforma_{proforma_firebird_id}.pdf",
+        filename=build_proforma_download_filename(
+            str(invoice.get("document_number") or ""),
+            fallback_id=proforma_firebird_id,
+        ),
     )
 
 
@@ -202,8 +209,10 @@ async def _load_invoice_preview_data(proforma_firebird_id: int) -> dict:
     return await asyncio.to_thread(load_proforma_preview_data, proforma_firebird_id)
 
 
-async def _ensure_invoice_pdf_file(proforma_firebird_id: int) -> Path:
-    return await asyncio.to_thread(ensure_proforma_pdf_file, proforma_firebird_id)
+async def _ensure_invoice_pdf_file(
+    proforma_firebird_id: int, *, invoice: dict | None = None
+) -> Path:
+    return await asyncio.to_thread(ensure_proforma_pdf_file, proforma_firebird_id, invoice=invoice)
 
 
 __all__ = ["router"]
