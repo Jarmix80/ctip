@@ -13,6 +13,9 @@ TEST_PUBLIC_HOST="${TEST_PUBLIC_HOST:-}"
 PRODUCTION_DB_HOST="192.168.0.8"
 PRODUCTION_PBX_HOST="192.168.0.11"
 LOCAL_TEST_DATABASE="ctip_test"
+FIREBIRD_CONTAINER="${FIREBIRD_CONTAINER:-ctip-firebird-local}"
+START_FIREBIRD="${START_FIREBIRD:-auto}" # auto|always|never
+FIREBIRD_WAIT_SECONDS="${FIREBIRD_WAIT_SECONDS:-30}"
 
 read_env_value() {
     local key="$1"
@@ -80,6 +83,73 @@ assert_env_value_not_production "FB_V_HOST" "${PRODUCTION_DB_HOST}" "bazę Fireb
 assert_env_value_equals "PGDATABASE" "${LOCAL_TEST_DATABASE}" "PGDATABASE w ${ENV_FILE} musi mieć wartość ${LOCAL_TEST_DATABASE}, aby lokalna praca zawsze trafiała do jednej testowej bazy."
 assert_env_value_equals "SMS_TEST_MODE" "true" "SMS_TEST_MODE w ${ENV_FILE} musi mieć wartość true, aby lokalne środowisko nie wysyłało realnych wiadomości."
 
+FB_HOST_VALUE="$(read_env_value "FB_HOST")"
+if [[ -z "${FB_HOST_VALUE}" ]]; then
+    FB_HOST_VALUE="127.0.0.1"
+fi
+FB_PORT_VALUE="$(read_env_value "FB_PORT")"
+if [[ -z "${FB_PORT_VALUE}" ]]; then
+    FB_PORT_VALUE="3050"
+fi
+
+firebird_reachable=false
+if nc -z "${FB_HOST_VALUE}" "${FB_PORT_VALUE}" >/dev/null 2>&1; then
+    firebird_reachable=true
+fi
+
+should_start_firebird=false
+case "${START_FIREBIRD}" in
+    always)
+        should_start_firebird=true
+        ;;
+    never)
+        should_start_firebird=false
+        ;;
+    auto)
+        if [[ "${FB_HOST_VALUE}" == "127.0.0.1" || "${FB_HOST_VALUE}" == "localhost" || "${FB_HOST_VALUE}" == "::1" ]]; then
+            should_start_firebird=true
+        fi
+        ;;
+    *)
+        echo "Nieznana wartość START_FIREBIRD=${START_FIREBIRD}. Użyj auto|always|never." >&2
+        exit 1
+        ;;
+esac
+
+if [[ "${firebird_reachable}" != "true" && "${should_start_firebird}" == "true" ]]; then
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "Firebird ${FB_HOST_VALUE}:${FB_PORT_VALUE} nie odpowiada, a docker nie jest dostępny do uruchomienia kontenera ${FIREBIRD_CONTAINER}." >&2
+        exit 1
+    fi
+
+    if ! docker ps -a --format '{{.Names}}' | grep -Fxq "${FIREBIRD_CONTAINER}"; then
+        echo "Nie znaleziono kontenera Firebird '${FIREBIRD_CONTAINER}'." >&2
+        exit 1
+    fi
+
+    running_state="$(docker inspect -f '{{.State.Running}}' "${FIREBIRD_CONTAINER}")"
+    if [[ "${running_state}" != "true" ]]; then
+        echo "Uruchamiam kontener Firebird: ${FIREBIRD_CONTAINER}"
+        docker start "${FIREBIRD_CONTAINER}" >/dev/null
+    else
+        echo "Kontener Firebird już działa: ${FIREBIRD_CONTAINER}"
+    fi
+
+    echo "Czekam na Firebird 127.0.0.1:${FB_PORT_VALUE} (max ${FIREBIRD_WAIT_SECONDS}s)..."
+    for _ in $(seq 1 "${FIREBIRD_WAIT_SECONDS}"); do
+        if nc -z 127.0.0.1 "${FB_PORT_VALUE}" >/dev/null 2>&1; then
+            firebird_reachable=true
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [[ "${firebird_reachable}" != "true" ]]; then
+    echo "Firebird nie odpowiada na ${FB_HOST_VALUE}:${FB_PORT_VALUE}. Uruchom serwer Firebird lub ustaw START_FIREBIRD=always." >&2
+    exit 1
+fi
+
 PBX_PORT_VALUE="$(read_env_value "PBX_PORT")"
 if [[ -z "${PBX_PORT_VALUE}" ]]; then
     PBX_PORT_VALUE="5525"
@@ -131,6 +201,7 @@ tmux new-window -t "${SESSION_NAME}:3" -n "sms-sender" "bash -lc '${sender_cmd}'
 cat <<INFO
 Uruchomiono sesję tmux '${SESSION_NAME}' (lokalne środowisko testowe ${ENV_FILE}):
   - mock-ctip  (scripts/mock/mock_ctip_server.py --port ${PBX_PORT_VALUE})
+  - firebird   (${FB_HOST_VALUE}:${FB_PORT_VALUE})
   - collector  (collector_full.py -> PostgreSQL ${LOCAL_TEST_DATABASE})
   - uvicorn    (app.main:app --port ${TEST_UVICORN_PORT})
   - sms-sender (sms_sender.py w trybie SMS_TEST_MODE=true)

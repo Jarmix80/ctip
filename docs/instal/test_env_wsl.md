@@ -59,7 +59,7 @@ Po wykonaniu powyższych kroków przygotowawczych możesz startować pełne śro
 ```bash
 ./ctiptest
 ```
-Skrypt tworzy sesję tmux `ctip-stack-test` z czterema oknami (`mock-ctip`, `collector`, `uvicorn`, `sms-sender`) i wymusza zabezpieczenia: `.env.test` musi mieć `PBX_HOST` różny od produkcyjnego `192.168.0.11`, hosty baz różne od `192.168.0.8`, `PGDATABASE=ctip_test` oraz `SMS_TEST_MODE=true`.
+Skrypt tworzy sesję tmux `ctip-stack-test` z czterema oknami (`mock-ctip`, `collector`, `uvicorn`, `sms-sender`) i wymusza zabezpieczenia: `.env.test` musi mieć `PBX_HOST` różny od produkcyjnego `192.168.0.11`, hosty baz różne od `192.168.0.8`, `PGDATABASE=ctip_test` oraz `SMS_TEST_MODE=true`. Dodatkowo przed startem sprawdza Firebird pod `FB_HOST:FB_PORT`; gdy host jest lokalny i port nie odpowiada, automatycznie uruchamia kontener `ctip-firebird-local`.
 
 ## Krok 1 – środowisko Python i zależności
 ```bash
@@ -100,7 +100,7 @@ python scripts/mock/mock_ctip_server.py --port 5525 --loop --log-level INFO
 Opcjonalnie możesz przygotować własny scenariusz zdarzeń (plik tekstowy, format `sekundy;RAMKA`) i podać go parametrem `--scenario-file`.
 
 ## Krok 5 – start stosu testowego
-Skrypt `run_test_stack_tmux.sh` uruchamia trzy procesy w sesji tmux zasilanej konfiguracją `.env.test`.
+Skrypt `run_test_stack_tmux.sh` uruchamia trzy procesy w sesji tmux zasilanej konfiguracją `.env.test` oraz wykonuje preflight Firebird (jak wyżej: auto-start `ctip-firebird-local` dla lokalnego hosta przy braku nasłuchu).
 ```bash
 ./run_test_stack_tmux.sh
 # dołączenie do sesji
