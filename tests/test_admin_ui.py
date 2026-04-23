@@ -690,8 +690,15 @@ def test_genform_page_renders_layout():
     assert "genform-detail-representatives" in response.text
     assert "genform-detail-print" in response.text
     assert "genform-detail-pdf" in response.text
-    assert "Utworzone przez" in response.text
-    assert "Status MS" in response.text
+    assert "ID formularza" in response.text
+    assert "Menadżer Serwisu" in response.text
+    assert "Status GRENKE" in response.text
+    assert "genform-workflow-modal" in response.text
+    assert "genform-workflow-save-devices" in response.text
+    assert "genform-proforma-modal" in response.text
+    assert "genform-proforma-create" in response.text
+    assert "genform-proforma-pdf" in response.text
+    assert "genform-proforma-reset" in response.text
     assert f"Wersja {app.version}" in response.text
 
 
@@ -703,7 +710,8 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert "function renderDetailSections(detailData)" in content
     assert "button[data-copy-value]" in content
     assert "window.print();" in content
-    assert 'item.ms_status || "—"' in content
+    assert "function workflowBusinessStatusLabel(status)" in content
+    assert "Status GRENKE" in content
     assert '{ label: "Ważny do"' not in content
     assert 'label: "E-mail firmowy"' in content
     assert 'label: "Telefon reprezentanta"' in content

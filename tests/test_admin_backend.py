@@ -5104,6 +5104,71 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("odbiorca: bank", body["message"])
         self.assertEqual(create_proforma_mock.call_args.kwargs["firebird_client_id"], 855)
 
+    async def test_contracts_form_workflow_proforma_returns_existing_document_without_recreating(
+        self,
+    ):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                firebird_client_status="created",
+                proforma_firebird_id=70021,
+                proforma_number="21/proforma/2026",
+                proforma_pdf_path="inbox/faktura/generated/proforma_70021.pdf",
+                client_payload_snapshot={"company_name": "FLOW TEST"},
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=18070,
+                    producer="Ricoh",
+                    model="IMC 300",
+                    serial="3920P401043",
+                    ewidencja="KP/5045",
+                    reservation_status="brak rezerwacji",
+                    price="2361.60",
+                    price_net="1920.00",
+                    price_gross="2361.60",
+                    snapshot={
+                        "row": 18070,
+                        "source_type": "firebird_magazyn_28",
+                        "producer": "Ricoh",
+                        "model": "IMC 300",
+                        "serial": "3920P401043",
+                        "ewidencja": "KP/5045",
+                        "price": "2361.60",
+                        "price_net": "1920.00",
+                        "price_gross": "2361.60",
+                    },
+                )
+            )
+            await session.commit()
+
+        with patch("app.api.routes.admin_contracts.create_proforma_from_workflow") as create_mock:
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/proforma",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertFalse(body["created"])
+        self.assertEqual(body["proforma_number"], "21/proforma/2026")
+        self.assertIn("Proforma jest juz zapisana", body["message"])
+        create_mock.assert_not_called()
+
     async def test_contracts_form_workflow_sheet_sync_endpoint_updates_device_snapshot(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()

@@ -73,3 +73,12 @@ def test_extract_data_from_contract_text_returns_key_fields() -> None:
     assert "67020505791" in extracted["pesels"]
     assert extracted["company"] is not None
     assert extracted["representative"] is not None
+
+
+def test_extract_data_from_contract_text_ignores_invalid_krs_like_nip() -> None:
+    text = (
+        "FINANSUJĄCY GRENKE KRS 0000175740 REGON 634495137 "
+        "Najemca KANCELARIA RADCY PRAWNEGO JACEK KUŚ PL9720314010"
+    )
+    extracted = extract_data_from_contract_text(text)
+    assert extracted["nips"] == ["PL9720314010"]

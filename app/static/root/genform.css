@@ -21,7 +21,7 @@ body {
 }
 
 .genform-shell {
-  width: min(1120px, 100%);
+  width: min(calc(100vw - 24px), 1680px);
   margin: 0 auto;
   padding: 24px 16px 32px;
 }
@@ -108,15 +108,27 @@ body {
   gap: 14px;
 }
 
-.genform-form button {
-  border: none;
+.genform-form button,
+.genform-btn-primary,
+.genform-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
   border-radius: 10px;
-  padding: 12px 16px;
-  background: var(--primary);
-  color: #fff;
-  font-size: 14px;
+  padding: 10px 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.genform-form button,
+.genform-btn-primary {
+  border: none;
+  background: var(--primary);
+  color: #fff;
 }
 
 .genform-checkbox {
@@ -147,18 +159,9 @@ body {
 }
 
 .genform-btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   border: 1px solid rgba(31, 63, 105, 0.25);
-  border-radius: 10px;
   background: rgba(31, 63, 105, 0.08);
   color: var(--primary);
-  padding: 10px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: none;
 }
 
 .genform-generated {
@@ -211,6 +214,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  min-width: 1320px;
 }
 
 .genform-table th,
@@ -236,7 +240,8 @@ body {
 }
 
 .genform-row-actions {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -254,6 +259,205 @@ body {
 .genform-row-action.danger {
   border-color: rgba(198, 40, 40, 0.28);
   color: var(--error);
+}
+
+.genform-status-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.genform-status-list li {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.genform-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.genform-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.genform-status-dot.success {
+  background: #2e7d32;
+}
+
+.genform-status-dot.danger {
+  background: #c62828;
+}
+
+.genform-customer-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 300px;
+}
+
+.genform-customer-cell strong {
+  color: var(--text);
+}
+
+.genform-customer-cell .genform-subtle {
+  color: var(--muted);
+}
+
+.genform-ms-cell {
+  min-width: 240px;
+}
+
+.genform-workflow-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+#genform-workflow-summary {
+  grid-template-columns: minmax(320px, 1.25fr) repeat(2, minmax(220px, 1fr));
+}
+
+#genform-workflow-summary .genform-detail-summary-card:first-child {
+  grid-row: span 3;
+}
+
+#genform-workflow-summary .genform-detail-summary-card:first-child dd {
+  line-height: 1.7;
+}
+
+.genform-workflow-panel {
+  margin-bottom: 12px;
+}
+
+.genform-workflow-panel h4 {
+  margin: 0;
+  color: var(--primary);
+  font-size: 16px;
+}
+
+.genform-workflow-panel p {
+  margin: 8px 0 0;
+}
+
+.genform-workflow-actions-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.genform-workflow-actions-row-tight {
+  grid-template-columns: minmax(240px, 1fr);
+}
+
+.genform-workflow-actions-row label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.genform-workflow-actions-row input,
+.genform-workflow-actions-row select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.genform-workflow-device-table td input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.genform-workflow-device-table td input[type="text"] {
+  width: 120px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.genform-workflow-device-table td .genform-price-input {
+  width: 96px;
+}
+
+.genform-workflow-device-table td .genform-price-readonly {
+  display: inline-flex;
+  min-width: 96px;
+  border: 1px solid rgba(31, 63, 105, 0.12);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.genform-workflow-row-locked {
+  background: rgba(198, 40, 40, 0.07);
+}
+
+.genform-reservation-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.genform-subtle {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.genform-status.danger {
+  background: rgba(198, 40, 40, 0.12);
+  color: var(--error);
+}
+
+.genform-status.soft {
+  background: rgba(31, 63, 105, 0.08);
+  color: var(--primary);
+}
+
+.genform-proforma-party-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.genform-proforma-modal-card .genform-table {
+  min-width: 860px;
+}
+
+.genform-proforma-party-grid .genform-detail-summary-card dd {
+  white-space: normal;
+  line-height: 1.55;
+}
+
+.genform-proforma-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.genform-proforma-help {
+  margin-bottom: 14px;
+  border: 1px solid rgba(31, 63, 105, 0.08);
+  border-radius: 12px;
+  background: rgba(31, 63, 105, 0.04);
+  padding: 12px 14px;
+}
+
+.genform-proforma-help p {
+  margin: 10px 0 0;
 }
 
 .genform-modal {
@@ -279,6 +483,14 @@ body {
   border: 1px solid var(--border);
   box-shadow: 0 20px 44px rgba(18, 32, 56, 0.16);
   padding: 20px;
+}
+
+.genform-modal-card.genform-workflow-modal-card {
+  width: min(calc(100vw - 32px), 1500px);
+}
+
+.genform-modal-card.genform-proforma-modal-card {
+  width: min(calc(100vw - 32px), 1180px);
 }
 
 .genform-modal-header {
@@ -580,6 +792,16 @@ body {
 
   .genform-modal-header {
     flex-direction: column;
+  }
+
+  .genform-proforma-party-grid,
+  .genform-proforma-status-grid,
+  #genform-workflow-summary {
+    grid-template-columns: 1fr;
+  }
+
+  #genform-workflow-summary .genform-detail-summary-card:first-child {
+    grid-row: auto;
   }
 
   .genform-detail-field-row {

@@ -13,6 +13,7 @@ MAILBOX_EVENT_APPROVAL = "approval_for_delivery"
 _APP_NO_PATTERN = re.compile(r"\b(\d{3})\s*[-_/]\s*(\d{4,7})\b")
 _NIP_PATTERN = re.compile(r"\b(?:PL)?\d{10}\b", re.IGNORECASE)
 _PESEL_PATTERN = re.compile(r"\b\d{11}\b")
+_NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
 
 
 @dataclass(slots=True)
@@ -65,6 +66,26 @@ def _ascii_upper(value: str) -> str:
     text = unicodedata.normalize("NFKD", value)
     text = "".join(char for char in text if not unicodedata.combining(char))
     return text.upper()
+
+
+def _normalize_nip(value: str) -> str | None:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) != 10:
+        return None
+    return digits
+
+
+def _is_valid_nip(value: str) -> bool:
+    normalized = _normalize_nip(value)
+    if normalized is None:
+        return False
+    checksum = (
+        sum(
+            int(digit) * weight for digit, weight in zip(normalized[:9], _NIP_WEIGHTS, strict=False)
+        )
+        % 11
+    )
+    return checksum == int(normalized[9])
 
 
 def build_pdf_password_candidates(payload: dict[str, Any]) -> list[str]:
@@ -162,7 +183,17 @@ def extract_data_from_contract_text(text: str) -> dict[str, Any]:
         seen_apps.add(raw)
         app_numbers.append(raw)
 
-    nips = sorted(set(item.upper() for item in _NIP_PATTERN.findall(normalized)))
+    nips = []
+    seen_nips: set[str] = set()
+    for raw_nip in _NIP_PATTERN.findall(normalized):
+        normalized_nip = _normalize_nip(raw_nip)
+        if normalized_nip is None or not _is_valid_nip(normalized_nip):
+            continue
+        canonical_nip = raw_nip.upper()
+        if canonical_nip in seen_nips:
+            continue
+        seen_nips.add(canonical_nip)
+        nips.append(canonical_nip)
     pesels = sorted(set(_PESEL_PATTERN.findall(normalized)))
 
     company_match = re.search(

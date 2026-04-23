@@ -97,6 +97,39 @@ Rozwiązanie:
   - v-maintenance -> `firebird_vmaintenance`, `PUT /admin/config/firebird-vmaintenance`, `POST /admin/firebird/test-vmaintenance`,
 - zmiana zamyka ryzyko pomylenia konfiguracji bazy glownej z baza `v-maintenance` w warstwie UI.
 
+## Rozszerzenie w wersjach 0.2.12-0.2.16
+### 0.2.12
+- ekran `/genform` dostal czytelny widok szczegolow formularza po statusie `SUBMITTED`, oparty o ten sam uklad danych co finalne podsumowanie klienta,
+- widok szczegolow wspiera `Kopiuj`, `Drukuj` i `PDF`,
+- formularz klienta i widok szczegolow zostaly rozszerzone o pola:
+  - `E-mail reprezentanta`,
+  - `Telefon reprezentanta`,
+- wydruk/PDF zostal doprowadzony do zwartego ukladu A4 z zachowaniem marginesow.
+
+### 0.2.13
+- po zapisaniu formularza system wysyla SMS nie tylko do autora, ale do wszystkich aktywnych uzytkownikow oznaczonych jako `Handlowiec`,
+- po statusie `SUBMITTED` backend automatycznie sprawdza Menadzer Serwisu po NIP:
+  - przy znalezionym kliencie zapisuje powiazanie,
+  - przy braku klienta moze utworzyc nowa kartoteke,
+  - wynik zapisuje do `ctip.form_request.ms_status`.
+
+### 0.2.14
+- konfiguracja Firebird uzywana przez automat formularzy, workflow i akcje `/contracts` jest ladowana runtime z panelu administratora (`admin_setting -> firebird.*`),
+- naprawiono modal edycji uzytkownika w panelu administratora, aby ponownie udostepnial pelna edycje danych.
+
+### 0.2.15
+- sekcja `Konfiguracja Firebird (Menadzer Serwisu)` otrzymala przelacznik `Odblokuj zapis do Firebird`,
+- blokada zapisu jest zapisywana w `admin_setting -> firebird.allow_writes` i steruje automatem MS bez recznej ingerencji w zmienne srodowiskowe.
+
+### 0.2.16
+- w trybie `local` Firebird dopuszczono absolutne sciezki testowe hosta, np. `D:\\BAZA_MS_KP\\BAZAMS.FDB`,
+- usunieto bledna walidacje wymagajaca, aby lokalna kopia `.FDB` znajdowala sie wewnatrz repozytorium; jedynym wymogiem pozostaje istnienie pliku i jawne odblokowanie zapisu w panelu.
+
+### 0.2.17
+- modal `Dodaj urzadzenie` w `/genform` zostal przebudowany do ukladu roboczego blizszego `/flow`: ma statusowe karty naglowka, filtry tabeli, rezerwacje arkusza Google oraz reczne pola cen `netto/brutto`,
+- modal `Proforma` pokazuje osobno dane firmy z formularza i aktualnego nabywce dokumentu; przy zaznaczeniu `Proforma na bank` widoczne sa dane klienta bankowego GRENKE, a po odznaczeniu dane klienta z formularza,
+- zapis PDF odbywa sie bez otwierania podgladu A4, a usuniecie proformy czyści tylko informacje o dokumencie i zostawia aktywna rezerwacje urzadzen.
+
 ## Następny etap: rozbudowa możliwości formularza i jego interakcji
 Najbliższy krok produktowy powinien dotyczyć wyłącznie warstwy interakcji formularza `GET/POST /formularz/{token}`.
 

@@ -40,6 +40,7 @@ from app.services.contracts_workflow import (
     build_workflow_business_status_options,
     build_workflow_device_key,
     clear_form_workflow_delivery,
+    clear_form_workflow_proforma,
     get_form_workflow_case,
     get_or_create_form_workflow_case,
     list_form_workflow_devices,
@@ -2311,6 +2312,74 @@ async def contracts_form_workflow_proforma(
         "sheet_assignee_label": sheet_assignee_label,
         "sheet_sync": sheet_sync_result,
         "sheet_sync_warning": sheet_sync_warning,
+        "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+    }
+
+
+@router.post(
+    "/forms/{form_id}/workflow/proforma-reset",
+    summary="Usun zapisana proforme ze sprawy workflow",
+)
+async def contracts_form_workflow_proforma_reset(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Czyści informacje o proformie zapisane w sprawie workflow."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Formularz nie istnieje.",
+        )
+    if item.status != "SUBMITTED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Workflow jest dostepny tylko dla formularzy ze statusem SUBMITTED.",
+        )
+
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak zapisanej sprawy workflow dla formularza.",
+        )
+
+    workflow_case = await clear_form_workflow_proforma(
+        session,
+        workflow_case=workflow_case,
+        updated_by=admin_user.id,
+    )
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_flow_proforma_reset",
+        client_ip=admin_session.client_ip,
+        payload={
+            "form_request_id": item.id,
+            "workflow_case_id": workflow_case.id,
+        },
+    )
+    await session.commit()
+
+    return {
+        "ok": True,
+        "message": "Usunieto informacje o proformie ze sprawy workflow.",
         "workflow": serialize_workflow_case(workflow_case, workflow_devices),
     }
 

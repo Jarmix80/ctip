@@ -2491,10 +2491,19 @@ async function initializeFlowPage() {
         };
       });
       activeWorkflowData.workflow_devices_dirty = true;
-      renderWorkflowDevicePicker();
       updateWorkflowSelectionSummary();
       updateWorkflowProformaNote();
       syncSalesPacketDevicesFromSelection();
+      const updatedDevice = activeWorkflowData.available_devices.find(
+        (item) => workflowDeviceKey(item) === deviceKey,
+      );
+      document
+        .querySelectorAll(`[data-workflow-device-price-gross-key="${CSS.escape(deviceKey)}"]`)
+        .forEach((input) => {
+          if (input instanceof HTMLInputElement && input !== target) {
+            input.value = updatedDevice?.price_gross || "";
+          }
+        });
       return;
     }
 
@@ -2512,10 +2521,19 @@ async function initializeFlowPage() {
         };
       });
       activeWorkflowData.workflow_devices_dirty = true;
-      renderWorkflowDevicePicker();
       updateWorkflowSelectionSummary();
       updateWorkflowProformaNote();
       syncSalesPacketDevicesFromSelection();
+      const updatedDevice = activeWorkflowData.available_devices.find(
+        (item) => workflowDeviceKey(item) === deviceKey,
+      );
+      document
+        .querySelectorAll(`[data-workflow-device-price-net-key="${CSS.escape(deviceKey)}"]`)
+        .forEach((input) => {
+          if (input instanceof HTMLInputElement && input !== target) {
+            input.value = updatedDevice?.price_net || "";
+          }
+        });
     }
   });
 

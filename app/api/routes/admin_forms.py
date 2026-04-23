@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +19,12 @@ from app.schemas.form_generator import (
 )
 from app.services import form_generator, section_permissions
 from app.services.audit import record_audit
+from app.services.contracts_workflow import get_form_workflow_case, list_form_workflow_devices
+from app.services.workflow_sheet_sync import (
+    load_workflow_sheet_runtime_config,
+    release_workflow_devices_from_sheet,
+    use_workflow_sheet_runtime_config,
+)
 
 router = APIRouter(prefix="/admin/forms", tags=["admin-forms"])
 
@@ -65,6 +74,40 @@ def _to_summary(item: FormRequest, *, fallback_user: AdminUser | None = None) ->
         email_status=item.email_status,
         ms_status=item.ms_status,
     )
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_sheet_release_payloads(workflow_devices: list[Any]) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for device in workflow_devices:
+        snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
+        payloads.append(
+            {
+                "source_row": _coerce_int(
+                    device.source_row if device.source_row is not None else snapshot.get("row")
+                ),
+                "row": _coerce_int(
+                    device.source_row if device.source_row is not None else snapshot.get("row")
+                ),
+                "sheet_row": _coerce_int(snapshot.get("sheet_row")),
+                "producer": str(snapshot.get("producer") or device.producer or "").strip(),
+                "model": str(snapshot.get("model") or device.model or "").strip(),
+                "serial": str(snapshot.get("serial") or device.serial or "").strip(),
+                "ewidencja": str(snapshot.get("ewidencja") or device.ewidencja or "").strip(),
+                "index": str(
+                    snapshot.get("index") or snapshot.get("ewidencja") or device.ewidencja or ""
+                ).strip(),
+            }
+        )
+    return payloads
 
 
 @router.get("", response_model=FormRequestListResponse, summary="Lista wygenerowanych formularzy")
@@ -202,6 +245,31 @@ async def delete_form(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
 
+    sheet_release_result: dict[str, Any] | None = None
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is not None:
+        workflow_devices = await list_form_workflow_devices(
+            session, workflow_case_id=workflow_case.id
+        )
+        if workflow_devices:
+            sheet_payloads = _build_sheet_release_payloads(workflow_devices)
+            if sheet_payloads:
+                sheet_config = await load_workflow_sheet_runtime_config(session)
+                try:
+                    with use_workflow_sheet_runtime_config(sheet_config):
+                        sheet_release_result = await asyncio.to_thread(
+                            release_workflow_devices_from_sheet,
+                            devices=sheet_payloads,
+                        )
+                except RuntimeError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=(
+                            "Nie udalo sie zwolnic rezerwacji arkusza dla usuwanego formularza: "
+                            f"{exc}"
+                        ),
+                    ) from exc
+
     await form_generator.delete_form_request(session, item)
     await record_audit(
         session,
@@ -212,6 +280,15 @@ async def delete_form(
             "deleted_form_request_id": form_id,
             "customer_email": item.customer_email,
             "status": item.status,
+            "sheet_release_enabled": bool(
+                sheet_release_result and sheet_release_result.get("enabled")
+            ),
+            "sheet_release_count": (
+                int(sheet_release_result.get("released_count") or 0) if sheet_release_result else 0
+            ),
+            "sheet_release_reason": (
+                sheet_release_result.get("reason") if sheet_release_result else None
+            ),
         },
     )
     await session.commit()

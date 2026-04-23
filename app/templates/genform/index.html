@@ -92,20 +92,17 @@
           <table class="genform-table">
             <thead>
               <tr>
-                <th>Nazwa</th>
-                <th>E-mail</th>
-                <th>Telefon</th>
-                <th>Utworzone przez</th>
                 <th>Status</th>
-                <th>Status MS</th>
-                <th>Ważny do</th>
-                <th>Utworzono</th>
+                <th>ID formularza</th>
+                <th>Klient</th>
+                <th>Menadżer Serwisu</th>
+                <th>Status GRENKE</th>
                 <th>Akcje</th>
               </tr>
             </thead>
             <tbody id="genform-table-body">
               <tr>
-                <td colspan="9">Brak wygenerowanych formularzy.</td>
+                <td colspan="6">Brak wygenerowanych formularzy.</td>
               </tr>
             </tbody>
           </table>
@@ -148,6 +145,171 @@
                 <div id="genform-detail-representatives" class="genform-detail-representatives"></div>
               </div>
             </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="genform-workflow-modal" class="genform-modal" hidden>
+        <div class="genform-modal-card genform-workflow-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-workflow-title">
+          <header class="genform-modal-header">
+            <div>
+              <h2 id="genform-workflow-title">Workflow formularza</h2>
+              <p id="genform-workflow-subtitle" class="genform-detail-status-text">Wybór urządzeń.</p>
+            </div>
+            <div class="genform-actions genform-detail-actions">
+              <button id="genform-workflow-close" type="button" class="genform-btn-secondary">Zamknij</button>
+            </div>
+          </header>
+
+          <section class="genform-detail-section">
+            <div id="genform-workflow-summary" class="genform-detail-grid"></div>
+          </section>
+
+          <section class="genform-detail-section">
+            <div class="genform-detail-section-header">
+              <h3>Wybór urządzeń</h3>
+              <p>W pierwszej kolejności wybierz urządzenia i uzupełnij ceny, które będą widoczne na proformie.</p>
+            </div>
+            <div class="genform-workflow-toolbar">
+              <div class="genform-actions">
+                <button id="genform-workflow-save-devices" type="button" class="genform-btn-primary">Zapisz wybór urządzeń</button>
+                <button id="genform-workflow-refresh-sheet-status" type="button" class="genform-btn-secondary">Odśwież statusy z arkusza</button>
+                <button id="genform-workflow-release-sheet" type="button" class="genform-btn-secondary">Usuń rezerwacje</button>
+              </div>
+            </div>
+            <div class="genform-workflow-panel">
+              <h4>Urządzenia do formularza</h4>
+              <p id="genform-workflow-device-note" class="genform-build-info"></p>
+            </div>
+            <div class="genform-workflow-actions-row">
+              <label>
+                Wyszukaj
+                <input id="genform-workflow-device-search" type="text" placeholder="model, indeks, serial...">
+              </label>
+              <label>
+                Status
+                <select id="genform-workflow-device-status-filter"></select>
+              </label>
+              <label>
+                Rezerwacja
+                <select id="genform-workflow-device-reservation-filter"></select>
+              </label>
+            </div>
+            <p id="genform-workflow-sheet-cache-note" class="genform-build-info"></p>
+            <p id="genform-workflow-selection-summary" class="genform-build-info"></p>
+            <div class="genform-table-wrap">
+              <table class="genform-table genform-workflow-device-table">
+                <thead>
+                  <tr>
+                    <th>Wybór</th>
+                    <th>ID pozycji</th>
+                    <th>Urządzenie</th>
+                    <th>Indeks</th>
+                    <th>Dostępne</th>
+                    <th>Status</th>
+                    <th>Rezerwacja</th>
+                    <th>Cena netto</th>
+                    <th>Cena brutto</th>
+                  </tr>
+                </thead>
+                <tbody id="genform-workflow-device-body">
+                  <tr>
+                    <td colspan="9">Brak danych urządzeń.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="genform-workflow-actions-row genform-workflow-actions-row-tight">
+              <label>
+                Użytkownik MS
+                <select id="genform-workflow-sheet-assignee"></select>
+              </label>
+            </div>
+            <div class="genform-actions">
+              <button id="genform-workflow-save-devices-bottom" type="button" class="genform-btn-primary">Zapisz wybór urządzeń</button>
+              <button id="genform-workflow-refresh-sheet-status-bottom" type="button" class="genform-btn-secondary">Odśwież statusy z arkusza</button>
+              <button id="genform-workflow-release-sheet-bottom" type="button" class="genform-btn-secondary">Usuń rezerwacje</button>
+            </div>
+            <p id="genform-workflow-note" class="genform-detail-status-text"></p>
+          </section>
+        </div>
+      </section>
+
+      <section id="genform-proforma-modal" class="genform-modal" hidden>
+        <div class="genform-modal-card genform-proforma-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-proforma-title">
+          <header class="genform-modal-header">
+            <div>
+              <h2 id="genform-proforma-title">Proforma</h2>
+              <p id="genform-proforma-subtitle" class="genform-detail-status-text">Kolejny etap po kliencie i wyborze urządzeń.</p>
+            </div>
+            <div class="genform-actions genform-detail-actions">
+              <button id="genform-proforma-create-top" type="button" class="genform-btn-primary">Utwórz PROFORMĘ</button>
+              <a id="genform-proforma-pdf-top" class="genform-btn-secondary" href="#" download hidden>Zapisz do PDF</a>
+              <button id="genform-proforma-close" type="button" class="genform-btn-secondary">Zamknij</button>
+            </div>
+          </header>
+          <section class="genform-detail-section">
+            <div class="genform-proforma-party-grid">
+              <article class="genform-detail-summary-card">
+                <dt>Dane firmy z formularza</dt>
+                <dd id="genform-proforma-customer-card"></dd>
+              </article>
+              <article class="genform-detail-summary-card">
+                <dt>Nabywca widoczny na proformie</dt>
+                <dd id="genform-proforma-buyer-card"></dd>
+              </article>
+            </div>
+            <div class="genform-proforma-status-grid">
+              <article class="genform-detail-summary-card">
+                <dt>Urządzenia</dt>
+                <dd id="genform-proforma-devices-status">Brak</dd>
+              </article>
+              <article class="genform-detail-summary-card">
+                <dt>Proforma</dt>
+                <dd id="genform-proforma-number-status">Brak</dd>
+              </article>
+              <article class="genform-detail-summary-card">
+                <dt>Klient MS</dt>
+                <dd id="genform-proforma-client-status">Brak</dd>
+              </article>
+            </div>
+            <div class="genform-proforma-help">
+              <label class="genform-checkbox">
+                <input id="genform-proforma-bank" type="checkbox" checked>
+                Proforma na bank
+              </label>
+              <p id="genform-proforma-bank-note" class="genform-detail-status-text"></p>
+            </div>
+            <div class="genform-table-wrap">
+              <table class="genform-table genform-workflow-device-table">
+                <thead>
+                  <tr>
+                    <th>Lp.</th>
+                    <th>Urządzenie</th>
+                    <th>Nr wew.</th>
+                    <th>Cena netto</th>
+                    <th>Cena brutto</th>
+                  </tr>
+                </thead>
+                <tbody id="genform-proforma-device-body">
+                  <tr>
+                    <td colspan="5">Brak wybranych urządzeń.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="genform-workflow-actions-row genform-workflow-actions-row-tight">
+              <label>
+                Osoba wystawiająca fakturę
+                <select id="genform-proforma-sheet-assignee"></select>
+              </label>
+            </div>
+            <div class="genform-actions">
+              <button id="genform-proforma-create" type="button" class="genform-btn-primary">Utwórz PROFORMĘ</button>
+              <a id="genform-proforma-pdf" class="genform-btn-secondary" href="#" download hidden>Zapisz do PDF</a>
+              <button id="genform-proforma-reset" type="button" class="genform-btn-secondary">Usuń proformę</button>
+            </div>
+            <p id="genform-proforma-note" class="genform-detail-status-text"></p>
           </section>
         </div>
       </section>

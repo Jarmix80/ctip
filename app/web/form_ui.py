@@ -34,6 +34,36 @@ REPRESENTATIVE_FIELDS = (
     "document_expiry_date",
 )
 
+FIELD_LABELS = {
+    "company_name": "Nazwa firmy",
+    "company_nip": "NIP",
+    "company_phone": "Nr telefonu firmowy",
+    "company_email": "E-mail firmowy",
+    "billing_email": "E-mail do e-faktur",
+    "registered_street": "Ulica",
+    "registered_building_no": "Nr budynku",
+    "registered_apartment_no": "Nr lokalu",
+    "registered_postal_code": "Kod pocztowy",
+    "registered_city": "Miejscowość",
+    "correspondence_street": "Ulica korespondencyjna",
+    "correspondence_building_no": "Nr budynku korespondencyjny",
+    "correspondence_apartment_no": "Nr lokalu korespondencyjny",
+    "correspondence_postal_code": "Kod pocztowy korespondencyjny",
+    "correspondence_city": "Miejscowość korespondencyjna",
+    "consent": "Zgoda",
+    "website": "Pole techniczne",
+    "first_name": "Imię",
+    "last_name": "Nazwisko",
+    "representative_email": "E-mail reprezentanta",
+    "representative_phone": "Telefon reprezentanta",
+    "pesel": "PESEL",
+    "birth_date": "Data urodzenia",
+    "document_type": "Rodzaj dokumentu tożsamości",
+    "document_number": "Nr dokumentu tożsamości",
+    "document_issue_date": "Data wydania dokumentu",
+    "document_expiry_date": "Data ważności dokumentu",
+}
+
 
 def _empty_representative() -> dict[str, str]:
     return {field: "" for field in REPRESENTATIVE_FIELDS}
@@ -119,7 +149,7 @@ def _validation_errors(exc: ValidationError) -> dict[str, str]:
     mapped: dict[str, str] = {}
     for error in exc.errors():
         location = tuple(error.get("loc", ()))
-        message = error.get("msg", "Nieprawidłowa wartość.")
+        message = _humanize_validation_error(error)
         if not location:
             mapped.setdefault("general", message)
             continue
@@ -131,6 +161,10 @@ def _validation_errors(exc: ValidationError) -> dict[str, str]:
                 field = location[2]
                 if isinstance(idx, int):
                     key = f"representatives.{idx}.{field}"
+                    message = (
+                        f"Reprezentant {idx + 1}: pole „{FIELD_LABELS.get(str(field), str(field))}” "
+                        f"{_humanize_validation_error(error, include_field_label=False).lower()}"
+                    )
                 else:
                     key = "representatives"
             else:
@@ -140,6 +174,72 @@ def _validation_errors(exc: ValidationError) -> dict[str, str]:
             continue
         mapped[key] = message
     return mapped
+
+
+def _humanize_validation_error(
+    error: Mapping[str, Any],
+    *,
+    include_field_label: bool = True,
+) -> str:
+    """Tłumaczy komunikaty Pydantic na krótkie opisy dla użytkownika formularza."""
+
+    error_type = str(error.get("type") or "")
+    message = str(error.get("msg") or "Nieprawidłowa wartość.")
+    location = tuple(error.get("loc", ()))
+    field_name = str(location[-1]) if location else ""
+    field_label = FIELD_LABELS.get(field_name, field_name)
+    ctx = error.get("ctx") or {}
+
+    if error_type == "string_too_short":
+        min_length = int(ctx.get("min_length") or 0)
+        base = f"musi mieć co najmniej {min_length} {_pluralize_znaki(min_length)}."
+        if min_length == 1:
+            base = "musi mieć co najmniej 1 znak."
+        if include_field_label and field_label:
+            return f"Pole „{field_label}” {base}"
+        return base[:1].upper() + base[1:]
+
+    if error_type == "string_too_long":
+        max_length = int(ctx.get("max_length") or 0)
+        base = f"może mieć maksymalnie {max_length} {_pluralize_znaki(max_length)}."
+        if include_field_label and field_label:
+            return f"Pole „{field_label}” {base}"
+        return f"Może mieć maksymalnie {max_length} znaków."
+
+    if "valid email address" in message.lower():
+        base = "musi zawierać prawidłowy adres e-mail."
+        if include_field_label and field_label:
+            return f"Pole „{field_label}” {base}"
+        return base[:1].upper() + base[1:]
+
+    if message.startswith("Value error, "):
+        message = message.replace("Value error, ", "", 1)
+
+    explicit_prefix = f"Pole '{field_name}' "
+    if field_name and message.startswith(explicit_prefix):
+        suffix = message.replace(explicit_prefix, "", 1)
+        if include_field_label and field_label:
+            return f"Pole „{field_label}” {suffix}"
+        return suffix
+
+    if not include_field_label:
+        lowered_label = field_label.lower()
+        lowered_message = message.lower()
+        if lowered_message.startswith(lowered_label):
+            suffix = message[len(field_label) :].lstrip(" :")
+            return suffix or message
+
+    return message
+
+
+def _pluralize_znaki(value: int) -> str:
+    """Zwraca poprawną odmianę słowa „znak” dla liczby całkowitej."""
+
+    if value % 100 in {12, 13, 14}:
+        return "znaków"
+    if value % 10 in {2, 3, 4}:
+        return "znaki"
+    return "znaków"
 
 
 def _initial_values_from_request(item) -> dict[str, Any]:

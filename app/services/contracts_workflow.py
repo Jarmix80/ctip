@@ -477,6 +477,29 @@ async def set_form_workflow_proforma(
     return workflow_case
 
 
+async def clear_form_workflow_proforma(
+    session: AsyncSession,
+    *,
+    workflow_case: FormWorkflowCase,
+    updated_by: int | None,
+) -> FormWorkflowCase:
+    """Usuwa informacje o proformie zapisane w sprawie workflow."""
+    devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    workflow_case.proforma_firebird_id = None
+    workflow_case.proforma_number = None
+    workflow_case.proforma_pdf_path = None
+    workflow_case.updated_by = updated_by
+    workflow_case.updated_at = datetime.now(UTC)
+    workflow_case.stage = derive_workflow_stage(
+        firebird_client_id=workflow_case.firebird_client_id,
+        devices_count=len(devices),
+        proforma_number=workflow_case.proforma_number,
+        proforma_firebird_id=workflow_case.proforma_firebird_id,
+    )
+    await session.flush()
+    return workflow_case
+
+
 async def set_form_workflow_business_status(
     session: AsyncSession,
     *,
@@ -767,6 +790,7 @@ __all__ = [
     "set_form_workflow_delivery",
     "set_form_workflow_business_status",
     "clear_form_workflow_delivery",
+    "clear_form_workflow_proforma",
     "set_form_workflow_client",
     "set_form_workflow_proforma",
     "workflow_business_status_label",
