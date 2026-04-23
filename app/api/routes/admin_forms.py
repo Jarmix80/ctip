@@ -19,6 +19,11 @@ from app.schemas.form_generator import (
 )
 from app.services import form_generator, section_permissions
 from app.services.audit import record_audit
+from app.services.contracts_dashboard import (
+    load_firebird_runtime_config,
+    use_firebird_runtime_config,
+)
+from app.services.contracts_proforma import delete_proforma_from_firebird
 from app.services.contracts_workflow import get_form_workflow_case, list_form_workflow_devices
 from app.services.workflow_sheet_sync import (
     load_workflow_sheet_runtime_config,
@@ -246,6 +251,7 @@ async def delete_form(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
 
     sheet_release_result: dict[str, Any] | None = None
+    firebird_delete_result: dict[str, Any] | None = None
     workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
     if workflow_case is not None:
         workflow_devices = await list_form_workflow_devices(
@@ -269,6 +275,41 @@ async def delete_form(
                             f"{exc}"
                         ),
                     ) from exc
+        if workflow_case.proforma_firebird_id:
+            firebird_config = await load_firebird_runtime_config(session)
+            try:
+                with use_firebird_runtime_config(firebird_config):
+                    delete_result = await asyncio.to_thread(
+                        delete_proforma_from_firebird,
+                        int(workflow_case.proforma_firebird_id),
+                    )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=str(exc),
+                ) from exc
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        "Nie udalo sie usunac proformy Firebird dla dezaktywowanego formularza: "
+                        f"{exc}"
+                    ),
+                ) from exc
+            if not delete_result.deleted:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Nie znaleziono proformy w aktywnej bazie Firebird dla dezaktywowanego formularza. "
+                        "Dezaktywacja zostala przerwana."
+                    ),
+                )
+            firebird_delete_result = {
+                "deleted": bool(delete_result.deleted),
+                "deleted_lines": int(delete_result.deleted_lines or 0),
+                "pdf_deleted": bool(delete_result.pdf_deleted),
+                "proforma_firebird_id": int(delete_result.id_faktura_table),
+            }
 
     await form_generator.delete_form_request(session, item)
     await record_audit(
@@ -289,6 +330,7 @@ async def delete_form(
             "sheet_release_reason": (
                 sheet_release_result.get("reason") if sheet_release_result else None
             ),
+            "firebird_delete": firebird_delete_result,
         },
     )
     await session.commit()

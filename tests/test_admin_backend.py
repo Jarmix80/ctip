@@ -5278,6 +5278,107 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             snapshot = workflow_device.snapshot or {}
             self.assertEqual(snapshot.get("sheet_proforma_number"), "")
 
+    async def test_contracts_form_workflow_proforma_reset_returns_409_when_firebird_delete_did_not_happen(
+        self,
+    ):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70021,
+                proforma_number="21/proforma/2026",
+            )
+            session.add(case)
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_contracts.delete_proforma_from_firebird",
+            return_value=SimpleNamespace(
+                id_faktura_table=70021,
+                deleted=False,
+                deleted_lines=0,
+                pdf_deleted=False,
+            ),
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/proforma-reset",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Nie znaleziono proformy", response.json()["detail"])
+
+    async def test_contracts_form_workflow_proforma_reset_returns_409_when_sheet_rows_not_found(
+        self,
+    ):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70021,
+                proforma_number="21/proforma/2026",
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=18070,
+                    producer="Ricoh",
+                    model="IMC 300",
+                    ewidencja="KP/5045",
+                    snapshot={"row": 18070, "sheet_row": 77},
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.delete_proforma_from_firebird",
+                return_value=SimpleNamespace(
+                    id_faktura_table=70021,
+                    deleted=True,
+                    deleted_lines=1,
+                    pdf_deleted=True,
+                ),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.clear_workflow_proforma_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia magazyn",
+                    "cleared_count": 0,
+                    "rows": [],
+                    "added_headers": [],
+                },
+            ),
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/proforma-reset",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Arkusz Google nie odnalazl", response.json()["detail"])
+
     async def test_contracts_form_workflow_sheet_sync_endpoint_updates_device_snapshot(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()
@@ -5540,6 +5641,67 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 204)
         release_mock.assert_called_once()
+
+    async def test_delete_form_also_deletes_proforma_from_firebird(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70001,
+                proforma_number="4/proforma/2026",
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=23,
+                    producer="Ricoh",
+                    model="IMC 3500",
+                    ewidencja="KP/5032",
+                    snapshot={"row": 23, "index": "KP/5032", "sheet_row": 77},
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_forms.release_workflow_devices_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia magazyn",
+                    "released_count": 1,
+                    "rows": [{"source_row": 23, "sheet_row": 77, "action": "released"}],
+                },
+            ) as release_mock,
+            patch(
+                "app.api.routes.admin_forms.delete_proforma_from_firebird",
+                return_value=SimpleNamespace(
+                    id_faktura_table=70001,
+                    deleted=True,
+                    deleted_lines=1,
+                    pdf_deleted=True,
+                ),
+            ) as firebird_mock,
+        ):
+            response = await self.client.delete(
+                f"/admin/forms/{form.id}",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 204)
+        release_mock.assert_called_once()
+        firebird_mock.assert_called_once_with(70001)
 
     async def test_admin_users_duplicate_email_returns_400(self):
         token, _ = await self._login()
