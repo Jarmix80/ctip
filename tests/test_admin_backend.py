@@ -5,6 +5,7 @@ import sys
 import unittest
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -5168,6 +5169,114 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["proforma_number"], "21/proforma/2026")
         self.assertIn("Proforma jest juz zapisana", body["message"])
         create_mock.assert_not_called()
+
+    async def test_contracts_form_workflow_proforma_reset_deletes_firebird_and_clears_sheet(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="PENDING_APPROVAL",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                firebird_client_status="created",
+                proforma_firebird_id=70021,
+                proforma_number="21/proforma/2026",
+                proforma_pdf_path="inbox/faktura/generated/proforma_70021.pdf",
+                client_payload_snapshot={"company_name": "FLOW TEST"},
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=18070,
+                    producer="Ricoh",
+                    model="IMC 300",
+                    serial="3920P401043",
+                    ewidencja="KP/5045",
+                    reservation_status="brak rezerwacji",
+                    price="2361.60",
+                    price_net="1920.00",
+                    price_gross="2361.60",
+                    snapshot={
+                        "row": 18070,
+                        "sheet_row": 77,
+                        "sheet_sync_status": "synced",
+                        "sheet_proforma_number": "21/proforma/2026",
+                    },
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.delete_proforma_from_firebird",
+                return_value=SimpleNamespace(
+                    id_faktura_table=70021,
+                    deleted=True,
+                    deleted_lines=1,
+                    pdf_deleted=True,
+                ),
+            ) as delete_mock,
+            patch(
+                "app.api.routes.admin_contracts.clear_workflow_proforma_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia magazyn",
+                    "cleared_count": 1,
+                    "rows": [{"source_row": 18070, "sheet_row": 77, "action": "proforma_cleared"}],
+                    "added_headers": [],
+                },
+            ) as sheet_mock,
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/proforma-reset",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertTrue(body["firebird_delete"]["deleted"])
+        self.assertEqual(body["sheet_clear"]["cleared_count"], 1)
+        self.assertIn("Menadzera Serwisu", body["message"])
+        delete_mock.assert_called_once_with(70021)
+        sheet_mock.assert_called_once()
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form.id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertIsNone(workflow_case.proforma_firebird_id)
+            self.assertIsNone(workflow_case.proforma_number)
+            self.assertIsNone(workflow_case.proforma_pdf_path)
+
+            workflow_device = (
+                (
+                    await session.execute(
+                        select(FormWorkflowDevice).where(
+                            FormWorkflowDevice.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            snapshot = workflow_device.snapshot or {}
+            self.assertEqual(snapshot.get("sheet_proforma_number"), "")
 
     async def test_contracts_form_workflow_sheet_sync_endpoint_updates_device_snapshot(self):
         token, _ = await self._login_operator()

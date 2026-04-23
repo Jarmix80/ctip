@@ -749,6 +749,57 @@ def release_workflow_devices_from_sheet(
     }
 
 
+def clear_workflow_proforma_from_sheet(*, devices: list[dict[str, Any]]) -> dict[str, Any]:
+    """Czyści numer proformy z arkusza bez zwalniania rezerwacji urządzeń."""
+
+    config = _resolve_workflow_sheet_runtime_config()
+    enabled, reason = workflow_sheet_sync_configured(config)
+    if not enabled:
+        return {
+            "enabled": False,
+            "reason": reason,
+            "worksheet_title": None,
+            "cleared_count": 0,
+            "rows": [],
+            "added_headers": [],
+        }
+
+    workbook, _ = _open_workbook(config)
+    worksheet = _resolve_devices_worksheet(workbook, config)
+
+    headers, header_index, values, added_headers = _prepare_headers(workbook, worksheet)
+    data_rows = [list(row) for row in values[1:]] if len(values) > 1 else []
+
+    updates: list[dict[str, Any]] = []
+    row_results: list[dict[str, Any]] = []
+    for device in devices:
+        row_number = _find_matching_row_number(data_rows, header_index, device)
+        if row_number is None:
+            continue
+        _queue_single_cell_update(updates, row_number, header_index, "proforma_grenke", "")
+        row_results.append(
+            {
+                "source_row": _coerce_int(device.get("source_row") or device.get("row")),
+                "sheet_row": row_number,
+                "action": "proforma_cleared",
+            }
+        )
+
+    if updates:
+        worksheet.batch_update(updates, value_input_option="USER_ENTERED")
+
+    _hide_helper_column(workbook, worksheet, header_index)
+
+    return {
+        "enabled": True,
+        "reason": None,
+        "worksheet_title": worksheet.title,
+        "cleared_count": len(row_results),
+        "rows": row_results,
+        "added_headers": added_headers,
+    }
+
+
 def _open_workbook(
     config: WorkflowSheetRuntimeConfig | None = None,
     *,
@@ -1370,6 +1421,7 @@ def _ensure_row_width(row: list[str], target: int) -> list[str]:
 
 __all__ = [
     "bootstrap_workflow_sheet_headers",
+    "clear_workflow_proforma_from_sheet",
     "list_workflow_sheet_assignee_options",
     "load_workflow_sheet_devices_lookup",
     "load_workflow_sheet_runtime_config",

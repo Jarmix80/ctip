@@ -99,6 +99,16 @@ class FirebirdProformaWriteResult:
     pdf_path: str | None = None
 
 
+@dataclass(slots=True)
+class FirebirdProformaDeleteResult:
+    """Wynik usuniecia proformy z Firebird."""
+
+    id_faktura_table: int
+    deleted: bool
+    deleted_lines: int
+    pdf_deleted: bool
+
+
 def build_proforma_preview_url(proforma_firebird_id: int, *, variant: str = "v1") -> str:
     """Buduje URL podgladu proformy w FLOW."""
     chosen_variant = "v1" if variant not in {"base", "v1"} else variant
@@ -113,6 +123,64 @@ def build_proforma_pdf_url(proforma_firebird_id: int) -> str:
 def build_proforma_pdf_storage_path(proforma_firebird_id: int) -> Path:
     """Zwraca docelowa sciezke zapisu PDF proformy."""
     return PROFORMA_PDF_DIR / f"proforma_{proforma_firebird_id}.pdf"
+
+
+def delete_proforma_from_firebird(proforma_firebird_id: int) -> FirebirdProformaDeleteResult:
+    """Usuwa proforme i jej pozycje z Firebird oraz kasuje zapisany PDF."""
+
+    enabled, reason = firebird_writes_enabled()
+    if not enabled:
+        raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
+    if proforma_firebird_id <= 0:
+        raise ValueError("Brak poprawnego ID proformy Firebird do usuniecia.")
+
+    connection = _firebird_connection()
+    cursor = connection.cursor()
+    deleted_lines = 0
+    deleted = False
+    try:
+        cursor.execute(
+            """
+            SELECT FIRST 1 ID_FAKTURA_TABLE
+            FROM FAKTURA
+            WHERE ID_FAKTURA_TABLE = ? AND RODZAJ_DOK = 'proforma'
+            """,
+            (proforma_firebird_id,),
+        )
+        row = cursor.fetchone()
+        if row and row[0] is not None:
+            cursor.execute(
+                "DELETE FROM FPOZYCJA WHERE ID_FAKTURA = ? AND RODZAJ_DOK = 'proforma'",
+                (proforma_firebird_id,),
+            )
+            deleted_lines = int(getattr(cursor, "rowcount", 0) or 0)
+            cursor.execute(
+                "DELETE FROM FAKTURA WHERE ID_FAKTURA_TABLE = ? AND RODZAJ_DOK = 'proforma'",
+                (proforma_firebird_id,),
+            )
+            deleted = int(getattr(cursor, "rowcount", 0) or 0) > 0
+            connection.commit()
+        else:
+            connection.rollback()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+    pdf_path = build_proforma_pdf_storage_path(proforma_firebird_id)
+    pdf_deleted = False
+    if pdf_path.exists():
+        pdf_path.unlink()
+        pdf_deleted = True
+
+    return FirebirdProformaDeleteResult(
+        id_faktura_table=proforma_firebird_id,
+        deleted=deleted,
+        deleted_lines=deleted_lines,
+        pdf_deleted=pdf_deleted,
+    )
 
 
 def build_proforma_download_filename(
@@ -1493,6 +1561,7 @@ def _zloty_form(value: int) -> str:
 
 
 __all__ = [
+    "FirebirdProformaDeleteResult",
     "FirebirdProformaWriteResult",
     "amount_to_polish_words",
     "build_proforma_download_filename",
@@ -1500,5 +1569,6 @@ __all__ = [
     "build_proforma_preview_url",
     "ensure_proforma_pdf_file",
     "create_proforma_from_workflow",
+    "delete_proforma_from_firebird",
     "load_proforma_preview_data",
 ]

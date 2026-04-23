@@ -26,6 +26,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 
 
 @dataclass(slots=True)
@@ -106,6 +107,14 @@ def _set_sequence(conn: psycopg.Connection[Any], sequence_name: str, table_name:
             f"SELECT setval(%s, COALESCE((SELECT MAX(id) FROM {table_name}), 1), true)",
             (sequence_name,),
         )
+
+
+def _json_param(value: Any) -> Any:
+    """Zwraca parametr bezpieczny dla kolumn JSON."""
+
+    if value is None:
+        return None
+    return Json(value)
 
 
 def _fetch_forms(
@@ -372,6 +381,7 @@ def _upsert_workflow_cases(
                     **row,
                     "created_by": _coerce_fk(row.get("created_by"), allowed_ids=allowed_admin_ids),
                     "updated_by": _coerce_fk(row.get("updated_by"), allowed_ids=allowed_admin_ids),
+                    "client_payload_snapshot": _json_param(row.get("client_payload_snapshot")),
                 },
             )
             inserted += 1
@@ -442,7 +452,10 @@ def _upsert_workflow_devices(
                     firebird_client_id = EXCLUDED.firebird_client_id,
                     snapshot = EXCLUDED.snapshot
                 """,
-                row,
+                {
+                    **row,
+                    "snapshot": _json_param(row.get("snapshot")),
+                },
             )
             inserted += 1
     return inserted

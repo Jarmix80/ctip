@@ -601,6 +601,96 @@ def test_release_workflow_devices_from_sheet_restores_previous_status_and_clears
     )
 
 
+def test_clear_workflow_proforma_from_sheet_clears_only_proforma_column():
+    workbook_requests = []
+    worksheet = SimpleNamespace(
+        title="zerowki_testowy",
+        values=[
+            [
+                "PRODUCENT",
+                "MODEL",
+                "SERIAL",
+                "EWIDENCJA",
+                "STATUS",
+                "LICZNIK B/W",
+                "LICZNIK KOLOR",
+                "CENA",
+                "UWAGI",
+                "REZERWACJA GRENKE",
+                "Osoba obsługująca",
+                "FORMULARZ CTIP",
+                "FAKTURA PROFORMA GRENKE",
+                "CTIP_FORM_ID",
+                "CTIP_WORKFLOW_CASE_ID",
+                "STATUS HANDLOWY (LEGACY)",
+                "MS_ID_MAGAZYN_TABLE",
+            ],
+            [
+                "Ricoh",
+                "MP 401",
+                "T605H900327",
+                "KP/4066",
+                "04. Rezerwacja GRENKE",
+                "",
+                "",
+                "",
+                "Rezerwacja zalozona automatycznie przez CTIP.",
+                "Marcin Jarmuszkiewicz",
+                "",
+                "23",
+                "21/proforma/2026",
+                "23",
+                "8",
+                "Robocza",
+                "12922",
+            ],
+        ],
+    )
+    worksheet.get_all_values = lambda: [list(row) for row in worksheet.values]
+    worksheet.batch_update = lambda updates, value_input_option=None: _apply_batch_update(
+        worksheet, updates
+    )
+    workbook = SimpleNamespace(
+        title="zerowki_testowy",
+        batch_update=lambda body: workbook_requests.append(body),
+    )
+
+    with (
+        patch.object(
+            workflow_sheet_sync,
+            "_open_workbook",
+            return_value=(workbook, "bot@example.com"),
+        ),
+        patch.object(
+            workflow_sheet_sync,
+            "_resolve_devices_worksheet",
+            return_value=worksheet,
+        ),
+        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+    ):
+        result = workflow_sheet_sync.clear_workflow_proforma_from_sheet(
+            devices=[
+                {
+                    "source_row": 12922,
+                    "row": 12922,
+                    "sheet_row": 2,
+                    "index": "KP/4066",
+                    "ewidencja": "KP/4066",
+                }
+            ]
+        )
+
+    assert result["enabled"] is True
+    assert result["cleared_count"] == 1
+    assert worksheet.values[1][4] == "04. Rezerwacja GRENKE"
+    assert worksheet.values[1][8] == "Rezerwacja zalozona automatycznie przez CTIP."
+    assert worksheet.values[1][9] == "Marcin Jarmuszkiewicz"
+    assert worksheet.values[1][11] == "23"
+    assert worksheet.values[1][12] == ""
+    assert worksheet.values[1][13] == "23"
+    assert workbook_requests == []
+
+
 def _apply_batch_update(worksheet, updates):
     for update in updates:
         range_name = update["range"]

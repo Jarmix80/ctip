@@ -1427,7 +1427,7 @@ function initializeGenForm() {
       return;
     }
     const confirmed = window.confirm(
-      `Proforma o numerze ${workflow.proforma_number} zostanie usunięta. Rezerwacja urządzeń nadal pozostanie aktywna. Czy kontynuować?`
+      `Proforma o numerze ${workflow.proforma_number} zostanie usunięta z Menadzera Serwisu, wpis w arkuszu Google zostanie wyczyszczony, a numer dokumentu zostanie zwolniony. Rezerwacja urządzeń nadal pozostanie aktywna. Czy kontynuować?`
     );
     if (!confirmed) {
       return;
@@ -1445,9 +1445,7 @@ function initializeGenForm() {
       if (!response.ok) {
         throw new Error(data.detail || "Nie udało się usunąć proformy.");
       }
-      showSuccess(
-        data.message || "Usunięto informacje o proformie. Rezerwacja urządzeń pozostała bez zmian."
-      );
+      showSuccess(data.message || "Usunięto proformę, a rezerwacja urządzeń pozostała bez zmian.");
       await loadItems(false);
       await openProformaModal(activeWorkflowFormId);
     } catch (err) {

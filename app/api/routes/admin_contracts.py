@@ -29,7 +29,10 @@ from app.services.contracts_dashboard import (
     synchronize_device_from_sheet_row,
     use_firebird_runtime_config,
 )
-from app.services.contracts_proforma import create_proforma_from_workflow
+from app.services.contracts_proforma import (
+    create_proforma_from_workflow,
+    delete_proforma_from_firebird,
+)
 from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_DRAFT,
     WORKFLOW_BUSINESS_STATUS_REJECTED,
@@ -59,6 +62,7 @@ from app.services.workflow_sheet_status_cache import (
     refresh_workflow_sheet_status_cache,
 )
 from app.services.workflow_sheet_sync import (
+    clear_workflow_proforma_from_sheet,
     list_workflow_sheet_assignee_options,
     load_workflow_sheet_runtime_config,
     release_workflow_devices_from_sheet,
@@ -695,6 +699,8 @@ def _apply_sheet_sync_snapshot(
             snapshot["sheet_assignee"] = assignee_label
         if proforma_number:
             snapshot["sheet_proforma_number"] = proforma_number
+        elif operation == "proforma_cleared":
+            snapshot["sheet_proforma_number"] = ""
 
         snapshot["sheet_sync_updated_at"] = updated_at
         if error:
@@ -2325,7 +2331,7 @@ async def contracts_form_workflow_proforma_reset(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Czyści informacje o proformie zapisane w sprawie workflow."""
+    """Usuwa proforme z Firebird i arkusza, a potem czyści stan CTIP."""
     admin_session, admin_user = admin_context
     if admin_user.role not in {"admin", "operator"}:
         raise HTTPException(
@@ -2358,13 +2364,80 @@ async def contracts_form_workflow_proforma_reset(
             status_code=status.HTTP_409_CONFLICT,
             detail="Brak zapisanej sprawy workflow dla formularza.",
         )
+    if not workflow_case.proforma_firebird_id or not workflow_case.proforma_number:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak zapisanej proformy do usuniecia.",
+        )
+
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    firebird_delete_result: dict[str, Any] | None = None
+    sheet_clear_result: dict[str, Any] | None = None
+    sheet_clear_reason: str | None = None
+    sheet_clear_warning: str | None = None
+
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        try:
+            delete_result = await asyncio.to_thread(
+                delete_proforma_from_firebird,
+                int(workflow_case.proforma_firebird_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
+    firebird_delete_result = {
+        "deleted": bool(delete_result.deleted),
+        "deleted_lines": int(delete_result.deleted_lines or 0),
+        "pdf_deleted": bool(delete_result.pdf_deleted),
+        "proforma_firebird_id": int(delete_result.id_faktura_table),
+    }
+
+    sheet_payloads = _build_sheet_release_payloads(workflow_devices, include_all=True)
+    if sheet_payloads:
+        sheet_config = await load_workflow_sheet_runtime_config(session)
+        try:
+            with use_workflow_sheet_runtime_config(sheet_config):
+                sheet_clear_result = await asyncio.to_thread(
+                    clear_workflow_proforma_from_sheet,
+                    devices=sheet_payloads,
+                )
+            if sheet_clear_result.get("enabled"):
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="proforma_cleared",
+                    sheet_result=sheet_clear_result,
+                    assignee_id=None,
+                    assignee_label=None,
+                    proforma_number="",
+                )
+            else:
+                sheet_clear_reason = str(sheet_clear_result.get("reason") or "").strip() or None
+        except RuntimeError as exc:
+            sheet_clear_warning = str(exc)
+    if workflow_devices and not (sheet_clear_result and sheet_clear_result.get("enabled")):
+        _apply_sheet_sync_snapshot(
+            workflow_devices,
+            operation="proforma_cleared",
+            sheet_result=sheet_clear_result,
+            assignee_id=None,
+            assignee_label=None,
+            proforma_number="",
+            error=sheet_clear_warning,
+        )
 
     workflow_case = await clear_form_workflow_proforma(
         session,
         workflow_case=workflow_case,
         updated_by=admin_user.id,
     )
-    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
     await record_audit(
         session,
         user_id=admin_user.id,
@@ -2373,13 +2446,32 @@ async def contracts_form_workflow_proforma_reset(
         payload={
             "form_request_id": item.id,
             "workflow_case_id": workflow_case.id,
+            "firebird_delete": firebird_delete_result,
+            "sheet_clear_enabled": bool(sheet_clear_result and sheet_clear_result.get("enabled")),
+            "sheet_clear_count": (
+                int(sheet_clear_result.get("cleared_count") or 0) if sheet_clear_result else 0
+            ),
+            "sheet_clear_reason": sheet_clear_reason,
+            "sheet_clear_warning": sheet_clear_warning,
         },
     )
     await session.commit()
 
+    message_parts = [
+        "Usunieto proforme z Menadzera Serwisu, zwolniono numer dokumentu i wyczyszczono wpis w arkuszu Google."
+    ]
+    if sheet_clear_reason:
+        message_parts.append(f"Czyszczenie arkusza pominiete ({sheet_clear_reason}).")
+    if sheet_clear_warning:
+        message_parts.append("Uwaga: nie udalo sie zaktualizowac arkusza Google.")
+    message_parts.append("Rezerwacja urzadzen pozostala aktywna.")
+
     return {
         "ok": True,
-        "message": "Usunieto informacje o proformie ze sprawy workflow.",
+        "message": " ".join(message_parts),
+        "firebird_delete": firebird_delete_result,
+        "sheet_clear": sheet_clear_result,
+        "sheet_clear_warning": sheet_clear_warning,
         "workflow": serialize_workflow_case(workflow_case, workflow_devices),
     }
 
