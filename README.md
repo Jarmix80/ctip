@@ -26,6 +26,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `inbox/` – lokalny katalog wymiany plików z Windows (dropzone), celowo odcięty od repozytorium Git.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
 - `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
+- `scripts/sync_prod_forms_to_test.py` – import najnowszych formularzy workflow z produkcyjnego PostgreSQL do lokalnego `ctip_test` z odczytem `read_only` po stronie źródła i upsertami po stronie testu.
 - `integrations/google_sheets/update_calendar_and_devices.py` – aktualizacja arkuszy Google (`Kalendarz_wiersze`, `Urzadzenia`) z formatowaniem i slotami zdarzeń dziennych.
 
 ## Wymagania systemowe
@@ -609,6 +610,18 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
   - podgląd/zatrzymanie: `tmux attach -t ctip-stack-test`, zakończenie `kill-session -t ctip-stack-test` i `Ctrl+C` w oknie mocka.
 - Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
 - Start całości jednym poleceniem (mock + Firebird + kolektor + uvicorn + sms_sender): `./ctiptest` – tworzy sesję tmux `ctip-stack-test` z czterema oknami i blokuje uruchomienie, jeśli `.env.test` wskazuje na produkcyjną centralę, hosty baz `192.168.0.8`, bazę inną niż `ctip_test` albo `SMS_TEST_MODE` ≠ `true`. Przed startem sprawdza też dostępność Firebird pod `FB_HOST:FB_PORT`; gdy host jest lokalny (`127.0.0.1`/`localhost`) i port nie odpowiada, skrypt automatycznie uruchamia kontener `ctip-firebird-local` i czeka na nasłuch. Domyslnie uruchamia `uvicorn` bez `--reload`, aby nie wpadać w bledy watchera na katalogach roboczych; reload mozna wlaczyc jawnie przez `TEST_UVICORN_RELOAD=true ./ctiptest`. Skrypt publikuje testowy adres WWW pod wykrytym adresem LAN hosta albo pod wartoscia `TEST_PUBLIC_HOST`, dzieki czemu linki i panel nie wskazuja na `localhost` przy dostepie z innych maszyn. Przy pustych `SMS_API_*` wysylka przechodzi w lokalna symulacje `SIMULATED` bez ruchu do operatora.
+- Aby zasilić `ctip_test` realnymi formularzami workflow przed testami mailbox/GRENKE, można uruchomić:
+
+```bash
+source .venv/bin/activate
+set -a
+source .env.test
+source .env
+set +a
+python scripts/sync_prod_forms_to_test.py --limit 200 --status SUBMITTED
+```
+
+- Skrypt importuje `ctip.form_request`, `ctip.form_workflow_case` i `ctip.form_workflow_device`, zachowuje identyfikatory rekordów, po imporcie ustawia sekwencje po stronie testowej i nigdy nie zapisuje nic do źródłowej bazy produkcyjnej. Jeśli `created_by` lub `updated_by` wskazują użytkownika, którego nie ma w `ctip_test`, pola są zerowane do `NULL`, aby nie złamać kluczy obcych.
 
 ## Instalacja jako usługa Windows
 1. Przygotuj `D:\CTIP` (git clone), Python 3.11 x64, plik `.env`.
