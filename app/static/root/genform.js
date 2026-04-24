@@ -1020,9 +1020,9 @@ function initializeGenForm() {
   function updateWorkflowButtonsState() {
     const workflow = activeWorkflowData?.workflow || {};
     const hasClient = Boolean(workflow.firebird_client_id);
-    const hasDevices = Number(workflow.devices_selected_count || 0) > 0;
+    const selectedDevicesCount = getSelectedWorkflowDevices().length;
+    const hasDevices = Number(workflow.devices_selected_count || 0) > 0 || selectedDevicesCount > 0;
     const hasProforma = Boolean(workflow.proforma_number);
-    const hasUnsavedDeviceChanges = Boolean(activeWorkflowData?.workflow_devices_dirty);
     const missingPriceDevices = getWorkflowDevicesMissingPrice();
     const canCreateProforma = hasClient && hasDevices && !hasProforma && missingPriceDevices.length === 0;
 
@@ -1033,12 +1033,12 @@ function initializeGenForm() {
       button.disabled = !canCreateProforma && !hasProforma;
       button.textContent = hasProforma
         ? "Proforma już istnieje"
-        : !hasClient || !hasDevices
-          ? "Najpierw klient i urządzenia"
-          : missingPriceDevices.length > 0
-            ? "Uzupełnij ceny"
-            : hasUnsavedDeviceChanges
-              ? "Utwórz PROFORMĘ"
+        : !hasClient
+          ? "Najpierw zapisz klienta"
+          : !hasDevices
+            ? "Najpierw wybierz urządzenia"
+            : missingPriceDevices.length > 0
+              ? "Uzupełnij ceny"
               : "Utwórz PROFORMĘ";
     });
     if (proformaResetBtn) {
@@ -1427,7 +1427,7 @@ function initializeGenForm() {
       return;
     }
     const confirmed = window.confirm(
-      `Proforma o numerze ${workflow.proforma_number} zostanie usunięta z Menadzera Serwisu, wpis w arkuszu Google zostanie wyczyszczony, a numer dokumentu zostanie zwolniony. Rezerwacja urządzeń nadal pozostanie aktywna. Czy kontynuować?`
+      `Proforma o numerze ${workflow.proforma_number} zostanie usunięta. Rezerwacja urządzeń pozostanie aktywna. Czy kontynuować?`
     );
     if (!confirmed) {
       return;
