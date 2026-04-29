@@ -144,6 +144,7 @@ Dodatkowo skrypt:
 - przy ekstrakcji danych z PDF odrzuca błędne numery NIP na podstawie sumy kontrolnej, żeby nie mylić ich z numerami KRS lub innymi identyfikatorami,
 - zapisuje numer wniosku i metadane e-maila w snapshotcie sprawy (`_mailbox_meta`),
 - zapisuje odszyfrowaną umowę PDF do archiwum plików (`CONTRACTS_MAILBOX_ARCHIVE_ROOT`, katalog `nazwa_firmy/<nr_formularza>`) oraz zapisuje w bazie ścieżkę i opis pliku (`_mailbox_meta.archived_contract_files`),
+- jeżeli odszyfrowanie PDF nie powiedzie się, zapisuje fallbackowo zaszyfrowaną wersję umowy (`kind=encrypted_contract_pdf`) i również utrwala ścieżkę w `_mailbox_meta`,
 - dla zaszyfrowanego PDF próbuje odszyfrować dokument hasłem wyliczonym z danych reprezentanta i zwraca wynik ekstrakcji/OCR,
 - format hasła PDF: `ostatnie 5 cyfr PESEL + inicjały ImięNazwisko + $` (np. `05791JK$`),
 - zapisuje wszystkie załączniki lokalnie w strukturze `inbox/mailbox/contracts/<scope>/<YYYY-MM-DD>/<message_id>/`,
@@ -182,6 +183,23 @@ curl -X POST http://127.0.0.1:8000/admin/contracts/workflow/mailbox-sync \
 ```
 
 Endpoint zwraca skrócony raport (`summary`, `stdout_tail`, `stderr_tail`) i zapisuje zdarzenie audytowe `contracts_mailbox_sync_trigger`.
+
+### Test dostepu do zasobu SMB z .env
+Do szybkiej diagnostyki dostepu do udzialu sieciowego dostepny jest skrypt:
+- `scripts/check_smb_resource_access.py`
+
+Skrypt pobiera z `.env` (lub env) klucze:
+- `sciezka_dok_umow`
+- `login_dok_umow`
+- `pass_dok_umow`
+
+i wykonuje test logowania SMB + listowanie katalogu + odczyt pliku testowego.
+
+Przyklad:
+```bash
+source .venv/bin/activate
+python scripts/check_smb_resource_access.py --env-file .env --read-file test.txt
+```
 
 Automat mailboxa działa też cyklicznie w tle po starcie backendu (`app/main.py`) jako scheduler `contracts-mailbox-scheduler`. Każdy przebieg zapisuje wpis audytu `contracts_mailbox_sync_scheduler` z podsumowaniem, kodem wyjścia i ogonem logów (`stdout_tail`/`stderr_tail`).
 

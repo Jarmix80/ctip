@@ -265,6 +265,44 @@ def persist_decrypted_contract_pdf(
     pdf_bytes: bytes,
 ) -> dict[str, Any] | None:
     """Zapisuje odszyfrowaną umowę PDF do archiwum plików i zwraca metadane."""
+    return _persist_contract_pdf(
+        form_ctx=form_ctx,
+        mail_ctx=mail_ctx,
+        original_file_name=original_file_name,
+        pdf_bytes=pdf_bytes,
+        kind="decrypted_contract_pdf",
+        description="Umowa GRENKE (odszyfrowany PDF z e-maila).",
+    )
+
+
+def persist_encrypted_contract_pdf(
+    *,
+    form_ctx: FormContext,
+    mail_ctx: MailContext,
+    original_file_name: str,
+    pdf_bytes: bytes,
+) -> dict[str, Any] | None:
+    """Zapisuje zaszyfrowaną umowę PDF do archiwum jako fallback."""
+    return _persist_contract_pdf(
+        form_ctx=form_ctx,
+        mail_ctx=mail_ctx,
+        original_file_name=original_file_name,
+        pdf_bytes=pdf_bytes,
+        kind="encrypted_contract_pdf",
+        description="Umowa GRENKE (zaszyfrowany PDF z e-maila).",
+    )
+
+
+def _persist_contract_pdf(
+    *,
+    form_ctx: FormContext,
+    mail_ctx: MailContext,
+    original_file_name: str,
+    pdf_bytes: bytes,
+    kind: str,
+    description: str,
+) -> dict[str, Any] | None:
+    """Zapisuje plik umowy PDF do archiwum i zwraca metadane."""
     archive_root = _resolve_contract_archive_root()
     if archive_root is None:
         return None
@@ -291,8 +329,8 @@ def persist_decrypted_contract_pdf(
     candidate.write_bytes(pdf_bytes)
 
     return {
-        "kind": "decrypted_contract_pdf",
-        "description": "Umowa GRENKE (odszyfrowany PDF z e-maila).",
+        "kind": kind,
+        "description": description,
         "path": candidate.as_posix(),
         "file_name": candidate.name,
         "original_name": original_file_name,
@@ -1059,27 +1097,38 @@ async def run_sync(args: argparse.Namespace) -> int:
                     continue
 
                 archived_contract_file: dict[str, Any] | None = None
-                if (
-                    not args.dry_run
-                    and matched_ctx is not None
-                    and encrypted_pdf is not None
-                    and pdf_result is not None
-                    and pdf_result.success
-                    and pdf_result.decrypted_pdf_bytes
-                ):
+                if not args.dry_run and matched_ctx is not None and encrypted_pdf is not None:
                     encrypted_pdf_name, _ = encrypted_pdf
-                    try:
-                        archived_contract_file = persist_decrypted_contract_pdf(
-                            form_ctx=matched_ctx,
-                            mail_ctx=mail_ctx,
-                            original_file_name=encrypted_pdf_name,
-                            pdf_bytes=pdf_result.decrypted_pdf_bytes,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        warnings.append(
-                            "Nie udalo sie zapisac odszyfrowanej umowy PDF "
-                            f"dla formularza {matched_ctx.form.id}: {exc}"
-                        )
+                    if (
+                        pdf_result is not None
+                        and pdf_result.success
+                        and pdf_result.decrypted_pdf_bytes
+                    ):
+                        try:
+                            archived_contract_file = persist_decrypted_contract_pdf(
+                                form_ctx=matched_ctx,
+                                mail_ctx=mail_ctx,
+                                original_file_name=encrypted_pdf_name,
+                                pdf_bytes=pdf_result.decrypted_pdf_bytes,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            warnings.append(
+                                "Nie udalo sie zapisac odszyfrowanej umowy PDF "
+                                f"dla formularza {matched_ctx.form.id}: {exc}"
+                            )
+                    else:
+                        try:
+                            archived_contract_file = persist_encrypted_contract_pdf(
+                                form_ctx=matched_ctx,
+                                mail_ctx=mail_ctx,
+                                original_file_name=encrypted_pdf_name,
+                                pdf_bytes=encrypted_pdf[1],
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            warnings.append(
+                                "Nie udalo sie zapisac zaszyfrowanej umowy PDF "
+                                f"dla formularza {matched_ctx.form.id}: {exc}"
+                            )
 
                 if not args.dry_run:
                     update_result = await apply_mail_to_workflow(

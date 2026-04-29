@@ -230,3 +230,48 @@ def test_persist_decrypted_contract_pdf_saves_file_and_description(tmp_path: Pat
     assert saved["description"] == "Umowa GRENKE (odszyfrowany PDF z e-maila)."
     assert path.parent.parent.name == "ACME_TEST_COMPANY"
     assert path.parent.name == "321"
+
+
+def test_persist_encrypted_contract_pdf_saves_file_and_description(tmp_path: Path) -> None:
+    module = _load_sync_module()
+    form = SimpleNamespace(id=654, customer_name="ALFA Sp. z o.o.")
+    form_ctx = module.FormContext(
+        form=form,
+        payload={"company_name": "ALFA/TEST:COMPANY"},
+        workflow_case=None,
+        application_no_normalized=None,
+    )
+    mail_ctx = module.MailContext(
+        imap_id="100",
+        message_id="<msg-encrypted@test>",
+        subject="Decyzja do wniosku 173-025296",
+        sender="x@example.com",
+        body_text="",
+        email_date_utc=datetime(2026, 4, 16, 11, 37, 30, tzinfo=UTC),
+        event_type=module.MAILBOX_EVENT_DECISION,
+        application_no_raw="173-025296",
+        application_no_normalized="173025296",
+        attachments=[],
+    )
+
+    previous_root = module.settings.contracts_mailbox_archive_root
+    module.settings.contracts_mailbox_archive_root = str(tmp_path)
+    try:
+        saved = module.persist_encrypted_contract_pdf(
+            form_ctx=form_ctx,
+            mail_ctx=mail_ctx,
+            original_file_name="173_25296_wn_a_cr.pdf",
+            pdf_bytes=b"%PDF-1.4\\nencrypted\\n",
+        )
+    finally:
+        module.settings.contracts_mailbox_archive_root = previous_root
+
+    assert isinstance(saved, dict)
+    path = Path(saved["path"])
+    assert path.exists()
+    assert path.is_file()
+    assert path.read_bytes() == b"%PDF-1.4\\nencrypted\\n"
+    assert saved["kind"] == "encrypted_contract_pdf"
+    assert saved["description"] == "Umowa GRENKE (zaszyfrowany PDF z e-maila)."
+    assert path.parent.parent.name == "ALFA_TEST_COMPANY"
+    assert path.parent.name == "654"
