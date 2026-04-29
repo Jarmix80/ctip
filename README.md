@@ -187,6 +187,43 @@ Automat mailboxa działa też cyklicznie w tle po starcie backendu (`app/main.py
 
 Dashboard `GET /admin/contracts/dashboard` zwraca dodatkowo sekcję `mailbox_sync` z metadanymi ostatniego przebiegu synchronizacji e-mail (`source`, `result`, `last_run_at`, `summary`, `exit_code`), dzięki czemu operator widzi aktualność automatu bez przeglądania logów.
 
+### Smoke-test logowania web i GENFORM/FLOW
+Do szybkiej walidacji po wdrozeniu dostepny jest skrypt:
+- `scripts/smoke_web_genform_flow.py`
+
+Zakres testu:
+- logowanie przez `POST /admin/auth/login`,
+- walidacja sesji przez `GET /admin/auth/me`,
+- odczyt dashboardu GENFORM/FLOW dla `active/accepted/rejected/unfilled`,
+- kontrola spojnosci kluczowych przyciskow (`summary`, `release_resources`),
+- opcjonalny dry-run synchronizacji mailboxa.
+
+Przyklad (lokalnie):
+```bash
+source .venv/bin/activate
+set -a && source .env.test && set +a
+python scripts/smoke_web_genform_flow.py \
+  --base-url http://127.0.0.1:8000 \
+  --email admin@example.com \
+  --password-env PASS_ADMIN_WEB
+```
+
+Przyklad (produkcja, haslo z `.env` pod kluczem `pass_admin_web`):
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+python scripts/smoke_web_genform_flow.py \
+  --base-url http://192.168.0.8:8000 \
+  --email marcin@ksero-partner.com.pl \
+  --password-env pass_admin_web \
+  --check-mailbox-dry-run \
+  --out inbox/wynik_smoke_genform_flow.json
+```
+
+Kod wyjscia:
+- `0` - test zakonczony powodzeniem,
+- `2` - wykryto bledy (szczegoly w JSON na STDOUT lub pliku `--out`).
+
 ### Zmienne środowiskowe kolektora (`collector_full.py`)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
