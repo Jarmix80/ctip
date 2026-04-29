@@ -3016,6 +3016,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["forms_scope"], "all")
+        self.assertIn("mailbox_sync", body)
+        self.assertFalse(body["mailbox_sync"]["available"])
         self.assertEqual(body["forms_status_totals"]["DISPATCHED"], 1)
         self.assertEqual(body["forms_status_totals"]["SUBMITTED"], 1)
         forms_by_id = {item["id"]: item for item in body["forms"]}
@@ -3026,6 +3028,70 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(forms_by_id[dispatched.id]["status"], "DISPATCHED")
         self.assertIsNone(forms_by_id[dispatched.id]["contract_action"])
         self.assertEqual(forms_by_id[dispatched.id]["customer_name"], "Klient Wyslany")
+
+    async def test_contracts_dashboard_returns_last_mailbox_sync_summary(self):
+        token, _ = await self._login_operator()
+        await self._create_submitted_form_request(
+            customer_name="Klient Mailbox",
+            customer_email="mailbox@test.local",
+            customer_phone="+48600404040",
+        )
+        finished_at = datetime(2026, 4, 29, 8, 4, 5, tzinfo=UTC)
+        started_at = finished_at - timedelta(seconds=9)
+        async with self.session_factory() as session:
+            session.add(
+                AdminAuditLog(
+                    created_at=finished_at,
+                    user_id=2,
+                    action="contracts_mailbox_sync_scheduler",
+                    payload={
+                        "result": "ok",
+                        "started_at": started_at.isoformat(),
+                        "finished_at": finished_at.isoformat(),
+                        "exit_code": 0,
+                        "summary": {
+                            "analysed": 19,
+                            "updated": 7,
+                            "skipped_state": 0,
+                            "warnings": 14,
+                            "unknown_subjects": 2,
+                            "unmatched_forms": 12,
+                            "ambiguous_matches": 0,
+                            "unresolved_open": 14,
+                        },
+                    },
+                    client_ip="scheduler",
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.find_client_in_firebird",
+                return_value=FirebirdClientMatch(found=False),
+            ),
+        ):
+            response = await self.client.get(
+                "/admin/contracts/dashboard?forms_scope=all&include_devices=0",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        sync = body["mailbox_sync"]
+        self.assertTrue(sync["available"])
+        self.assertEqual(sync["source"], "scheduler")
+        self.assertEqual(sync["result"], "ok")
+        self.assertEqual(sync["last_run_at"], finished_at.isoformat())
+        self.assertEqual(sync["started_at"], started_at.isoformat())
+        self.assertEqual(sync["finished_at"], finished_at.isoformat())
+        self.assertEqual(sync["exit_code"], 0)
+        self.assertEqual(sync["summary"]["updated"], 7)
+        self.assertEqual(sync["summary"]["warnings"], 14)
 
     async def test_contracts_dashboard_skips_devices_when_include_devices_disabled(self):
         token, _ = await self._login_operator()
@@ -3922,7 +3988,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["workflow"]["firebird_client_id"], 2897)
         self.assertEqual(body["workflow"]["devices_selected_count"], 1)
-        self.assertEqual(body["workflow"]["business_status"], "PENDING_APPROVAL")
+        self.assertEqual(body["workflow"]["business_status"], "WAITING_SIGNATURE")
         selected = [item for item in body["available_devices"] if item["selected"]]
         self.assertEqual(len(selected), 1)
         self.assertEqual(selected[0]["row"], 14)
@@ -4596,7 +4662,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(devices_by_row[22].snapshot["sheet_row"], 12)
 
         self.assertEqual(sync_kwargs["workflow_case_id"], workflow_case.id)
-        self.assertEqual(sync_kwargs["business_status_label"], "Robocza")
+        self.assertEqual(sync_kwargs["business_status_label"], "Wypełniony formularz klienta")
 
     async def test_contracts_form_workflow_devices_releases_removed_rows_from_sheet(self):
         token, _ = await self._login_operator()
@@ -4931,7 +4997,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["proforma_number"], "4/proforma/2026")
         self.assertEqual(body["preview_url"], "/flow/proforma/70001/pdf")
         self.assertEqual(body["workflow"]["stage"], "PROFORMA_CREATED")
-        self.assertEqual(body["workflow"]["business_status"], "PENDING_APPROVAL")
+        self.assertEqual(body["workflow"]["business_status"], "WAITING_SIGNATURE")
         create_payload = create_proforma_mock.call_args.kwargs["selected_devices"][0]
         self.assertEqual(create_payload["price_net"], "3024.39")
         self.assertEqual(create_payload["price_gross"], "3720.00")
@@ -4952,7 +5018,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 workflow_case.proforma_pdf_path,
                 "inbox/faktura/generated/proforma_70001.pdf",
             )
-            self.assertEqual(workflow_case.business_status, "PENDING_APPROVAL")
+            self.assertEqual(workflow_case.business_status, "WAITING_SIGNATURE")
 
     async def test_contracts_form_workflow_proforma_returns_400_when_device_has_no_price(self):
         token, _ = await self._login_operator()
@@ -5589,9 +5655,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body["ok"])
-        self.assertEqual(body["workflow"]["business_status"], "REJECTED")
-        self.assertEqual(body["sheet_release"]["released_count"], 1)
-        release_mock.assert_called_once()
+        self.assertEqual(body["workflow"]["business_status"], "REJECTED_GRENKE")
+        self.assertNotIn("sheet_release", body)
+        release_mock.assert_not_called()
 
     async def test_delete_form_releases_sheet_reservation_when_workflow_exists(self):
         token, _ = await self._login_operator()
@@ -5624,16 +5690,27 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             await session.commit()
 
-        with patch(
-            "app.api.routes.admin_forms.release_workflow_devices_from_sheet",
-            return_value={
-                "enabled": True,
-                "reason": None,
-                "worksheet_title": "Urzadzenia magazyn",
-                "released_count": 1,
-                "rows": [{"source_row": 23, "sheet_row": 77, "action": "released"}],
-            },
-        ) as release_mock:
+        with (
+            patch(
+                "app.api.routes.admin_forms.release_workflow_devices_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia magazyn",
+                    "released_count": 1,
+                    "rows": [{"source_row": 23, "sheet_row": 77, "action": "released"}],
+                },
+            ) as release_mock,
+            patch(
+                "app.api.routes.admin_forms.delete_proforma_from_firebird",
+                return_value=SimpleNamespace(
+                    id_faktura_table=70001,
+                    deleted=True,
+                    deleted_lines=1,
+                    pdf_deleted=True,
+                ),
+            ) as firebird_mock,
+        ):
             response = await self.client.delete(
                 f"/admin/forms/{form.id}",
                 headers={"X-Admin-Session": token},
@@ -5641,6 +5718,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 204)
         release_mock.assert_called_once()
+        firebird_mock.assert_called_once_with(70001)
 
     async def test_delete_form_also_deletes_proforma_from_firebird(self):
         token, _ = await self._login_operator()

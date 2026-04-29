@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -13,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.models import AdminUser, FormRequest, FormWorkflowCase, FormWorkflowDevice
+from app.models import AdminAuditLog, AdminUser, FormRequest, FormWorkflowCase, FormWorkflowDevice
 from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.contracts_dashboard import (
@@ -29,13 +31,19 @@ from app.services.contracts_dashboard import (
     synchronize_device_from_sheet_row,
     use_firebird_runtime_config,
 )
+from app.services.contracts_mailbox_sync_runtime import (
+    parse_mailbox_sync_summary,
+    run_mailbox_sync_subprocess,
+)
 from app.services.contracts_proforma import (
     create_proforma_from_workflow,
     delete_proforma_from_firebird,
 )
 from app.services.contracts_workflow import (
+    WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
     WORKFLOW_BUSINESS_STATUS_DRAFT,
-    WORKFLOW_BUSINESS_STATUS_REJECTED,
+    WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+    WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
     WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
     WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
     build_client_preview,
@@ -48,6 +56,8 @@ from app.services.contracts_workflow import (
     get_or_create_form_workflow_case,
     list_form_workflow_devices,
     map_form_workflow_summaries,
+    mark_workflow_resources_released,
+    normalize_workflow_business_status,
     normalize_workflow_device_source_type,
     replace_form_workflow_devices,
     serialize_workflow_case,
@@ -81,6 +91,19 @@ def _to_iso(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC).isoformat()
     return value.astimezone(UTC).isoformat()
+
+
+def _parse_datetime_iso(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 class ContractActionRequest(BaseModel):
@@ -129,8 +152,12 @@ class WorkflowStatusRequest(BaseModel):
     """Zadanie zmiany statusu biznesowego sprawy workflow."""
 
     business_status: str = Field(
-        pattern="^(DRAFT|PENDING_APPROVAL|APPROVED|ZEROWKA|REJECTED)$",
+        pattern=(
+            "^(DRAFT|PENDING_APPROVAL|APPROVED|ZEROWKA|REJECTED|"
+            "WAITING_SIGNATURE|APPROVED_ORDER|REJECTED_GRENKE)$"
+        ),
     )
+    signature_deadline_at: datetime | None = None
 
 
 class WorkflowProformaRequest(BaseModel):
@@ -162,11 +189,180 @@ class WorkflowDeliveryMoveRequest(BaseModel):
     delivery_date: date
 
 
+class WorkflowArchiveRequest(BaseModel):
+    """Żądanie ręcznego przeniesienia formularza do archiwum."""
+
+    bucket: Literal["accepted", "rejected", "unfilled"] | None = None
+
+
+class WorkflowMailboxSyncRequest(BaseModel):
+    """Żądanie uruchomienia synchronizacji mailbox -> workflow."""
+
+    limit: int = Field(default=30, ge=1, le=500)
+    folder: str = Field(default="INBOX", min_length=1, max_length=128)
+    reprocess: bool = False
+    dry_run: bool = False
+    timeout_seconds: int = Field(default=300, ge=30, le=1800)
+
+
 WORKFLOW_DEFAULT_VAT = Decimal("23")
 PRICE_PRECISION = Decimal("0.01")
 WORKFLOW_BANK_CLIENT_ID = 855
 WORKFLOW_BANK_CLIENT_NIP = normalize_nip("782-22-75-815")
 WORKFLOW_BANK_CLIENT_NAME = "GRENKELEASING Sp. z o.o."
+ARCHIVE_BUCKET_ACCEPTED = "accepted"
+ARCHIVE_BUCKET_REJECTED = "rejected"
+ARCHIVE_BUCKET_UNFILLED = "unfilled"
+ARCHIVE_SCOPE_ACTIVE = "active"
+ARCHIVE_DAYS_AFTER_DECISION = 14
+RESOURCE_RELEASE_DAYS_AFTER_REJECTION = 7
+
+
+def _tail_text(value: str, *, max_lines: int = 120, max_chars: int = 12000) -> str:
+    lines = value.splitlines()
+    tail = "\n".join(lines[-max_lines:])
+    if len(tail) > max_chars:
+        return tail[-max_chars:]
+    return tail
+
+
+def _days_until(value: datetime | None) -> int | None:
+    if value is None:
+        return None
+    target = value if value.tzinfo else value.replace(tzinfo=UTC)
+    delta = target.astimezone(UTC) - datetime.now(UTC)
+    return max(0, int(delta.total_seconds() // 86400) + (1 if delta.total_seconds() % 86400 else 0))
+
+
+async def _load_last_mailbox_sync_summary(session: AsyncSession) -> dict[str, Any]:
+    stmt = (
+        select(AdminAuditLog)
+        .where(
+            AdminAuditLog.action.in_(
+                (
+                    "contracts_mailbox_sync_scheduler",
+                    "contracts_mailbox_sync_trigger",
+                )
+            )
+        )
+        .order_by(AdminAuditLog.created_at.desc(), AdminAuditLog.id.desc())
+        .limit(1)
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return {
+            "available": False,
+            "source": None,
+            "result": None,
+            "last_run_at": None,
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "summary": None,
+        }
+
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    source = "scheduler" if row.action == "contracts_mailbox_sync_scheduler" else "manual"
+    exit_code = _coerce_int(payload.get("exit_code"))
+    raw_result = str(payload.get("result") or "").strip().lower()
+    result = raw_result
+    if not result:
+        if exit_code is None:
+            result = "unknown"
+        else:
+            result = "ok" if exit_code == 0 else "error"
+
+    started_at = _parse_datetime_iso(payload.get("started_at"))
+    finished_at = _parse_datetime_iso(payload.get("finished_at"))
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else None
+    last_run_at = finished_at or started_at or row.created_at
+    return {
+        "available": True,
+        "source": source,
+        "result": result,
+        "last_run_at": _to_iso(last_run_at),
+        "started_at": _to_iso(started_at),
+        "finished_at": _to_iso(finished_at),
+        "exit_code": exit_code,
+        "summary": summary,
+    }
+
+
+def _archive_bucket_for_form(
+    form: FormRequest,
+    workflow_summary: dict[str, Any] | None,
+) -> str | None:
+    if form.status != "SUBMITTED":
+        expires_at = form.token_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        return (
+            ARCHIVE_BUCKET_UNFILLED
+            if form.status == "EXPIRED" or expires_at <= datetime.now(UTC)
+            else None
+        )
+    status_value = normalize_workflow_business_status(
+        (workflow_summary or {}).get("business_status")
+    )
+    if status_value == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        return ARCHIVE_BUCKET_ACCEPTED
+    if status_value == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
+        return ARCHIVE_BUCKET_REJECTED
+    return None
+
+
+def _flow_status_for_form(form: FormRequest, workflow_summary: dict[str, Any] | None) -> dict:
+    workflow = workflow_summary or {}
+    status_value = normalize_workflow_business_status(workflow.get("business_status"))
+    if form.status in {"GENERATED", "DISPATCHED"}:
+        return {"value": "FORM_SENT", "label": "Wysłany formularz do klienta"}
+    if form.status == "EXPIRED":
+        return {"value": "UNFILLED", "label": "Formularz niewypełniony"}
+    if status_value == WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE:
+        return {
+            "value": WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
+            "label": workflow_business_status_label(status_value),
+        }
+    if status_value == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        return {
+            "value": WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+            "label": workflow_business_status_label(status_value),
+        }
+    if status_value == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
+        return {
+            "value": WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+            "label": workflow_business_status_label(status_value),
+        }
+    return {"value": "FORM_SUBMITTED", "label": "Wypełniony formularz klienta"}
+
+
+def _row_tone_for_form(form: FormRequest, workflow_summary: dict[str, Any] | None) -> str:
+    if form.archive_bucket:
+        return "muted"
+    status_value = normalize_workflow_business_status(
+        (workflow_summary or {}).get("business_status")
+    )
+    if status_value == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        return "accepted"
+    if status_value == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
+        return "muted" if (workflow_summary or {}).get("resources_released_at") else "rejected"
+    if form.status == "EXPIRED":
+        return "muted"
+    return "active"
+
+
+def _apply_archive_due(form: FormRequest, workflow_summary: dict[str, Any] | None) -> None:
+    if form.archive_due_at is not None or form.archive_bucket is not None:
+        return
+    bucket = _archive_bucket_for_form(form, workflow_summary)
+    if bucket in {ARCHIVE_BUCKET_ACCEPTED, ARCHIVE_BUCKET_REJECTED}:
+        form.archive_due_at = datetime.now(UTC) + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
+    elif bucket == ARCHIVE_BUCKET_UNFILLED:
+        expires_at = form.token_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC):
+            form.archive_due_at = expires_at + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
 
 
 def _normalize_price_text(value: str | None) -> str:
@@ -563,7 +759,7 @@ async def _load_active_workflow_device_reservations(
         .outerjoin(AdminUser, AdminUser.id == FormWorkflowCase.updated_by)
         .where(
             FormRequest.status == "SUBMITTED",
-            FormWorkflowCase.business_status != WORKFLOW_BUSINESS_STATUS_REJECTED,
+            FormWorkflowCase.resources_released_at.is_(None),
         )
     )
     if exclude_workflow_case_id:
@@ -800,6 +996,10 @@ async def _resolve_proforma_recipient_client_id(
 async def contracts_dashboard_data(
     forms_scope: str = Query(default="submitted", pattern="^(submitted|all)$"),
     include_devices: bool = Query(default=True),
+    archive_scope: str = Query(
+        default=ARCHIVE_SCOPE_ACTIVE,
+        pattern="^(active|accepted|rejected|unfilled)$",
+    ),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
@@ -817,12 +1017,15 @@ async def contracts_dashboard_data(
         )
 
     warnings: list[str] = []
+    mailbox_sync_summary = await _load_last_mailbox_sync_summary(session)
 
     submitted_only = forms_scope != "all"
-    forms = await load_contract_forms(session, limit=300, submitted_only=submitted_only)
+    forms = await load_contract_forms(session, limit=500, submitted_only=submitted_only)
     workflow_summaries = await map_form_workflow_summaries(
         session, form_request_ids=[item.id for item in forms]
     )
+    for form in forms:
+        _apply_archive_due(form, workflow_summaries.get(form.id))
     await session.commit()
     firebird_config = await load_firebird_runtime_config(session)
 
@@ -846,7 +1049,25 @@ async def contracts_dashboard_data(
                 firebird_client_cache[nip] = await asyncio.to_thread(find_client_in_firebird, nip)
             return firebird_client_cache[nip]
 
+        archive_totals = {
+            "active": 0,
+            ARCHIVE_BUCKET_ACCEPTED: 0,
+            ARCHIVE_BUCKET_REJECTED: 0,
+            ARCHIVE_BUCKET_UNFILLED: 0,
+        }
+        scoped_forms: list[FormRequest] = []
         for item in forms:
+            bucket = item.archive_bucket
+            if bucket in archive_totals:
+                archive_totals[bucket] += 1
+            else:
+                archive_totals["active"] += 1
+            if archive_scope == ARCHIVE_SCOPE_ACTIVE and bucket is None:
+                scoped_forms.append(item)
+            elif archive_scope != ARCHIVE_SCOPE_ACTIVE and bucket == archive_scope:
+                scoped_forms.append(item)
+
+        for item in scoped_forms:
             form_status_totals[item.status] = form_status_totals.get(item.status, 0) + 1
             payload: dict = {}
             meta: dict = {}
@@ -866,6 +1087,22 @@ async def contracts_dashboard_data(
             else:
                 nip = ""
 
+            workflow_summary = workflow_summaries.get(item.id, serialize_workflow_case(None))
+            flow_status = _flow_status_for_form(item, workflow_summary)
+            archive_bucket = _archive_bucket_for_form(item, workflow_summary)
+            available_actions = {
+                "workflow": item.status == "SUBMITTED" and item.archive_bucket is None,
+                "proforma": item.status == "SUBMITTED" and item.archive_bucket is None,
+                "status_change": item.status == "SUBMITTED" and item.archive_bucket is None,
+                "summary": flow_status["value"] == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+                "release_resources": (
+                    flow_status["value"] == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE
+                    and not workflow_summary.get("resources_released_at")
+                    and item.archive_bucket is None
+                ),
+                "archive": item.archive_bucket is None and archive_bucket is not None,
+                "extend_archive": item.archive_bucket is None and item.archive_due_at is not None,
+            }
             form_items.append(
                 {
                     "id": item.id,
@@ -897,6 +1134,20 @@ async def contracts_dashboard_data(
                     },
                     "contract_action": contract_action,
                     "workflow": workflow_summaries.get(item.id, serialize_workflow_case(None)),
+                    "flow_status": flow_status,
+                    "archive_state": {
+                        "scope": archive_scope,
+                        "bucket": item.archive_bucket,
+                        "target_bucket": archive_bucket,
+                        "archived_at": _to_iso(item.archived_at),
+                        "archive_due_at": _to_iso(item.archive_due_at),
+                        "days_to_archive": _days_until(item.archive_due_at),
+                    },
+                    "days_to_resource_release": _days_until(
+                        _parse_datetime_iso(workflow_summary.get("resources_release_due_at"))
+                    ),
+                    "row_tone": _row_tone_for_form(item, workflow_summary),
+                    "available_actions": available_actions,
                 }
             )
 
@@ -935,6 +1186,9 @@ async def contracts_dashboard_data(
         )
     return {
         "forms_scope": forms_scope,
+        "archive_scope": archive_scope,
+        "archive_totals": archive_totals,
+        "mailbox_sync": mailbox_sync_summary,
         "forms_total": len(form_items),
         "forms_status_totals": form_status_totals,
         "devices_total": len(devices_output),
@@ -1048,7 +1302,7 @@ async def contracts_form_workflow_detail(
         "workflow": workflow_payload,
         "workflow_status_action": {
             "current": (
-                workflow_case.business_status
+                normalize_workflow_business_status(workflow_case.business_status)
                 if workflow_case is not None
                 else WORKFLOW_BUSINESS_STATUS_DRAFT
             ),
@@ -1976,58 +2230,30 @@ async def contracts_form_workflow_status(
         workflow_case=workflow_case,
         business_status=payload.business_status,
         updated_by=admin_user.id,
+        signature_deadline_at=payload.signature_deadline_at,
+        status_source="manual",
     )
+    normalized_status = normalize_workflow_business_status(payload.business_status)
+    if normalized_status in {
+        WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+        WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+    }:
+        item.archive_due_at = datetime.now(UTC) + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
+        workflow_case.resources_release_due_at = (
+            workflow_case.resources_release_due_at
+            or datetime.now(UTC) + timedelta(days=RESOURCE_RELEASE_DAYS_AFTER_REJECTION)
+        )
+    item.updated_at = datetime.now(UTC)
     workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
-    current_sheet_sync = serialize_workflow_case(workflow_case, workflow_devices).get(
-        "sheet_sync", {}
-    )
-    current_sheet_assignee_id = _coerce_int(current_sheet_sync.get("assignee_id"))
-    current_sheet_assignee_label = (
-        str(current_sheet_sync.get("assignee_label") or "").strip() or None
-    )
-    sheet_release_result: dict[str, Any] | None = None
-    sheet_release_warning: str | None = None
-    if payload.business_status == WORKFLOW_BUSINESS_STATUS_REJECTED and workflow_devices:
-        release_payloads = _build_sheet_release_payloads(workflow_devices, include_all=True)
-        if release_payloads:
-            sheet_config = await load_workflow_sheet_runtime_config(session)
-            try:
-                with use_workflow_sheet_runtime_config(sheet_config):
-                    sheet_release_result = await asyncio.to_thread(
-                        release_workflow_devices_from_sheet,
-                        devices=release_payloads,
-                    )
-                _apply_sheet_sync_snapshot(
-                    workflow_devices,
-                    operation="released",
-                    sheet_result=sheet_release_result,
-                    assignee_id=current_sheet_assignee_id,
-                    assignee_label=current_sheet_assignee_label,
-                    proforma_number=workflow_case.proforma_number,
-                )
-            except RuntimeError as exc:
-                sheet_release_warning = str(exc)
-                _apply_sheet_sync_snapshot(
-                    workflow_devices,
-                    operation="error",
-                    sheet_result=None,
-                    assignee_id=current_sheet_assignee_id,
-                    assignee_label=current_sheet_assignee_label,
-                    proforma_number=workflow_case.proforma_number,
-                    error=sheet_release_warning,
-                )
-
     response_workflow = serialize_workflow_case(workflow_case, workflow_devices)
     response_message = "Zapisano status sprawy FLOW."
-    if sheet_release_result and sheet_release_result.get("enabled"):
-        released_count = int(sheet_release_result.get("released_count") or 0)
-        if released_count > 0:
-            response_message = (
-                "Zapisano status sprawy FLOW. "
-                f"Zwolniono rezerwacje arkusza dla {released_count} urzadzen."
-            )
-    if sheet_release_warning:
-        response_message = f"{response_message} Uwaga: nie udalo sie zwolnic rezerwacji arkusza."
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
+        days = _days_until(workflow_case.resources_release_due_at)
+        response_message = (
+            "Zapisano odmowę GRENKE. Zasoby pozostają w historii sprawy i zostaną "
+            f"zwolnione automatycznie za {days} dni, jeżeli nie zostaną zwolnione ręcznie."
+        )
 
     await record_audit(
         session,
@@ -2037,14 +2263,10 @@ async def contracts_form_workflow_status(
         payload={
             "form_request_id": item.id,
             "workflow_case_id": workflow_case.id,
-            "business_status": payload.business_status,
-            "sheet_release_enabled": bool(
-                sheet_release_result and sheet_release_result.get("enabled")
-            ),
-            "sheet_release_count": (
-                int(sheet_release_result.get("released_count") or 0) if sheet_release_result else 0
-            ),
-            "sheet_release_warning": sheet_release_warning,
+            "business_status": normalized_status,
+            "signature_deadline_at": _to_iso(workflow_case.signature_deadline_at),
+            "resources_release_due_at": _to_iso(workflow_case.resources_release_due_at),
+            "archive_due_at": _to_iso(item.archive_due_at),
         },
     )
     await session.commit()
@@ -2052,8 +2274,10 @@ async def contracts_form_workflow_status(
         "ok": True,
         "message": response_message,
         "workflow": response_workflow,
-        "sheet_release": sheet_release_result,
-        "sheet_release_warning": sheet_release_warning,
+        "archive_state": {
+            "archive_due_at": _to_iso(item.archive_due_at),
+            "days_to_archive": _days_until(item.archive_due_at),
+        },
     }
 
 
@@ -2393,6 +2617,14 @@ async def contracts_form_workflow_proforma_reset(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=str(exc),
             ) from exc
+    if not delete_result.deleted:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Nie znaleziono proformy w aktywnej bazie Firebird dla wskazanego ID. "
+                "Sprawdz konfiguracje runtime Firebird albo zgodnosc ID dokumentu."
+            ),
+        )
     firebird_delete_result = {
         "deleted": bool(delete_result.deleted),
         "deleted_lines": int(delete_result.deleted_lines or 0),
@@ -2422,6 +2654,18 @@ async def contracts_form_workflow_proforma_reset(
                 sheet_clear_reason = str(sheet_clear_result.get("reason") or "").strip() or None
         except RuntimeError as exc:
             sheet_clear_warning = str(exc)
+        if (
+            sheet_clear_result
+            and sheet_clear_result.get("enabled")
+            and int(sheet_clear_result.get("cleared_count") or 0) < len(sheet_payloads)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Arkusz Google nie odnalazl wszystkich wierszy dla tej proformy. "
+                    "Usuwanie zostalo przerwane, aby nie zostawic niespójnego stanu."
+                ),
+            )
     if workflow_devices and not (sheet_clear_result and sheet_clear_result.get("enabled")):
         _apply_sheet_sync_snapshot(
             workflow_devices,
@@ -2736,6 +2980,372 @@ async def contracts_form_workflow_sheet_release(
         "message": message,
         "sheet_release": sheet_release_result,
         "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+    }
+
+
+@router.post(
+    "/forms/{form_id}/workflow/release-resources",
+    summary="Zwolnij zasoby po odmowie GRENKE",
+)
+async def contracts_form_workflow_release_resources(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwalnia rezerwacje i usuwa proformę, ale zostawia pełną historię sprawy."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
+    if item.status != "SUBMITTED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Zasoby workflow są dostępne tylko dla formularzy SUBMITTED.",
+        )
+
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak zapisanej sprawy workflow dla formularza.",
+        )
+
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    sheet_release_result: dict[str, Any] | None = None
+    sheet_release_warning: str | None = None
+    firebird_delete_result: dict[str, Any] | None = None
+    sheet_clear_result: dict[str, Any] | None = None
+    sheet_clear_warning: str | None = None
+
+    sheet_payloads = _build_sheet_release_payloads(workflow_devices, include_all=True)
+    current_sheet_sync = serialize_workflow_case(workflow_case, workflow_devices).get(
+        "sheet_sync", {}
+    )
+    if sheet_payloads:
+        sheet_config = await load_workflow_sheet_runtime_config(session)
+        try:
+            with use_workflow_sheet_runtime_config(sheet_config):
+                sheet_release_result = await asyncio.to_thread(
+                    release_workflow_devices_from_sheet,
+                    devices=sheet_payloads,
+                )
+        except RuntimeError as exc:
+            sheet_release_warning = str(exc)
+        _apply_sheet_sync_snapshot(
+            workflow_devices,
+            operation="released" if sheet_release_warning is None else "error",
+            sheet_result=sheet_release_result,
+            assignee_id=_coerce_int(current_sheet_sync.get("assignee_id")),
+            assignee_label=str(current_sheet_sync.get("assignee_label") or "").strip() or None,
+            proforma_number=workflow_case.proforma_number,
+            error=sheet_release_warning,
+        )
+
+    previous_proforma = {
+        "proforma_firebird_id": workflow_case.proforma_firebird_id,
+        "proforma_number": workflow_case.proforma_number,
+        "proforma_pdf_path": workflow_case.proforma_pdf_path,
+    }
+    if workflow_case.proforma_firebird_id and workflow_case.proforma_number:
+        firebird_config = await load_firebird_runtime_config(session)
+        with use_firebird_runtime_config(firebird_config):
+            try:
+                delete_result = await asyncio.to_thread(
+                    delete_proforma_from_firebird,
+                    int(workflow_case.proforma_firebird_id),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=str(exc),
+                ) from exc
+        firebird_delete_result = {
+            "deleted": bool(delete_result.deleted),
+            "deleted_lines": int(delete_result.deleted_lines or 0),
+            "pdf_deleted": bool(delete_result.pdf_deleted),
+            "proforma_firebird_id": int(delete_result.id_faktura_table),
+        }
+        if sheet_payloads:
+            sheet_config = await load_workflow_sheet_runtime_config(session)
+            try:
+                with use_workflow_sheet_runtime_config(sheet_config):
+                    sheet_clear_result = await asyncio.to_thread(
+                        clear_workflow_proforma_from_sheet,
+                        devices=sheet_payloads,
+                    )
+            except RuntimeError as exc:
+                sheet_clear_warning = str(exc)
+        workflow_case = await clear_form_workflow_proforma(
+            session,
+            workflow_case=workflow_case,
+            updated_by=admin_user.id,
+        )
+
+    workflow_case = await mark_workflow_resources_released(
+        session,
+        workflow_case=workflow_case,
+        updated_by=admin_user.id,
+        status_source="manual_release",
+        note="Ręcznie zwolniono zasoby po odmowie GRENKE.",
+    )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_flow_resources_release",
+        client_ip=admin_session.client_ip,
+        payload={
+            "form_request_id": item.id,
+            "workflow_case_id": workflow_case.id,
+            "previous_proforma": previous_proforma,
+            "sheet_release": sheet_release_result,
+            "sheet_release_warning": sheet_release_warning,
+            "firebird_delete": firebird_delete_result,
+            "sheet_clear": sheet_clear_result,
+            "sheet_clear_warning": sheet_clear_warning,
+        },
+    )
+    await session.commit()
+
+    return {
+        "ok": True,
+        "message": "Zwolniono rezerwacje i usunięto aktywną proformę. Historia formularza została zachowana.",
+        "sheet_release": sheet_release_result,
+        "sheet_release_warning": sheet_release_warning,
+        "firebird_delete": firebird_delete_result,
+        "sheet_clear": sheet_clear_result,
+        "sheet_clear_warning": sheet_clear_warning,
+        "workflow": serialize_workflow_case(workflow_case, workflow_devices),
+    }
+
+
+@router.post("/forms/{form_id}/archive", summary="Przenies formularz do archiwum GenForm")
+async def contracts_form_archive(
+    form_id: int,
+    payload: WorkflowArchiveRequest | None = None,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Przenosi formularz do wybranej sekcji archiwum bez usuwania historii."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    workflow_devices = (
+        await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+        if workflow_case is not None
+        else []
+    )
+    workflow_payload = serialize_workflow_case(workflow_case, workflow_devices)
+    target_bucket = (payload.bucket if payload else None) or _archive_bucket_for_form(
+        item,
+        workflow_payload,
+    )
+    if target_bucket is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ten formularz nie ma jeszcze docelowej sekcji archiwum.",
+        )
+    item.archive_bucket = target_bucket
+    item.archived_at = datetime.now(UTC)
+    item.updated_at = datetime.now(UTC)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_form_archive",
+        client_ip=admin_session.client_ip,
+        payload={"form_request_id": item.id, "archive_bucket": target_bucket},
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": "Formularz przeniesiono do archiwum.",
+        "archive_state": {
+            "bucket": item.archive_bucket,
+            "archived_at": _to_iso(item.archived_at),
+            "archive_due_at": _to_iso(item.archive_due_at),
+        },
+    }
+
+
+@router.post(
+    "/forms/{form_id}/archive/extend",
+    summary="Przedluz termin automatycznej archiwizacji formularza",
+)
+async def contracts_form_archive_extend(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Przedłuża termin automatycznej archiwizacji o 7 dni."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
+    base = item.archive_due_at or datetime.now(UTC)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=UTC)
+    if base < datetime.now(UTC):
+        base = datetime.now(UTC)
+    item.archive_due_at = base + timedelta(days=7)
+    item.updated_at = datetime.now(UTC)
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_form_archive_extend",
+        client_ip=admin_session.client_ip,
+        payload={"form_request_id": item.id, "archive_due_at": _to_iso(item.archive_due_at)},
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": "Termin archiwizacji przedłużono o 7 dni.",
+        "archive_state": {
+            "archive_due_at": _to_iso(item.archive_due_at),
+            "days_to_archive": _days_until(item.archive_due_at),
+        },
+    }
+
+
+@router.post("/workflow/mailbox-sync", summary="Uruchom synchronizacje mailbox -> FLOW")
+async def contracts_workflow_mailbox_sync(
+    payload: WorkflowMailboxSyncRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Uruchamia skrypt synchronizacji mailboxa i zwraca zwięzły raport wykonania."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    repo_root = Path(__file__).resolve().parents[3]
+    script_path = repo_root / "scripts" / "contracts_mailbox_sync.py"
+    if not script_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Brak skryptu synchronizacji mailboxa: {script_path}",
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            run_mailbox_sync_subprocess,
+            limit=payload.limit,
+            folder=payload.folder,
+            reprocess=payload.reprocess,
+            dry_run=payload.dry_run,
+            timeout_seconds=payload.timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        await record_audit(
+            session,
+            user_id=admin_user.id,
+            action="contracts_mailbox_sync_trigger",
+            client_ip=admin_session.client_ip,
+            payload={
+                "limit": payload.limit,
+                "folder": payload.folder,
+                "dry_run": payload.dry_run,
+                "reprocess": payload.reprocess,
+                "timeout_seconds": payload.timeout_seconds,
+                "result": "timeout",
+                "error": str(exc),
+            },
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Synchronizacja mailboxa przekroczyla limit czasu.",
+        ) from exc
+
+    stdout_tail = _tail_text(result.stdout or "")
+    stderr_tail = _tail_text(result.stderr or "")
+    summary = parse_mailbox_sync_summary(result.stdout or "")
+
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_mailbox_sync_trigger",
+        client_ip=admin_session.client_ip,
+        payload={
+            "limit": payload.limit,
+            "folder": payload.folder,
+            "dry_run": payload.dry_run,
+            "reprocess": payload.reprocess,
+            "timeout_seconds": payload.timeout_seconds,
+            "exit_code": result.returncode,
+            "summary": summary,
+        },
+    )
+    await session.commit()
+
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "message": "Synchronizacja mailboxa zakonczona bledem.",
+                "exit_code": result.returncode,
+                "summary": summary,
+                "stdout_tail": stdout_tail,
+                "stderr_tail": stderr_tail,
+            },
+        )
+
+    return {
+        "ok": True,
+        "message": "Synchronizacja mailboxa zakonczona powodzeniem.",
+        "exit_code": result.returncode,
+        "summary": summary,
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
     }
 
 

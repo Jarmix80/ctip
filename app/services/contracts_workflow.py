@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -31,14 +31,32 @@ WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL = "PENDING_APPROVAL"
 WORKFLOW_BUSINESS_STATUS_APPROVED = "APPROVED"
 WORKFLOW_BUSINESS_STATUS_ZEROWKA = "ZEROWKA"
 WORKFLOW_BUSINESS_STATUS_REJECTED = "REJECTED"
+WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE = "WAITING_SIGNATURE"
+WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER = "APPROVED_ORDER"
+WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE = "REJECTED_GRENKE"
+
+WORKFLOW_LEGACY_STATUS_MAP = {
+    WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL: WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
+    WORKFLOW_BUSINESS_STATUS_APPROVED: WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+    WORKFLOW_BUSINESS_STATUS_REJECTED: WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+}
 
 WORKFLOW_BUSINESS_STATUS_LABELS = {
-    WORKFLOW_BUSINESS_STATUS_DRAFT: "Robocza",
-    WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL: "Umowa czeka na podpis klienta",
-    WORKFLOW_BUSINESS_STATUS_APPROVED: "Umowa podpisana - dowoz urzadzenia",
-    WORKFLOW_BUSINESS_STATUS_ZEROWKA: "Zerowka",
-    WORKFLOW_BUSINESS_STATUS_REJECTED: "Odrzucono",
+    WORKFLOW_BUSINESS_STATUS_DRAFT: "Wypełniony formularz klienta",
+    WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL: "Umowa GRENKE czeka na podpis",
+    WORKFLOW_BUSINESS_STATUS_APPROVED: "Zgoda na realizację zamówienia",
+    WORKFLOW_BUSINESS_STATUS_ZEROWKA: "Zerówka",
+    WORKFLOW_BUSINESS_STATUS_REJECTED: "Odmowa GRENKE",
+    WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE: "Umowa GRENKE czeka na podpis",
+    WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER: "Zgoda na realizację zamówienia",
+    WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE: "Odmowa GRENKE",
 }
+
+WORKFLOW_MANUAL_STATUS_OPTIONS = (
+    WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
+    WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+    WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+)
 
 
 def build_workflow_proforma_preview_url(proforma_firebird_id: int | None) -> str | None:
@@ -92,17 +110,49 @@ def _resolve_proforma_preview_url(workflow_case: FormWorkflowCase | None) -> str
 
 def workflow_business_status_label(value: str | None) -> str:
     """Zwraca czytelna etykiete statusu biznesowego sprawy."""
+    normalized = normalize_workflow_business_status(value)
     return WORKFLOW_BUSINESS_STATUS_LABELS.get(
-        str(value or WORKFLOW_BUSINESS_STATUS_DRAFT),
+        normalized,
         str(value or WORKFLOW_BUSINESS_STATUS_DRAFT),
     )
 
 
 def build_workflow_business_status_options() -> list[dict[str, str]]:
-    """Zwraca liste opcji statusu biznesowego do UI."""
+    """Zwraca ręczne opcje statusu GRENKE do UI."""
     return [
-        {"value": key, "label": label} for key, label in WORKFLOW_BUSINESS_STATUS_LABELS.items()
+        {"value": key, "label": WORKFLOW_BUSINESS_STATUS_LABELS[key]}
+        for key in WORKFLOW_MANUAL_STATUS_OPTIONS
     ]
+
+
+def normalize_workflow_business_status(value: str | None) -> str:
+    """Mapuje stare wartości statusów na bieżący kanon używany przez GenForm."""
+    raw = str(value or WORKFLOW_BUSINESS_STATUS_DRAFT).strip() or WORKFLOW_BUSINESS_STATUS_DRAFT
+    return WORKFLOW_LEGACY_STATUS_MAP.get(raw, raw)
+
+
+def append_workflow_status_history(
+    workflow_case: FormWorkflowCase,
+    *,
+    status_value: str,
+    status_source: str,
+    changed_at: datetime,
+    note: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Dopisuje wpis historii statusów bez nadpisywania istniejących danych sprawy."""
+    history = workflow_case.status_history if isinstance(workflow_case.status_history, list) else []
+    event: dict[str, Any] = {
+        "status": status_value,
+        "label": workflow_business_status_label(status_value),
+        "source": status_source,
+        "changed_at": changed_at.isoformat(),
+    }
+    if note:
+        event["note"] = str(note).strip()
+    if metadata:
+        event["metadata"] = metadata
+    workflow_case.status_history = [*history, event]
 
 
 def build_client_preview(payload: dict[str, Any]) -> list[dict[str, str]]:
@@ -251,6 +301,13 @@ def serialize_workflow_case(
             "stage": WORKFLOW_STAGE_FORM_SUBMITTED,
             "business_status": WORKFLOW_BUSINESS_STATUS_DRAFT,
             "business_status_label": workflow_business_status_label(WORKFLOW_BUSINESS_STATUS_DRAFT),
+            "business_status_canonical": WORKFLOW_BUSINESS_STATUS_DRAFT,
+            "signature_deadline_at": None,
+            "resources_release_due_at": None,
+            "resources_released_at": None,
+            "status_changed_at": None,
+            "status_source": None,
+            "status_history": [],
             "firebird_client_id": None,
             "firebird_client_status": None,
             "client_mode": None,
@@ -285,8 +342,34 @@ def serialize_workflow_case(
             proforma_number=workflow_case.proforma_number,
             proforma_firebird_id=workflow_case.proforma_firebird_id,
         ),
-        "business_status": workflow_case.business_status,
+        "business_status": normalize_workflow_business_status(workflow_case.business_status),
+        "business_status_raw": workflow_case.business_status,
+        "business_status_canonical": normalize_workflow_business_status(
+            workflow_case.business_status
+        ),
         "business_status_label": workflow_business_status_label(workflow_case.business_status),
+        "signature_deadline_at": (
+            workflow_case.signature_deadline_at.isoformat()
+            if workflow_case.signature_deadline_at
+            else None
+        ),
+        "resources_release_due_at": (
+            workflow_case.resources_release_due_at.isoformat()
+            if workflow_case.resources_release_due_at
+            else None
+        ),
+        "resources_released_at": (
+            workflow_case.resources_released_at.isoformat()
+            if workflow_case.resources_released_at
+            else None
+        ),
+        "status_changed_at": (
+            workflow_case.status_changed_at.isoformat() if workflow_case.status_changed_at else None
+        ),
+        "status_source": workflow_case.status_source,
+        "status_history": (
+            workflow_case.status_history if isinstance(workflow_case.status_history, list) else []
+        ),
         "firebird_client_id": workflow_case.firebird_client_id,
         "firebird_client_status": workflow_case.firebird_client_status,
         "client_mode": workflow_case.client_mode,
@@ -463,8 +546,22 @@ async def set_form_workflow_proforma(
     workflow_case.proforma_firebird_id = proforma_firebird_id
     workflow_case.proforma_number = proforma_number
     workflow_case.proforma_pdf_path = proforma_pdf_path
-    if workflow_case.business_status == WORKFLOW_BUSINESS_STATUS_DRAFT:
-        workflow_case.business_status = WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL
+    if (
+        normalize_workflow_business_status(workflow_case.business_status)
+        == WORKFLOW_BUSINESS_STATUS_DRAFT
+    ):
+        now = datetime.now(UTC)
+        workflow_case.business_status = WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE
+        workflow_case.signature_deadline_at = now + timedelta(days=7)
+        workflow_case.status_changed_at = now
+        workflow_case.status_source = "system_proforma"
+        append_workflow_status_history(
+            workflow_case,
+            status_value=WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
+            status_source="system_proforma",
+            changed_at=now,
+            metadata={"proforma_number": proforma_number},
+        )
     workflow_case.updated_by = updated_by
     workflow_case.updated_at = datetime.now(UTC)
     workflow_case.stage = derive_workflow_stage(
@@ -506,11 +603,62 @@ async def set_form_workflow_business_status(
     workflow_case: FormWorkflowCase,
     business_status: str,
     updated_by: int | None,
+    signature_deadline_at: datetime | None = None,
+    status_source: str = "manual",
+    note: str | None = None,
 ) -> FormWorkflowCase:
     """Zapisuje status biznesowy sprawy workflow."""
-    workflow_case.business_status = business_status
+    now = datetime.now(UTC)
+    normalized_status = normalize_workflow_business_status(business_status)
+    workflow_case.business_status = normalized_status
+    workflow_case.status_changed_at = now
+    workflow_case.status_source = status_source
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE:
+        workflow_case.signature_deadline_at = signature_deadline_at or (now + timedelta(days=7))
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        workflow_case.resources_release_due_at = None
+    if (
+        normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE
+        and workflow_case.resources_released_at is None
+        and workflow_case.resources_release_due_at is None
+    ):
+        workflow_case.resources_release_due_at = now + timedelta(days=7)
+    append_workflow_status_history(
+        workflow_case,
+        status_value=normalized_status,
+        status_source=status_source,
+        changed_at=now,
+        note=note,
+        metadata={"updated_by": updated_by} if updated_by is not None else None,
+    )
     workflow_case.updated_by = updated_by
-    workflow_case.updated_at = datetime.now(UTC)
+    workflow_case.updated_at = now
+    await session.flush()
+    return workflow_case
+
+
+async def mark_workflow_resources_released(
+    session: AsyncSession,
+    *,
+    workflow_case: FormWorkflowCase,
+    updated_by: int | None,
+    status_source: str = "manual",
+    note: str | None = None,
+) -> FormWorkflowCase:
+    """Oznacza zasoby sprawy jako zwolnione bez usuwania historii urządzeń."""
+    now = datetime.now(UTC)
+    workflow_case.resources_released_at = now
+    workflow_case.resources_release_due_at = None
+    workflow_case.updated_by = updated_by
+    workflow_case.updated_at = now
+    append_workflow_status_history(
+        workflow_case,
+        status_value=normalize_workflow_business_status(workflow_case.business_status),
+        status_source=status_source,
+        changed_at=now,
+        note=note or "Zwolniono zasoby i proformę dla sprawy.",
+        metadata={"resources_released": True},
+    )
     await session.flush()
     return workflow_case
 
@@ -605,8 +753,33 @@ async def map_form_workflow_summaries(
                 proforma_number=workflow_case.proforma_number,
                 proforma_firebird_id=workflow_case.proforma_firebird_id,
             ),
-            "business_status": workflow_case.business_status,
+            "business_status": normalize_workflow_business_status(workflow_case.business_status),
+            "business_status_raw": workflow_case.business_status,
+            "business_status_canonical": normalize_workflow_business_status(
+                workflow_case.business_status
+            ),
             "business_status_label": workflow_business_status_label(workflow_case.business_status),
+            "signature_deadline_at": (
+                workflow_case.signature_deadline_at.isoformat()
+                if workflow_case.signature_deadline_at
+                else None
+            ),
+            "resources_release_due_at": (
+                workflow_case.resources_release_due_at.isoformat()
+                if workflow_case.resources_release_due_at
+                else None
+            ),
+            "resources_released_at": (
+                workflow_case.resources_released_at.isoformat()
+                if workflow_case.resources_released_at
+                else None
+            ),
+            "status_changed_at": (
+                workflow_case.status_changed_at.isoformat()
+                if workflow_case.status_changed_at
+                else None
+            ),
+            "status_source": workflow_case.status_source,
             "firebird_client_id": workflow_case.firebird_client_id,
             "firebird_client_status": workflow_case.firebird_client_status,
             "client_mode": workflow_case.client_mode,
@@ -766,9 +939,12 @@ __all__ = [
     "WORKFLOW_DEVICE_SOURCES",
     "WORKFLOW_DEVICE_SOURCE_GOOGLE_SHEET",
     "WORKFLOW_BUSINESS_STATUS_APPROVED",
+    "WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER",
     "WORKFLOW_BUSINESS_STATUS_DRAFT",
     "WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL",
     "WORKFLOW_BUSINESS_STATUS_REJECTED",
+    "WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE",
+    "WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE",
     "WORKFLOW_BUSINESS_STATUS_ZEROWKA",
     "WORKFLOW_STAGE_CLIENT_READY",
     "WORKFLOW_STAGE_DEVICES_SELECTED",
@@ -784,6 +960,8 @@ __all__ = [
     "get_or_create_form_workflow_case",
     "list_form_workflow_devices",
     "map_form_workflow_summaries",
+    "mark_workflow_resources_released",
+    "normalize_workflow_business_status",
     "normalize_workflow_device_source_type",
     "replace_form_workflow_devices",
     "serialize_workflow_case",

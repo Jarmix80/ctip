@@ -88,24 +88,37 @@
         <p id="genform-success" class="genform-success" hidden></p>
         <p id="genform-error" class="genform-error" hidden></p>
 
-        <div class="genform-table-wrap">
-          <table class="genform-table">
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>ID formularza</th>
-                <th>Klient</th>
-                <th>Menadżer Serwisu</th>
-                <th>Status GRENKE</th>
-                <th>Akcje</th>
-              </tr>
-            </thead>
-            <tbody id="genform-table-body">
-              <tr>
-                <td colspan="6">Brak wygenerowanych formularzy.</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="genform-dashboard-layout">
+          <nav class="genform-side-menu" aria-label="Kategorie formularzy">
+            <button type="button" class="genform-side-menu-item is-active" data-archive-scope="active">Formularze w toku <span id="genform-count-active">0</span></button>
+            <button type="button" class="genform-side-menu-item" data-archive-scope="accepted">Formularze zaakceptowane <span id="genform-count-accepted">0</span></button>
+            <button type="button" class="genform-side-menu-item" data-archive-scope="rejected">Formularze odrzucone <span id="genform-count-rejected">0</span></button>
+            <button type="button" class="genform-side-menu-item" data-archive-scope="unfilled">Formularze niewypełnione <span id="genform-count-unfilled">0</span></button>
+          </nav>
+          <div class="genform-table-column">
+            <p id="genform-mailbox-sync-note" class="genform-build-info genform-mailbox-sync-note">
+              Synchronizacja e-mail GRENKE: brak danych o ostatnim przebiegu.
+            </p>
+            <div class="genform-table-wrap">
+              <table class="genform-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>ID formularza</th>
+                    <th>Klient</th>
+                    <th>Menadżer Serwisu</th>
+                    <th>Status GRENKE</th>
+                    <th>Akcje</th>
+                  </tr>
+                </thead>
+                <tbody id="genform-table-body">
+                  <tr>
+                    <td colspan="6">Brak wygenerowanych formularzy.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -235,6 +248,53 @@
         </div>
       </section>
 
+      <section id="genform-status-modal" class="genform-modal" hidden>
+        <div class="genform-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-status-title">
+          <header class="genform-modal-header">
+            <div>
+              <h2 id="genform-status-title">Zmiana statusu GRENKE</h2>
+              <p id="genform-status-subtitle" class="genform-detail-status-text">Ręczna korekta statusu sprawy.</p>
+            </div>
+            <div class="genform-actions genform-detail-actions">
+              <button id="genform-status-close" type="button" class="genform-btn-secondary">Zamknij</button>
+            </div>
+          </header>
+          <section class="genform-detail-section">
+            <div class="genform-workflow-actions-row genform-workflow-actions-row-tight">
+              <label>
+                Status biznesowy
+                <select id="genform-status-select"></select>
+              </label>
+              <label>
+                Termin podpisu
+                <input id="genform-status-signature-deadline" type="datetime-local">
+              </label>
+            </div>
+            <p id="genform-status-note" class="genform-detail-status-text">Termin podpisu jest używany dla statusu „Umowa GRENKE czeka na podpis”.</p>
+            <div class="genform-actions">
+              <button id="genform-status-save" type="button" class="genform-btn-primary">Zapisz status</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="genform-summary-modal" class="genform-modal" hidden>
+        <div class="genform-modal-card genform-proforma-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-summary-title">
+          <header class="genform-modal-header">
+            <div>
+              <h2 id="genform-summary-title">Podsumowanie formularza</h2>
+              <p id="genform-summary-subtitle" class="genform-detail-status-text">Dane zebrane w czasie życia formularza.</p>
+            </div>
+            <div class="genform-actions genform-detail-actions">
+              <button id="genform-summary-close" type="button" class="genform-btn-secondary">Zamknij</button>
+            </div>
+          </header>
+          <section class="genform-detail-section">
+            <div id="genform-summary-content" class="genform-summary-content"></div>
+          </section>
+        </div>
+      </section>
+
       <section id="genform-proforma-modal" class="genform-modal" hidden>
         <div class="genform-modal-card genform-proforma-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-proforma-title">
           <header class="genform-modal-header">
@@ -249,6 +309,7 @@
             </div>
           </header>
           <section class="genform-detail-section">
+            <div id="genform-proforma-summary" class="genform-detail-grid"></div>
             <div class="genform-proforma-party-grid">
               <article class="genform-detail-summary-card">
                 <dt>Dane firmy z formularza</dt>

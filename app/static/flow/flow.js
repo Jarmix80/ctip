@@ -57,6 +57,18 @@ function formatDateOnly(value) {
   }
 }
 
+function mailboxSyncResultLabel(result) {
+  const mapped = {
+    ok: "OK",
+    error: "blad",
+    timeout: "timeout",
+    exception: "wyjatek",
+    skipped: "pominieto",
+    unknown: "nieznany",
+  };
+  return mapped[String(result || "").trim().toLowerCase()] || "nieznany";
+}
+
 function formStatusLabel(status) {
   const mapped = {
     GENERATED: "Wygenerowany",
@@ -418,6 +430,7 @@ async function initializeFlowPage() {
     devicesTotal: document.getElementById("flow-devices-total"),
     devicesMatched: document.getElementById("flow-devices-matched"),
     devicesPending: document.getElementById("flow-devices-pending"),
+    mailboxSyncNote: document.getElementById("flow-mailbox-sync-note"),
   };
 
   if (
@@ -493,7 +506,8 @@ async function initializeFlowPage() {
     !statNodes.formsExpired ||
     !statNodes.devicesTotal ||
     !statNodes.devicesMatched ||
-    !statNodes.devicesPending
+    !statNodes.devicesPending ||
+    !statNodes.mailboxSyncNote
   ) {
     return;
   }
@@ -1855,6 +1869,29 @@ async function initializeFlowPage() {
       .join("");
   };
 
+  const renderMailboxSyncNote = (mailboxSync) => {
+    if (!mailboxSync?.available || !mailboxSync?.last_run_at) {
+      statNodes.mailboxSyncNote.textContent =
+        "Synchronizacja e-mail GRENKE: brak danych o ostatnim przebiegu.";
+      return;
+    }
+
+    const resultLabel = mailboxSyncResultLabel(mailboxSync.result);
+    const sourceLabel = mailboxSync.source === "scheduler" ? "automat" : "recznie";
+    const summary = mailboxSync.summary && typeof mailboxSync.summary === "object"
+      ? mailboxSync.summary
+      : null;
+    const updatedCount = Number(summary?.updated || 0);
+    const warningsCount = Number(summary?.warnings || 0);
+    const countersLabel = summary
+      ? `, zaktualizowane: ${updatedCount}, ostrzezenia: ${warningsCount}`
+      : "";
+
+    statNodes.mailboxSyncNote.textContent =
+      `Synchronizacja e-mail GRENKE: ${resultLabel}, ${formatDate(mailboxSync.last_run_at)} `
+      + `(${sourceLabel}${countersLabel}).`;
+  };
+
   const updateStats = (data) => {
     const totals = data.forms_status_totals || {};
     statNodes.formsTotal.textContent = String(data.forms_total || 0);
@@ -1867,6 +1904,7 @@ async function initializeFlowPage() {
     statNodes.devicesPending.textContent = String(
       Math.max(0, Number(data.devices_total || 0) - Number(data.devices_matched || 0)),
     );
+    renderMailboxSyncNote(data.mailbox_sync || null);
   };
 
   const runAction = async (button) => {

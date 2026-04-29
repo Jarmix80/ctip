@@ -122,6 +122,10 @@ class FormRequest(Base):
             "status in ('GENERATED','DISPATCHED','SUBMITTED','EXPIRED')",
             name="form_request_status_check",
         ),
+        CheckConstraint(
+            "archive_bucket is null or archive_bucket in ('accepted','rejected','unfilled')",
+            name="form_request_archive_bucket_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -147,6 +151,9 @@ class FormRequest(Base):
     notification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archive_bucket: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archive_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_by_user: Mapped[AdminUser | None] = relationship()
 
@@ -161,7 +168,10 @@ class FormWorkflowCase(Base):
             name="form_workflow_case_stage_check",
         ),
         CheckConstraint(
-            "business_status in ('DRAFT','PENDING_APPROVAL','APPROVED','ZEROWKA','REJECTED')",
+            "business_status in ("
+            "'DRAFT','PENDING_APPROVAL','APPROVED','ZEROWKA','REJECTED',"
+            "'WAITING_SIGNATURE','APPROVED_ORDER','REJECTED_GRENKE'"
+            ")",
             name="form_workflow_case_business_status_check",
         ),
         UniqueConstraint("form_request_id", name="uq_form_workflow_case_form_request_id"),
@@ -192,6 +202,20 @@ class FormWorkflowCase(Base):
     proforma_firebird_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     proforma_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     proforma_pdf_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    signature_deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resources_release_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resources_released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status_history: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_time_window: Mapped[str | None] = mapped_column(Text, nullable=True)
     delivery_contact_name: Mapped[str | None] = mapped_column(Text, nullable=True)

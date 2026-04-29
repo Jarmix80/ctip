@@ -10,6 +10,18 @@ from typing import Any
 MAILBOX_EVENT_DECISION = "decision_for_signature"
 MAILBOX_EVENT_APPROVAL = "approval_for_delivery"
 
+_REJECTION_PATTERNS = (
+    "odmowa",
+    "decyzja negatywna",
+    "wniosek odrzucony",
+    "brak zgody",
+    "nie wyraza zgody",
+    "nie wyraza zgody na zawarcie umowy",
+    "nie wyrazila zgody",
+    "nie wyrazamy zgody",
+    "nie mozemy wyrazic zgody",
+)
+
 _APP_NO_PATTERN = re.compile(r"\b(\d{3})\s*[-_/]\s*(\d{4,7})\b")
 _NIP_PATTERN = re.compile(r"\b(?:PL)?\d{10}\b", re.IGNORECASE)
 _PESEL_PATTERN = re.compile(r"\b\d{11}\b")
@@ -32,6 +44,14 @@ def classify_mail_subject(subject: str) -> str | None:
     if "zgoda na realizacje zamowienia do wniosku" in normalized:
         return MAILBOX_EVENT_APPROVAL
     return None
+
+
+def detect_rejection_decision(text: str) -> bool:
+    """Rozpoznaje odmowę GRENKE w treści wiadomości lub PDF."""
+    normalized = _normalize_for_match(text)
+    if not normalized:
+        return False
+    return any(pattern in normalized for pattern in _REJECTION_PATTERNS)
 
 
 def extract_application_number(text: str) -> ParsedApplicationNumber | None:

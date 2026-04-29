@@ -214,6 +214,10 @@ button,
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.flow-mailbox-sync-note {
+  margin: -4px 22px 0;
+}
+
 .flow-stats article {
   padding: 16px 18px;
   background: linear-gradient(180deg, #fff 0, var(--flow-panel) 100%);

@@ -7,6 +7,7 @@ from app.services.contracts_mailbox import (
     MAILBOX_EVENT_DECISION,
     build_pdf_password_candidates,
     classify_mail_subject,
+    detect_rejection_decision,
     extract_application_number,
     extract_data_from_contract_text,
     normalize_application_number,
@@ -82,3 +83,19 @@ def test_extract_data_from_contract_text_ignores_invalid_krs_like_nip() -> None:
     )
     extracted = extract_data_from_contract_text(text)
     assert extracted["nips"] == ["PL9720314010"]
+
+
+def test_detect_rejection_decision_handles_phrase_nie_wyraza_zgody() -> None:
+    body = (
+        "Dzień dobry, niestety w tym przypadku Grenkeleasing sp. z o.o. "
+        "nie wyraża zgody na zawarcie umowy przez GENERAL ELECTRICALS KRZYSZTOF KASSIN."
+    )
+    assert detect_rejection_decision(body) is True
+
+
+def test_detect_rejection_decision_does_not_mark_positive_decision() -> None:
+    body = (
+        "Dzień dobry, dziękujemy za zainteresowanie. "
+        "Wyrażamy zgodę na realizację zamówienia do wniosku 173-25299."
+    )
+    assert detect_rejection_decision(body) is False

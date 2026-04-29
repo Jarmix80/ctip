@@ -109,6 +109,14 @@ class Settings(BaseSettings):
         default=1800,
         alias="WORKFLOW_SHEET_STATUS_CACHE_STALE_AFTER_SECONDS",
     )
+    contracts_workflow_maintenance_scheduler_enabled: bool = Field(
+        default=True,
+        alias="CONTRACTS_WORKFLOW_MAINTENANCE_SCHEDULER_ENABLED",
+    )
+    contracts_workflow_maintenance_interval_seconds: int = Field(
+        default=3600,
+        alias="CONTRACTS_WORKFLOW_MAINTENANCE_INTERVAL_SECONDS",
+    )
 
     mailbox_email_address: str | None = Field(default=None, alias="MAILBOX_EMAIL_ADDRESS")
     mailbox_email_password: str | None = Field(default=None, alias="MAILBOX_EMAIL_PASSWORD")
@@ -118,6 +126,30 @@ class Settings(BaseSettings):
     mailbox_smtp_port: int = Field(default=465, alias="MAILBOX_SMTP_PORT")
     mailbox_smtp_use_ssl: bool = Field(default=True, alias="MAILBOX_SMTP_USE_SSL")
     mailbox_smtp_use_starttls: bool = Field(default=False, alias="MAILBOX_SMTP_USE_STARTTLS")
+    contracts_mailbox_scheduler_enabled: bool = Field(
+        default=True,
+        alias="CONTRACTS_MAILBOX_SCHEDULER_ENABLED",
+    )
+    contracts_mailbox_sync_interval_seconds: int = Field(
+        default=300,
+        alias="CONTRACTS_MAILBOX_SYNC_INTERVAL_SECONDS",
+    )
+    contracts_mailbox_sync_limit: int = Field(
+        default=60,
+        alias="CONTRACTS_MAILBOX_SYNC_LIMIT",
+    )
+    contracts_mailbox_sync_folder: str = Field(
+        default="INBOX",
+        alias="CONTRACTS_MAILBOX_SYNC_FOLDER",
+    )
+    contracts_mailbox_sync_timeout_seconds: int = Field(
+        default=300,
+        alias="CONTRACTS_MAILBOX_SYNC_TIMEOUT_SECONDS",
+    )
+    contracts_mailbox_sync_reprocess: bool = Field(
+        default=False,
+        alias="CONTRACTS_MAILBOX_SYNC_REPROCESS",
+    )
 
     backup_execution_enabled: bool | None = Field(default=None, alias="BACKUP_EXECUTION_ENABLED")
     backup_scheduler_enabled: bool = Field(default=True, alias="BACKUP_SCHEDULER_ENABLED")

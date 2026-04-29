@@ -79,13 +79,44 @@ function workflowStageLabel(stage) {
 
 function workflowBusinessStatusLabel(status) {
   const mapped = {
-    DRAFT: "Robocza",
-    PENDING_APPROVAL: "Umowa wyslana do podpisu klienta",
-    APPROVED: "Akceptacja umowy - mozna dostarczac",
-    ZEROWKA: "Zerowka",
-    REJECTED: "Odrzucono",
+    DRAFT: "Wypełniony formularz klienta",
+    PENDING_APPROVAL: "Umowa GRENKE czeka na podpis",
+    WAITING_SIGNATURE: "Umowa GRENKE czeka na podpis",
+    APPROVED: "Zgoda na realizację zamówienia",
+    APPROVED_ORDER: "Zgoda na realizację zamówienia",
+    ZEROWKA: "Zerówka",
+    REJECTED: "Odmowa GRENKE",
+    REJECTED_GRENKE: "Odmowa GRENKE",
   };
   return mapped[status] || status || "Brak";
+}
+
+function mailboxSyncResultLabel(result) {
+  const mapped = {
+    ok: "OK",
+    error: "błąd",
+    timeout: "timeout",
+    exception: "wyjątek",
+    skipped: "pominięto",
+    unknown: "nieznany",
+  };
+  return mapped[String(result || "").trim().toLowerCase()] || "nieznany";
+}
+
+function formatDateInputValue(value) {
+  if (!value) {
+    return "";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const hh = String(parsed.getHours()).padStart(2, "0");
+  const min = String(parsed.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
 function parsePriceValue(value) {
@@ -187,6 +218,7 @@ function initializeGenForm() {
   const logoutBtn = document.getElementById("genform-logout");
   const userLine = document.getElementById("genform-user-line");
   const tableBody = document.getElementById("genform-table-body");
+  const mailboxSyncNote = document.getElementById("genform-mailbox-sync-note");
   const errorBox = document.getElementById("genform-error");
   const successBox = document.getElementById("genform-success");
   const generatedBox = document.getElementById("genform-generated-box");
@@ -229,6 +261,18 @@ function initializeGenForm() {
     "genform-workflow-release-sheet-bottom"
   );
   const workflowNote = document.getElementById("genform-workflow-note");
+  const statusModal = document.getElementById("genform-status-modal");
+  const statusCloseBtn = document.getElementById("genform-status-close");
+  const statusSubtitle = document.getElementById("genform-status-subtitle");
+  const statusSaveBtn = document.getElementById("genform-status-save");
+  const statusSelect = document.getElementById("genform-status-select");
+  const statusSignatureDeadline = document.getElementById("genform-status-signature-deadline");
+  const statusNote = document.getElementById("genform-status-note");
+  const summaryModal = document.getElementById("genform-summary-modal");
+  const summaryCloseBtn = document.getElementById("genform-summary-close");
+  const summarySubtitle = document.getElementById("genform-summary-subtitle");
+  const summaryContent = document.getElementById("genform-summary-content");
+  const archiveMenuItems = document.querySelectorAll("[data-archive-scope]");
   const proformaModal = document.getElementById("genform-proforma-modal");
   const proformaCloseBtn = document.getElementById("genform-proforma-close");
   const proformaSubtitle = document.getElementById("genform-proforma-subtitle");
@@ -255,6 +299,7 @@ function initializeGenForm() {
   let latestForms = [];
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
+  let activeArchiveScope = "active";
   setDefaultExpiresOn();
 
   function setBusy(element, busy, labelBusy, labelIdle) {
@@ -316,6 +361,44 @@ function initializeGenForm() {
     if (workflowNote) {
       workflowNote.textContent = "";
     }
+    if (workflowDeviceSearch) {
+      workflowDeviceSearch.value = "";
+    }
+    if (workflowDeviceStatusFilter) {
+      workflowDeviceStatusFilter.innerHTML = "";
+      workflowDeviceStatusFilter.value = "";
+    }
+    if (workflowDeviceReservationFilter) {
+      workflowDeviceReservationFilter.innerHTML = "";
+      workflowDeviceReservationFilter.value = "";
+    }
+  }
+
+  function closeStatusModal() {
+    if (!statusModal) {
+      return;
+    }
+    statusModal.hidden = true;
+    if (statusSelect) {
+      statusSelect.innerHTML = "";
+    }
+    if (statusSignatureDeadline) {
+      statusSignatureDeadline.value = "";
+    }
+    if (statusNote) {
+      statusNote.textContent =
+        "Termin podpisu jest używany dla statusu „Umowa GRENKE czeka na podpis”.";
+    }
+  }
+
+  function closeSummaryModal() {
+    if (!summaryModal) {
+      return;
+    }
+    summaryModal.hidden = true;
+    if (summaryContent) {
+      summaryContent.innerHTML = "";
+    }
   }
 
   function closeProformaModal() {
@@ -354,6 +437,8 @@ function initializeGenForm() {
     setAuthLayout(true);
     closeDetailModal();
     closeWorkflowModal();
+    closeStatusModal();
+    closeSummaryModal();
     closeProformaModal();
     if (message) {
       loginError.textContent = message;
@@ -369,6 +454,8 @@ function initializeGenForm() {
     appSection.hidden = false;
     closeDetailModal();
     closeWorkflowModal();
+    closeStatusModal();
+    closeSummaryModal();
     closeProformaModal();
     setAuthLayout(false);
     const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
@@ -734,9 +821,10 @@ function initializeGenForm() {
 
   function buildStatusChecklist(item) {
     const workflow = item.workflow || {};
+    const flowStatus = item.flow_status || {};
     const checklist = [];
     checklist.push({
-      label: `Etap formularza: ${statusLabel(item.status)}`,
+      label: `Etap: ${flowStatus.label || statusLabel(item.status)}`,
       done: item.status !== "EXPIRED",
     });
     checklist.push({
@@ -759,6 +847,17 @@ function initializeGenForm() {
     return checklist;
   }
 
+  function archiveInfoLabel(item) {
+    const archive = item.archive_state || {};
+    if (archive.bucket) {
+      return `Archiwum: ${archive.bucket}`;
+    }
+    if (archive.days_to_archive !== null && archive.days_to_archive !== undefined) {
+      return `Archiwizacja za ${archive.days_to_archive} dni`;
+    }
+    return "";
+  }
+
   function renderItems(items) {
     if (!Array.isArray(items) || !items.length) {
       tableBody.innerHTML = "<tr><td colspan='6'>Brak wygenerowanych formularzy.</td></tr>";
@@ -775,7 +874,8 @@ function initializeGenForm() {
         const customerEmail = payload.company_email || item.customer_email || "—";
         const customerPhone = payload.company_phone || item.customer_phone || "—";
         const customerAddress = formatCustomerAddress(payload) || "—";
-        const hasWorkflowActions = item.status === "SUBMITTED";
+        const actions = item.available_actions || {};
+        const hasWorkflowActions = Boolean(actions.workflow);
         const msLabel = workflow.firebird_client_id
           ? workflow.firebird_client_status === "created"
             ? `Dodano nowego klienta ID ${workflow.firebird_client_id}`
@@ -786,8 +886,13 @@ function initializeGenForm() {
         const grenkeLabel = workflow.business_status
           ? workflowBusinessStatusLabel(workflow.business_status)
           : "Brak";
+        const archiveLabel = archiveInfoLabel(item);
+        const resourceReleaseLabel =
+          item.days_to_resource_release !== null && item.days_to_resource_release !== undefined
+            ? `Zwolnienie zasobów za ${item.days_to_resource_release} dni`
+            : "";
 
-        return `<tr data-form-id="${rowId}" tabindex="0">
+        return `<tr data-form-id="${rowId}" class="genform-row-tone-${escapeHtmlAttribute(item.row_tone || "active")}" tabindex="0">
           <td>
             <ul class="genform-status-list">
               ${statusChecklist
@@ -820,8 +925,15 @@ function initializeGenForm() {
                      <button type="button" class="genform-row-action" data-action="proforma" data-form-id="${rowId}">Stwórz proformę</button>`
                   : ""
               }
+              ${actions.status_change ? `<button type="button" class="genform-row-action" data-action="status" data-form-id="${rowId}">Zmiana statusu</button>` : ""}
+              ${actions.summary ? `<button type="button" class="genform-row-action" data-action="summary" data-form-id="${rowId}">Podsumowanie</button>` : ""}
+              ${actions.release_resources ? `<button type="button" class="genform-row-action danger" data-action="release-resources" data-form-id="${rowId}">Zwolnij zasoby</button>` : ""}
+              ${actions.archive ? `<button type="button" class="genform-row-action" data-action="archive" data-form-id="${rowId}">Przenieś do archiwum</button>` : ""}
+              ${actions.extend_archive ? `<button type="button" class="genform-row-action" data-action="extend-archive" data-form-id="${rowId}">Przedłuż o 7 dni</button>` : ""}
               <button type="button" class="genform-row-action danger" data-action="deactivate" data-form-id="${rowId}">Dezaktywuj</button>
             </div>
+            ${archiveLabel ? `<div class="genform-subtle">${escapeHtml(archiveLabel)}</div>` : ""}
+            ${resourceReleaseLabel ? `<div class="genform-subtle">${escapeHtml(resourceReleaseLabel)}</div>` : ""}
           </td>
         </tr>`;
       })
@@ -1014,7 +1126,52 @@ function initializeGenForm() {
     }
     proformaSheetAssignee.innerHTML =
       workflowSheetAssignee.innerHTML || '<option value="">Brak powiązania</option>';
-    proformaSheetAssignee.value = workflowSheetAssignee.value || "";
+    const workflowValue = workflowSheetAssignee.value || "";
+    const hasMatchingValue = Array.from(proformaSheetAssignee.options).some(
+      (option) => option.value === workflowValue
+    );
+    proformaSheetAssignee.value = hasMatchingValue ? workflowValue : "";
+  }
+
+  function renderSheetAssigneeOptions(selectElement, options, selectedId) {
+    if (!selectElement) {
+      return;
+    }
+    const normalizedOptions = Array.isArray(options)
+      ? options
+          .map((option) => {
+            const optionId = Number(option?.id || 0);
+            if (!Number.isFinite(optionId) || optionId <= 0) {
+              return null;
+            }
+            return {
+              id: String(optionId),
+              label: String(option?.label || option?.login_user || optionId),
+            };
+          })
+          .filter(Boolean)
+      : [];
+    const expectedValue = Number.isFinite(selectedId) && selectedId > 0 ? String(selectedId) : "";
+    selectElement.innerHTML =
+      '<option value="">Brak powiązania</option>' +
+      normalizedOptions
+        .map(
+          (option) =>
+            `<option value="${escapeHtmlAttribute(option.id)}">${
+              escapeHtml(option.label || "Użytkownik")
+            }</option>`
+        )
+        .join("");
+    const hasExpectedValue = normalizedOptions.some((option) => option.id === expectedValue);
+    selectElement.value = hasExpectedValue ? expectedValue : "";
+  }
+
+  function canSaveWorkflowStatus() {
+    if (!statusSelect) {
+      return false;
+    }
+    return !statusSelect.disabled && statusSelect.options.length > 0
+      && Boolean(statusSelect.value);
   }
 
   function updateWorkflowButtonsState() {
@@ -1030,7 +1187,7 @@ function initializeGenForm() {
       if (!button) {
         return;
       }
-      button.disabled = !canCreateProforma && !hasProforma;
+      button.disabled = hasProforma || !canCreateProforma;
       button.textContent = hasProforma
         ? "Proforma już istnieje"
         : !hasClient
@@ -1200,9 +1357,16 @@ function initializeGenForm() {
       workflowRefreshSheetBtnBottom,
       workflowReleaseSheetBtn,
       workflowReleaseSheetBtnBottom,
+      statusSaveBtn,
     ].filter(Boolean);
     buttons.forEach((button) => {
-      button.disabled = isBusy;
+      if (isBusy) {
+        button.disabled = true;
+      } else if (button === statusSaveBtn) {
+        button.disabled = !canSaveWorkflowStatus();
+      } else {
+        button.disabled = false;
+      }
       if (isBusy) {
         button.dataset.originalLabel = button.dataset.originalLabel || button.textContent || "";
         button.textContent = busyLabel;
@@ -1210,12 +1374,16 @@ function initializeGenForm() {
         button.textContent = button.dataset.originalLabel;
       }
     });
+    if (statusSelect) {
+      statusSelect.disabled = isBusy || statusSelect.options.length === 0;
+    }
   }
 
   function renderWorkflowModalData(data) {
     activeWorkflowData = data;
     activeWorkflowData.workflow_devices_dirty = false;
     ensureWorkflowDevicePrices();
+    const workflow = data.workflow || {};
     if (workflowSubtitle) {
       workflowSubtitle.textContent = `Formularz ${data.form?.id || "—"} / ${statusLabel(data.form?.status)}`;
     }
@@ -1223,27 +1391,20 @@ function initializeGenForm() {
     if (workflowDeviceNote) {
       workflowDeviceNote.textContent = data.selection_capabilities?.note || "";
     }
-    if (workflowSheetAssignee) {
-      const options = Array.isArray(data.sheet_assignee_options) ? data.sheet_assignee_options : [];
-      const selectedId = Number(data.sheet_assignee_selected_id || 0);
-      workflowSheetAssignee.innerHTML =
-        `<option value="">Brak powiązania</option>` +
-        options
-          .map((option) => {
-            const optionId = Number(option.id || 0);
-            return `<option value="${escapeHtml(optionId)}" ${
-              optionId === selectedId ? "selected" : ""
-            }>${escapeHtml(option.label || option.login_user || option.id || "Użytkownik")}</option>`;
-          })
-          .join("");
-    }
+    const assigneeOptions = Array.isArray(data.sheet_assignee_options) ? data.sheet_assignee_options : [];
+    const selectedAssigneeId = Number(data.sheet_assignee_selected_id || 0);
+    renderSheetAssigneeOptions(workflowSheetAssignee, assigneeOptions, selectedAssigneeId);
     syncProformaFormSelection();
+    if (workflowDeviceSearch) {
+      workflowDeviceSearch.value = "";
+    }
     if (workflowDeviceStatusFilter) {
       workflowDeviceStatusFilter.innerHTML =
         '<option value="">Wszystkie</option>' +
         uniqueValues(data.available_devices || [], "status")
           .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
           .join("");
+      workflowDeviceStatusFilter.value = "";
     }
     if (workflowDeviceReservationFilter) {
       workflowDeviceReservationFilter.innerHTML =
@@ -1251,6 +1412,7 @@ function initializeGenForm() {
         uniqueValues(data.available_devices || [], "reservation_filter_value")
           .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
           .join("");
+      workflowDeviceReservationFilter.value = "";
     }
     if (workflowSheetCacheNote) {
       workflowSheetCacheNote.textContent = formatSheetCacheNote(data.sheet_status_cache || {});
@@ -1482,7 +1644,7 @@ function initializeGenForm() {
       return;
     }
     const confirmed = window.confirm(
-      "Usunięcie rezerwacji zwolni wpisy w arkuszu Google, usunie przypięte urządzenia i usunie proformę ze sprawy workflow. Czy kontynuować?"
+      "Zwolnienie zasobów usunie aktywną proformę i rezerwacje, ale zostawi historię formularza. Czy kontynuować?"
     );
     if (!confirmed) {
       return;
@@ -1490,28 +1652,8 @@ function initializeGenForm() {
     setWorkflowButtonsBusy(true, "Usuwanie...");
     clearMessages();
     try {
-      const clearDevices = await fetch(`/admin/contracts/forms/${activeWorkflowFormId}/workflow/devices`, {
-        method: "POST",
-        headers: headers(true),
-        body: JSON.stringify({ devices: [], sheet_assignee_id: null }),
-      });
-      const clearData = await clearDevices.json().catch(() => ({}));
-      if (!clearDevices.ok) {
-        throw new Error(clearData.detail || "Nie udało się usunąć urządzeń ze sprawy workflow.");
-      }
-      const resetProforma = await fetch(
-        `/admin/contracts/forms/${activeWorkflowFormId}/workflow/proforma-reset`,
-        {
-          method: "POST",
-          headers: headers(false),
-        }
-      );
-      if (!resetProforma.ok && resetProforma.status !== 409) {
-        const resetData = await resetProforma.json().catch(() => ({}));
-        throw new Error(resetData.detail || "Nie udało się usunąć informacji o proformie.");
-      }
       const response = await fetch(
-        `/admin/contracts/forms/${activeWorkflowFormId}/workflow/sheet-release`,
+        `/admin/contracts/forms/${activeWorkflowFormId}/workflow/release-resources`,
         {
           method: "POST",
           headers: headers(false),
@@ -1523,11 +1665,107 @@ function initializeGenForm() {
       }
       showSuccess(data.message || "Rezerwacje usunięte.");
       await loadItems(false);
-      await openWorkflowModal(activeWorkflowFormId);
+      if (workflowModal && !workflowModal.hidden) {
+        await openWorkflowModal(activeWorkflowFormId);
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Błąd usuwania rezerwacji.");
     } finally {
       setWorkflowButtonsBusy(false);
+    }
+  }
+
+  async function saveWorkflowStatus() {
+    if (!activeWorkflowFormId) {
+      return;
+    }
+    if (!statusSelect) {
+      return;
+    }
+    setBusy(statusSaveBtn, true, "Zapisywanie...", "Zapisz status");
+    clearMessages();
+    try {
+      const deadlineValue = statusSignatureDeadline?.value || "";
+      const response = await fetch(
+        `/admin/contracts/forms/${activeWorkflowFormId}/workflow/status`,
+        {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify({
+            business_status: statusSelect.value || "WAITING_SIGNATURE",
+            signature_deadline_at: deadlineValue ? new Date(deadlineValue).toISOString() : null,
+          }),
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się zapisać statusu.");
+      }
+      showSuccess(data.message || "Status GRENKE zapisany.");
+      await loadItems(false);
+      closeStatusModal();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd zapisu statusu.");
+    } finally {
+      setBusy(statusSaveBtn, false, "Zapisywanie...", "Zapisz status");
+    }
+  }
+
+  async function openStatusModal(formId) {
+    if (!token) {
+      showLogin("Brak aktywnej sesji.");
+      return;
+    }
+    const numericFormId = Number(formId);
+    if (!Number.isFinite(numericFormId) || numericFormId <= 0 || !statusModal) {
+      return;
+    }
+    clearMessages();
+    activeWorkflowFormId = numericFormId;
+    setBusy(statusSaveBtn, true, "Ładowanie...", "Zapisz status");
+    try {
+      const response = await fetch(`/admin/contracts/forms/${numericFormId}/workflow`, {
+        headers: headers(false),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się pobrać statusu workflow.");
+      }
+      activeWorkflowData = data;
+      const workflow = data.workflow || {};
+      const statusAction = data.workflow_status_action || {};
+      const statusOptions = Array.isArray(statusAction.options) ? statusAction.options : [];
+      const currentStatus = String(workflow.business_status || statusAction.current || "");
+      const optionValues = statusOptions.map((item) => String(item?.value || "").trim()).filter(Boolean);
+      const selectedStatus = optionValues.includes(currentStatus) ? currentStatus : optionValues[0] || "";
+      if (statusSelect) {
+        statusSelect.innerHTML = statusOptions.length
+          ? statusOptions
+              .map(
+                (item) => `<option value="${escapeHtmlAttribute(item.value)}" ${
+                  String(item.value || "") === selectedStatus ? "selected" : ""
+                }>${escapeHtml(item.label || item.value || "Status")}</option>`
+              )
+              .join("")
+          : '<option value="">Brak statusów do wyboru</option>';
+        statusSelect.value = selectedStatus;
+      }
+      if (statusSignatureDeadline) {
+        statusSignatureDeadline.value = formatDateInputValue(workflow.signature_deadline_at);
+        statusSignatureDeadline.disabled = selectedStatus !== "WAITING_SIGNATURE";
+      }
+      if (statusSubtitle) {
+        statusSubtitle.textContent = `Formularz ${data.form?.id || "—"} / ${workflowBusinessStatusLabel(currentStatus)}`;
+      }
+      statusModal.hidden = false;
+      statusSelect?.focus();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd ładowania statusu.");
+    } finally {
+      setBusy(statusSaveBtn, false, "Ładowanie...", "Zapisz status");
+      if (statusSaveBtn) {
+        statusSaveBtn.disabled = !canSaveWorkflowStatus();
+      }
     }
   }
 
@@ -1578,11 +1816,10 @@ function initializeGenForm() {
           }</dd></article>
         `;
       }
-      if (workflowSheetAssignee) {
-        const selectedId = Number(data.sheet_assignee_selected_id || 0);
-        workflowSheetAssignee.value = selectedId > 0 ? String(selectedId) : "";
-      }
-      syncProformaFormSelection();
+      const assigneeOptions = Array.isArray(data.sheet_assignee_options) ? data.sheet_assignee_options : [];
+      const selectedAssigneeId = Number(data.sheet_assignee_selected_id || 0);
+      renderSheetAssigneeOptions(workflowSheetAssignee, assigneeOptions, selectedAssigneeId);
+      renderSheetAssigneeOptions(proformaSheetAssignee, assigneeOptions, selectedAssigneeId);
       if (proformaBank) {
         proformaBank.checked = true;
       }
@@ -1592,6 +1829,122 @@ function initializeGenForm() {
       (workflow.proforma_number ? proformaPdfLinkTop : proformaCreateBtnTop)?.focus();
     } catch (err) {
       showError(err instanceof Error ? err.message : "Błąd ładowania danych proformy.");
+    }
+  }
+
+  function renderSummarySection(title, rows) {
+    const visibleRows = (rows || []).filter((row) => normalizeText(row.value));
+    if (!visibleRows.length) {
+      return "";
+    }
+    return `<article class="genform-summary-section">
+      <h3>${escapeHtml(title)}</h3>
+      <dl class="genform-detail-fields">${renderFieldCards(visibleRows)}</dl>
+    </article>`;
+  }
+
+  async function openSummaryModal(formId) {
+    if (!token) {
+      showLogin("Brak aktywnej sesji.");
+      return;
+    }
+    const numericFormId = Number(formId);
+    if (!Number.isFinite(numericFormId) || numericFormId <= 0 || !summaryModal || !summaryContent) {
+      return;
+    }
+    clearMessages();
+    try {
+      const response = await fetch(`/admin/contracts/forms/${numericFormId}/workflow`, {
+        headers: headers(false),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się pobrać podsumowania.");
+      }
+      const form = data.form || {};
+      const workflow = data.workflow || {};
+      const payload = form.payload || {};
+      const salesPacket = data.sales_packet || {};
+      const mailboxMeta = workflow.status_history || [];
+      if (summarySubtitle) {
+        summarySubtitle.textContent = `Formularz ${form.id || "—"} / ${workflowBusinessStatusLabel(workflow.business_status)}`;
+      }
+      summaryContent.innerHTML = [
+        renderSummarySection("Klient", [
+          { label: "Firma", value: payload.company_name || form.customer_name },
+          { label: "NIP", value: payload.company_nip || form.customer_nip },
+          { label: "E-mail", value: payload.company_email || form.customer_email },
+          { label: "Telefon", value: payload.company_phone || form.customer_phone },
+          { label: "Adres", value: formatCustomerAddress(payload) },
+        ]),
+        renderSummarySection("Workflow", [
+          { label: "Status GRENKE", value: workflowBusinessStatusLabel(workflow.business_status) },
+          { label: "Termin podpisu", value: formatDate(workflow.signature_deadline_at) },
+          { label: "Proforma", value: workflow.proforma_number },
+          { label: "Klient MS", value: workflow.firebird_client_id ? `ID ${workflow.firebird_client_id}` : "" },
+          { label: "Urządzenia", value: String(workflow.devices_selected_count || "") },
+        ]),
+        renderSummarySection("Dostawa", [
+          { label: "Termin", value: workflow.delivery_label },
+          { label: "Kontakt", value: workflow.delivery_contact_name },
+          { label: "Telefon", value: workflow.delivery_contact_phone },
+          { label: "Uwagi", value: workflow.delivery_notes },
+        ]),
+        `<article class="genform-summary-section"><h3>Urządzenia</h3>${
+          Array.isArray(salesPacket.devices) && salesPacket.devices.length
+            ? `<ul class="genform-summary-list">${salesPacket.devices
+                .map((device) => `<li>${escapeHtml([device.producer, device.model, device.serial, device.price_gross].filter(Boolean).join(" / "))}</li>`)
+                .join("")}</ul>`
+            : '<p class="genform-detail-empty">Brak urządzeń.</p>'
+        }</article>`,
+        `<article class="genform-summary-section"><h3>Historia statusów</h3>${
+          Array.isArray(mailboxMeta) && mailboxMeta.length
+            ? `<ul class="genform-summary-list">${mailboxMeta
+                .map((event) => `<li>${escapeHtml(formatDate(event.changed_at))}: ${escapeHtml(event.label || event.status || "")} (${escapeHtml(event.source || "")})</li>`)
+                .join("")}</ul>`
+            : '<p class="genform-detail-empty">Brak historii statusów.</p>'
+        }</article>`,
+      ].join("");
+      summaryModal.hidden = false;
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd ładowania podsumowania.");
+    }
+  }
+
+  async function archiveForm(formId) {
+    clearMessages();
+    try {
+      const response = await fetch(`/admin/contracts/forms/${formId}/archive`, {
+        method: "POST",
+        headers: headers(true),
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się przenieść formularza do archiwum.");
+      }
+      showSuccess(data.message || "Formularz przeniesiono do archiwum.");
+      await loadItems(false);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd archiwizacji formularza.");
+    }
+  }
+
+  async function extendArchive(formId) {
+    clearMessages();
+    try {
+      const response = await fetch(`/admin/contracts/forms/${formId}/archive/extend`, {
+        method: "POST",
+        headers: headers(false),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się przedłużyć terminu archiwizacji.");
+      }
+      showSuccess(data.message || "Termin archiwizacji przedłużony.");
+      await loadItems(false);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd przedłużenia archiwizacji.");
     }
   }
 
@@ -1657,7 +2010,7 @@ function initializeGenForm() {
     setBusy(refreshBtn, true, "Odświeżanie…", "Odśwież listę");
     try {
       const response = await fetch(
-        "/admin/contracts/dashboard?forms_scope=all&include_devices=0",
+        `/admin/contracts/dashboard?forms_scope=all&include_devices=0&archive_scope=${encodeURIComponent(activeArchiveScope)}`,
         { headers: headers(false) }
       );
       const data = await response.json().catch(() => ({}));
@@ -1665,6 +2018,8 @@ function initializeGenForm() {
         throw new Error(data.detail || "Nie udało się pobrać listy formularzy.");
       }
       latestForms = Array.isArray(data.forms) ? data.forms : [];
+      renderArchiveMenu(data.archive_totals || {});
+      renderMailboxSyncNote(data.mailbox_sync || null);
       renderItems(latestForms);
       if (showInfo) {
         showSuccess("Lista formularzy została odświeżona.");
@@ -1674,6 +2029,49 @@ function initializeGenForm() {
     } finally {
       setBusy(refreshBtn, false, "Odświeżanie…", "Odśwież listę");
     }
+  }
+
+  function renderArchiveMenu(totals) {
+    archiveMenuItems.forEach((button) => {
+      const scope = button.getAttribute("data-archive-scope") || "active";
+      button.classList.toggle("is-active", scope === activeArchiveScope);
+    });
+    const mapping = {
+      active: document.getElementById("genform-count-active"),
+      accepted: document.getElementById("genform-count-accepted"),
+      rejected: document.getElementById("genform-count-rejected"),
+      unfilled: document.getElementById("genform-count-unfilled"),
+    };
+    Object.entries(mapping).forEach(([scope, element]) => {
+      if (element) {
+        element.textContent = String(Number(totals?.[scope] || 0));
+      }
+    });
+  }
+
+  function renderMailboxSyncNote(mailboxSync) {
+    if (!mailboxSyncNote) {
+      return;
+    }
+    if (!mailboxSync?.available || !mailboxSync?.last_run_at) {
+      mailboxSyncNote.textContent = "Synchronizacja e-mail GRENKE: brak danych o ostatnim przebiegu.";
+      return;
+    }
+
+    const resultLabel = mailboxSyncResultLabel(mailboxSync.result);
+    const sourceLabel = mailboxSync.source === "scheduler" ? "automat" : "ręcznie";
+    const summary = mailboxSync.summary && typeof mailboxSync.summary === "object"
+      ? mailboxSync.summary
+      : null;
+    const updatedCount = Number(summary?.updated || 0);
+    const warningsCount = Number(summary?.warnings || 0);
+    const countersLabel = summary
+      ? `, zaktualizowane: ${updatedCount}, ostrzeżenia: ${warningsCount}`
+      : "";
+
+    mailboxSyncNote.textContent =
+      `Synchronizacja e-mail GRENKE: ${resultLabel}, ${formatDate(mailboxSync.last_run_at)} `
+      + `(${sourceLabel}${countersLabel}).`;
   }
 
   async function loadFormDetail(formId) {
@@ -1868,6 +2266,8 @@ function initializeGenForm() {
       clearToken();
       closeDetailModal();
       closeWorkflowModal();
+      closeStatusModal();
+      closeSummaryModal();
       closeProformaModal();
       showLogin("Wylogowano.");
       if (generatedBox) {
@@ -1982,6 +2382,8 @@ function initializeGenForm() {
   passwordToggleBtn?.addEventListener("click", togglePasswordVisibility);
   detailCloseBtn?.addEventListener("click", closeDetailModal);
   workflowCloseBtn?.addEventListener("click", closeWorkflowModal);
+  statusCloseBtn?.addEventListener("click", closeStatusModal);
+  summaryCloseBtn?.addEventListener("click", closeSummaryModal);
   proformaCloseBtn?.addEventListener("click", closeProformaModal);
   detailPrintBtn?.addEventListener("click", () => triggerDetailPrint("print"));
   detailPdfBtn?.addEventListener("click", () => triggerDetailPrint("pdf"));
@@ -2010,6 +2412,16 @@ function initializeGenForm() {
       closeProformaModal();
     }
   });
+  statusModal?.addEventListener("click", (event) => {
+    if (event.target === statusModal) {
+      closeStatusModal();
+    }
+  });
+  summaryModal?.addEventListener("click", (event) => {
+    if (event.target === summaryModal) {
+      closeSummaryModal();
+    }
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && detailModal && !detailModal.hidden) {
       closeDetailModal();
@@ -2021,12 +2433,22 @@ function initializeGenForm() {
     }
     if (event.key === "Escape" && proformaModal && !proformaModal.hidden) {
       closeProformaModal();
+      return;
+    }
+    if (event.key === "Escape" && statusModal && !statusModal.hidden) {
+      closeStatusModal();
+      return;
+    }
+    if (event.key === "Escape" && summaryModal && !summaryModal.hidden) {
+      closeSummaryModal();
     }
   });
   window.addEventListener("afterprint", clearPrintMode);
   window.addEventListener("pageshow", () => {
     closeDetailModal();
     closeWorkflowModal();
+    closeStatusModal();
+    closeSummaryModal();
     closeProformaModal();
   });
 
@@ -2052,6 +2474,17 @@ function initializeGenForm() {
         openWorkflowModal(formId);
       } else if (action === "proforma") {
         openProformaModal(formId);
+      } else if (action === "status") {
+        openStatusModal(formId);
+      } else if (action === "summary") {
+        openSummaryModal(formId);
+      } else if (action === "release-resources") {
+        activeWorkflowFormId = formId;
+        releaseWorkflowSheetReservations();
+      } else if (action === "archive") {
+        archiveForm(formId);
+      } else if (action === "extend-archive") {
+        extendArchive(formId);
       }
     }
   });
@@ -2082,6 +2515,23 @@ function initializeGenForm() {
   });
   workflowReleaseSheetBtnBottom?.addEventListener("click", () => {
     releaseWorkflowSheetReservations();
+  });
+  statusSaveBtn?.addEventListener("click", () => {
+    saveWorkflowStatus();
+  });
+  statusSelect?.addEventListener("change", () => {
+    if (statusSaveBtn) {
+      statusSaveBtn.disabled = !canSaveWorkflowStatus();
+    }
+    if (statusSignatureDeadline) {
+      statusSignatureDeadline.disabled = statusSelect.value !== "WAITING_SIGNATURE";
+    }
+  });
+  archiveMenuItems.forEach((button) => {
+    button.addEventListener("click", () => {
+      activeArchiveScope = button.getAttribute("data-archive-scope") || "active";
+      loadItems(false);
+    });
   });
   proformaCreateBtn?.addEventListener("click", () => {
     createWorkflowProforma();

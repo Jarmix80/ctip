@@ -306,8 +306,9 @@ def _upsert_forms(
 
 def _upsert_workflow_cases(
     conn: psycopg.Connection[Any], *, rows: Iterable[dict[str, Any]], allowed_admin_ids: set[int]
-) -> int:
+) -> tuple[int, dict[int, int]]:
     inserted = 0
+    source_to_target_ids: dict[int, int] = {}
     with conn.cursor() as cur:
         for row in rows:
             cur.execute(
@@ -356,10 +357,9 @@ def _upsert_workflow_cases(
                     %(delivery_contact_phone)s,
                     %(delivery_notes)s
                 )
-                ON CONFLICT (id) DO UPDATE SET
+                ON CONFLICT (form_request_id) DO UPDATE SET
                     created_at = EXCLUDED.created_at,
                     updated_at = EXCLUDED.updated_at,
-                    form_request_id = EXCLUDED.form_request_id,
                     created_by = EXCLUDED.created_by,
                     updated_by = EXCLUDED.updated_by,
                     stage = EXCLUDED.stage,
@@ -376,6 +376,7 @@ def _upsert_workflow_cases(
                     delivery_contact_name = EXCLUDED.delivery_contact_name,
                     delivery_contact_phone = EXCLUDED.delivery_contact_phone,
                     delivery_notes = EXCLUDED.delivery_notes
+                RETURNING id
                 """,
                 {
                     **row,
@@ -384,16 +385,25 @@ def _upsert_workflow_cases(
                     "client_payload_snapshot": _json_param(row.get("client_payload_snapshot")),
                 },
             )
+            returned = cur.fetchone()
+            if returned and returned["id"] is not None:
+                source_to_target_ids[int(row["id"])] = int(returned["id"])
             inserted += 1
-    return inserted
+    return inserted, source_to_target_ids
 
 
 def _upsert_workflow_devices(
-    conn: psycopg.Connection[Any], *, rows: Iterable[dict[str, Any]]
+    conn: psycopg.Connection[Any],
+    *,
+    rows: Iterable[dict[str, Any]],
+    workflow_case_id_map: dict[int, int],
 ) -> int:
     inserted = 0
     with conn.cursor() as cur:
         for row in rows:
+            target_workflow_case_id = workflow_case_id_map.get(int(row["workflow_case_id"]))
+            if target_workflow_case_id is None:
+                continue
             cur.execute(
                 """
                 INSERT INTO ctip.form_workflow_device (
@@ -434,9 +444,8 @@ def _upsert_workflow_devices(
                     %(firebird_client_id)s,
                     %(snapshot)s
                 )
-                ON CONFLICT (id) DO UPDATE SET
+                ON CONFLICT (workflow_case_id, source_type, source_row) DO UPDATE SET
                     created_at = EXCLUDED.created_at,
-                    workflow_case_id = EXCLUDED.workflow_case_id,
                     source_type = EXCLUDED.source_type,
                     source_row = EXCLUDED.source_row,
                     producer = EXCLUDED.producer,
@@ -454,6 +463,7 @@ def _upsert_workflow_devices(
                 """,
                 {
                     **row,
+                    "workflow_case_id": target_workflow_case_id,
                     "snapshot": _json_param(row.get("snapshot")),
                 },
             )
@@ -520,10 +530,14 @@ def main() -> None:
             forms_count = _upsert_forms(
                 target_conn, rows=forms, allowed_admin_ids=allowed_admin_ids
             )
-            cases_count = _upsert_workflow_cases(
+            cases_count, workflow_case_id_map = _upsert_workflow_cases(
                 target_conn, rows=workflow_cases, allowed_admin_ids=allowed_admin_ids
             )
-            devices_count = _upsert_workflow_devices(target_conn, rows=workflow_devices)
+            devices_count = _upsert_workflow_devices(
+                target_conn,
+                rows=workflow_devices,
+                workflow_case_id_map=workflow_case_id_map,
+            )
             _set_sequence(target_conn, "ctip.form_request_id_seq", "ctip.form_request")
             _set_sequence(target_conn, "ctip.form_workflow_case_id_seq", "ctip.form_workflow_case")
             _set_sequence(

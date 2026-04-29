@@ -695,7 +695,13 @@ def test_genform_page_renders_layout():
     assert "Status GRENKE" in response.text
     assert "genform-workflow-modal" in response.text
     assert "genform-workflow-save-devices" in response.text
+    assert "genform-status-modal" in response.text
+    assert "genform-status-select" in response.text
+    assert "genform-status-save" in response.text
+    assert "genform-summary-modal" in response.text
+    assert "Formularze w toku" in response.text
     assert "genform-proforma-modal" in response.text
+    assert "genform-proforma-summary" in response.text
     assert "genform-proforma-create" in response.text
     assert "genform-proforma-pdf" in response.text
     assert "genform-proforma-reset" in response.text

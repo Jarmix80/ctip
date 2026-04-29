@@ -344,6 +344,28 @@ body {
   margin: 8px 0 0;
 }
 
+.genform-workflow-status-panel {
+  margin-top: 14px;
+  border: 1px solid rgba(31, 63, 105, 0.12);
+  border-radius: 12px;
+  background: rgba(31, 63, 105, 0.04);
+  padding: 12px;
+}
+
+.genform-workflow-status-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.genform-workflow-status-head h4 {
+  margin: 0;
+  color: var(--primary);
+  font-size: 15px;
+}
+
 .genform-workflow-actions-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -429,6 +451,11 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  margin-bottom: 14px;
+}
+
+#genform-proforma-summary {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 14px;
 }
 
@@ -785,6 +812,92 @@ body {
   color: var(--error);
 }
 
+.genform-dashboard-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.genform-table-column {
+  display: grid;
+  gap: 10px;
+}
+
+.genform-table-column > .genform-table-wrap {
+  margin-top: 0;
+}
+
+.genform-mailbox-sync-note {
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.genform-side-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 16px;
+}
+
+.genform-side-menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(31, 63, 105, 0.14);
+  border-radius: 14px;
+  background: #f7f9fc;
+  color: var(--primary);
+  padding: 12px 14px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.genform-side-menu-item.is-active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(31, 63, 105, 0.18);
+}
+
+.genform-row-tone-accepted {
+  background: rgba(46, 125, 50, 0.08);
+}
+
+.genform-row-tone-rejected {
+  background: rgba(198, 40, 40, 0.08);
+}
+
+.genform-row-tone-muted {
+  opacity: 0.62;
+  background: #eef2f6;
+}
+
+.genform-summary-content {
+  display: grid;
+  gap: 16px;
+}
+
+.genform-summary-section {
+  border: 1px solid rgba(31, 63, 105, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+  background: #f9fbfd;
+}
+
+.genform-summary-section h3 {
+  margin: 0 0 10px;
+  color: var(--primary);
+}
+
+.genform-summary-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
 @media (max-width: 700px) {
   .genform-header {
     flex-direction: column;
@@ -796,8 +909,14 @@ body {
 
   .genform-proforma-party-grid,
   .genform-proforma-status-grid,
+  .genform-dashboard-layout,
+  #genform-proforma-summary,
   #genform-workflow-summary {
     grid-template-columns: 1fr;
+  }
+
+  .genform-side-menu {
+    position: static;
   }
 
   #genform-workflow-summary .genform-detail-summary-card:first-child {
@@ -807,6 +926,10 @@ body {
   .genform-detail-field-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .genform-workflow-status-head {
+    flex-direction: column;
   }
 
   .genform-shell.is-auth {

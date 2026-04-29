@@ -637,12 +637,16 @@ CREATE TABLE ctip.form_request (
     notification_error text,
     submitted_payload text,
     submitted_at timestamp with time zone,
+    archive_bucket text,
+    archived_at timestamp with time zone,
+    archive_due_at timestamp with time zone,
     CONSTRAINT form_request_pkey PRIMARY KEY (id),
     CONSTRAINT form_request_created_by_fkey FOREIGN KEY (created_by)
         REFERENCES ctip.admin_user (id) MATCH SIMPLE
         ON UPDATE NO ACTION
         ON DELETE SET NULL,
     CONSTRAINT form_request_status_check CHECK (status = ANY (ARRAY['GENERATED'::text, 'DISPATCHED'::text, 'SUBMITTED'::text, 'EXPIRED'::text])),
+    CONSTRAINT form_request_archive_bucket_check CHECK ((archive_bucket IS NULL) OR (archive_bucket = ANY (ARRAY['accepted'::text, 'rejected'::text, 'unfilled'::text]))),
     CONSTRAINT uq_form_request_token_hash UNIQUE (token_hash)
 );
 
@@ -650,6 +654,8 @@ ALTER TABLE ctip.form_request OWNER TO postgres;
 
 CREATE INDEX idx_form_request_status_created ON ctip.form_request USING btree (status, created_at);
 CREATE INDEX idx_form_request_created_by ON ctip.form_request USING btree (created_by, created_at);
+CREATE INDEX ix_form_request_archive_bucket ON ctip.form_request USING btree (archive_bucket);
+CREATE INDEX ix_form_request_archive_due_at ON ctip.form_request USING btree (archive_due_at);
 
 CREATE SEQUENCE ctip.form_workflow_case_id_seq
     START WITH 1
@@ -677,6 +683,12 @@ CREATE TABLE ctip.form_workflow_case (
     proforma_firebird_id integer,
     proforma_number text,
     proforma_pdf_path text,
+    signature_deadline_at timestamp with time zone,
+    resources_release_due_at timestamp with time zone,
+    resources_released_at timestamp with time zone,
+    status_changed_at timestamp with time zone,
+    status_source text,
+    status_history json,
     delivery_date date,
     delivery_time_window text,
     delivery_contact_name text,
@@ -697,12 +709,13 @@ CREATE TABLE ctip.form_workflow_case (
         ON UPDATE NO ACTION
         ON DELETE SET NULL,
     CONSTRAINT form_workflow_case_stage_check CHECK (stage = ANY (ARRAY['FORM_SUBMITTED'::text, 'CLIENT_READY'::text, 'DEVICES_SELECTED'::text, 'PROFORMA_CREATED'::text])),
-    CONSTRAINT form_workflow_case_business_status_check CHECK (business_status = ANY (ARRAY['DRAFT'::text, 'PENDING_APPROVAL'::text, 'APPROVED'::text, 'ZEROWKA'::text, 'REJECTED'::text]))
+    CONSTRAINT form_workflow_case_business_status_check CHECK (business_status = ANY (ARRAY['DRAFT'::text, 'PENDING_APPROVAL'::text, 'APPROVED'::text, 'ZEROWKA'::text, 'REJECTED'::text, 'WAITING_SIGNATURE'::text, 'APPROVED_ORDER'::text, 'REJECTED_GRENKE'::text]))
 );
 
 ALTER TABLE ctip.form_workflow_case OWNER TO postgres;
 
 CREATE INDEX idx_form_workflow_case_form_request ON ctip.form_workflow_case USING btree (form_request_id);
+CREATE INDEX ix_form_workflow_case_resources_release_due_at ON ctip.form_workflow_case USING btree (resources_release_due_at);
 
 CREATE SEQUENCE ctip.form_workflow_device_id_seq
     START WITH 1

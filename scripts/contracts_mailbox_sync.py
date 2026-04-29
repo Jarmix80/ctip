@@ -12,7 +12,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from email import message_from_bytes
 from email.header import decode_header
 from email.message import Message
@@ -34,14 +34,16 @@ from app.services.contracts_mailbox import (
     MAILBOX_EVENT_DECISION,
     build_pdf_password_candidates,
     classify_mail_subject,
+    detect_rejection_decision,
     extract_application_number,
     extract_data_from_contract_text,
     normalize_application_number,
     score_form_match,
 )
 from app.services.contracts_workflow import (
-    WORKFLOW_BUSINESS_STATUS_APPROVED,
-    WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL,
+    WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+    WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+    WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
     get_or_create_form_workflow_case,
     set_form_workflow_business_status,
     set_form_workflow_delivery,
@@ -641,6 +643,7 @@ async def apply_mail_to_workflow(
     form_ctx: FormContext,
     mail_ctx: MailContext,
     extracted_data: dict[str, Any] | None,
+    pdf_text: str = "",
 ) -> dict[str, Any]:
     """Aktualizuje workflow formularza na podstawie pojedynczej wiadomości."""
     workflow_case = form_ctx.workflow_case
@@ -654,20 +657,40 @@ async def apply_mail_to_workflow(
         form_ctx.workflow_case = workflow_case
 
     if mail_ctx.event_type == MAILBOX_EVENT_DECISION:
+        decision_text = " ".join(
+            [
+                mail_ctx.subject,
+                mail_ctx.body_text,
+                pdf_text,
+                json.dumps(extracted_data or {}, ensure_ascii=False),
+            ]
+        )
+        is_rejection = detect_rejection_decision(decision_text)
+        new_status = (
+            WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE
+            if is_rejection
+            else WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE
+        )
         workflow_case = await set_form_workflow_business_status(
             session,
             workflow_case=workflow_case,
-            business_status=WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL,
+            business_status=new_status,
             updated_by=None,
+            signature_deadline_at=(
+                mail_ctx.email_date_utc + timedelta(days=7) if not is_rejection else None
+            ),
+            status_source="mailbox",
         )
-        message_kind = "decyzja"
-        new_status = WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL
+        if is_rejection:
+            form_ctx.form.archive_due_at = mail_ctx.email_date_utc + timedelta(days=14)
+        message_kind = "odmowa" if is_rejection else "decyzja"
     else:
         workflow_case = await set_form_workflow_business_status(
             session,
             workflow_case=workflow_case,
-            business_status=WORKFLOW_BUSINESS_STATUS_APPROVED,
+            business_status=WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
             updated_by=None,
+            status_source="mailbox",
         )
         signature_date: date = mail_ctx.email_date_utc.date()
         existing_notes = str(workflow_case.delivery_notes or "").strip()
@@ -687,7 +710,8 @@ async def apply_mail_to_workflow(
             updated_by=None,
         )
         message_kind = "zgoda"
-        new_status = WORKFLOW_BUSINESS_STATUS_APPROVED
+        new_status = WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
+        form_ctx.form.archive_due_at = mail_ctx.email_date_utc + timedelta(days=14)
 
     saved_files = persist_mail_attachments(scope=f"case_{workflow_case.id}", mail_ctx=mail_ctx)
 
@@ -912,6 +936,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                         form_ctx=matched_ctx,
                         mail_ctx=mail_ctx,
                         extracted_data=extracted_data,
+                        pdf_text=pdf_result.text if pdf_result else "",
                     )
                     await session.commit()
                 else:
@@ -921,9 +946,21 @@ async def run_sync(args: argparse.Namespace) -> int:
                             matched_ctx.workflow_case.id if matched_ctx.workflow_case else None
                         ),
                         "new_business_status": (
-                            WORKFLOW_BUSINESS_STATUS_PENDING_APPROVAL
+                            (
+                                WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE
+                                if detect_rejection_decision(
+                                    " ".join(
+                                        [
+                                            mail_ctx.subject,
+                                            mail_ctx.body_text,
+                                            pdf_result.text if pdf_result else "",
+                                        ]
+                                    )
+                                )
+                                else WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE
+                            )
                             if mail_ctx.event_type == MAILBOX_EVENT_DECISION
-                            else WORKFLOW_BUSINESS_STATUS_APPROVED
+                            else WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
                         ),
                         "email_date_utc": mail_ctx.email_date_utc.isoformat(),
                         "saved_files_count": len(mail_ctx.attachments),

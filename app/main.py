@@ -9,6 +9,14 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.api.routes.admin_backup import start_backup_scheduler, stop_backup_scheduler
 from app.core.config import settings
+from app.services.contracts_mailbox_scheduler import (
+    start_contracts_mailbox_scheduler,
+    stop_contracts_mailbox_scheduler,
+)
+from app.services.contracts_workflow_maintenance import (
+    start_contracts_workflow_maintenance_scheduler,
+    stop_contracts_workflow_maintenance_scheduler,
+)
 from app.services.workflow_sheet_status_cache import (
     ensure_workflow_sheet_status_cache_table,
     start_workflow_sheet_status_cache_scheduler,
@@ -29,6 +37,8 @@ async def _app_lifespan(_: FastAPI):
     """Obsługuje zadania startowe i zamknięcie aplikacji."""
     backup_scheduler_started = False
     workflow_sheet_status_scheduler_started = False
+    contracts_workflow_maintenance_scheduler_started = False
+    contracts_mailbox_scheduler_started = False
     await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
@@ -36,6 +46,12 @@ async def _app_lifespan(_: FastAPI):
     if settings.workflow_sheet_status_cache_scheduler_enabled:
         await start_workflow_sheet_status_cache_scheduler()
         workflow_sheet_status_scheduler_started = True
+    if settings.contracts_workflow_maintenance_scheduler_enabled:
+        await start_contracts_workflow_maintenance_scheduler()
+        contracts_workflow_maintenance_scheduler_started = True
+    if settings.contracts_mailbox_scheduler_enabled:
+        await start_contracts_mailbox_scheduler()
+        contracts_mailbox_scheduler_started = True
     try:
         yield
     finally:
@@ -43,6 +59,10 @@ async def _app_lifespan(_: FastAPI):
             await stop_backup_scheduler()
         if workflow_sheet_status_scheduler_started:
             await stop_workflow_sheet_status_cache_scheduler()
+        if contracts_workflow_maintenance_scheduler_started:
+            await stop_contracts_workflow_maintenance_scheduler()
+        if contracts_mailbox_scheduler_started:
+            await stop_contracts_mailbox_scheduler()
 
 
 def create_app() -> FastAPI:
