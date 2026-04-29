@@ -150,6 +150,10 @@ class Settings(BaseSettings):
         default=False,
         alias="CONTRACTS_MAILBOX_SYNC_REPROCESS",
     )
+    contracts_mailbox_archive_root: str | None = Field(
+        default=None,
+        alias="CONTRACTS_MAILBOX_ARCHIVE_ROOT",
+    )
 
     backup_execution_enabled: bool | None = Field(default=None, alias="BACKUP_EXECUTION_ENABLED")
     backup_scheduler_enabled: bool = Field(default=True, alias="BACKUP_SCHEDULER_ENABLED")

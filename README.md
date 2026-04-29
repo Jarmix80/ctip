@@ -143,6 +143,7 @@ Dodatkowo skrypt:
 - próbuje powiązać wiadomość z formularzem `SUBMITTED` po numerze wniosku, numerze proformy (`.../proforma/...`) i treści (NIP/nazwa/reprezentant),
 - przy ekstrakcji danych z PDF odrzuca błędne numery NIP na podstawie sumy kontrolnej, żeby nie mylić ich z numerami KRS lub innymi identyfikatorami,
 - zapisuje numer wniosku i metadane e-maila w snapshotcie sprawy (`_mailbox_meta`),
+- zapisuje odszyfrowaną umowę PDF do archiwum plików (`CONTRACTS_MAILBOX_ARCHIVE_ROOT`, katalog `nazwa_firmy/<nr_formularza>`) oraz zapisuje w bazie ścieżkę i opis pliku (`_mailbox_meta.archived_contract_files`),
 - dla zaszyfrowanego PDF próbuje odszyfrować dokument hasłem wyliczonym z danych reprezentanta i zwraca wynik ekstrakcji/OCR,
 - format hasła PDF: `ostatnie 5 cyfr PESEL + inicjały ImięNazwisko + $` (np. `05791JK$`),
 - zapisuje wszystkie załączniki lokalnie w strukturze `inbox/mailbox/contracts/<scope>/<YYYY-MM-DD>/<message_id>/`,
@@ -301,6 +302,7 @@ Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` 
 | `CONTRACTS_MAILBOX_SYNC_FOLDER` | `INBOX` | Folder IMAP używany przez automat mailboxa. |
 | `CONTRACTS_MAILBOX_SYNC_TIMEOUT_SECONDS` | `300` | Timeout pojedynczego przebiegu automatu mailboxa. |
 | `CONTRACTS_MAILBOX_SYNC_REPROCESS` | `false` | Gdy `true`, automat przetwarza ponownie wiadomości już zapisane w stanie lokalnym. |
+| `CONTRACTS_MAILBOX_ARCHIVE_ROOT` | *(puste)* | Katalog zapisu odszyfrowanych umów PDF (np. `D:\\archiwum_dok` na Windows). |
 
 ### Zmienne środowiskowe panelu administratora (`app/api/routes/admin_*`)
 | Nazwa | Domyślna wartość | Opis |

@@ -7,6 +7,7 @@ import importlib.util
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _load_sync_module():
@@ -185,3 +186,47 @@ def test_persist_mail_attachments_saves_files_and_metadata(tmp_path: Path) -> No
         assert path.is_file()
     assert saved[0]["sha256"] == hashlib.sha256(b"pdf-bytes").hexdigest()
     assert saved[1]["sha256"] == hashlib.sha256(b"instrukcja").hexdigest()
+
+
+def test_persist_decrypted_contract_pdf_saves_file_and_description(tmp_path: Path) -> None:
+    module = _load_sync_module()
+    form = SimpleNamespace(id=321, customer_name="ACME Sp. z o.o.")
+    form_ctx = module.FormContext(
+        form=form,
+        payload={"company_name": "ACME/TEST:COMPANY"},
+        workflow_case=None,
+        application_no_normalized=None,
+    )
+    mail_ctx = module.MailContext(
+        imap_id="99",
+        message_id="<msg@test>",
+        subject="Decyzja do wniosku 173-025167",
+        sender="x@example.com",
+        body_text="",
+        email_date_utc=datetime(2026, 4, 2, 8, 30, 0, tzinfo=UTC),
+        event_type=module.MAILBOX_EVENT_DECISION,
+        application_no_raw="173-025167",
+        application_no_normalized="173025167",
+        attachments=[],
+    )
+
+    previous_root = module.settings.contracts_mailbox_archive_root
+    module.settings.contracts_mailbox_archive_root = str(tmp_path)
+    try:
+        saved = module.persist_decrypted_contract_pdf(
+            form_ctx=form_ctx,
+            mail_ctx=mail_ctx,
+            original_file_name="umowa grenke.pdf",
+            pdf_bytes=b"%PDF-1.4\nfake\n",
+        )
+    finally:
+        module.settings.contracts_mailbox_archive_root = previous_root
+
+    assert isinstance(saved, dict)
+    path = Path(saved["path"])
+    assert path.exists()
+    assert path.is_file()
+    assert path.read_bytes() == b"%PDF-1.4\nfake\n"
+    assert saved["description"] == "Umowa GRENKE (odszyfrowany PDF z e-maila)."
+    assert path.parent.parent.name == "ACME_TEST_COMPANY"
+    assert path.parent.name == "321"

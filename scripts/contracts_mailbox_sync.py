@@ -8,6 +8,7 @@ import hashlib
 import html
 import imaplib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -97,6 +98,7 @@ class PdfExtractionResult:
     text: str
     method: str
     error: str | None
+    decrypted_pdf_bytes: bytes | None = None
 
 
 @dataclass(slots=True)
@@ -225,6 +227,80 @@ def _sanitize_attachment_name(file_name: str, fallback_index: int) -> str:
     cleaned = cleaned.replace("/", "_").replace("\\", "_")
     cleaned = re.sub(r"\s+", "_", cleaned).strip("._")
     return cleaned or f"attachment_{fallback_index}"
+
+
+def _sanitize_fs_segment(value: str | None, *, fallback: str) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1F]+', "_", text)
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    return text or fallback
+
+
+def _resolve_contract_archive_root() -> Path | None:
+    configured = str(settings.contracts_mailbox_archive_root or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    if os.name == "nt":
+        return Path(r"D:\archiwum_dok")
+    return None
+
+
+def _render_reader_pdf_bytes(reader: PdfReader) -> bytes | None:
+    try:
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+        buffer = BytesIO()
+        writer.write(buffer)
+        return buffer.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def persist_decrypted_contract_pdf(
+    *,
+    form_ctx: FormContext,
+    mail_ctx: MailContext,
+    original_file_name: str,
+    pdf_bytes: bytes,
+) -> dict[str, Any] | None:
+    """Zapisuje odszyfrowaną umowę PDF do archiwum plików i zwraca metadane."""
+    archive_root = _resolve_contract_archive_root()
+    if archive_root is None:
+        return None
+
+    payload_company = str(form_ctx.payload.get("company_name") or "").strip()
+    company_name = payload_company or str(getattr(form_ctx.form, "customer_name", "") or "").strip()
+    company_segment = _sanitize_fs_segment(company_name, fallback=f"firma_{form_ctx.form.id}")
+    form_segment = _sanitize_fs_segment(str(form_ctx.form.id), fallback="brak_formularza")
+    target_dir = archive_root / company_segment / form_segment
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    base_name = _sanitize_attachment_name(
+        original_file_name or f"umowa_form_{form_ctx.form.id}.pdf",
+        fallback_index=1,
+    )
+    if not base_name.lower().endswith(".pdf"):
+        base_name = f"{base_name}.pdf"
+    stamped_name = f"{mail_ctx.email_date_utc.strftime('%Y%m%d_%H%M%S')}_{base_name}"
+    candidate = target_dir / stamped_name
+    counter = 1
+    while candidate.exists():
+        candidate = target_dir / f"{candidate.stem}_{counter}{candidate.suffix}"
+        counter += 1
+    candidate.write_bytes(pdf_bytes)
+
+    return {
+        "kind": "decrypted_contract_pdf",
+        "description": "Umowa GRENKE (odszyfrowany PDF z e-maila).",
+        "path": candidate.as_posix(),
+        "file_name": candidate.name,
+        "original_name": original_file_name,
+        "form_request_id": form_ctx.form.id,
+        "company_name": company_name or None,
+        "message_id": mail_ctx.message_id,
+        "saved_at_utc": datetime.now(UTC).isoformat(),
+    }
 
 
 def persist_mail_attachments(*, scope: str, mail_ctx: MailContext) -> list[dict[str, Any]]:
@@ -412,6 +488,7 @@ def try_extract_text_from_pdf(
                     text=text,
                     method="pypdf-text",
                     error=None,
+                    decrypted_pdf_bytes=_render_reader_pdf_bytes(reader),
                 )
 
             try:
@@ -427,6 +504,7 @@ def try_extract_text_from_pdf(
                     text=ocr_text,
                     method="ocr",
                     error=None,
+                    decrypted_pdf_bytes=_render_reader_pdf_bytes(reader),
                 )
 
             return PdfExtractionResult(
@@ -435,6 +513,7 @@ def try_extract_text_from_pdf(
                 text="",
                 method="empty",
                 error=None,
+                decrypted_pdf_bytes=_render_reader_pdf_bytes(reader),
             )
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc))
@@ -447,6 +526,7 @@ def try_extract_text_from_pdf(
         text="",
         method="none",
         error=error_message,
+        decrypted_pdf_bytes=None,
     )
 
 
@@ -610,6 +690,7 @@ def attach_mailbox_meta(
     message_kind: str,
     extracted_data: dict[str, Any] | None,
     saved_files: list[dict[str, Any]] | None = None,
+    archived_contract_file: dict[str, Any] | None = None,
 ) -> None:
     """Aktualizuje metadane mailbox w snapshotcie sprawy workflow."""
     snapshot = (
@@ -632,6 +713,16 @@ def attach_mailbox_meta(
     meta["last_message_kind"] = message_kind
     if extracted_data:
         meta["last_extracted_data"] = extracted_data
+    if archived_contract_file:
+        meta["last_archived_contract_file"] = archived_contract_file
+        raw_archive_history = meta.get("archived_contract_files")
+        archive_history = (
+            [item for item in raw_archive_history if isinstance(item, dict)]
+            if isinstance(raw_archive_history, list)
+            else []
+        )
+        archive_history.append(archived_contract_file)
+        meta["archived_contract_files"] = archive_history[-50:]
     if saved_files:
         meta["last_saved_files"] = saved_files
         history = meta.get("saved_files_history")
@@ -668,6 +759,7 @@ async def apply_mail_to_workflow(
     mail_ctx: MailContext,
     extracted_data: dict[str, Any] | None,
     pdf_text: str = "",
+    archived_contract_file: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aktualizuje workflow formularza na podstawie pojedynczej wiadomości."""
     workflow_case = form_ctx.workflow_case
@@ -745,6 +837,7 @@ async def apply_mail_to_workflow(
         message_kind=message_kind,
         extracted_data=extracted_data,
         saved_files=saved_files,
+        archived_contract_file=archived_contract_file,
     )
     workflow_case.updated_at = datetime.now(UTC)
     await record_audit(
@@ -764,6 +857,7 @@ async def apply_mail_to_workflow(
             "email_date_utc": mail_ctx.email_date_utc.isoformat(),
             "extracted_data": extracted_data,
             "saved_files": saved_files,
+            "archived_contract_file": archived_contract_file,
         },
     )
     await session.flush()
@@ -774,6 +868,7 @@ async def apply_mail_to_workflow(
         "new_business_status": new_status,
         "email_date_utc": mail_ctx.email_date_utc.isoformat(),
         "saved_files_count": len(saved_files),
+        "archived_contract_file": archived_contract_file,
     }
 
 
@@ -963,6 +1058,29 @@ async def run_sync(args: argparse.Namespace) -> int:
                     )
                     continue
 
+                archived_contract_file: dict[str, Any] | None = None
+                if (
+                    not args.dry_run
+                    and matched_ctx is not None
+                    and encrypted_pdf is not None
+                    and pdf_result is not None
+                    and pdf_result.success
+                    and pdf_result.decrypted_pdf_bytes
+                ):
+                    encrypted_pdf_name, _ = encrypted_pdf
+                    try:
+                        archived_contract_file = persist_decrypted_contract_pdf(
+                            form_ctx=matched_ctx,
+                            mail_ctx=mail_ctx,
+                            original_file_name=encrypted_pdf_name,
+                            pdf_bytes=pdf_result.decrypted_pdf_bytes,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        warnings.append(
+                            "Nie udalo sie zapisac odszyfrowanej umowy PDF "
+                            f"dla formularza {matched_ctx.form.id}: {exc}"
+                        )
+
                 if not args.dry_run:
                     update_result = await apply_mail_to_workflow(
                         session,
@@ -970,6 +1088,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                         mail_ctx=mail_ctx,
                         extracted_data=extracted_data,
                         pdf_text=pdf_result.text if pdf_result else "",
+                        archived_contract_file=archived_contract_file,
                     )
                     await session.commit()
                 else:
@@ -997,6 +1116,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                         ),
                         "email_date_utc": mail_ctx.email_date_utc.isoformat(),
                         "saved_files_count": len(mail_ctx.attachments),
+                        "archived_contract_file": archived_contract_file,
                     }
 
                 updated += 1
@@ -1018,6 +1138,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                         "proforma_no": mail_ctx.proforma_no_raw,
                         "email_date_utc": update_result["email_date_utc"],
                         "saved_files_count": update_result.get("saved_files_count"),
+                        "archived_contract_file": update_result.get("archived_contract_file"),
                         "pdf_success": pdf_result.success if pdf_result else None,
                         "pdf_method": pdf_result.method if pdf_result else None,
                         "pdf_password_used": pdf_result.password_used if pdf_result else None,
@@ -1052,6 +1173,16 @@ async def run_sync(args: argparse.Namespace) -> int:
             print(f"[INFO] Data e-mail (UTC): {item.get('email_date_utc')}")
         if item.get("saved_files_count") is not None:
             print(f"[INFO] Zapisane załączniki: {item.get('saved_files_count')}")
+        archived_contract_file = item.get("archived_contract_file")
+        if isinstance(archived_contract_file, dict):
+            archived_path = str(archived_contract_file.get("path") or "").strip()
+            archived_description = str(archived_contract_file.get("description") or "").strip()
+            if archived_path:
+                print(
+                    "[INFO] Zapisana umowa: "
+                    + archived_path
+                    + (f" ({archived_description})" if archived_description else "")
+                )
         if item.get("pdf_success") is not None:
             print(
                 f"[INFO] PDF success={item.get('pdf_success')} "
