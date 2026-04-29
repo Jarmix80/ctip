@@ -86,6 +86,14 @@ class FormRequestCreateResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class FormRequestDataEnteredEmailStatus(BaseModel):
+    """Stan wysyłki wiadomości „dane zostały wpisane” dla formularza."""
+
+    sent: bool = False
+    sent_at: datetime | None = None
+    recipient_email: str | None = None
+
+
 class FormRequestDetailResponse(BaseModel):
     """Szczegóły pojedynczego formularza dla widoku operacyjnego."""
 
@@ -93,6 +101,19 @@ class FormRequestDetailResponse(BaseModel):
     status_message: str
     submitted_payload: dict[str, object] | None = None
     submitted_meta: dict[str, str | None] | None = None
+    data_entered_email: FormRequestDataEnteredEmailStatus = Field(
+        default_factory=FormRequestDataEnteredEmailStatus
+    )
+
+
+class FormRequestNotifyDataEnteredResponse(BaseModel):
+    """Odpowiedź akcji wysyłki e-mail po potwierdzeniu wpisania danych."""
+
+    ok: bool
+    already_sent: bool
+    message: str
+    recipient_email: str | None = None
+    sent_at: datetime | None = None
 
 
 class PublicFormRepresentative(BaseModel):

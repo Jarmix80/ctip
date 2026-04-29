@@ -236,6 +236,7 @@ function initializeGenForm() {
   const detailRepresentatives = document.getElementById("genform-detail-representatives");
   const detailPrintBtn = document.getElementById("genform-detail-print");
   const detailPdfBtn = document.getElementById("genform-detail-pdf");
+  const detailDataEnteredBtn = document.getElementById("genform-detail-data-entered");
   const workflowModal = document.getElementById("genform-workflow-modal");
   const workflowCloseBtn = document.getElementById("genform-workflow-close");
   const workflowSubtitle = document.getElementById("genform-workflow-subtitle");
@@ -296,6 +297,7 @@ function initializeGenForm() {
   let token = readToken();
   let openedFormId = null;
   let currentDetailData = null;
+  let detailDataEnteredBusy = false;
   let latestForms = [];
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
@@ -343,6 +345,8 @@ function initializeGenForm() {
       detailEmpty.hidden = true;
       detailEmpty.textContent = "";
     }
+    detailDataEnteredBusy = false;
+    updateDataEnteredButtonState();
   }
 
   function closeWorkflowModal() {
@@ -2074,6 +2078,103 @@ function initializeGenForm() {
       + `(${sourceLabel}${countersLabel}).`;
   }
 
+  function normalizeDataEnteredStatus(rawStatus) {
+    if (!rawStatus || typeof rawStatus !== "object") {
+      return { sent: false, sentAt: null, recipientEmail: null };
+    }
+    return {
+      sent: Boolean(rawStatus.sent),
+      sentAt: rawStatus.sent_at || null,
+      recipientEmail: rawStatus.recipient_email || null,
+    };
+  }
+
+  function updateDataEnteredButtonState() {
+    if (!detailDataEnteredBtn) {
+      return;
+    }
+    const isSubmitted = currentDetailData?.item?.status === "SUBMITTED";
+    const status = currentDetailData?.dataEnteredEmail || {
+      sent: false,
+      sentAt: null,
+      recipientEmail: null,
+    };
+    if (!isSubmitted) {
+      detailDataEnteredBtn.hidden = true;
+      detailDataEnteredBtn.disabled = true;
+      detailDataEnteredBtn.classList.remove("is-complete");
+      detailDataEnteredBtn.textContent = "Dane zostały wpisane";
+      detailDataEnteredBtn.title = "Przycisk dostępny po wypełnieniu formularza przez klienta.";
+      return;
+    }
+    detailDataEnteredBtn.hidden = false;
+    if (detailDataEnteredBusy) {
+      detailDataEnteredBtn.disabled = true;
+      detailDataEnteredBtn.classList.remove("is-complete");
+      detailDataEnteredBtn.textContent = "Wysyłanie…";
+      detailDataEnteredBtn.title = "Trwa wysyłka powiadomienia e-mail.";
+      return;
+    }
+    if (status.sent) {
+      detailDataEnteredBtn.disabled = true;
+      detailDataEnteredBtn.classList.add("is-complete");
+      detailDataEnteredBtn.textContent = "E-mail wysłany";
+      detailDataEnteredBtn.title = status.sentAt
+        ? `Wysłano: ${formatDate(status.sentAt)}`
+        : "Wiadomość została już wysłana.";
+      return;
+    }
+    detailDataEnteredBtn.disabled = false;
+    detailDataEnteredBtn.classList.remove("is-complete");
+    detailDataEnteredBtn.textContent = "Dane zostały wpisane";
+    detailDataEnteredBtn.title = "Wyślij klientowi informację o kolejnych krokach umowy.";
+  }
+
+  async function sendDataEnteredNotification() {
+    if (!token) {
+      showLogin("Brak aktywnej sesji.");
+      return;
+    }
+    if (!openedFormId || !currentDetailData || currentDetailData.item?.status !== "SUBMITTED") {
+      showError("Powiadomienie można wysłać tylko dla formularza w statusie „Wypełniony”.");
+      return;
+    }
+    if (currentDetailData?.dataEnteredEmail?.sent) {
+      showSuccess("Wiadomość była już wysłana wcześniej.");
+      return;
+    }
+
+    clearMessages();
+    detailDataEnteredBusy = true;
+    updateDataEnteredButtonState();
+    try {
+      const response = await fetch(`/admin/forms/${openedFormId}/notify-data-entered`, {
+        method: "POST",
+        headers: headers(false),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się wysłać wiadomości e-mail.");
+      }
+
+      currentDetailData.dataEnteredEmail = {
+        sent: true,
+        sentAt: data.sent_at || new Date().toISOString(),
+        recipientEmail: data.recipient_email || null,
+      };
+      updateDataEnteredButtonState();
+      showSuccess(
+        data.message ||
+          "Wiadomość została wysłana do klienta z informacją o dalszych krokach procesu."
+      );
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd wysyłki wiadomości e-mail.");
+    } finally {
+      detailDataEnteredBusy = false;
+      updateDataEnteredButtonState();
+    }
+  }
+
   async function loadFormDetail(formId) {
     if (!token) {
       showLogin("Brak aktywnej sesji.");
@@ -2100,6 +2201,7 @@ function initializeGenForm() {
         submittedMeta: data.submitted_meta && typeof data.submitted_meta === "object"
           ? data.submitted_meta
           : {},
+        dataEnteredEmail: normalizeDataEnteredStatus(data.data_entered_email),
       };
       if (detailStatus) {
         detailStatus.textContent = currentDetailData.statusMessage;
@@ -2107,6 +2209,8 @@ function initializeGenForm() {
       renderDetailSections(currentDetailData);
 
       openedFormId = formId;
+      detailDataEnteredBusy = false;
+      updateDataEnteredButtonState();
       detailModal.hidden = false;
     } catch (err) {
       showError(err instanceof Error ? err.message : "Błąd odczytu szczegółów formularza.");
@@ -2385,6 +2489,7 @@ function initializeGenForm() {
   statusCloseBtn?.addEventListener("click", closeStatusModal);
   summaryCloseBtn?.addEventListener("click", closeSummaryModal);
   proformaCloseBtn?.addEventListener("click", closeProformaModal);
+  detailDataEnteredBtn?.addEventListener("click", sendDataEnteredNotification);
   detailPrintBtn?.addEventListener("click", () => triggerDetailPrint("print"));
   detailPdfBtn?.addEventListener("click", () => triggerDetailPrint("pdf"));
   detailModal?.addEventListener("click", (event) => {

@@ -690,6 +690,7 @@ def test_genform_page_renders_layout():
     assert "genform-detail-representatives" in response.text
     assert "genform-detail-print" in response.text
     assert "genform-detail-pdf" in response.text
+    assert "genform-detail-data-entered" in response.text
     assert "ID formularza" in response.text
     assert "Menadżer Serwisu" in response.text
     assert "Status GRENKE" in response.text
@@ -717,6 +718,8 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert "button[data-copy-value]" in content
     assert "window.print();" in content
     assert "function workflowBusinessStatusLabel(status)" in content
+    assert "notify-data-entered" in content
+    assert "function sendDataEnteredNotification()" in content
     assert "Status GRENKE" in content
     assert '{ label: "Ważny do"' not in content
     assert 'label: "E-mail firmowy"' in content

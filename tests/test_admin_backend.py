@@ -2445,6 +2445,153 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["item"]["status"], "DISPATCHED")
         self.assertIsNone(body["submitted_payload"])
         self.assertIn("nie został jeszcze wypełniony", body["status_message"])
+        self.assertFalse(body["data_entered_email"]["sent"])
+
+    async def test_operator_can_send_data_entered_email_once_for_submitted_form(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request(
+            customer_name="Firma Mailingowa",
+            customer_email="formularz@firma-mailingowa.pl",
+            payload={
+                "company_name": "Firma Mailingowa Sp. z o.o.",
+                "company_nip": "7778889990",
+                "company_phone": "+48600900100",
+                "company_email": "biuro@firma-mailingowa.pl",
+                "billing_email": "faktury@firma-mailingowa.pl",
+                "registered_street": "Wiosenna",
+                "registered_building_no": "8",
+                "registered_apartment_no": "1",
+                "registered_postal_code": "60-001",
+                "registered_city": "Poznań",
+                "correspondence_same_as_registered": True,
+                "correspondence_street": "Wiosenna",
+                "correspondence_building_no": "8",
+                "correspondence_apartment_no": "1",
+                "correspondence_postal_code": "60-001",
+                "correspondence_city": "Poznań",
+                "representatives": [
+                    {"first_name": "Alicja", "last_name": "Kowalska"},
+                    {"first_name": "Piotr", "last_name": "Nowak"},
+                ],
+                "consent": True,
+            },
+            created_by=2,
+        )
+        async with self.session_factory() as session:
+            operator = await session.get(AdminUser, 2)
+            self.assertIsNotNone(operator)
+            assert operator is not None
+            operator.mobile_phone = "+48600111222"
+            await session.commit()
+
+        email_settings = EmailDeliverySettings(
+            host="smtp.test.local",
+            port=587,
+            username="smtp-user",
+            password="smtp-pass",
+            sender_name="CTIP Test",
+            sender_address="noreply@test.local",
+            use_tls=True,
+            use_ssl=False,
+        )
+        with (
+            patch(
+                "app.api.routes.admin_forms.admin_users.resolve_email_delivery_settings",
+                AsyncMock(return_value=email_settings),
+            ),
+            patch(
+                "app.api.routes.admin_forms.send_smtp_message",
+                AsyncMock(return_value=EmailSendResult(True, "Wysłano")),
+            ) as send_mock,
+        ):
+            first_response = await self.client.post(
+                f"/admin/forms/{form.id}/notify-data-entered",
+                headers={"X-Admin-Session": token},
+            )
+            second_response = await self.client.post(
+                f"/admin/forms/{form.id}/notify-data-entered",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(first_response.status_code, 200)
+        first_body = first_response.json()
+        self.assertTrue(first_body["ok"])
+        self.assertFalse(first_body["already_sent"])
+        self.assertEqual(first_body["recipient_email"], "biuro@firma-mailingowa.pl")
+        self.assertIsNotNone(first_body["sent_at"])
+        self.assertIn("została wysłana", first_body["message"])
+
+        self.assertEqual(second_response.status_code, 200)
+        second_body = second_response.json()
+        self.assertTrue(second_body["ok"])
+        self.assertTrue(second_body["already_sent"])
+        self.assertEqual(second_body["recipient_email"], "biuro@firma-mailingowa.pl")
+        send_mock.assert_awaited_once()
+
+        sent_message = send_mock.call_args.kwargs["message"]
+        self.assertEqual(sent_message["Subject"], "Informacja o dalszych krokach umowy najmu")
+        self.assertEqual(sent_message["To"], "biuro@firma-mailingowa.pl")
+        content = sent_message.get_content()
+        self.assertIn("Firma Mailingowa Sp. z o.o.", content)
+        self.assertIn("NIP: 7778889990", content)
+        self.assertIn("Alicja Kowalska", content)
+        self.assertIn("Piotr Nowak", content)
+        self.assertIn("Anna Nowak", content)
+        self.assertIn("operator@example.com", content)
+        self.assertIn("+48600111222", content)
+
+        detail_response = await self.client.get(
+            f"/admin/forms/{form.id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        detail = detail_response.json()
+        self.assertTrue(detail["data_entered_email"]["sent"])
+        self.assertEqual(
+            detail["data_entered_email"]["recipient_email"],
+            "biuro@firma-mailingowa.pl",
+        )
+
+        async with self.session_factory() as session:
+            entries = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action == "form_request_data_entered_email_sent"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            matching = [
+                entry
+                for entry in entries
+                if isinstance(entry.payload, dict)
+                and entry.payload.get("form_request_id") == form.id
+            ]
+            self.assertEqual(len(matching), 1)
+
+    async def test_notify_data_entered_requires_submitted_form(self):
+        token, _ = await self._login_operator()
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Bez Danych",
+                "customer_email": "bezdanych@example.com",
+                "customer_phone": "+48 600 222 333",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+
+        response = await self.client.post(
+            f"/admin/forms/{form_id}/notify-data-entered",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("dopiero po wypełnieniu", response.json().get("detail", ""))
 
     async def test_operator_can_delete_form_request(self):
         token, _ = await self._login_operator()

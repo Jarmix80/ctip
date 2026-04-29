@@ -131,6 +131,17 @@ body {
   color: #fff;
 }
 
+.genform-form button:disabled,
+.genform-btn-primary:disabled,
+.genform-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.genform-btn-primary.is-complete {
+  background: #2e7d32;
+}
+
 .genform-checkbox {
   display: flex;
   align-items: center;
