@@ -114,6 +114,45 @@ def test_pick_best_form_context_marks_ambiguous_score() -> None:
     assert decision.reason == "ambiguous_score"
 
 
+def test_pick_best_form_context_prefers_exact_proforma_match() -> None:
+    module = _load_sync_module()
+
+    mail_ctx = module.MailContext(
+        imap_id="12",
+        message_id="msg-proforma",
+        subject="Decyzja do wniosku 173-025203 / Faktura Pro Forma nr: 10/proforma/2026",
+        sender="x@example.com",
+        body_text="",
+        email_date_utc=datetime(2026, 4, 1, 13, 13, 12, tzinfo=UTC),
+        event_type=module.MAILBOX_EVENT_DECISION,
+        application_no_raw="173-025203",
+        application_no_normalized="173025203",
+        attachments=[],
+        proforma_no_raw="10/proforma/2026",
+        proforma_no_normalized="10/proforma/2026",
+    )
+    contexts = [
+        module.FormContext(
+            form=object(),
+            payload={"company_name": "ABC Sp z o.o."},
+            workflow_case=None,
+            application_no_normalized=None,
+            proforma_no_normalized="10/proforma/2026",
+        ),
+        module.FormContext(
+            form=object(),
+            payload={"company_name": "XYZ Sp z o.o."},
+            workflow_case=None,
+            application_no_normalized=None,
+            proforma_no_normalized="11/proforma/2026",
+        ),
+    ]
+
+    decision = module.pick_best_form_context(mail_ctx=mail_ctx, contexts=contexts)
+    assert decision.context is contexts[0]
+    assert decision.reason == "exact_proforma"
+
+
 def test_persist_mail_attachments_saves_files_and_metadata(tmp_path: Path) -> None:
     module = _load_sync_module()
     mail_ctx = module.MailContext(

@@ -10,7 +10,9 @@ from app.services.contracts_mailbox import (
     detect_rejection_decision,
     extract_application_number,
     extract_data_from_contract_text,
+    extract_proforma_number,
     normalize_application_number,
+    normalize_proforma_number,
     score_form_match,
 )
 
@@ -33,6 +35,16 @@ def test_extract_application_number_and_normalization() -> None:
     assert parsed.raw == "173-025167"
     assert parsed.normalized == "173025167"
     assert normalize_application_number(parsed.raw) == "173025167"
+
+
+def test_extract_proforma_number_and_normalization() -> None:
+    parsed = extract_proforma_number(
+        "RE: Decyzja do wniosku 173-025203 / Faktura Pro Forma nr: 1 0 / pro forma / 2 0 2 6"
+    )
+    assert parsed is not None
+    assert parsed.raw == "10/proforma/2026"
+    assert parsed.normalized == "10/proforma/2026"
+    assert normalize_proforma_number(" 10 / PRO FORMA / 2026 ") == "10/proforma/2026"
 
 
 def test_build_pdf_password_candidates_uses_pesel_and_initials() -> None:

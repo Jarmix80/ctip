@@ -23,6 +23,10 @@ _REJECTION_PATTERNS = (
 )
 
 _APP_NO_PATTERN = re.compile(r"\b(\d{3})\s*[-_/]\s*(\d{4,7})\b")
+_PROFORMA_NO_PATTERN = re.compile(
+    r"(?is)\b(?:faktura\s*)?pro\s*forma(?:\s*(?:nr|numer|no|#)\s*[:.]?)?\s*"
+    r"(\d[\d\s]*/\s*pro\s*forma\s*/\s*\d[\d\s]*)"
+)
 _NIP_PATTERN = re.compile(r"\b(?:PL)?\d{10}\b", re.IGNORECASE)
 _PESEL_PATTERN = re.compile(r"\b\d{11}\b")
 _NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
@@ -31,6 +35,14 @@ _NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
 @dataclass(slots=True)
 class ParsedApplicationNumber:
     """Numer wniosku wyciągnięty z treści/tematu wiadomości."""
+
+    raw: str
+    normalized: str
+
+
+@dataclass(slots=True)
+class ParsedProformaNumber:
+    """Numer proformy wyciągnięty z treści/tematu wiadomości."""
 
     raw: str
     normalized: str
@@ -70,6 +82,31 @@ def normalize_application_number(value: str | None) -> str | None:
         return None
     digits = re.sub(r"\D+", "", str(value))
     return digits or None
+
+
+def normalize_proforma_number(value: str | None) -> str | None:
+    """Normalizuje numer proformy do stabilnego klucza porównań."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    text = text.replace("\\", "/")
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[^a-z0-9/._-]+", "", text)
+    return text or None
+
+
+def extract_proforma_number(text: str) -> ParsedProformaNumber | None:
+    """Wyciąga numer proformy z tekstu i zwraca formę surową oraz znormalizowaną."""
+    match = _PROFORMA_NO_PATTERN.search(text or "")
+    if match is None:
+        return None
+    raw = re.sub(r"\s+", "", match.group(1))
+    normalized = normalize_proforma_number(raw)
+    if not normalized:
+        return None
+    return ParsedProformaNumber(raw=raw, normalized=normalized)
 
 
 def _normalize_for_match(value: str | None) -> str:
@@ -243,10 +280,13 @@ __all__ = [
     "MAILBOX_EVENT_APPROVAL",
     "MAILBOX_EVENT_DECISION",
     "ParsedApplicationNumber",
+    "ParsedProformaNumber",
     "build_pdf_password_candidates",
     "classify_mail_subject",
+    "extract_proforma_number",
     "extract_application_number",
     "extract_data_from_contract_text",
     "normalize_application_number",
+    "normalize_proforma_number",
     "score_form_match",
 ]

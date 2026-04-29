@@ -37,7 +37,9 @@ from app.services.contracts_mailbox import (
     detect_rejection_decision,
     extract_application_number,
     extract_data_from_contract_text,
+    extract_proforma_number,
     normalize_application_number,
+    normalize_proforma_number,
     score_form_match,
 )
 from app.services.contracts_workflow import (
@@ -65,6 +67,7 @@ class FormContext:
     payload: dict[str, Any]
     workflow_case: FormWorkflowCase | None
     application_no_normalized: str | None
+    proforma_no_normalized: str | None = None
 
 
 @dataclass(slots=True)
@@ -81,6 +84,8 @@ class MailContext:
     application_no_raw: str | None
     application_no_normalized: str | None
     attachments: list[tuple[str, str, bytes]]
+    proforma_no_raw: str | None = None
+    proforma_no_normalized: str | None = None
 
 
 @dataclass(slots=True)
@@ -497,6 +502,9 @@ async def load_form_contexts(session: AsyncSession) -> list[FormContext]:
                 payload=payload,
                 workflow_case=workflow_case,
                 application_no_normalized=application_no_normalized,
+                proforma_no_normalized=normalize_proforma_number(
+                    workflow_case.proforma_number if workflow_case else None
+                ),
             )
         )
     return contexts
@@ -517,6 +525,15 @@ def pick_best_form_context(*, mail_ctx: MailContext, contexts: list[FormContext]
             return MatchDecision(context=exact[0], reason="exact_application", score=100)
         if len(exact) > 1:
             return MatchDecision(context=None, reason="ambiguous_application")
+
+    if mail_ctx.proforma_no_normalized:
+        exact_proforma = [
+            ctx for ctx in contexts if ctx.proforma_no_normalized == mail_ctx.proforma_no_normalized
+        ]
+        if len(exact_proforma) == 1:
+            return MatchDecision(context=exact_proforma[0], reason="exact_proforma", score=95)
+        if len(exact_proforma) > 1:
+            return MatchDecision(context=None, reason="ambiguous_proforma")
 
     scored: list[tuple[int, FormContext]] = []
     for ctx in contexts:
@@ -561,6 +578,9 @@ def build_mail_context(imap_id: str, msg: Message) -> MailContext | None:
     body_text = extract_message_body_text(msg)
     app_from_body = extract_application_number(body_text)
     app_ref = app_from_subject or app_from_body
+    proforma_from_subject = extract_proforma_number(subject)
+    proforma_from_body = extract_proforma_number(body_text)
+    proforma_ref = proforma_from_subject or proforma_from_body
 
     message_id = decode_mime_text(msg.get("Message-Id")) or f"imap:{imap_id}"
     sender = decode_mime_text(msg.get("From"))
@@ -578,6 +598,8 @@ def build_mail_context(imap_id: str, msg: Message) -> MailContext | None:
         application_no_raw=app_ref.raw if app_ref else None,
         application_no_normalized=app_ref.normalized if app_ref else None,
         attachments=attachments,
+        proforma_no_raw=proforma_ref.raw if proforma_ref else None,
+        proforma_no_normalized=proforma_ref.normalized if proforma_ref else None,
     )
 
 
@@ -600,6 +622,8 @@ def attach_mailbox_meta(
 
     meta["external_application_no"] = mail_ctx.application_no_raw
     meta["external_application_no_normalized"] = mail_ctx.application_no_normalized
+    meta["external_proforma_no"] = mail_ctx.proforma_no_raw
+    meta["external_proforma_no_normalized"] = mail_ctx.proforma_no_normalized
     meta["last_message_id"] = mail_ctx.message_id
     meta["last_message_subject"] = mail_ctx.subject
     meta["last_message_sender"] = mail_ctx.sender
@@ -735,6 +759,7 @@ async def apply_mail_to_workflow(
             "subject": mail_ctx.subject,
             "event_type": mail_ctx.event_type,
             "application_no": mail_ctx.application_no_raw,
+            "proforma_no": mail_ctx.proforma_no_raw,
             "new_business_status": new_status,
             "email_date_utc": mail_ctx.email_date_utc.isoformat(),
             "extracted_data": extracted_data,
@@ -887,7 +912,11 @@ async def run_sync(args: argparse.Namespace) -> int:
 
                 if matched_ctx is None:
                     unresolved_reason = UNRESOLVED_REASON_UNMATCHED_FORM
-                    if match_decision.reason in {"ambiguous_application", "ambiguous_score"}:
+                    if match_decision.reason in {
+                        "ambiguous_application",
+                        "ambiguous_proforma",
+                        "ambiguous_score",
+                    }:
                         unresolved_reason = UNRESOLVED_REASON_AMBIGUOUS_MATCH
                         ambiguous_matches += 1
                     else:
@@ -908,7 +937,10 @@ async def run_sync(args: argparse.Namespace) -> int:
                         sender=mail_ctx.sender,
                         email_date_utc=mail_ctx.email_date_utc,
                         application_no=mail_ctx.application_no_raw,
-                        details=f"match_reason={match_decision.reason}; score={match_decision.score}",
+                        details=(
+                            f"match_reason={match_decision.reason}; score={match_decision.score}; "
+                            f"proforma_no={mail_ctx.proforma_no_raw}"
+                        ),
                         saved_files=unresolved_saved_files,
                     )
                     state_changed = True
@@ -922,6 +954,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                             "subject": mail_ctx.subject,
                             "matched": False,
                             "match_reason": unresolved_reason,
+                            "proforma_no": mail_ctx.proforma_no_raw,
                             "saved_files_count": len(unresolved_saved_files),
                             "pdf_success": pdf_result.success if pdf_result else None,
                             "pdf_error": pdf_result.error if pdf_result else None,
@@ -982,6 +1015,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                         "workflow_case_id": update_result["workflow_case_id"],
                         "new_business_status": update_result["new_business_status"],
                         "application_no": mail_ctx.application_no_raw,
+                        "proforma_no": mail_ctx.proforma_no_raw,
                         "email_date_utc": update_result["email_date_utc"],
                         "saved_files_count": update_result.get("saved_files_count"),
                         "pdf_success": pdf_result.success if pdf_result else None,
@@ -1013,6 +1047,8 @@ async def run_sync(args: argparse.Namespace) -> int:
                 f"Nowy status: {item.get('new_business_status')}"
             )
             print(f"[INFO] Nr wniosku: {item.get('application_no')}")
+            if item.get("proforma_no"):
+                print(f"[INFO] Nr proformy: {item.get('proforma_no')}")
             print(f"[INFO] Data e-mail (UTC): {item.get('email_date_utc')}")
         if item.get("saved_files_count") is not None:
             print(f"[INFO] Zapisane załączniki: {item.get('saved_files_count')}")

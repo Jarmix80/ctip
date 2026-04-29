@@ -140,7 +140,7 @@ Skrypt `scripts/contracts_mailbox_sync.py` analizuje wiadomości z `INBOX`, rozp
 - `Zgoda na realizację zamówienia do wniosku ...` -> ustawia status `APPROVED_ORDER`, zapisuje datę e-mail jako datę podpisania umowy (`delivery_date`) i wyznacza termin archiwizacji.
 
 Dodatkowo skrypt:
-- próbuje powiązać wiadomość z formularzem `SUBMITTED` po numerze wniosku i treści (NIP/nazwa/reprezentant),
+- próbuje powiązać wiadomość z formularzem `SUBMITTED` po numerze wniosku, numerze proformy (`.../proforma/...`) i treści (NIP/nazwa/reprezentant),
 - przy ekstrakcji danych z PDF odrzuca błędne numery NIP na podstawie sumy kontrolnej, żeby nie mylić ich z numerami KRS lub innymi identyfikatorami,
 - zapisuje numer wniosku i metadane e-maila w snapshotcie sprawy (`_mailbox_meta`),
 - dla zaszyfrowanego PDF próbuje odszyfrować dokument hasłem wyliczonym z danych reprezentanta i zwraca wynik ekstrakcji/OCR,
