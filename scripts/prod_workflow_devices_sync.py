@@ -5,7 +5,7 @@ Skrypt obsługuje scenariusze, które były wykonywane ręcznie:
 2) uzupełnienie `MS_ID_MAGAZYN_TABLE` oraz dopisanie brakujących wierszy,
 3) uzupełnienie `MASZYNA` po stronie Firebird dla zaktualizowanych pozycji,
 4) przeniesienie numeru seryjnego z kolumny `MODEL` (fragment po `S/N:`) do `SERIAL`,
-5) dopisywanie adnotacji w `UWAGI` bez nadpisywania treści.
+5) dopisywanie adnotacji w `UWAGI CODEX` bez nadpisywania treści.
 
 Wszystkie operacje zapisują raport JSON do katalogu `inbox/`.
 """
@@ -127,6 +127,7 @@ class HeaderIndex:
     index: int | None
     status: int | None
     notes: int | None
+    codex_notes: int | None
     reservation_grenke: int | None
     proforma_grenke: int | None
     ms_id_magazyn_table: int | None
@@ -149,6 +150,7 @@ def header_index(headers: list[str]) -> HeaderIndex:
         index=first("INDEKS", "EWIDENCJA", "INDEX"),
         status=first("STATUS"),
         notes=first("UWAGI", "UWAGA"),
+        codex_notes=first("UWAGI CODEX", "UWAGI_Codex", "UWAGI KODEX", "UWAGI CODEKS"),
         reservation_grenke=first("REZERWACJA GRENKE"),
         proforma_grenke=first("FAKTURA PROFORMA GRENKE", "PROFORMA GRENKE"),
         ms_id_magazyn_table=first("MS_ID_MAGAZYN_TABLE", "ID_MAGAZYN_TABLE"),
@@ -159,7 +161,7 @@ def parse_sheet_rows(
     values: list[list[str]],
 ) -> tuple[list[str], HeaderIndex, dict[int, dict[str, Any]]]:
     if not values:
-        return [], HeaderIndex(None, None, None, None, None, None, None, None, None), {}
+        return [], HeaderIndex(None, None, None, None, None, None, None, None, None, None), {}
 
     headers = [text(col) for col in values[0]]
     idx = header_index(headers)
@@ -206,6 +208,11 @@ def parse_sheet_rows(
             "notes": (
                 text(row_ext[idx.notes])
                 if idx.notes is not None and idx.notes < len(row_ext)
+                else ""
+            ),
+            "codex_notes": (
+                text(row_ext[idx.codex_notes])
+                if idx.codex_notes is not None and idx.codex_notes < len(row_ext)
                 else ""
             ),
         }
@@ -863,6 +870,35 @@ def append_notes(
     headers, idx, sheet_rows = parse_sheet_rows(values)
     if idx.notes is None:
         raise ScriptError("Arkusz nie zawiera kolumny UWAGI.")
+    if idx.codex_notes is None:
+        if not write:
+            raise ScriptError(
+                "Arkusz nie zawiera kolumny UWAGI CODEX (R). "
+                "Uruchom ponownie z --apply, aby dodać nagłówek automatycznie."
+            )
+        headers_updated = list(headers)
+        if len(headers_updated) < 18:
+            headers_updated.extend([""] * (18 - len(headers_updated)))
+        existing_r1 = text(headers_updated[17])
+        if existing_r1 and normalize_key(existing_r1) not in {
+            normalize_key("UWAGI CODEX"),
+            normalize_key("UWAGI KODEX"),
+            normalize_key("UWAGI CODEKS"),
+        }:
+            raise ScriptError(
+                f"Kolumna R ma inny nagłówek ({existing_r1!r}). "
+                "Ustaw ręcznie 'UWAGI CODEX' i uruchom ponownie."
+            )
+        headers_updated[17] = "UWAGI CODEX"
+        worksheet.update(
+            range_name=f"A1:{col_letter(len(headers_updated))}1",
+            values=[headers_updated],
+            value_input_option="USER_ENTERED",
+        )
+        values = worksheet.get_all_values()
+        headers, idx, sheet_rows = parse_sheet_rows(values)
+    if idx.codex_notes is None:
+        raise ScriptError("Nie udało się odczytać kolumny UWAGI CODEX po aktualizacji nagłówka.")
 
     rows_to_update: dict[int, list[str]] = defaultdict(list)
 
@@ -899,20 +935,20 @@ def append_notes(
         row = sheet_rows.get(row_no)
         if row is None:
             continue
-        old_notes = row["notes"]
+        old_notes = row["codex_notes"]
         reasons = ", ".join(sorted(set(rows_to_update[row_no])))
         append_line = f"{NOTES_MARKER} {stamp} - {reasons}."
         if append_line in old_notes:
             continue
         new_notes = old_notes + ("\n" if old_notes else "") + append_line
-        cell = f"{col_letter(idx.notes + 1)}{row_no}"
+        cell = f"{col_letter(idx.codex_notes + 1)}{row_no}"
         updates.append({"range": cell, "values": [[new_notes]]})
         changed_rows.append(
             {
                 "sheet_row": row_no,
                 "index": row["index"],
-                "notes_before": old_notes,
-                "notes_after": new_notes,
+                "codex_notes_before": old_notes,
+                "codex_notes_after": new_notes,
                 "reasons": reasons,
             }
         )
@@ -927,6 +963,7 @@ def append_notes(
             "title": workbook.title,
             "worksheet": worksheet.title,
         },
+        "notes_column": "UWAGI CODEX",
         "dry_run": not write,
         "summary": {
             "rows_updated": len(changed_rows),
@@ -1085,7 +1122,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser_notes = subparsers.add_parser(
         "append-notes",
-        help="Dopisz adnotacje [CTIP/CODEX] w kolumnie UWAGI na podstawie raportów.",
+        help="Dopisz adnotacje [CTIP/CODEX] w kolumnie UWAGI CODEX (R) na podstawie raportów.",
     )
     parser_notes.add_argument(
         "--sheet-report",
