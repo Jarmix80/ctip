@@ -28,6 +28,7 @@ from app.web.device_ui import router as device_ui_router
 from app.web.flow_ui import router as flow_ui_router
 from app.web.form_ui import router as form_ui_router
 from app.web.genform_ui import router as genform_ui_router
+from app.web.mm_ui import router as mm_ui_router
 from app.web.operator_ui import router as operator_ui_router
 from app.web.root_ui import router as root_ui_router
 
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(genform_ui_router)
     app.include_router(operator_ui_router)
     app.include_router(root_ui_router)
+    app.include_router(mm_ui_router)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     app.mount(
         "/raport",

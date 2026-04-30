@@ -1,0 +1,282 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    "Segoe UI",
+    Tahoma,
+    Geneva,
+    Verdana,
+    sans-serif;
+  background: #f4f6fa;
+  color: #1b1f2a;
+}
+
+.mm-shell {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.mm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  background: #ffffff;
+  border: 1px solid #d9deea;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.mm-kicker {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: #355084;
+  text-transform: uppercase;
+}
+
+.mm-header h1 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.mm-lead {
+  margin: 8px 0 0;
+  color: #4e5568;
+  max-width: 760px;
+}
+
+.mm-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mm-user-chip {
+  background: #eef3ff;
+  border: 1px solid #c9d7ff;
+  color: #173b87;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+button,
+.mm-secondary {
+  border: 1px solid #c9cfdd;
+  background: #ffffff;
+  color: #1f2740;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover,
+.mm-secondary:hover {
+  background: #f2f5fb;
+}
+
+#mm-apply {
+  background: #2455c3;
+  color: #ffffff;
+  border-color: #2455c3;
+}
+
+#mm-apply:hover {
+  background: #1c45a0;
+}
+
+.mm-filters,
+.mm-card {
+  background: #ffffff;
+  border: 1px solid #d9deea;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.mm-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.mm-filter-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.mm-filter-wide {
+  grid-column: 1 / -1;
+}
+
+.mm-filter-grid input,
+.mm-filter-grid select {
+  width: 100%;
+  border: 1px solid #c9cfdd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.mm-filter-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mm-periods {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mm-period-btn {
+  background: #edf2ff;
+  border-color: #c8d5ff;
+  color: #1f4ab5;
+}
+
+.mm-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.mm-stats article {
+  background: #ffffff;
+  border: 1px solid #d9deea;
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.mm-stats span {
+  color: #5a6377;
+  font-size: 0.82rem;
+}
+
+.mm-stats strong {
+  font-size: 1.28rem;
+}
+
+.mm-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+
+.mm-destination-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.mm-destination-row {
+  border: 1px solid #d6dcef;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.mm-table-wrap {
+  overflow: auto;
+  border: 1px solid #dae0ef;
+  border-radius: 8px;
+}
+
+.mm-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1200px;
+}
+
+.mm-table th,
+.mm-table td {
+  border-bottom: 1px solid #e6ebf5;
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  font-size: 0.84rem;
+}
+
+.mm-table th {
+  position: sticky;
+  top: 0;
+  background: #f6f8fd;
+  z-index: 1;
+}
+
+.mm-row-kind-zlom td:nth-child(3) {
+  color: #7d2b2b;
+  font-weight: 600;
+}
+
+.mm-row-kind-wynajem td:nth-child(3) {
+  color: #1d4e2f;
+  font-weight: 600;
+}
+
+.mm-warning,
+.mm-error,
+.mm-info {
+  margin: 0;
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 0.86rem;
+}
+
+.mm-warning {
+  background: #fff6df;
+  border: 1px solid #f0dba0;
+  color: #7a5a00;
+}
+
+.mm-error {
+  background: #ffe9e8;
+  border: 1px solid #f7b7b3;
+  color: #7d201a;
+}
+
+.mm-info {
+  background: #e9f2ff;
+  border: 1px solid #bdd7ff;
+  color: #1e427e;
+}
+
+@media (max-width: 1100px) {
+  .mm-filter-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+  .mm-stats {
+    grid-template-columns: repeat(2, minmax(170px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .mm-header {
+    flex-direction: column;
+  }
+  .mm-filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .mm-stats {
+    grid-template-columns: 1fr;
+  }
+}

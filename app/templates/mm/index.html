@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP - MM</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/mm/mm.css">
+    <script defer src="/static/mm/mm.js"></script>
+  </head>
+  <body>
+    <main class="mm-shell">
+      <header class="mm-header">
+        <div>
+          <p class="mm-kicker">CTIP / MM</p>
+          <h1>Przesuniecia miedzymagazynowe (MM)</h1>
+          <p class="mm-lead">
+            Raport dokumentow MM przyjmujacych urzadzenia na magazyny:
+            <strong>złom</strong> i <strong>wynajem</strong>.
+          </p>
+        </div>
+        <div class="mm-actions">
+          <div id="mm-user-chip" class="mm-user-chip">Uzytkownik</div>
+          <a href="/choice" class="mm-secondary">Wybor sekcji</a>
+          <button id="mm-refresh" type="button" class="mm-secondary">Odswiez</button>
+          <button id="mm-logout" type="button" class="mm-secondary">Wyloguj</button>
+        </div>
+      </header>
+
+      <section class="mm-filters">
+        <form id="mm-filter-form">
+          <div class="mm-filter-grid">
+            <label>
+              <span>Od daty</span>
+              <input id="mm-date-from" name="date_from" type="date" value="2023-06-01">
+            </label>
+            <label>
+              <span>Do daty</span>
+              <input id="mm-date-to" name="date_to" type="date">
+            </label>
+            <label>
+              <span>Magazyn docelowy</span>
+              <select id="mm-destination" name="destination">
+                <option value="all">Wszystkie (zlom + wynajem)</option>
+                <option value="zlom">Tylko zlom</option>
+                <option value="wynajem">Tylko wynajem</option>
+              </select>
+            </label>
+            <label>
+              <span>Model urzadzenia</span>
+              <input id="mm-model" name="model" type="text" maxlength="200" placeholder="np. Ricoh IMC 300">
+            </label>
+            <label class="mm-filter-wide">
+              <span>Szukaj (numer MM / indeks / nazwa / serial / ewidencja)</span>
+              <input id="mm-search" name="search" type="text" maxlength="200" placeholder="np. MM / 513 / 2026 albo KP/2816/BNP">
+            </label>
+          </div>
+          <div class="mm-filter-actions">
+            <button id="mm-apply" type="submit">Zastosuj filtry</button>
+            <button id="mm-reset" type="button" class="mm-secondary">Reset</button>
+            <button id="mm-export" type="button" class="mm-secondary">Eksport CSV</button>
+          </div>
+          <div class="mm-periods">
+            <button type="button" class="mm-period-btn" data-from="2023-06-01" data-to="2023-12-31">06-12/2023</button>
+            <button type="button" class="mm-period-btn" data-from="2024-01-01" data-to="2024-12-31">01-12/2024</button>
+            <button type="button" class="mm-period-btn" data-from="2025-01-01" data-to="2025-12-31">01-12/2025</button>
+            <button type="button" class="mm-period-btn" data-from="2026-01-01" data-to="2026-03-31">01-03/2026</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="mm-stats">
+        <article>
+          <span>Dokumenty MM</span>
+          <strong id="mm-docs-count">0</strong>
+        </article>
+        <article>
+          <span>Pozycje urzadzen</span>
+          <strong id="mm-items-count">0</strong>
+        </article>
+        <article>
+          <span>Suma ilosci</span>
+          <strong id="mm-quantity-sum">0</strong>
+        </article>
+        <article>
+          <span>Zakres danych</span>
+          <strong id="mm-range-label">-</strong>
+        </article>
+      </section>
+
+      <section class="mm-card">
+        <h2>Rozklad po magazynie docelowym</h2>
+        <div id="mm-destination-summary" class="mm-destination-summary"></div>
+      </section>
+
+      <section class="mm-card">
+        <h2>Pozycje MM</h2>
+        <p id="mm-truncated" class="mm-warning" hidden>
+          Uwaga: wynik zostal przyciety do limitu. Zawęź filtry, aby zobaczyć komplet.
+        </p>
+        <div class="mm-table-wrap">
+          <table class="mm-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Numer MM</th>
+                <th>Mag. przyjmujacy</th>
+                <th>Mag. wydajacy</th>
+                <th>Model</th>
+                <th>Indeks</th>
+                <th>Nazwa pozycji</th>
+                <th>Ilosc</th>
+                <th>JM</th>
+                <th>Serial</th>
+                <th>Ewidencja</th>
+              </tr>
+            </thead>
+            <tbody id="mm-items-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p id="mm-error" class="mm-error" hidden></p>
+      <p id="mm-info" class="mm-info" hidden></p>
+    </main>
+  </body>
+</html>
