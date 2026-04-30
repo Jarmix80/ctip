@@ -16,12 +16,25 @@ function Invoke-GitCommand {
     param(
         [string[]]$GitArgs
     )
-    $output = & git @GitArgs 2>&1
-    if ($output) {
-        $output | ForEach-Object { Write-Host $_ }
-    }
-    if ($LASTEXITCODE -ne 0) {
-        throw "Polecenie git nie powiodlo sie: git $($GitArgs -join ' ')"
+    $gitExe = (Get-Command git -ErrorAction Stop).Source
+    $tempStdout = [System.IO.Path]::GetTempFileName()
+    $tempStderr = [System.IO.Path]::GetTempFileName()
+    try {
+        $process = Start-Process -FilePath $gitExe -ArgumentList $GitArgs -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tempStdout -RedirectStandardError $tempStderr
+        $stdout = Get-Content -Path $tempStdout -ErrorAction SilentlyContinue
+        $stderr = Get-Content -Path $tempStderr -ErrorAction SilentlyContinue
+        if ($stdout) {
+            $stdout | ForEach-Object { Write-Host $_ }
+        }
+        if ($stderr) {
+            $stderr | ForEach-Object { Write-Host $_ }
+        }
+        if ($process.ExitCode -ne 0) {
+            throw "Polecenie git nie powiodlo sie (exit=$($process.ExitCode)): git $($GitArgs -join ' ')"
+        }
+    } finally {
+        Remove-Item -Path $tempStdout -ErrorAction SilentlyContinue
+        Remove-Item -Path $tempStderr -ErrorAction SilentlyContinue
     }
 }
 
