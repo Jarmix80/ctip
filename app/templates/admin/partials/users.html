@@ -43,6 +43,13 @@
           <input id="user-mobile" type="tel" x-model="form.mobilePhone" required placeholder="np. +48 600 700 800">
         </div>
         <div class="form-field">
+          <label class="users-section-option users-flag-option" for="user-imap-enabled">
+            <input id="user-imap-enabled" type="checkbox" x-model="form.imapEnabled">
+            IMAP aktywny
+          </label>
+          <small>Dane skrzynki przypisanej do użytkownika (dla czatu: tylko odczyt).</small>
+        </div>
+        <div class="form-field">
           <label for="user-firebird-app-user">Użytkownik MS</label>
           <select
             id="user-firebird-app-user"
@@ -67,11 +74,42 @@
           </select>
         </div>
         <div class="form-field">
+          <label for="user-imap-email">E-mail IMAP</label>
+          <input id="user-imap-email" type="email" x-model="form.imapEmail" placeholder="np. user@domena.pl">
+        </div>
+        <div class="form-field">
+          <label for="user-imap-host">Host IMAP</label>
+          <input id="user-imap-host" type="text" x-model="form.imapHost" placeholder="np. imap.gmail.com">
+        </div>
+        <div class="form-field">
+          <label for="user-imap-port">Port IMAP</label>
+          <input id="user-imap-port" type="number" x-model="form.imapPort" min="1" max="65535">
+        </div>
+        <div class="form-field">
+          <label for="user-imap-username">Login IMAP</label>
+          <input id="user-imap-username" type="text" x-model="form.imapUsername" placeholder="np. user@domena.pl">
+        </div>
+        <div class="form-field">
+          <label for="user-imap-folder">Folder IMAP</label>
+          <input id="user-imap-folder" type="text" x-model="form.imapFolder" placeholder="INBOX">
+        </div>
+        <div class="form-field">
+          <label for="user-imap-password">Hasło / app password IMAP</label>
+          <input id="user-imap-password" type="password" x-model="form.imapPassword" autocomplete="new-password">
+        </div>
+        <div class="form-field">
           <label class="users-section-option users-flag-option" for="user-is-salesperson">
             <input id="user-is-salesperson" type="checkbox" x-model="form.isSalesperson">
             Handlowiec
           </label>
           <small>Znacznik biznesowy do grupowego routingu powiadomień formularzy.</small>
+        </div>
+        <div class="form-field">
+          <label class="users-section-option users-flag-option" for="user-imap-use-ssl">
+            <input id="user-imap-use-ssl" type="checkbox" x-model="form.imapUseSsl">
+            IMAP SSL
+          </label>
+          <small>Włączone: połączenie IMAP4_SSL (domyślnie port 993).</small>
         </div>
         <div class="form-field form-field-wide">
           <label>Dostępne sekcje</label>
@@ -112,6 +150,7 @@
           <th>Imię i nazwisko</th>
           <th>Wewnętrzny</th>
           <th>Telefon</th>
+          <th>IMAP</th>
           <th>Użytkownik MS</th>
           <th>Rola</th>
           <th>Handlowiec</th>
@@ -125,7 +164,7 @@
       <tbody>
         <template x-if="users.length === 0">
           <tr>
-            <td colspan="12" class="sms-history-empty">Brak użytkowników.</td>
+            <td colspan="13" class="sms-history-empty">Brak użytkowników.</td>
           </tr>
         </template>
         <template x-for="user in users" :key="user.id">
@@ -139,6 +178,14 @@
             </td>
             <td x-text="user.internal_ext || '—'"></td>
             <td x-text="formatPhone(user.mobile_phone)"></td>
+            <td>
+              <span
+                class="status-chip"
+                :class="user.imap?.enabled ? 'success' : 'info'"
+                x-text="user.imap?.enabled ? 'Włączony' : 'Wyłączony'"
+              ></span>
+              <div class="user-meta" x-text="user.imap?.email || '—'"></div>
+            </td>
             <td x-text="formatMsUser(user)"></td>
             <td>
               <span class="badge" :class="user.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="user.role"></span>
@@ -238,6 +285,14 @@
                     <dd x-text="formatPhone(modalDetail.mobile_phone)"></dd>
                   </div>
                   <div>
+                    <dt>IMAP</dt>
+                    <dd x-text="formatImapStatus(modalDetail.imap)"></dd>
+                  </div>
+                  <div>
+                    <dt>E-mail IMAP</dt>
+                    <dd x-text="modalDetail.imap?.email || '—'"></dd>
+                  </div>
+                  <div>
                     <dt>Numer wewnętrzny</dt>
                     <dd x-text="modalDetail.internal_ext || '—'"></dd>
                   </div>
@@ -321,11 +376,57 @@
                   </select>
                 </div>
                 <div class="form-field">
+                  <label class="users-section-option users-flag-option" for="modal-user-imap-enabled">
+                    <input id="modal-user-imap-enabled" type="checkbox" x-model="modalEdit.imapEnabled">
+                    IMAP aktywny
+                  </label>
+                  <small>Konfiguracja dostępu skrzynki użytkownika dla modułu chat.</small>
+                </div>
+                <div class="form-field">
                   <label class="users-section-option users-flag-option" for="modal-user-is-salesperson">
                     <input id="modal-user-is-salesperson" type="checkbox" x-model="modalEdit.isSalesperson">
                     Handlowiec
                   </label>
                   <small>Użytkownik będzie odbiorcą grupowych powiadomień formularzy.</small>
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-imap-email">E-mail IMAP</label>
+                  <input id="modal-user-imap-email" type="email" x-model="modalEdit.imapEmail">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-imap-host">Host IMAP</label>
+                  <input id="modal-user-imap-host" type="text" x-model="modalEdit.imapHost">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-imap-port">Port IMAP</label>
+                  <input id="modal-user-imap-port" type="number" x-model="modalEdit.imapPort" min="1" max="65535">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-imap-username">Login IMAP</label>
+                  <input id="modal-user-imap-username" type="text" x-model="modalEdit.imapUsername">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-imap-folder">Folder IMAP</label>
+                  <input id="modal-user-imap-folder" type="text" x-model="modalEdit.imapFolder" placeholder="INBOX">
+                </div>
+                <div class="form-field">
+                  <label for="modal-user-imap-password">Nowe hasło / app password IMAP</label>
+                  <input id="modal-user-imap-password" type="password" x-model="modalEdit.imapPassword" autocomplete="new-password">
+                  <small x-text="modalDetail.imap?.password_set ? 'Hasło IMAP jest zapisane.' : 'Brak zapisanego hasła IMAP.'"></small>
+                </div>
+                <div class="form-field">
+                  <label class="users-section-option users-flag-option" for="modal-user-imap-use-ssl">
+                    <input id="modal-user-imap-use-ssl" type="checkbox" x-model="modalEdit.imapUseSsl">
+                    IMAP SSL
+                  </label>
+                  <small>Wyłącz tylko gdy serwer wymaga połączenia bez SSL.</small>
+                </div>
+                <div class="form-field">
+                  <label class="users-section-option users-flag-option" for="modal-user-imap-clear-password">
+                    <input id="modal-user-imap-clear-password" type="checkbox" x-model="modalEdit.imapClearPassword">
+                    Usuń zapisane hasło IMAP
+                  </label>
+                  <small>Opcja zostanie wykonana przy zapisie zmian.</small>
                 </div>
                 <div class="form-field form-field-wide">
                   <label>Dostępne sekcje</label>

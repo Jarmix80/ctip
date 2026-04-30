@@ -1,0 +1,289 @@
+# ruff: noqa: E402
+
+"""Testy API modułu CTIP AI Asystent."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+from fastapi import status
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from app.api import deps
+from app.main import create_app
+from app.models import (
+    AdminSession,
+    AdminSetting,
+    AdminUser,
+    AssistantChangeRequest,
+    AssistantChatMessage,
+    AssistantChatThread,
+    AssistantToolCallLog,
+    AssistantUserProfile,
+    AssistantWeeklyInsight,
+)
+from app.models.base import Base
+from app.services.assistant_runtime import AssistantGenerationResult
+from app.services.security import hash_password
+
+
+class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            execution_options={"schema_translate_map": {"ctip": None}},
+        )
+
+        @event.listens_for(self.engine.sync_engine, "connect")
+        def _add_sqlite_functions(dbapi_connection, _record):  # pragma: no cover
+            dbapi_connection.create_function("timezone", 2, lambda _tz, value: value)
+
+        async with self.engine.begin() as conn:
+            await conn.run_sync(
+                Base.metadata.create_all,
+                tables=[
+                    AdminUser.__table__,
+                    AdminSession.__table__,
+                    AdminSetting.__table__,
+                    AssistantChatThread.__table__,
+                    AssistantChatMessage.__table__,
+                    AssistantToolCallLog.__table__,
+                    AssistantChangeRequest.__table__,
+                    AssistantUserProfile.__table__,
+                    AssistantWeeklyInsight.__table__,
+                ],
+            )
+
+        self.session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
+            self.engine, expire_on_commit=False
+        )
+
+        async def override_get_db_session():
+            async with self.session_factory() as session:
+                yield session
+
+        self.app = create_app()
+        self.app.dependency_overrides[deps.get_db_session] = override_get_db_session
+        self.client = AsyncClient(
+            transport=ASGITransport(app=self.app),
+            base_url="http://testserver",
+        )
+
+        now = datetime.now(UTC)
+        async with self.session_factory() as session:
+            admin = AdminUser(
+                id=1,
+                email="admin@example.com",
+                first_name="Admin",
+                last_name="One",
+                role="admin",
+                password_hash=hash_password("Admin123!"),
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            operator = AdminUser(
+                id=2,
+                email="operator@example.com",
+                first_name="Operator",
+                last_name="Two",
+                role="operator",
+                password_hash=hash_password("Operator123!"),
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add_all([admin, operator])
+            await session.flush()
+
+            admin_session = AdminSession(
+                user_id=1,
+                token="admin-token",
+                created_at=now,
+                expires_at=now + timedelta(hours=2),
+            )
+            operator_session = AdminSession(
+                user_id=2,
+                token="operator-token",
+                created_at=now,
+                expires_at=now + timedelta(hours=2),
+            )
+            session.add_all([admin_session, operator_session])
+            await session.commit()
+
+    async def asyncTearDown(self) -> None:
+        await self.client.aclose()
+        self.app.dependency_overrides.clear()
+        await self.engine.dispose()
+
+    async def test_chat_lifecycle_for_user(self) -> None:
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"title": "Test AI"},
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_200_OK)
+        chat_id = create_response.json()["id"]
+
+        list_response = await self.client.get(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+        )
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(list_response.json()), 1)
+        self.assertEqual(list_response.json()[0]["id"], chat_id)
+
+        detail_response = await self.client.get(
+            f"/assistant/chats/{chat_id}",
+            headers={"X-Admin-Session": "admin-token"},
+        )
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.json()["thread"]["id"], chat_id)
+        self.assertEqual(detail_response.json()["messages"], [])
+
+    async def test_message_response_and_tool_sources(self) -> None:
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"title": "Integracja"},
+        )
+        chat_id = create_response.json()["id"]
+
+        generation = AssistantGenerationResult(
+            answer_text="Odpowiedz testowa",
+            response_id="resp_123",
+            model_name="gpt-4.1-mini",
+            input_tokens=10,
+            output_tokens=20,
+            tool_results=[],
+            sources=[
+                {"tool": "firebird_read", "row_count": 3, "duration_ms": 11},
+                {"tool": "firebird_business_read", "row_count": 4, "duration_ms": 9},
+                {"tool": "firebird_knowledge_read", "row_count": 1, "duration_ms": 6},
+                {"tool": "imap_read", "row_count": 2, "duration_ms": 7},
+                {"tool": "ctip_schema_read", "row_count": 1, "duration_ms": 5},
+            ],
+            blocked_as_change_request=False,
+        )
+        with patch(
+            "app.api.routes.assistant.AssistantRuntime.generate", AsyncMock(return_value=generation)
+        ):
+            message_response = await self.client.post(
+                f"/assistant/chats/{chat_id}/messages",
+                headers={"X-Admin-Session": "admin-token"},
+                json={"prompt": "Pokaż dane", "stream": False},
+            )
+        self.assertEqual(message_response.status_code, status.HTTP_200_OK)
+        payload = message_response.json()
+        self.assertEqual(payload["assistant_message"]["content"], "Odpowiedz testowa")
+        self.assertEqual(payload["assistant_message"]["openai_response_id"], "resp_123")
+        self.assertEqual(payload["sources"][0]["tool"], "firebird_read")
+        self.assertEqual(payload["sources"][1]["tool"], "firebird_business_read")
+        self.assertEqual(payload["sources"][2]["tool"], "firebird_knowledge_read")
+        self.assertEqual(payload["sources"][3]["tool"], "imap_read")
+        self.assertEqual(payload["sources"][4]["tool"], "ctip_schema_read")
+        self.assertFalse(payload["blocked_as_change_request"])
+
+    async def test_access_to_foreign_thread_is_forbidden(self) -> None:
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"title": "Prywatny"},
+        )
+        chat_id = create_response.json()["id"]
+
+        other_user_response = await self.client.get(
+            f"/assistant/chats/{chat_id}",
+            headers={"X-Admin-Session": "operator-token"},
+        )
+        self.assertEqual(other_user_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    async def test_auto_change_request_when_write_intent_blocked(self) -> None:
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"title": "Zmiany"},
+        )
+        chat_id = create_response.json()["id"]
+
+        generation = AssistantGenerationResult(
+            answer_text="Tryb tylko odczytu.",
+            response_id=None,
+            model_name="gpt-4.1-mini",
+            input_tokens=None,
+            output_tokens=None,
+            tool_results=[],
+            sources=[],
+            blocked_as_change_request=True,
+        )
+        with patch(
+            "app.api.routes.assistant.AssistantRuntime.generate", AsyncMock(return_value=generation)
+        ):
+            response = await self.client.post(
+                f"/assistant/chats/{chat_id}/messages",
+                headers={"X-Admin-Session": "admin-token"},
+                json={"prompt": "Zmien status klienta", "stream": False},
+            )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertTrue(body["blocked_as_change_request"])
+        self.assertIsNotNone(body["change_request_id"])
+
+        change_requests = await self.client.get(
+            "/assistant/change-requests",
+            headers={"X-Admin-Session": "admin-token"},
+        )
+        self.assertEqual(change_requests.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(change_requests.json()), 1)
+
+    async def test_change_request_approval_requires_admin(self) -> None:
+        create_response = await self.client.post(
+            "/assistant/change-requests",
+            headers={"X-Admin-Session": "operator-token"},
+            json={"request_text": "Prośba testowa"},
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_200_OK)
+        request_id = create_response.json()["id"]
+
+        forbidden_response = await self.client.post(
+            f"/assistant/change-requests/{request_id}/approve",
+            headers={"X-Admin-Session": "operator-token"},
+            json={"note": "nie mam uprawnien"},
+        )
+        self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        approve_response = await self.client.post(
+            f"/assistant/change-requests/{request_id}/approve",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"note": "zatwierdzone testowo"},
+        )
+        self.assertEqual(approve_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(approve_response.json()["status"], "approved")
+        self.assertEqual(approve_response.json()["decided_by"], 1)
+
+    async def test_weekly_insight_generation_for_admin(self) -> None:
+        response = await self.client.get(
+            "/assistant/insights/weekly",
+            headers={"X-Admin-Session": "admin-token"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = response.json()
+        self.assertGreaterEqual(len(payload), 1)
+        self.assertIn("Raport tygodniowy asystenta", payload[0]["summary"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -23,6 +23,7 @@ from app.services.workflow_sheet_status_cache import (
     stop_workflow_sheet_status_cache_scheduler,
 )
 from app.web.admin_ui import router as admin_ui_router
+from app.web.assistant_ui import router as assistant_ui_router
 from app.web.contracts_ui import router as contracts_ui_router
 from app.web.device_ui import router as device_ui_router
 from app.web.flow_ui import router as flow_ui_router
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(api_router)
+    app.include_router(assistant_ui_router)
     app.include_router(admin_ui_router)
     app.include_router(contracts_ui_router)
     app.include_router(device_ui_router)

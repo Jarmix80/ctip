@@ -3,6 +3,9 @@
 ## Język i styl
 1. Wszystkie komentarze, README i dokumentacja muszą być tworzone wyłącznie po polsku.
 2. Obowiązuje styl techniczny, zgodny z dokumentacją administratora systemu.
+2a. Wszystkie odpowiedzi Codex kierowane do użytkownika muszą być wyłącznie po polsku.
+2b. Kod, polecenia terminalowe i logi mogą pozostać w oryginalnym języku, ale opisy i wyjaśnienia muszą być po polsku.
+2c. W razie przypadkowego użycia innego języka Codex musi natychmiast skorygować odpowiedź i kontynuować wyłącznie po polsku.
 
 ## Uprawnienia i środowisko
 3. Codex ma prawo edytować pliki w tym repozytorium bez konieczności uzyskania dodatkowej zgody.

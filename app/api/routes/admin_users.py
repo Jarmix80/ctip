@@ -13,6 +13,8 @@ from app.schemas.admin import (
     AdminUserCreate,
     AdminUserCreateResponse,
     AdminUserDetail,
+    AdminUserImapConfig,
+    AdminUserImapUpdate,
     AdminUserListResponse,
     AdminUserResetPasswordResponse,
     AdminUserSessionInfo,
@@ -23,6 +25,7 @@ from app.schemas.admin import (
     FirebirdMsUserOption,
 )
 from app.services import admin_users, firebird_ms_users, section_permissions
+from app.services.admin_user_imap import UserImapUpdate, load_user_imap_config, set_user_imap_config
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
@@ -35,7 +38,40 @@ def _ensure_admin(role: str) -> None:
         )
 
 
-def _map_summary(row: admin_users.UserRow, sections: list[str]) -> AdminUserSummary:
+def _map_imap_config(config) -> AdminUserImapConfig:
+    return AdminUserImapConfig(
+        enabled=config.enabled,
+        email=config.email,
+        host=config.host,
+        port=config.port,
+        username=config.username,
+        use_ssl=config.use_ssl,
+        folder=config.folder,
+        password_set=config.password_set,
+    )
+
+
+def _build_imap_update(payload: AdminUserImapUpdate | None) -> UserImapUpdate | None:
+    if payload is None:
+        return None
+    return UserImapUpdate(
+        enabled=payload.enabled,
+        email=str(payload.email) if payload.email is not None else None,
+        host=payload.host,
+        port=payload.port,
+        username=payload.username,
+        use_ssl=payload.use_ssl,
+        folder=payload.folder,
+        password=payload.password,
+        clear_password=payload.clear_password,
+    )
+
+
+def _map_summary(
+    row: admin_users.UserRow,
+    sections: list[str],
+    imap: AdminUserImapConfig | None,
+) -> AdminUserSummary:
     user = row.user
     return AdminUserSummary(
         id=user.id,
@@ -54,6 +90,7 @@ def _map_summary(row: admin_users.UserRow, sections: list[str]) -> AdminUserSumm
         updated_at=user.updated_at,
         last_login_at=row.last_login_at,
         sessions_active=row.sessions_active,
+        imap=imap,
     )
 
 
@@ -80,6 +117,13 @@ async def _load_detail(session: AsyncSession, user_id: int) -> AdminUserDetail:
     if not summary_row:
         summary_row = admin_users.UserRow(user=user, sessions_active=0, last_login_at=None)
     user_sections = await section_permissions.get_user_sections(session, user)
+    imap_config = _map_imap_config(
+        await load_user_imap_config(
+            session,
+            user_id=user.id,
+            fallback_email=user.email,
+        )
+    )
     sessions = await admin_users.list_sessions(session, user_id)
     session_items = [
         AdminUserSessionInfo(
@@ -93,7 +137,7 @@ async def _load_detail(session: AsyncSession, user_id: int) -> AdminUserDetail:
         for item in sessions
     ]
     return AdminUserDetail(
-        **_map_summary(summary_row, user_sections).model_dump(),
+        **_map_summary(summary_row, user_sections, imap_config).model_dump(),
         sessions=session_items,
     )
 
@@ -107,7 +151,19 @@ async def list_admin_users(
     _ensure_admin(admin_user.role)
     rows = await admin_users.list_users(session)
     sections_map = await section_permissions.list_user_sections(session, [row.user for row in rows])
-    items = [_map_summary(row, sections_map.get(row.user.id, [])) for row in rows]
+    imap_map: dict[int, AdminUserImapConfig] = {}
+    for row in rows:
+        imap_map[row.user.id] = _map_imap_config(
+            await load_user_imap_config(
+                session,
+                user_id=row.user.id,
+                fallback_email=row.user.email,
+            )
+        )
+    items = [
+        _map_summary(row, sections_map.get(row.user.id, []), imap_map.get(row.user.id))
+        for row in rows
+    ]
     return AdminUserListResponse(items=items)
 
 
@@ -171,8 +227,24 @@ async def create_admin_user(
             sections=payload.sections,
             updated_by=admin_user.id,
         )
+        imap_update = _build_imap_update(payload.imap)
+        if imap_update is not None:
+            await set_user_imap_config(
+                session,
+                user_id=user.id,
+                update=imap_update,
+                updated_by=admin_user.id,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    user_imap_config = _map_imap_config(
+        await load_user_imap_config(
+            session,
+            user_id=user.id,
+            fallback_email=user.email,
+        )
+    )
 
     login_url_default = urljoin(str(request.base_url), "")
     panel_url_config = getattr(settings, "admin_panel_url", None)
@@ -199,6 +271,16 @@ async def create_admin_user(
             "firebird_app_user_id": user.firebird_app_user_id,
             "firebird_app_user_login": user.firebird_app_user_login,
             "sections": normalized_sections,
+            "imap": {
+                "enabled": user_imap_config.enabled,
+                "email": user_imap_config.email,
+                "host": user_imap_config.host,
+                "port": user_imap_config.port,
+                "username": user_imap_config.username,
+                "use_ssl": user_imap_config.use_ssl,
+                "folder": user_imap_config.folder,
+                "password_set": user_imap_config.password_set,
+            },
         },
     )
     await session.commit()
@@ -206,7 +288,7 @@ async def create_admin_user(
     summary_row = admin_users.UserRow(user=user, sessions_active=0, last_login_at=None)
     await admin_users.send_credentials_email(email_delivery, user, password, login_url)
     return AdminUserCreateResponse(
-        user=_map_summary(summary_row, normalized_sections),
+        user=_map_summary(summary_row, normalized_sections, user_imap_config),
         password=password,
         sms_queued=sms_queued,
         sms_recipient=user.mobile_phone if sms_queued else None,
@@ -264,8 +346,24 @@ async def update_admin_user(
             sections=payload.sections,
             updated_by=admin_user.id,
         )
+        imap_update = _build_imap_update(payload.imap)
+        if imap_update is not None:
+            await set_user_imap_config(
+                session,
+                user_id=user.id,
+                update=imap_update,
+                updated_by=admin_user.id,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    user_imap_config = _map_imap_config(
+        await load_user_imap_config(
+            session,
+            user_id=user.id,
+            fallback_email=user.email,
+        )
+    )
 
     await record_audit(
         session,
@@ -280,6 +378,16 @@ async def update_admin_user(
             "firebird_app_user_id": user.firebird_app_user_id,
             "firebird_app_user_login": user.firebird_app_user_login,
             "sections": normalized_sections,
+            "imap": {
+                "enabled": user_imap_config.enabled,
+                "email": user_imap_config.email,
+                "host": user_imap_config.host,
+                "port": user_imap_config.port,
+                "username": user_imap_config.username,
+                "use_ssl": user_imap_config.use_ssl,
+                "folder": user_imap_config.folder,
+                "password_set": user_imap_config.password_set,
+            },
         },
     )
     await session.commit()
@@ -376,7 +484,14 @@ async def update_admin_status(
     user_sections = sections_map.get(user_id) or await section_permissions.get_user_sections(
         session, user
     )
-    return _map_summary(summary_row, user_sections)
+    user_imap_config = _map_imap_config(
+        await load_user_imap_config(
+            session,
+            user_id=user.id,
+            fallback_email=user.email,
+        )
+    )
+    return _map_summary(summary_row, user_sections, user_imap_config)
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Usuń użytkownika")

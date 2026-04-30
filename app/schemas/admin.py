@@ -426,6 +426,49 @@ class EmailTestResponse(BaseModel):
     message: str
 
 
+class AdminUserImapConfig(BaseModel):
+    """Widok konfiguracji IMAP przypisanej do użytkownika."""
+
+    enabled: bool = False
+    email: EmailStr | None = None
+    host: str | None = Field(default=None, max_length=255)
+    port: int | None = Field(default=993, ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=255)
+    use_ssl: bool = True
+    folder: str | None = Field(default="INBOX", max_length=255)
+    password_set: bool = False
+
+    @field_validator("host", "username", "folder", mode="before")
+    @classmethod
+    def _strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class AdminUserImapUpdate(BaseModel):
+    """Aktualizacja konfiguracji IMAP użytkownika (admin-only)."""
+
+    enabled: bool | None = None
+    email: EmailStr | None = None
+    host: str | None = Field(default=None, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=255)
+    use_ssl: bool | None = None
+    folder: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, min_length=1, max_length=4000)
+    clear_password: bool = False
+
+    @field_validator("host", "username", "folder", "password", mode="before")
+    @classmethod
+    def _strip_optional_update_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
 class AdminUserSummary(BaseModel):
     """Skrócony widok użytkownika panelu."""
 
@@ -445,6 +488,7 @@ class AdminUserSummary(BaseModel):
     updated_at: datetime
     last_login_at: datetime | None
     sessions_active: int
+    imap: AdminUserImapConfig | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -487,6 +531,7 @@ class AdminUserCreate(BaseModel):
     sections: list[PanelSection] | None = None
     password: str | None = None
     mobile_phone: str = Field(min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$")
+    imap: AdminUserImapUpdate | None = None
 
 
 class AdminUserCreateResponse(BaseModel):
@@ -512,6 +557,7 @@ class AdminUserUpdate(BaseModel):
     mobile_phone: str | None = Field(
         default=None, min_length=6, max_length=32, pattern=r"^[0-9+\s\-]+$"
     )
+    imap: AdminUserImapUpdate | None = None
 
 
 class FirebirdMsUserOption(BaseModel):

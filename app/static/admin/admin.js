@@ -1467,6 +1467,15 @@ document.addEventListener("alpine:init", () => {
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
+      imapEnabled: false,
+      imapEmail: "",
+      imapHost: "",
+      imapPort: "993",
+      imapUsername: "",
+      imapUseSsl: true,
+      imapFolder: "INBOX",
+      imapPassword: "",
+      imapClearPassword: false,
       sections: ["operator", "generator"],
     },
     modalOpen: false,
@@ -1486,6 +1495,15 @@ document.addEventListener("alpine:init", () => {
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
+      imapEnabled: false,
+      imapEmail: "",
+      imapHost: "",
+      imapPort: "993",
+      imapUsername: "",
+      imapUseSsl: true,
+      imapFolder: "INBOX",
+      imapPassword: "",
+      imapClearPassword: false,
       sections: ["operator", "generator"],
     },
 
@@ -1596,6 +1614,17 @@ document.addEventListener("alpine:init", () => {
       return "—";
     },
 
+    formatImapStatus(imap) {
+      if (!imap) {
+        return "Wyłączony";
+      }
+      if (!imap.enabled) {
+        return "Wyłączony";
+      }
+      const email = String(imap.email || "").trim();
+      return email ? `Włączony (${email})` : "Włączony";
+    },
+
     defaultSectionsForRole(role) {
       if (role === "admin") {
         return ["admin", "operator", "generator"];
@@ -1653,6 +1682,15 @@ document.addEventListener("alpine:init", () => {
       this.form.mobilePhone = "";
       this.form.firebirdAppUserId = "";
       this.form.firebirdAppUserLogin = "";
+      this.form.imapEnabled = false;
+      this.form.imapEmail = "";
+      this.form.imapHost = "";
+      this.form.imapPort = "993";
+      this.form.imapUsername = "";
+      this.form.imapUseSsl = true;
+      this.form.imapFolder = "INBOX";
+      this.form.imapPassword = "";
+      this.form.imapClearPassword = false;
       this.form.sections = this.defaultSectionsForRole("operator");
     },
 
@@ -1777,6 +1815,27 @@ document.addEventListener("alpine:init", () => {
       };
       const email = normalize(source.email).toLowerCase();
       const mobile = normalize(source.mobilePhone);
+      const imapEmail = normalize(source.imapEmail).toLowerCase();
+      const imapHost = normalize(source.imapHost);
+      const imapUsername = normalize(source.imapUsername);
+      const imapFolder = normalize(source.imapFolder) || "INBOX";
+      const imapPassword = normalize(source.imapPassword);
+      const imapPortRaw = normalize(source.imapPort);
+      const imapPortParsed = imapPortRaw ? Number(imapPortRaw) : null;
+      const imapPort =
+        Number.isInteger(imapPortParsed) && imapPortParsed > 0 && imapPortParsed <= 65535
+          ? imapPortParsed
+          : null;
+      const hasImapPayload =
+        Boolean(source.imapEnabled)
+        || Boolean(imapEmail)
+        || Boolean(imapHost)
+        || Boolean(imapUsername)
+        || Boolean(imapPassword)
+        || Boolean(source.imapClearPassword)
+        || (imapPort !== null && String(imapPort) !== "993")
+        || (imapFolder && imapFolder.toUpperCase() !== "INBOX")
+        || source.imapUseSsl === false;
       return {
         email,
         first_name: normalize(source.firstName) || null,
@@ -1787,6 +1846,19 @@ document.addEventListener("alpine:init", () => {
         mobile_phone: mobile || null,
         firebird_app_user_id: this.normalizeMsUserId(source.firebirdAppUserId),
         sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
+        imap: hasImapPayload
+          ? {
+              enabled: Boolean(source.imapEnabled),
+              email: imapEmail || null,
+              host: imapHost || null,
+              port: imapPort,
+              username: imapUsername || null,
+              use_ssl: source.imapUseSsl !== false,
+              folder: imapFolder || null,
+              password: imapPassword || null,
+              clear_password: Boolean(source.imapClearPassword),
+            }
+          : null,
       };
     },
 
@@ -2010,6 +2082,15 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.mobilePhone = "";
       this.modalEdit.firebirdAppUserId = "";
       this.modalEdit.firebirdAppUserLogin = "";
+      this.modalEdit.imapEnabled = false;
+      this.modalEdit.imapEmail = "";
+      this.modalEdit.imapHost = "";
+      this.modalEdit.imapPort = "993";
+      this.modalEdit.imapUsername = "";
+      this.modalEdit.imapUseSsl = true;
+      this.modalEdit.imapFolder = "INBOX";
+      this.modalEdit.imapPassword = "";
+      this.modalEdit.imapClearPassword = false;
       this.modalEdit.sections = this.defaultSectionsForRole("operator");
       this._loadModal(userId);
     },
@@ -2042,6 +2123,15 @@ document.addEventListener("alpine:init", () => {
           ? String(data.firebird_app_user_id)
           : "";
         this.modalEdit.firebirdAppUserLogin = data.firebird_app_user_login || "";
+        this.modalEdit.imapEnabled = Boolean(data.imap?.enabled);
+        this.modalEdit.imapEmail = data.imap?.email || "";
+        this.modalEdit.imapHost = data.imap?.host || "";
+        this.modalEdit.imapPort = data.imap?.port ? String(data.imap.port) : "993";
+        this.modalEdit.imapUsername = data.imap?.username || "";
+        this.modalEdit.imapUseSsl = data.imap?.use_ssl !== false;
+        this.modalEdit.imapFolder = data.imap?.folder || "INBOX";
+        this.modalEdit.imapPassword = "";
+        this.modalEdit.imapClearPassword = false;
         this.modalEdit.sections = this.normalizeSectionsForRole(
           data.sections,
           this.modalEdit.role,
@@ -2088,6 +2178,8 @@ document.addEventListener("alpine:init", () => {
         }
         const detail = await response.json();
         this.modalDetail = detail;
+        this.modalEdit.imapPassword = "";
+        this.modalEdit.imapClearPassword = false;
         this.modalSuccess = "Zmiany zostały zapisane.";
         showToast(this.modalSuccess, "success");
         await this.fetchUsers(false);

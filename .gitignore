@@ -45,5 +45,6 @@ backups/
 
 # Lokalne klony/artefakty zewnetrznych repozytoriow
 docs/firebird/external/
+integrations/bazams/
 tools/gh/
 tools/*.tar.gz

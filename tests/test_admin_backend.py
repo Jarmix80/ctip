@@ -2122,6 +2122,86 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(db_user.firebird_app_user_id, 151)
             self.assertEqual(db_user.firebird_app_user_login, "JoannaG")
 
+    async def test_admin_user_can_manage_imap_configuration(self):
+        token, _ = await self._login()
+        create_payload = {
+            "email": "imap.konfiguracja@example.com",
+            "first_name": "Iwona",
+            "last_name": "Poczta",
+            "role": "operator",
+            "mobile_phone": "+48600666777",
+            "imap": {
+                "enabled": True,
+                "email": "imap.konfiguracja@example.com",
+                "host": "imap.example.com",
+                "port": 993,
+                "username": "imap.konfiguracja@example.com",
+                "use_ssl": True,
+                "folder": "INBOX",
+                "password": "SekretneHaslo123!",
+            },
+        }
+        response = await self.client.post(
+            "/admin/users",
+            json=create_payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        user_id = int(body["user"]["id"])
+        self.assertTrue(body["user"]["imap"]["enabled"])
+        self.assertEqual(body["user"]["imap"]["host"], "imap.example.com")
+        self.assertTrue(body["user"]["imap"]["password_set"])
+
+        detail_response = await self.client.get(
+            f"/admin/users/{user_id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        detail_payload = detail_response.json()
+        self.assertTrue(detail_payload["imap"]["enabled"])
+        self.assertEqual(detail_payload["imap"]["email"], "imap.konfiguracja@example.com")
+        self.assertTrue(detail_payload["imap"]["password_set"])
+
+        update_payload = {
+            "email": "imap.konfiguracja@example.com",
+            "first_name": "Iwona",
+            "last_name": "Poczta",
+            "internal_ext": None,
+            "role": "operator",
+            "is_salesperson": False,
+            "mobile_phone": "+48600666777",
+            "imap": {
+                "enabled": False,
+                "clear_password": True,
+            },
+        }
+        update_response = await self.client.put(
+            f"/admin/users/{user_id}",
+            json=update_payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        updated_payload = update_response.json()
+        self.assertFalse(updated_payload["imap"]["enabled"])
+        self.assertFalse(updated_payload["imap"]["password_set"])
+
+        async with self.session_factory() as session:
+            key_prefix = f"user_imap.{user_id}."
+            rows = (
+                (
+                    await session.execute(
+                        select(AdminSetting).where(AdminSetting.key.like(f"{key_prefix}%"))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            keys = {row.key: row for row in rows}
+            self.assertIn(f"{key_prefix}host", keys)
+            self.assertIn(f"{key_prefix}password", keys)
+            self.assertTrue(keys[f"{key_prefix}password"].is_secret)
+
     async def test_admin_can_load_firebird_ms_user_options(self):
         token, _ = await self._login()
         options = [

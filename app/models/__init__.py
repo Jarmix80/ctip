@@ -10,6 +10,14 @@ from .admin import (  # noqa: F401
     FormWorkflowDevice,
     WorkflowSheetStatusCache,
 )
+from .assistant import (  # noqa: F401
+    AssistantChangeRequest,
+    AssistantChatMessage,
+    AssistantChatThread,
+    AssistantToolCallLog,
+    AssistantUserProfile,
+    AssistantWeeklyInsight,
+)
 from .base import Base  # noqa: F401
 from .call import Call  # noqa: F401
 from .call_event import CallEvent  # noqa: F401

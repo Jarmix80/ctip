@@ -464,8 +464,28 @@ def test_users_partial_renders_listing():
         mobile_phone="+48600900900",
     )
     row = admin_users.UserRow(user=user, sessions_active=2, last_login_at=now)
+    fake_imap_config = type(
+        "FakeImapConfig",
+        (),
+        {
+            "enabled": False,
+            "email": "panel@example.com",
+            "host": None,
+            "port": None,
+            "username": None,
+            "use_ssl": True,
+            "folder": "INBOX",
+            "password_set": False,
+        },
+    )()
 
-    with patch("app.web.admin_ui.admin_users.list_users", AsyncMock(return_value=[row])):
+    with (
+        patch("app.web.admin_ui.admin_users.list_users", AsyncMock(return_value=[row])),
+        patch(
+            "app.web.admin_ui.load_user_imap_config",
+            AsyncMock(return_value=fake_imap_config),
+        ),
+    ):
         response = client.get(
             "/admin/partials/users",
             headers={"X-Admin-Session": "token"},
@@ -743,6 +763,8 @@ def test_admin_users_modal_edit_form_is_not_hidden_by_x_cloak():
     assert '@submit.prevent="saveModal()"' in template
     assert "modal-user-is-salesperson" in template
     assert "modal-user-firebird-app-user" in template
+    assert "modal-user-imap-enabled" in template
+    assert "modal-user-imap-password" in template
     assert '@submit.prevent="saveModal()" x-show="canManage"' not in template
     assert 'class="users-modal-content"' in template
     assert (

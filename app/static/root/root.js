@@ -213,7 +213,7 @@ async function initializeRootChoicePage() {
     let visibleCount = 0;
     sectionButtons.forEach((button) => {
       const section = button.getAttribute("data-section") || "";
-      const visible = sections.has(section);
+      const visible = section === "assistant" ? true : sections.has(section);
       button.hidden = !visible;
       if (visible) {
         visibleCount += 1;

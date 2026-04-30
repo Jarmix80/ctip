@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP AI Asystent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/assistant/assistant.css">
+    <script defer src="/static/assistant/assistant.js"></script>
+  </head>
+  <body>
+    <div class="assistant-layout">
+      <aside class="assistant-sidebar">
+        <div class="assistant-sidebar-header">
+          <h1>CTIP AI Asystent</h1>
+          <button id="assistant-new-chat-btn" type="button">Nowa rozmowa</button>
+        </div>
+        <p class="assistant-safety-label">
+          Tryb tylko odczyt. Zmiany wymagają akceptacji właściciela.
+        </p>
+        <ul id="assistant-chat-list" class="assistant-chat-list"></ul>
+      </aside>
+
+      <main class="assistant-main">
+        <header class="assistant-chat-header">
+          <h2 id="assistant-chat-title">Wybierz rozmowę</h2>
+          <a class="assistant-back-link" href="/choice">Powrót do wyboru sekcji</a>
+        </header>
+        <section id="assistant-messages" class="assistant-messages"></section>
+        <form id="assistant-prompt-form" class="assistant-prompt-form">
+          <textarea
+            id="assistant-prompt-input"
+            name="prompt"
+            rows="3"
+            maxlength="10000"
+            placeholder="Np. „Wyświetl urządzenia firmy Steico” albo „Pokaż średni miesięczny wydruk modelu MPC3004”."
+            required
+          ></textarea>
+          <div class="assistant-actions">
+            <button id="assistant-send-btn" type="submit">Wyślij</button>
+          </div>
+        </form>
+      </main>
+
+      <aside class="assistant-sidepanel">
+        <section>
+          <h3>Źródła danych</h3>
+          <ul id="assistant-sources-list" class="assistant-sources-list"></ul>
+        </section>
+        <section>
+          <h3>Wnioski o zmiany</h3>
+          <p id="assistant-change-request-info" class="assistant-change-request-info">
+            Brak nowych wniosków.
+          </p>
+        </section>
+      </aside>
+    </div>
+  </body>
+</html>

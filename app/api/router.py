@@ -20,6 +20,7 @@ from app.api.routes import (
     admin_sms,
     admin_status,
     admin_users,
+    assistant,
     calls,
     contacts,
     health,
@@ -30,6 +31,7 @@ from app.api.routes import (
 )
 
 api_router = APIRouter()
+api_router.include_router(assistant.router)
 api_router.include_router(admin_backup.router)
 api_router.include_router(admin_auth.router)
 api_router.include_router(admin_call_sms.router)

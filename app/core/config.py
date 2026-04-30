@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     sms_api_username: str | None = Field(default=None, alias="SMS_API_USERNAME")
     sms_api_password: str | None = Field(default=None, alias="SMS_API_PASSWORD")
     sms_test_mode: bool = Field(default=True, alias="SMS_TEST_MODE")
+    openai_api_chat_kp: str | None = Field(default=None, alias="OPENAI_API_CHAT_KP")
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
     admin_secret_key: str | None = Field(default=None, alias="ADMIN_SECRET_KEY")
     admin_session_ttl_minutes: int = Field(default=60, alias="ADMIN_SESSION_TTL_MINUTES")

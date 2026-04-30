@@ -39,6 +39,7 @@ from app.api.routes.admin_sms import (
 )
 from app.api.routes.admin_status import compute_status_summary
 from app.schemas.admin import (
+    AdminUserImapConfig,
     AdminUserSummary,
     CtipConfigResponse,
     DatabaseConfigResponse,
@@ -52,6 +53,7 @@ from app.schemas.admin import (
 from app.schemas.admin_contacts import AdminContactSummary
 from app.schemas.admin_ctip import AdminIvrMapEntry
 from app.services import admin_contacts, admin_ivr_map, admin_users, section_permissions
+from app.services.admin_user_imap import load_user_imap_config
 from app.services.backup_runner import BACKUP_DIR, format_backup_size, list_backup_files
 from app.services.call_sms_rules import CALL_SMS_SCENARIO_LABELS
 
@@ -505,8 +507,24 @@ async def admin_contacts_partial(
     )
 
 
-def _user_summary_from_row(row: admin_users.UserRow, sections: list[str]) -> AdminUserSummary:
+def _user_summary_from_row(
+    row: admin_users.UserRow,
+    sections: list[str],
+    imap_raw,
+) -> AdminUserSummary:
     user = row.user
+    imap = None
+    if imap_raw is not None:
+        imap = AdminUserImapConfig(
+            enabled=imap_raw.enabled,
+            email=imap_raw.email,
+            host=imap_raw.host,
+            port=imap_raw.port,
+            username=imap_raw.username,
+            use_ssl=imap_raw.use_ssl,
+            folder=imap_raw.folder,
+            password_set=imap_raw.password_set,
+        )
     return AdminUserSummary(
         id=user.id,
         email=user.email,
@@ -524,6 +542,7 @@ def _user_summary_from_row(row: admin_users.UserRow, sections: list[str]) -> Adm
         updated_at=user.updated_at,
         last_login_at=row.last_login_at,
         sessions_active=row.sessions_active,
+        imap=imap,
     )
 
 
@@ -536,9 +555,20 @@ async def admin_users_partial(
     """Widok listy użytkowników panelu."""
     _, admin_user = admin_context
     rows = await admin_users.list_users(session)
+    imap_map = {}
+    for row in rows:
+        imap_map[row.user.id] = await load_user_imap_config(
+            session,
+            user_id=row.user.id,
+            fallback_email=row.user.email,
+        )
     sections_map = await section_permissions.list_user_sections(session, [row.user for row in rows])
     summaries = [
-        _user_summary_from_row(row, sections_map.get(row.user.id, [])).model_dump(mode="json")
+        _user_summary_from_row(
+            row,
+            sections_map.get(row.user.id, []),
+            imap_map.get(row.user.id),
+        ).model_dump(mode="json")
         for row in rows
     ]
     admin_token = request.headers.get("x-admin-session", "")
