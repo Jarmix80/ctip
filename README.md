@@ -32,6 +32,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
 - `scripts/sync_prod_forms_to_test.py` – import najnowszych formularzy workflow z produkcyjnego PostgreSQL do lokalnego `ctip_test` z odczytem `read_only` po stronie źródła i upsertami po stronie testu.
 - `scripts/manual_archive_contracts_via_smb.py` – reczny import wskazanych wiadomosci umow GRENKE: pobranie PDF z IMAP, proba odszyfrowania haslem z danych reprezentanta, zapis do SMB (`sciezka_dok_umow`) oraz opcjonalny zapis metadanych do PostgreSQL (po podaniu DSN).
+- `scripts/prod_workflow_devices_sync.py` – zestaw operacji produkcyjnych dla FLOW urzadzen (`audit`, `sync-sheet`, `sync-machines`, `move-serial`, `append-notes`, `fill-msid-by-index`) z raportami JSON do `inbox/`.
 - `integrations/google_sheets/update_calendar_and_devices.py` – aktualizacja arkuszy Google (`Kalendarz_wiersze`, `Urzadzenia`) z formatowaniem i slotami zdarzeń dziennych.
 
 ## Wymagania systemowe
@@ -42,6 +43,24 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 
 ## Konfiguracja środowiskowa
 Lokalna praca w repozytorium odbywa się wyłącznie na `.env.test` oraz bazie `ctip_test`. Produkcyjny `.env` pozostaje poza repo i jest używany dopiero na serwerze wdrożeniowym. Artefakty lokalne (`.codex/*` poza `.codex/session.json`, `backups/`, lokalne binaria w `tools/`) pozostają poza wersjonowaniem; sekrety z obu plików środowiskowych również nie trafiają do Git.
+
+### Operacyjne sync urzadzen FLOW (prod)
+Do powtarzalnego audytu i aktualizacji arkusza `Urzadzenia_magazyn` oraz uzupelnienia `MASZYNA` w Firebird sluzy:
+
+```bash
+python scripts/prod_workflow_devices_sync.py --env-file .env audit
+python scripts/prod_workflow_devices_sync.py --env-file .env --apply sync-sheet
+python scripts/prod_workflow_devices_sync.py --env-file .env --apply sync-machines --sheet-report auto
+python scripts/prod_workflow_devices_sync.py --env-file .env --apply move-serial
+python scripts/prod_workflow_devices_sync.py --env-file .env --apply append-notes --sheet-report auto --serial-report auto
+```
+
+Tryb bez `--apply` wykonuje dry-run i zapisuje tylko raporty. Wszystkie raporty trafiaja do `inbox/`:
+- `raport_urzadzenia_prod_audit_*.json`
+- `raport_urzadzenia_prod_sync_sheet_*.json`
+- `raport_urzadzenia_prod_sync_maszyna_*.json`
+- `raport_urzadzenia_prod_move_serial_*.json`
+- `raport_urzadzenia_prod_append_notes_*.json`
 
 ### Uruchomienie Codex
 Skrypt `scripts/run_codex.sh` uruchamia Codex w kontekście repozytorium i automatyzuje kroki wymagane przez `AGENTS.md`:
