@@ -16,3 +16,4 @@ def test_mm_page_renders_template() -> None:
     assert response.status_code == 200
     assert "Przesuniecia miedzymagazynowe" in response.text
     assert 'id="mm-filter-form"' in response.text
+    assert "Cena zakupu netto" in response.text

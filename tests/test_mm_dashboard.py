@@ -28,6 +28,7 @@ class _FakeCursor:
             return [
                 (3, "Magazyn Złom"),
                 (27, "Urzadzenia Wynajem"),
+                (28, "Urządzenia Magazyn"),
                 (5, "Magazyn Glowne"),
             ]
         return [
@@ -36,7 +37,7 @@ class _FakeCursor:
                 "MM/1/2026",
                 date(2026, 1, 5),
                 27,
-                5,
+                28,
                 "uwaga a",
                 5001,
                 "IDX-RICOH",
@@ -45,13 +46,15 @@ class _FakeCursor:
                 "szt",
                 "SN123",
                 "KP/123",
+                Decimal("450.50"),
+                Decimal("460.00"),
             ),
             (
                 1001,
                 "MM/1/2026",
                 date(2026, 1, 5),
                 27,
-                5,
+                28,
                 "uwaga a",
                 5002,
                 "IDX-RICOH-2",
@@ -60,13 +63,15 @@ class _FakeCursor:
                 "szt",
                 "SN124",
                 "KP/124",
+                Decimal("470.00"),
+                Decimal("480.00"),
             ),
             (
                 1002,
                 "MM/2/2026",
                 date(2026, 1, 6),
                 3,
-                5,
+                27,
                 "uwaga b",
                 5003,
                 "IDX-KONICA",
@@ -75,6 +80,25 @@ class _FakeCursor:
                 "szt",
                 "XY",
                 "KP/200",
+                Decimal("300.00"),
+                Decimal("305.00"),
+            ),
+            (
+                1003,
+                "MM/3/2026",
+                date(2026, 1, 7),
+                27,
+                5,
+                "nie urzadzenie",
+                5004,
+                "IDX-TONER",
+                "Toner czarny",
+                Decimal("1.00"),
+                "szt",
+                "",
+                "",
+                Decimal("50.00"),
+                Decimal("55.00"),
             ),
         ]
 
@@ -115,7 +139,9 @@ def test_load_mm_dashboard_data_returns_summary_for_all_targets() -> None:
     assert result["summary"]["documents_by_destination"]["Urzadzenia Wynajem (wynajem)"] == 1
     assert result["warehouses"]["zlom_ids"] == [3]
     assert result["warehouses"]["wynajem_ids"] == [27]
+    assert result["warehouses"]["source_ids"] == [27, 28]
     assert result["items"][0]["model_label"] == "Ricoh IM C300"
+    assert result["items"][0]["cena_zakupu_netto"] == 450.5
     assert fake_connection.cursor_obj.closed is True
     assert fake_connection.closed is True
 

@@ -206,7 +206,7 @@ async function initializeMmPage() {
 
   const renderItems = (items) => {
     if (!Array.isArray(items) || items.length === 0) {
-      itemsBody.innerHTML = "<tr><td colspan='11'>Brak pozycji dla wybranych filtrow.</td></tr>";
+      itemsBody.innerHTML = "<tr><td colspan='12'>Brak pozycji dla wybranych filtrow.</td></tr>";
       return;
     }
     itemsBody.innerHTML = items
@@ -228,6 +228,7 @@ async function initializeMmPage() {
             <td>${escapeHtml(item.nazwa_pozycji)}</td>
             <td>${escapeHtml(item.ilosc)}</td>
             <td>${escapeHtml(item.jm)}</td>
+            <td>${escapeHtml(item.cena_zakupu_netto ?? 0)}</td>
             <td>${escapeHtml(item.serial || "—")}</td>
             <td>${escapeHtml(item.ewidencja || "—")}</td>
           </tr>
@@ -254,6 +255,7 @@ async function initializeMmPage() {
       "nazwa_pozycji",
       "ilosc",
       "jm",
+      "cena_zakupu_netto",
       "serial",
       "ewidencja",
       "id_zakupy_table",
