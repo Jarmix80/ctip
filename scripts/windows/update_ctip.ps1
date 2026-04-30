@@ -12,6 +12,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Invoke-GitCommand {
+    param(
+        [string[]]$GitArgs
+    )
+    $output = & git @GitArgs 2>&1
+    if ($output) {
+        $output | ForEach-Object { Write-Host $_ }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Polecenie git nie powiodlo sie: git $($GitArgs -join ' ')"
+    }
+}
+
 function Assert-Admin {
     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($currentIdentity)
@@ -102,9 +115,9 @@ $updateSucceeded = $false
 
 try {
     Write-Host "git fetch $GitRemote --tags"
-    git fetch $GitRemote --tags
+    Invoke-GitCommand -GitArgs @("fetch", $GitRemote, "--tags")
     Write-Host "git pull $GitRemote $GitBranch --ff-only"
-    git pull $GitRemote $GitBranch --ff-only
+    Invoke-GitCommand -GitArgs @("pull", $GitRemote, $GitBranch, "--ff-only")
 
     Write-Host "Aktywacja .venv"
     . $venvActivate

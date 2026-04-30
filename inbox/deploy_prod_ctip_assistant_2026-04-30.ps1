@@ -2,7 +2,7 @@ param(
     [string]$InstallDir = "D:\CTIP",
     [string]$GitRemote = "origin",
     [string]$GitBranch = "codex/fix-public-form-checkbox-422",
-    [string]$TargetCommit = "24d3943",
+    [string]$TargetCommit = "",
     [string]$ExpectedAlembicHead = "8d7a3b9e4c11",
     [string[]]$ServiceNames = @("CollectorService", "CTIP-Web", "CTIP-SMS", "CTIP-FormsPublic"),
     [string]$HealthUrl = "http://127.0.0.1:8000/health",
@@ -135,9 +135,13 @@ if ($LASTEXITCODE -ne 0) {
     Fail "Brak zdalnej galezi: $remoteBranchRef"
 }
 
-& git merge-base --is-ancestor $TargetCommit $remoteBranchRef
-if ($LASTEXITCODE -ne 0) {
-    Fail "Commit $TargetCommit nie nalezy do $remoteBranchRef"
+if ($TargetCommit) {
+    & git merge-base --is-ancestor $TargetCommit $remoteBranchRef
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Commit $TargetCommit nie nalezy do $remoteBranchRef"
+    }
+} else {
+    Write-Log "Brak wymuszonego TargetCommit - pomijam walidacje konkretnego hash."
 }
 
 if (-not $Apply) {
@@ -168,15 +172,19 @@ if ($LASTEXITCODE -ne 0) {
     Fail "Nie udalo sie odczytac HEAD po aktualizacji."
 }
 
-if ($AllowNewerCommit) {
-    & git merge-base --is-ancestor $TargetCommit HEAD
-    if ($LASTEXITCODE -ne 0) {
-        Fail "HEAD nie zawiera docelowego commitu $TargetCommit (HEAD=$currentHead)."
+if ($TargetCommit) {
+    if ($AllowNewerCommit) {
+        & git merge-base --is-ancestor $TargetCommit HEAD
+        if ($LASTEXITCODE -ne 0) {
+            Fail "HEAD nie zawiera docelowego commitu $TargetCommit (HEAD=$currentHead)."
+        }
+    } else {
+        if ($currentHead -ne $TargetCommit) {
+            Fail "Po aktualizacji HEAD=$currentHead, oczekiwano dokladnie $TargetCommit."
+        }
     }
 } else {
-    if ($currentHead -ne $TargetCommit) {
-        Fail "Po aktualizacji HEAD=$currentHead, oczekiwano dokladnie $TargetCommit."
-    }
+    Write-Log "Brak wymuszonego TargetCommit - pomijam walidacje HEAD."
 }
 
 if (-not (Test-Path $venvActivate)) {
@@ -218,6 +226,20 @@ if (-not $alembicCurrent) {
 }
 if ($ExpectedAlembicHead -and $alembicCurrent -ne $ExpectedAlembicHead) {
     Fail "Rewizja Alembic=$alembicCurrent, oczekiwano $ExpectedAlembicHead."
+}
+
+Write-Log "Weryfikacja/start uslug przed healthcheck"
+foreach ($name in $ServiceNames) {
+    $service = Get-Service -Name $name -ErrorAction SilentlyContinue
+    if (-not $service) {
+        Write-Log "Usluga $name nie istnieje - pomijam."
+        continue
+    }
+    if ($service.Status -ne "Running") {
+        Write-Log "Uruchamiam usluge $name"
+        Start-Service -Name $name -ErrorAction Stop
+        Start-Sleep -Seconds 2
+    }
 }
 
 Write-Log "Smoke test: $HealthUrl"
