@@ -65,10 +65,10 @@ function Import-DotEnv {
 }
 
 function Invoke-Git {
-    param([string[]]$Args)
-    & git @Args
+    param([string[]]$GitArgs)
+    & git @GitArgs
     if ($LASTEXITCODE -ne 0) {
-        Fail "Polecenie git nie powiodlo sie: git $($Args -join ' ')"
+        Fail "Polecenie git nie powiodlo sie: git $($GitArgs -join ' ')"
     }
 }
 
@@ -127,7 +127,7 @@ if (-not $AllowDirtyRepo) {
 }
 
 Write-Log "Pobieram metadane git"
-Invoke-Git -Args @("fetch", $GitRemote, "--tags")
+Invoke-Git -GitArgs @("fetch", $GitRemote, "--tags")
 
 $remoteBranchRef = "$GitRemote/$GitBranch"
 & git rev-parse --verify $remoteBranchRef *> $null
