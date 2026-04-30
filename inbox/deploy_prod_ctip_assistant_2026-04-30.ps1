@@ -2,7 +2,7 @@ param(
     [string]$InstallDir = "D:\CTIP",
     [string]$GitRemote = "origin",
     [string]$GitBranch = "codex/fix-public-form-checkbox-422",
-    [string]$TargetCommit = "ce1feb4",
+    [string]$TargetCommit = "24d3943",
     [string]$ExpectedAlembicHead = "8d7a3b9e4c11",
     [string[]]$ServiceNames = @("CollectorService", "CTIP-Web", "CTIP-SMS", "CTIP-FormsPublic"),
     [string]$HealthUrl = "http://127.0.0.1:8000/health",
