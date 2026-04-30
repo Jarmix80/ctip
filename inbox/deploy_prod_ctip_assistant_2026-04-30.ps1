@@ -148,18 +148,17 @@ if (-not $Apply) {
 
 Write-Log "Start wdrozenia produkcyjnego na branchu $GitBranch"
 
-$updateArgs = @(
-    "-InstallDir", $InstallDir,
-    "-GitRemote", $GitRemote,
-    "-GitBranch", $GitBranch,
-    "-ServiceNames"
-) + $ServiceNames
+$updateParams = @{
+    InstallDir = $InstallDir
+    GitRemote = $GitRemote
+    GitBranch = $GitBranch
+    ServiceNames = $ServiceNames
+}
+if ($SkipPip) { $updateParams.SkipPip = $true }
+if ($SkipPreCommit) { $updateParams.SkipPreCommit = $true }
+if ($SkipTests) { $updateParams.SkipTests = $true }
 
-if ($SkipPip) { $updateArgs += "-SkipPip" }
-if ($SkipPreCommit) { $updateArgs += "-SkipPreCommit" }
-if ($SkipTests) { $updateArgs += "-SkipTests" }
-
-& $updateScript @updateArgs
+& $updateScript @updateParams
 if ($LASTEXITCODE -ne 0) {
     Fail "Skrypt update_ctip.ps1 zakonczyl sie bledem."
 }
