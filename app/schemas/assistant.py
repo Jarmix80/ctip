@@ -7,11 +7,26 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+AssistantWorkerKey = Literal[
+    "ksero_partner_analyst",
+    "opiekun_klienta",
+    "diagnosta_bazy_ms",
+]
+
+
+class AssistantWorkerInfo(BaseModel):
+    """Definicja dostępnego profilu pracownika AI."""
+
+    key: AssistantWorkerKey
+    name: str
+    description: str
+
 
 class AssistantChatCreateRequest(BaseModel):
     """Payload tworzenia nowego czatu."""
 
     title: str | None = Field(default=None, max_length=200)
+    worker_key: AssistantWorkerKey | None = None
 
     @field_validator("title")
     @classmethod
@@ -27,6 +42,7 @@ class AssistantChatSummary(BaseModel):
 
     id: int
     title: str
+    worker_key: AssistantWorkerKey
     status: Literal["active", "archived", "deleted"]
     created_at: datetime
     updated_at: datetime
@@ -153,3 +169,29 @@ class AssistantWeeklyInsightRead(BaseModel):
     generated_by: int | None = None
     summary: str
     details: dict[str, Any] | None = None
+
+
+class AssistantLearningProfileRead(BaseModel):
+    """Widok profilu uczenia asystenta dla użytkownika."""
+
+    user_id: int
+    personalization_enabled: bool
+    preferences: dict[str, Any] | None = None
+    memory_notes: str | None = None
+    updated_at: datetime
+
+
+class AssistantLearningProfileUpdate(BaseModel):
+    """Aktualizacja profilu uczenia asystenta (admin-only)."""
+
+    personalization_enabled: bool | None = None
+    preferences: dict[str, Any] | None = None
+    memory_notes: str | None = Field(default=None, max_length=10000)
+
+    @field_validator("memory_notes")
+    @classmethod
+    def strip_memory_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None

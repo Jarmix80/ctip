@@ -14,6 +14,11 @@
           <h1>CTIP AI Asystent</h1>
           <button id="assistant-new-chat-btn" type="button">Nowa rozmowa</button>
         </div>
+        <section class="assistant-worker-picker">
+          <label for="assistant-worker-select">Nowy pracownik AI</label>
+          <select id="assistant-worker-select" name="worker_key"></select>
+          <small id="assistant-worker-description"></small>
+        </section>
         <p class="assistant-safety-label">
           Tryb tylko odczyt. Zmiany wymagają akceptacji właściciela.
         </p>
@@ -23,6 +28,7 @@
       <main class="assistant-main">
         <header class="assistant-chat-header">
           <h2 id="assistant-chat-title">Wybierz rozmowę</h2>
+          <p id="assistant-chat-worker-label" class="assistant-chat-worker-label"></p>
           <a class="assistant-back-link" href="/choice">Powrót do wyboru sekcji</a>
         </header>
         <section id="assistant-messages" class="assistant-messages"></section>

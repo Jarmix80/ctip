@@ -18,6 +18,7 @@ from app.models import (
     AssistantChatMessage,
     AssistantChatThread,
     AssistantToolCallLog,
+    AssistantUserProfile,
     AssistantWeeklyInsight,
 )
 from app.schemas.assistant import (
@@ -30,10 +31,19 @@ from app.schemas.assistant import (
     AssistantChatMessageResponse,
     AssistantChatPromptRequest,
     AssistantChatSummary,
+    AssistantLearningProfileRead,
+    AssistantLearningProfileUpdate,
     AssistantSourceInfo,
     AssistantWeeklyInsightRead,
+    AssistantWorkerInfo,
 )
+from app.services.assistant_learning import update_user_learning_profile
 from app.services.assistant_runtime import AssistantRuntime
+from app.services.assistant_workers import (
+    DEFAULT_WORKER_KEY,
+    get_worker_profile,
+    list_worker_profiles,
+)
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -47,9 +57,11 @@ def _assert_admin(user: AdminUser) -> None:
 
 
 def _map_chat_summary(item: AssistantChatThread) -> AssistantChatSummary:
+    worker = get_worker_profile(item.worker_key)
     return AssistantChatSummary(
         id=item.id,
         title=item.title,
+        worker_key=worker.key,  # type: ignore[arg-type]
         status=item.status,  # type: ignore[arg-type]
         created_at=item.created_at,
         updated_at=item.updated_at,
@@ -97,6 +109,16 @@ def _map_weekly_insight(item: AssistantWeeklyInsight) -> AssistantWeeklyInsightR
         generated_by=item.generated_by,
         summary=item.summary,
         details=item.details,
+    )
+
+
+def _map_learning_profile(item: AssistantUserProfile) -> AssistantLearningProfileRead:
+    return AssistantLearningProfileRead(
+        user_id=item.user_id,
+        personalization_enabled=bool(item.personalization_enabled),
+        preferences=item.preferences if isinstance(item.preferences, dict) else {},
+        memory_notes=item.memory_notes,
+        updated_at=item.updated_at,
     )
 
 
@@ -156,9 +178,12 @@ async def create_chat(
     _, admin_user = admin_context
     now = datetime.now(UTC)
     title = (payload.title.strip() if payload and payload.title else "") or "Nowa rozmowa"
+    worker_key = payload.worker_key if payload and payload.worker_key else DEFAULT_WORKER_KEY
+    worker = get_worker_profile(worker_key)
     thread = AssistantChatThread(
         owner_user_id=admin_user.id,
         title=title,
+        worker_key=worker.key,
         status="active",
         created_at=now,
         updated_at=now,
@@ -168,6 +193,25 @@ async def create_chat(
     await session.commit()
     await session.refresh(thread)
     return _map_chat_summary(thread)
+
+
+@router.get(
+    "/workers",
+    response_model=list[AssistantWorkerInfo],
+    summary="Lista dostępnych pracowników AI",
+)
+async def list_assistant_workers(
+    _admin_context=Depends(get_admin_session_context),  # noqa: B008
+) -> list[AssistantWorkerInfo]:
+    """Zwraca listę profili pracowników AI dostępnych w module czatu."""
+    return [
+        AssistantWorkerInfo(
+            key=profile.key,  # type: ignore[arg-type]
+            name=profile.name,
+            description=profile.description,
+        )
+        for profile in list_worker_profiles()
+    ]
 
 
 @router.get("/chats", response_model=list[AssistantChatSummary], summary="Lista chatów użytkownika")
@@ -272,6 +316,7 @@ async def send_chat_message(
         user_id=admin_user.id,
         prompt=payload.prompt,
         history=history,
+        worker_key=thread.worker_key,
     )
 
     assistant_message = AssistantChatMessage(
@@ -305,6 +350,13 @@ async def send_chat_message(
             error_message=tool_result.error_message,
         )
         session.add(tool_log)
+
+    await update_user_learning_profile(
+        session,
+        user_id=admin_user.id,
+        prompt=payload.prompt,
+        tool_results=generation.tool_results,
+    )
 
     change_request_id: int | None = None
     if generation.blocked_as_change_request:
@@ -585,6 +637,96 @@ async def get_weekly_insights(
     )
     rows = (await session.execute(stmt)).scalars().all()
     return [_map_weekly_insight(item) for item in rows]
+
+
+@router.get(
+    "/users/{user_id}/learning-profile",
+    response_model=AssistantLearningProfileRead,
+    summary="Profil uczenia asystenta użytkownika (admin)",
+)
+async def get_learning_profile(
+    user_id: int = Path(..., ge=1),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> AssistantLearningProfileRead:
+    """Zwraca profil uczenia asystenta wskazanego użytkownika (admin-only)."""
+    _, admin_user = admin_context
+    _assert_admin(admin_user)
+    target_user = (
+        await session.execute(select(AdminUser).where(AdminUser.id == user_id))
+    ).scalar_one_or_none()
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Użytkownik nie istnieje."
+        )
+
+    profile = (
+        await session.execute(
+            select(AssistantUserProfile).where(AssistantUserProfile.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if profile is None:
+        profile = AssistantUserProfile(
+            user_id=user_id,
+            personalization_enabled=True,
+            preferences={},
+            memory_notes=None,
+            updated_at=datetime.now(UTC),
+        )
+        session.add(profile)
+        await session.commit()
+        await session.refresh(profile)
+    return _map_learning_profile(profile)
+
+
+@router.put(
+    "/users/{user_id}/learning-profile",
+    response_model=AssistantLearningProfileRead,
+    summary="Aktualizacja profilu uczenia asystenta użytkownika (admin)",
+)
+async def update_learning_profile(
+    payload: AssistantLearningProfileUpdate,
+    user_id: int = Path(..., ge=1),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> AssistantLearningProfileRead:
+    """Aktualizuje pamięć uczenia asystenta dla wskazanego użytkownika (admin-only)."""
+    _, admin_user = admin_context
+    _assert_admin(admin_user)
+    target_user = (
+        await session.execute(select(AdminUser).where(AdminUser.id == user_id))
+    ).scalar_one_or_none()
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Użytkownik nie istnieje."
+        )
+
+    profile = (
+        await session.execute(
+            select(AssistantUserProfile).where(AssistantUserProfile.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if profile is None:
+        profile = AssistantUserProfile(
+            user_id=user_id,
+            personalization_enabled=True,
+            preferences={},
+            memory_notes=None,
+            updated_at=datetime.now(UTC),
+        )
+        session.add(profile)
+
+    if payload.personalization_enabled is not None:
+        profile.personalization_enabled = payload.personalization_enabled
+    if payload.preferences is not None:
+        profile.preferences = payload.preferences
+    if payload.memory_notes is not None:
+        profile.memory_notes = payload.memory_notes
+    profile.updated_at = datetime.now(UTC)
+
+    await session.commit()
+    await session.refresh(profile)
+    return _map_learning_profile(profile)
 
 
 __all__ = ["router"]

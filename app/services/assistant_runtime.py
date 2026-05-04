@@ -14,7 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import AssistantChatMessage
+from app.services.assistant_learning import (
+    build_learning_prompt_context,
+    infer_business_intent_from_prompt,
+    load_user_assistant_preferences,
+    render_business_tool_answer,
+)
 from app.services.assistant_tools import AssistantDataTools, AssistantToolResult
+from app.services.assistant_workers import get_worker_profile
 from app.services.settings_store import build_store
 
 _SETTINGS_NAMESPACE = "assistant"
@@ -235,6 +242,7 @@ class AssistantRuntime:
         user_id: int,
         prompt: str,
         history: list[dict[str, str]],
+        worker_key: str | None = None,
     ) -> AssistantGenerationResult:
         config = await load_assistant_runtime_config(self._session, secret_key=self._secret_key)
         clean_prompt = _sanitize_text(prompt, config.redact_patterns)
@@ -281,6 +289,39 @@ class AssistantRuntime:
                 blocked_as_change_request=False,
             )
 
+        tools = AssistantDataTools(
+            self._session,
+            settings_store_secret=self._secret_key,
+            user_id=user_id,
+        )
+        worker_profile = get_worker_profile(worker_key)
+        user_preferences = await load_user_assistant_preferences(self._session, user_id=user_id)
+        inferred_business_intent = infer_business_intent_from_prompt(
+            clean_prompt, preferences=user_preferences
+        )
+        if inferred_business_intent:
+            shortcut_result = await tools.execute_tool(
+                "firebird_business_read",
+                inferred_business_intent,
+            )
+            if shortcut_result.status == "success":
+                return AssistantGenerationResult(
+                    answer_text=render_business_tool_answer(shortcut_result.payload),
+                    response_id=None,
+                    model_name="rule-based-business-router",
+                    input_tokens=None,
+                    output_tokens=None,
+                    tool_results=[shortcut_result],
+                    sources=[
+                        {
+                            "tool": shortcut_result.tool_name,
+                            "row_count": shortcut_result.row_count,
+                            "duration_ms": shortcut_result.duration_ms,
+                        }
+                    ],
+                    blocked_as_change_request=False,
+                )
+
         if not config.api_key:
             return AssistantGenerationResult(
                 answer_text=(
@@ -296,11 +337,6 @@ class AssistantRuntime:
                 blocked_as_change_request=False,
             )
 
-        tools = AssistantDataTools(
-            self._session,
-            settings_store_secret=self._secret_key,
-            user_id=user_id,
-        )
         tool_results: list[AssistantToolResult] = []
         response_payload = await self._call_responses_api(
             api_key=config.api_key,
@@ -309,7 +345,12 @@ class AssistantRuntime:
             payload={
                 "model": config.model_name,
                 "max_output_tokens": config.max_output_tokens,
-                "input": self._build_input_messages(clean_prompt, history),
+                "input": self._build_input_messages(
+                    clean_prompt,
+                    history,
+                    learning_context=build_learning_prompt_context(user_preferences),
+                    worker_prompt=worker_profile.prompt_addendum,
+                ),
                 "tools": self._tool_definitions(
                     firebird_limit=config.firebird_row_limit,
                     sheets_limit=config.sheets_row_limit,
@@ -407,6 +448,9 @@ class AssistantRuntime:
         self,
         prompt: str,
         history: list[dict[str, str]],
+        *,
+        learning_context: str = "",
+        worker_prompt: str = "",
     ) -> list[dict[str, str]]:
         system_prompt = (
             "Jesteś CTIP AI Asystentem w trybie tylko odczytu. "
@@ -419,8 +463,12 @@ class AssistantRuntime:
             "(np. tabele MASZYNA/KLIENT/CPC/MODEL, trigger, generator, kolumny MS) "
             "zawsze najpierw użyj firebird_knowledge_read (lokalny indeks wiedzy repozytorium). "
             "Dla pytań biznesowych po naturalnym opisie najpierw użyj firebird_business_read: "
-            "`devices_by_company` dla listy urządzeń firmy oraz "
-            "`monthly_average_print_by_model` dla średnich miesięcznych liczników modelu. "
+            "`devices_by_company` dla listy urządzeń firmy, "
+            "`monthly_average_print_by_model` dla średnich miesięcznych liczników modelu, "
+            "`company_monthly_print_summary` dla miesięcznego podsumowania wydruków firmy, "
+            "`top_models_by_volume` dla rankingu modeli po wolumenie wydruków, "
+            "`device_monthly_print_by_serial` dla historii miesięcznej po numerze seryjnym, "
+            "`active_devices_on_contracts` dla listy aktywnych urządzeń na umowach. "
             "Jeśli użytkownik nie poda okresu dla modelu, przyjmij ostatnie 12 miesięcy "
             "(ustaw `months_back=12`). "
             "Jeśli model podany przez użytkownika ma różny zapis (np. MPC3004 vs MP C3004), "
@@ -428,6 +476,12 @@ class AssistantRuntime:
             "Nigdy nie wykonuj operacji zapisu ani DDL/DML. "
             "Jeśli użytkownik prosi o zmianę danych, odmów i zasugeruj utworzenie wniosku o zmianę."
         )
+        if learning_context.strip():
+            system_prompt = (
+                f"{system_prompt}\n\nKontekst uczenia użytkownika:\n{learning_context.strip()}"
+            )
+        if worker_prompt.strip():
+            system_prompt = f"{system_prompt}\n\nProfil pracownika AI:\n{worker_prompt.strip()}"
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         for item in history[-20:]:
             role = (item.get("role") or "").strip().lower()
@@ -460,10 +514,18 @@ class AssistantRuntime:
                     "properties": {
                         "intent": {
                             "type": "string",
-                            "enum": ["devices_by_company", "monthly_average_print_by_model"],
+                            "enum": [
+                                "devices_by_company",
+                                "monthly_average_print_by_model",
+                                "company_monthly_print_summary",
+                                "top_models_by_volume",
+                                "device_monthly_print_by_serial",
+                                "active_devices_on_contracts",
+                            ],
                         },
                         "company_name": {"type": "string"},
                         "model_name": {"type": "string"},
+                        "serial_number": {"type": "string"},
                         "months_back": {"type": "integer", "minimum": 1, "maximum": 120},
                         "row_limit": {"type": "integer", "minimum": 1, "maximum": firebird_limit},
                     },

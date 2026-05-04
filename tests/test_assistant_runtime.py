@@ -104,6 +104,19 @@ class AssistantRuntimeConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("firebird_business_read", names)
         self.assertIn("firebird_knowledge_read", names)
 
+    async def test_build_input_messages_includes_worker_prompt(self) -> None:
+        runtime = AssistantRuntime(session=None, secret_key=None)  # type: ignore[arg-type]
+        messages = runtime._build_input_messages(
+            "Pokaż dane",
+            history=[{"role": "user", "content": "Test"}],
+            learning_context="Użytkownik preferuje krótkie odpowiedzi.",
+            worker_prompt="Twoja rola: Opiekun Klienta.",
+        )
+        self.assertGreaterEqual(len(messages), 3)
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("Kontekst uczenia użytkownika", messages[0]["content"])
+        self.assertIn("Profil pracownika AI", messages[0]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

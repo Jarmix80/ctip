@@ -252,6 +252,7 @@ class AssistantDataTools:
         intent: str,
         company_name: str | None = None,
         model_name: str | None = None,
+        serial_number: str | None = None,
         months_back: int | None = None,
         row_limit: int | None = None,
     ) -> AssistantToolResult:
@@ -276,6 +277,7 @@ class AssistantDataTools:
                     normalized_intent,
                     company_name,
                     model_name,
+                    serial_number,
                     normalized_months_back,
                     limit,
                 ),
@@ -1011,6 +1013,7 @@ class AssistantDataTools:
         intent: str,
         company_name: str | None,
         model_name: str | None,
+        serial_number: str | None,
         months_back: int,
         row_limit: int,
     ) -> dict[str, Any]:
@@ -1053,6 +1056,67 @@ class AssistantDataTools:
                     "rows": mapped_rows,
                     "row_count": len(mapped_rows),
                     "limited_to": row_limit,
+                    "generated_sql": sql.strip(),
+                }
+
+            if intent == "company_monthly_print_summary":
+                company = (company_name or "").strip()
+                if not company:
+                    raise RuntimeError(
+                        "Dla intent=company_monthly_print_summary wymagane jest `company_name`."
+                    )
+                start_key, end_key, period_criteria = _resolve_year_month_window(
+                    months_back=months_back
+                )
+                sql = """
+                    WITH cpc_base AS (
+                        SELECT
+                            c.ID_MASZYNA,
+                            c.ROK AS ROK,
+                            COALESCE(NULLIF(c.MIESIAC, 0), 1) AS MIESIAC,
+                            (
+                                COALESCE(c.LICZNIK_MONO_END, c.LICZNIK_MONO_START, 0)
+                                - COALESCE(c.LICZNIK_MONO_START, c.LICZNIK_MONO_END, 0)
+                            ) AS MONO_DIFF,
+                            (
+                                COALESCE(c.LICZNIK_KOLOR_END, c.LICZNIK_KOLOR_START, 0)
+                                - COALESCE(c.LICZNIK_KOLOR_START, c.LICZNIK_KOLOR_END, 0)
+                            ) AS KOLOR_DIFF
+                        FROM CPC c
+                        JOIN MASZYNA m ON m.ID_MASZYNA = c.ID_MASZYNA
+                        JOIN KLIENT k ON k.ID_KLIENT = m.ID_KLIENT
+                        WHERE UPPER(COALESCE(k.NAZWA, '')) CONTAINING ?
+                          AND ((c.ROK * 100) + COALESCE(NULLIF(c.MIESIAC, 0), 1)) BETWEEN ? AND ?
+                    )
+                    SELECT
+                        b.ROK,
+                        b.MIESIAC,
+                        COUNT(*) AS REKORDY_CPC,
+                        COUNT(DISTINCT b.ID_MASZYNA) AS LICZBA_URZADZEN,
+                        SUM(b.MONO_DIFF) AS MONO_SUM,
+                        SUM(b.KOLOR_DIFF) AS KOLOR_SUM,
+                        SUM(b.MONO_DIFF + b.KOLOR_DIFF) AS LACZNIE_SUM,
+                        CASE
+                            WHEN COUNT(DISTINCT b.ID_MASZYNA) = 0 THEN NULL
+                            ELSE SUM(b.MONO_DIFF + b.KOLOR_DIFF) * 1.0 / COUNT(DISTINCT b.ID_MASZYNA)
+                        END AS SREDNIO_NA_URZADZENIE
+                    FROM cpc_base b
+                    GROUP BY b.ROK, b.MIESIAC
+                    ORDER BY b.ROK DESC, b.MIESIAC DESC
+                """
+                cursor.execute(sql, (company.upper(), start_key, end_key))
+                effective_row_limit = min(
+                    max(row_limit, months_back),
+                    runtime_settings.firebird_row_limit,
+                )
+                columns, mapped_rows = self._fetch_cursor_rows(cursor, effective_row_limit)
+                return {
+                    "intent": intent,
+                    "criteria": {"company_name": company, **period_criteria},
+                    "columns": columns,
+                    "rows": mapped_rows,
+                    "row_count": len(mapped_rows),
+                    "limited_to": effective_row_limit,
                     "generated_sql": sql.strip(),
                 }
 
@@ -1126,9 +1190,164 @@ class AssistantDataTools:
                     "generated_sql": sql.strip(),
                 }
 
+            if intent == "top_models_by_volume":
+                start_key, end_key, period_criteria = _resolve_year_month_window(
+                    months_back=months_back
+                )
+                sql = """
+                    WITH cpc_base AS (
+                        SELECT
+                            c.ID_MASZYNA,
+                            TRIM(COALESCE(m.MODEL, '')) AS MODEL,
+                            (
+                                COALESCE(c.LICZNIK_MONO_END, c.LICZNIK_MONO_START, 0)
+                                - COALESCE(c.LICZNIK_MONO_START, c.LICZNIK_MONO_END, 0)
+                            ) AS MONO_DIFF,
+                            (
+                                COALESCE(c.LICZNIK_KOLOR_END, c.LICZNIK_KOLOR_START, 0)
+                                - COALESCE(c.LICZNIK_KOLOR_START, c.LICZNIK_KOLOR_END, 0)
+                            ) AS KOLOR_DIFF
+                        FROM CPC c
+                        JOIN MASZYNA m ON m.ID_MASZYNA = c.ID_MASZYNA
+                        WHERE ((c.ROK * 100) + COALESCE(NULLIF(c.MIESIAC, 0), 1)) BETWEEN ? AND ?
+                    )
+                    SELECT
+                        b.MODEL,
+                        COUNT(*) AS REKORDY_CPC,
+                        COUNT(DISTINCT b.ID_MASZYNA) AS LICZBA_URZADZEN,
+                        SUM(b.MONO_DIFF) AS MONO_SUM,
+                        SUM(b.KOLOR_DIFF) AS KOLOR_SUM,
+                        SUM(b.MONO_DIFF + b.KOLOR_DIFF) AS LACZNIE_SUM,
+                        CASE
+                            WHEN COUNT(DISTINCT b.ID_MASZYNA) = 0 THEN NULL
+                            ELSE SUM(b.MONO_DIFF + b.KOLOR_DIFF) * 1.0 / COUNT(DISTINCT b.ID_MASZYNA)
+                        END AS SREDNIO_NA_URZADZENIE
+                    FROM cpc_base b
+                    WHERE b.MODEL <> ''
+                    GROUP BY b.MODEL
+                    ORDER BY LACZNIE_SUM DESC, b.MODEL
+                """
+                cursor.execute(sql, (start_key, end_key))
+                columns, mapped_rows = self._fetch_cursor_rows(cursor, row_limit)
+                return {
+                    "intent": intent,
+                    "criteria": period_criteria,
+                    "columns": columns,
+                    "rows": mapped_rows,
+                    "row_count": len(mapped_rows),
+                    "limited_to": row_limit,
+                    "generated_sql": sql.strip(),
+                }
+
+            if intent == "device_monthly_print_by_serial":
+                serial = (serial_number or "").strip()
+                if not serial:
+                    raise RuntimeError(
+                        "Dla intent=device_monthly_print_by_serial wymagane jest `serial_number`."
+                    )
+                start_key, end_key, period_criteria = _resolve_year_month_window(
+                    months_back=months_back
+                )
+                sql = """
+                    WITH cpc_base AS (
+                        SELECT
+                            m.ID_MASZYNA,
+                            TRIM(COALESCE(m.MODEL, '')) AS MODEL,
+                            TRIM(COALESCE(m.SERIAL, '')) AS SERIAL,
+                            c.ROK AS ROK,
+                            COALESCE(NULLIF(c.MIESIAC, 0), 1) AS MIESIAC,
+                            (
+                                COALESCE(c.LICZNIK_MONO_END, c.LICZNIK_MONO_START, 0)
+                                - COALESCE(c.LICZNIK_MONO_START, c.LICZNIK_MONO_END, 0)
+                            ) AS MONO_DIFF,
+                            (
+                                COALESCE(c.LICZNIK_KOLOR_END, c.LICZNIK_KOLOR_START, 0)
+                                - COALESCE(c.LICZNIK_KOLOR_START, c.LICZNIK_KOLOR_END, 0)
+                            ) AS KOLOR_DIFF
+                        FROM CPC c
+                        JOIN MASZYNA m ON m.ID_MASZYNA = c.ID_MASZYNA
+                        WHERE UPPER(COALESCE(m.SERIAL, '')) CONTAINING ?
+                          AND ((c.ROK * 100) + COALESCE(NULLIF(c.MIESIAC, 0), 1)) BETWEEN ? AND ?
+                    )
+                    SELECT
+                        b.ID_MASZYNA,
+                        b.MODEL,
+                        b.SERIAL,
+                        b.ROK,
+                        b.MIESIAC,
+                        COUNT(*) AS REKORDY_CPC,
+                        SUM(b.MONO_DIFF) AS MONO_SUM,
+                        SUM(b.KOLOR_DIFF) AS KOLOR_SUM,
+                        SUM(b.MONO_DIFF + b.KOLOR_DIFF) AS LACZNIE_SUM
+                    FROM cpc_base b
+                    GROUP BY b.ID_MASZYNA, b.MODEL, b.SERIAL, b.ROK, b.MIESIAC
+                    ORDER BY b.ROK DESC, b.MIESIAC DESC, b.ID_MASZYNA DESC
+                """
+                cursor.execute(sql, (serial.upper(), start_key, end_key))
+                effective_row_limit = min(
+                    max(row_limit, months_back),
+                    runtime_settings.firebird_row_limit,
+                )
+                columns, mapped_rows = self._fetch_cursor_rows(cursor, effective_row_limit)
+                return {
+                    "intent": intent,
+                    "criteria": {"serial_number": serial, **period_criteria},
+                    "columns": columns,
+                    "rows": mapped_rows,
+                    "row_count": len(mapped_rows),
+                    "limited_to": effective_row_limit,
+                    "generated_sql": sql.strip(),
+                }
+
+            if intent == "active_devices_on_contracts":
+                sql = """
+                    SELECT
+                        m.ID_MASZYNA,
+                        m.ID_KLIENT,
+                        TRIM(COALESCE(k.NAZWA, '')) AS KLIENT_NAZWA,
+                        TRIM(COALESCE(m.MARKA, '')) AS MARKA,
+                        TRIM(COALESCE(m.MODEL, '')) AS MODEL,
+                        TRIM(COALESCE(m.SERIAL, '')) AS SERIAL,
+                        TRIM(COALESCE(m.EWIDENCJA, '')) AS EWIDENCJA,
+                        TRIM(COALESCE(m.AKTYWNA, '')) AS AKTYWNA_MASZYNA,
+                        m.UM_P,
+                        m.UM_K,
+                        m.ID_UMOWACPC,
+                        TRIM(COALESCE(uc.UMOWA, '')) AS UMOWA_CPC,
+                        TRIM(COALESCE(uc.AKTYWNA, '')) AS AKTYWNA_UMOWA_CPC,
+                        uc.U_START,
+                        uc.U_STOP
+                    FROM MASZYNA m
+                    JOIN KLIENT k ON k.ID_KLIENT = m.ID_KLIENT
+                    LEFT JOIN UMOWACPC uc ON uc.ID_UMOWACPC = m.ID_UMOWACPC
+                    WHERE COALESCE(m.ID_UMOWACPC, 0) <> 0
+                      AND (
+                          UPPER(TRIM(COALESCE(m.AKTYWNA, ''))) IN ('T', 'TAK', '1', 'Y', 'YES')
+                          OR UPPER(TRIM(COALESCE(uc.AKTYWNA, ''))) IN ('T', 'TAK', '1', 'Y', 'YES')
+                          OR m.UM_K IS NULL
+                          OR m.UM_K >= CURRENT_DATE
+                          OR uc.U_STOP IS NULL
+                          OR uc.U_STOP >= CURRENT_DATE
+                      )
+                    ORDER BY k.NAZWA, m.MODEL, m.SERIAL
+                """
+                cursor.execute(sql)
+                columns, mapped_rows = self._fetch_cursor_rows(cursor, row_limit)
+                return {
+                    "intent": intent,
+                    "criteria": {"active_only": True, "contracts_only": True},
+                    "columns": columns,
+                    "rows": mapped_rows,
+                    "row_count": len(mapped_rows),
+                    "limited_to": row_limit,
+                    "generated_sql": sql.strip(),
+                }
+
             raise RuntimeError(
                 "Nieobsługiwany intent `firebird_business_read`. "
-                "Dozwolone: devices_by_company, monthly_average_print_by_model."
+                "Dozwolone: devices_by_company, monthly_average_print_by_model, "
+                "company_monthly_print_summary, top_models_by_volume, "
+                "device_monthly_print_by_serial, active_devices_on_contracts."
             )
         finally:
             if cursor is not None:
@@ -1213,6 +1432,11 @@ class AssistantDataTools:
                 model_name=(
                     str(arguments.get("model_name")).strip()
                     if arguments.get("model_name") is not None
+                    else None
+                ),
+                serial_number=(
+                    str(arguments.get("serial_number")).strip()
+                    if arguments.get("serial_number") is not None
                     else None
                 ),
                 months_back=arguments.get("months_back"),

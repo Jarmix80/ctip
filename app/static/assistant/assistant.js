@@ -94,29 +94,77 @@ async function bootstrapAssistantPage() {
   const newChatBtn = document.getElementById("assistant-new-chat-btn");
   const chatList = document.getElementById("assistant-chat-list");
   const chatTitle = document.getElementById("assistant-chat-title");
+  const chatWorkerLabel = document.getElementById("assistant-chat-worker-label");
   const messagesEl = document.getElementById("assistant-messages");
   const promptForm = document.getElementById("assistant-prompt-form");
   const promptInput = document.getElementById("assistant-prompt-input");
   const sendBtn = document.getElementById("assistant-send-btn");
   const sourcesList = document.getElementById("assistant-sources-list");
   const changeRequestInfo = document.getElementById("assistant-change-request-info");
+  const workerSelect = document.getElementById("assistant-worker-select");
+  const workerDescription = document.getElementById("assistant-worker-description");
   if (
     !newChatBtn ||
     !chatList ||
     !chatTitle ||
+    !chatWorkerLabel ||
     !messagesEl ||
     !promptForm ||
     !promptInput ||
     !sendBtn ||
     !sourcesList ||
-    !changeRequestInfo
+    !changeRequestInfo ||
+    !workerSelect ||
+    !workerDescription
   ) {
     return;
   }
 
   const state = {
     threads: [],
+    workers: [],
+    workersByKey: {},
     activeThreadId: null,
+    activeWorkerKey: "ksero_partner_analyst",
+  };
+
+  const resolveWorker = (key) => {
+    const workerKey = String(key || "").trim();
+    return state.workersByKey[workerKey] || state.workersByKey.ksero_partner_analyst || null;
+  };
+
+  const syncWorkerUi = (key) => {
+    const worker = resolveWorker(key);
+    if (!worker) {
+      workerDescription.textContent = "";
+      chatWorkerLabel.textContent = "";
+      return;
+    }
+    state.activeWorkerKey = worker.key;
+    workerSelect.value = worker.key;
+    workerDescription.textContent = worker.description || "";
+    chatWorkerLabel.textContent = `Pracownik AI: ${worker.name}`;
+  };
+
+  const refreshWorkers = async () => {
+    const items = await requestJson("/assistant/workers", { method: "GET" }, token);
+    state.workers = Array.isArray(items) ? items : [];
+    state.workersByKey = {};
+    for (const worker of state.workers) {
+      if (!worker?.key) {
+        continue;
+      }
+      state.workersByKey[worker.key] = worker;
+    }
+
+    workerSelect.innerHTML = "";
+    for (const worker of state.workers) {
+      const option = document.createElement("option");
+      option.value = worker.key;
+      option.textContent = worker.name || worker.key;
+      workerSelect.appendChild(option);
+    }
+    syncWorkerUi(state.activeWorkerKey);
   };
 
   const refreshThreads = async () => {
@@ -154,6 +202,7 @@ async function bootstrapAssistantPage() {
     }
     const data = await requestJson(`/assistant/chats/${threadId}`, { method: "GET" }, token);
     chatTitle.textContent = data?.thread?.title || "Rozmowa";
+    syncWorkerUi(data?.thread?.worker_key);
     messagesEl.innerHTML = "";
     const messages = Array.isArray(data?.messages) ? data.messages : [];
     for (const item of messages) {
@@ -164,14 +213,16 @@ async function bootstrapAssistantPage() {
   };
 
   const createNewThread = async () => {
+    const workerKey = String(workerSelect.value || state.activeWorkerKey || "").trim();
     const created = await requestJson(
       "/assistant/chats",
       {
         method: "POST",
-        body: JSON.stringify({ title: null }),
+        body: JSON.stringify({ title: null, worker_key: workerKey }),
       },
       token,
     );
+    syncWorkerUi(created?.worker_key);
     state.activeThreadId = created.id;
     await refreshThreads();
     await loadThread(created.id);
@@ -282,7 +333,12 @@ async function bootstrapAssistantPage() {
     await createNewThread();
   });
 
+  workerSelect.addEventListener("change", () => {
+    syncWorkerUi(workerSelect.value);
+  });
+
   try {
+    await refreshWorkers();
     await refreshThreads();
     if (state.activeThreadId) {
       await loadThread(state.activeThreadId);

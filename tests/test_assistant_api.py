@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -35,6 +35,7 @@ from app.models import (
 )
 from app.models.base import Base
 from app.services.assistant_runtime import AssistantGenerationResult
+from app.services.assistant_tools import AssistantToolResult
 from app.services.security import hash_password
 
 
@@ -137,6 +138,7 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(create_response.status_code, status.HTTP_200_OK)
         chat_id = create_response.json()["id"]
+        self.assertEqual(create_response.json()["worker_key"], "ksero_partner_analyst")
 
         list_response = await self.client.get(
             "/assistant/chats",
@@ -152,7 +154,28 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.json()["thread"]["id"], chat_id)
+        self.assertEqual(detail_response.json()["thread"]["worker_key"], "ksero_partner_analyst")
         self.assertEqual(detail_response.json()["messages"], [])
+
+    async def test_workers_catalog_and_chat_creation_with_selected_worker(self) -> None:
+        workers_response = await self.client.get(
+            "/assistant/workers",
+            headers={"X-Admin-Session": "admin-token"},
+        )
+        self.assertEqual(workers_response.status_code, status.HTTP_200_OK)
+        workers = workers_response.json()
+        keys = {item["key"] for item in workers}
+        self.assertIn("ksero_partner_analyst", keys)
+        self.assertIn("opiekun_klienta", keys)
+        self.assertIn("diagnosta_bazy_ms", keys)
+
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"title": "Nowy pracownik", "worker_key": "opiekun_klienta"},
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(create_response.json()["worker_key"], "opiekun_klienta")
 
     async def test_message_response_and_tool_sources(self) -> None:
         create_response = await self.client.post(
@@ -283,6 +306,102 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
         payload = response.json()
         self.assertGreaterEqual(len(payload), 1)
         self.assertIn("Raport tygodniowy asystenta", payload[0]["summary"])
+
+    async def test_admin_can_get_and_update_learning_profile(self) -> None:
+        get_response = await self.client.get(
+            "/assistant/users/2/learning-profile",
+            headers={"X-Admin-Session": "admin-token"},
+        )
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        body = get_response.json()
+        self.assertEqual(body["user_id"], 2)
+        self.assertIn("preferences", body)
+
+        update_response = await self.client.put(
+            "/assistant/users/2/learning-profile",
+            headers={"X-Admin-Session": "admin-token"},
+            json={
+                "personalization_enabled": True,
+                "preferences": {
+                    "business_learning": {
+                        "company_aliases": {"steico": "Steico Sp. z o.o."},
+                        "model_aliases": {"mpc3004": "MP C3004"},
+                    }
+                },
+                "memory_notes": "Preferowane krótkie odpowiedzi.",
+            },
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        updated = update_response.json()
+        self.assertEqual(updated["user_id"], 2)
+        self.assertTrue(updated["personalization_enabled"])
+        self.assertEqual(
+            updated["preferences"]["business_learning"]["company_aliases"]["steico"],
+            "Steico Sp. z o.o.",
+        )
+        self.assertEqual(updated["memory_notes"], "Preferowane krótkie odpowiedzi.")
+
+    async def test_operator_cannot_access_learning_profile_admin_endpoint(self) -> None:
+        response = await self.client.get(
+            "/assistant/users/1/learning-profile",
+            headers={"X-Admin-Session": "operator-token"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    async def test_message_updates_learning_profile_from_business_tool(self) -> None:
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "admin-token"},
+            json={"title": "Nauka"},
+        )
+        chat_id = create_response.json()["id"]
+
+        generation = AssistantGenerationResult(
+            answer_text="Znaleziono urządzenia.",
+            response_id=None,
+            model_name="rule-based-business-router",
+            input_tokens=None,
+            output_tokens=None,
+            tool_results=[
+                AssistantToolResult(
+                    tool_name="firebird_business_read",
+                    status="success",
+                    payload={
+                        "intent": "devices_by_company",
+                        "criteria": {"company_name": "Steico"},
+                        "rows": [],
+                    },
+                    row_count=0,
+                    generated_sql=None,
+                    error_message=None,
+                    duration_ms=5,
+                )
+            ],
+            sources=[{"tool": "firebird_business_read", "row_count": 0, "duration_ms": 5}],
+            blocked_as_change_request=False,
+        )
+        with patch(
+            "app.api.routes.assistant.AssistantRuntime.generate", AsyncMock(return_value=generation)
+        ):
+            response = await self.client.post(
+                f"/assistant/chats/{chat_id}/messages",
+                headers={"X-Admin-Session": "admin-token"},
+                json={"prompt": "Wyswietl urzadzenia firmy steico", "stream": False},
+            )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        async with self.session_factory() as session:
+            profile = (
+                await session.execute(
+                    select(AssistantUserProfile).where(AssistantUserProfile.user_id == 1)
+                )
+            ).scalar_one_or_none()
+            self.assertIsNotNone(profile)
+            self.assertIsInstance(profile.preferences, dict)
+            learning = profile.preferences.get("business_learning")
+            self.assertIsInstance(learning, dict)
+            counts = learning.get("intent_success_counts")
+            self.assertEqual(counts.get("devices_by_company"), 1)
 
 
 if __name__ == "__main__":

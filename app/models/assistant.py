@@ -31,6 +31,10 @@ class AssistantChatThread(Base):
             "status in ('active','archived','deleted')",
             name="assistant_chat_thread_status_check",
         ),
+        CheckConstraint(
+            "worker_key in ('ksero_partner_analyst','opiekun_klienta','diagnosta_bazy_ms')",
+            name="assistant_chat_thread_worker_key_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -38,6 +42,12 @@ class AssistantChatThread(Base):
         ForeignKey("ctip.admin_user.id", ondelete="CASCADE"), nullable=False
     )
     title: Mapped[str] = mapped_column(Text, nullable=False, default="Nowa rozmowa")
+    worker_key: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="ksero_partner_analyst",
+        server_default="ksero_partner_analyst",
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
     last_activity_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())

@@ -45,6 +45,7 @@ class AssistantToolsDispatchTests(unittest.IsolatedAsyncioTestCase):
             intent="devices_by_company",
             company_name="Steico",
             model_name=None,
+            serial_number=None,
             months_back=12,
             row_limit=50,
         )
