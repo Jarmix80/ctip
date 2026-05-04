@@ -398,6 +398,7 @@ async def send_chat_message(
                 "sheets_read",
                 "imap_read",
                 "ctip_schema_read",
+                "email_send_report",
             }
         ],
         blocked_as_change_request=generation.blocked_as_change_request,

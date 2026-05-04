@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import imaplib
+import io
 import json
 import re
 import time
@@ -12,7 +14,8 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from email import message_from_bytes
 from email.header import decode_header
-from email.utils import parsedate_to_datetime
+from email.message import EmailMessage
+from email.utils import formataddr, parseaddr, parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminUser
 from app.services.admin_user_imap import load_user_imap_config
+from app.services.admin_users import resolve_email_delivery_settings
 from app.services.assistant_sql_guard import AssistantSqlGuardError, guard_readonly_sql
 from app.services.contracts_dashboard import load_firebird_runtime_config
+from app.services.email_client import send_smtp_message
 from app.services.settings_store import build_store
 from app.services.workflow_sheet_sync import (
     WorkflowSheetRuntimeConfig,
@@ -143,6 +148,16 @@ def _load_firebird_knowledge_index() -> dict[str, Any]:
     return data
 
 
+_EMAIL_REPORT_ALLOWED_SOURCE_TOOLS = {
+    "firebird_read",
+    "firebird_business_read",
+    "firebird_knowledge_read",
+    "sheets_read",
+    "imap_read",
+    "ctip_schema_read",
+}
+
+
 class AssistantDataTools:
     """Adapter narzędzi danych dostępnych dla asystenta (wyłącznie odczyt)."""
 
@@ -158,6 +173,7 @@ class AssistantDataTools:
         self._session = session
         self._settings_store = build_store(settings_store_secret)
         self._user_id = user_id
+        self._tool_history: list[AssistantToolResult] = []
 
     async def load_runtime_config(self) -> AssistantToolRuntimeConfig:
         """Wczytuje runtime konfigurację narzędzi z `admin_setting` + domyślne wartości."""
@@ -710,6 +726,228 @@ class AssistantDataTools:
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 
+    async def email_send_report(
+        self,
+        *,
+        recipient_email: str,
+        subject: str | None = None,
+        message_body: str | None = None,
+        report_format: str | None = None,
+        source_tool: str | None = None,
+        report_title: str | None = None,
+    ) -> AssistantToolResult:
+        """Wysyła raport jako załącznik przez systemową skrzynkę SMTP CTIP."""
+        runtime = await self.load_runtime_config()
+        started = time.monotonic()
+        try:
+            _, parsed_recipient = parseaddr((recipient_email or "").strip())
+            if not parsed_recipient or "@" not in parsed_recipient:
+                raise RuntimeError("Nieprawidłowy adres odbiorcy e-mail.")
+
+            if source_tool is not None and source_tool.strip():
+                normalized_source_tool = source_tool.strip()
+                if normalized_source_tool not in _EMAIL_REPORT_ALLOWED_SOURCE_TOOLS:
+                    raise RuntimeError(
+                        "Niedozwolone źródło raportu. "
+                        f"Dozwolone: {', '.join(sorted(_EMAIL_REPORT_ALLOWED_SOURCE_TOOLS))}."
+                    )
+            else:
+                normalized_source_tool = None
+
+            delivery = await resolve_email_delivery_settings(self._session)
+            if delivery is None:
+                raise RuntimeError(
+                    "Brak konfiguracji SMTP systemowej CTIP. Uzupełnij `admin/config/email`."
+                )
+
+            source_result = self._pick_report_source_result(normalized_source_tool)
+            if source_result is None:
+                if normalized_source_tool:
+                    raise RuntimeError(
+                        f"Brak wcześniejszego wyniku narzędzia `{normalized_source_tool}` w tej rozmowie."
+                    )
+                raise RuntimeError(
+                    "Brak danych do raportu. Najpierw wykonaj zapytanie (np. firebird_business_read)."
+                )
+
+            normalized_report_format = (report_format or "csv").strip().lower()
+            attachment_name, attachment_bytes = self._build_report_attachment(
+                source_result=source_result,
+                report_format=normalized_report_format,
+                report_title=report_title,
+            )
+            if len(attachment_bytes) > 5 * 1024 * 1024:
+                raise RuntimeError("Załącznik raportu przekracza limit 5 MB.")
+
+            sender_name = (delivery.sender_name or "").strip() or "CTIP Asystent"
+            email_subject = (
+                subject or ""
+            ).strip() or f"CTIP raport: {source_result.tool_name} ({datetime.now(UTC).date().isoformat()})"
+            text_body = (message_body or "").strip()
+            if not text_body:
+                text_body = (
+                    "Automatyczny raport wygenerowany przez CTIP AI Asystenta.\n\n"
+                    f"Źródło danych: {source_result.tool_name}\n"
+                    f"Liczba rekordów: {source_result.row_count if source_result.row_count is not None else 'n/d'}\n"
+                    f"Wygenerowano: {datetime.now(UTC).isoformat()}"
+                )
+
+            message = EmailMessage()
+            message["From"] = formataddr((sender_name, delivery.sender_address))
+            message["To"] = parsed_recipient
+            message["Subject"] = email_subject
+            message.set_content(text_body)
+
+            if normalized_report_format == "json":
+                maintype, subtype = "application", "json"
+            elif normalized_report_format == "txt":
+                maintype, subtype = "text", "plain"
+            else:
+                maintype, subtype = "text", "csv"
+            message.add_attachment(
+                attachment_bytes,
+                maintype=maintype,
+                subtype=subtype,
+                filename=attachment_name,
+            )
+
+            send_result = await asyncio.wait_for(
+                send_smtp_message(
+                    host=delivery.host,
+                    port=delivery.port,
+                    username=delivery.username,
+                    password=delivery.password,
+                    use_tls=delivery.use_tls,
+                    use_ssl=delivery.use_ssl,
+                    message=message,
+                ),
+                timeout=runtime.tool_timeout_seconds,
+            )
+            if not send_result.success:
+                raise RuntimeError(send_result.message or "Wysyłka e-mail zakończona błędem.")
+
+            result_payload = {
+                "recipient_email": parsed_recipient,
+                "subject": email_subject,
+                "source_tool": source_result.tool_name,
+                "source_row_count": source_result.row_count,
+                "attachment_name": attachment_name,
+                "attachment_size_bytes": len(attachment_bytes),
+                "report_format": normalized_report_format,
+                "message": send_result.message,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return AssistantToolResult(
+                tool_name="email_send_report",
+                status="error",
+                payload={},
+                row_count=None,
+                generated_sql=None,
+                error_message=str(exc).strip() or type(exc).__name__,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+
+        return AssistantToolResult(
+            tool_name="email_send_report",
+            status="success",
+            payload=result_payload,
+            row_count=source_result.row_count,
+            generated_sql=None,
+            error_message=None,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    def _pick_report_source_result(self, source_tool: str | None) -> AssistantToolResult | None:
+        for item in reversed(self._tool_history):
+            if item.status != "success":
+                continue
+            if item.tool_name not in _EMAIL_REPORT_ALLOWED_SOURCE_TOOLS:
+                continue
+            if source_tool and item.tool_name != source_tool:
+                continue
+            return item
+        return None
+
+    def _build_report_attachment(
+        self,
+        *,
+        source_result: AssistantToolResult,
+        report_format: str,
+        report_title: str | None,
+    ) -> tuple[str, bytes]:
+        payload = source_result.payload if isinstance(source_result.payload, dict) else {}
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        safe_title = re.sub(r"[^0-9A-Za-z_.-]+", "_", (report_title or "").strip()).strip("_")
+        base_name = safe_title or f"ctip_{source_result.tool_name}_report"
+
+        if report_format == "json":
+            content = json.dumps(
+                {
+                    "tool": source_result.tool_name,
+                    "row_count": source_result.row_count,
+                    "generated_sql": source_result.generated_sql,
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            return f"{base_name}_{timestamp}.json", content.encode("utf-8")
+
+        if report_format == "txt":
+            lines = [
+                "Raport CTIP AI Asystent",
+                f"Źródło: {source_result.tool_name}",
+                f"Liczba rekordów: {source_result.row_count if source_result.row_count is not None else 'n/d'}",
+                f"Data UTC: {datetime.now(UTC).isoformat()}",
+                "",
+            ]
+            rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+            if rows:
+                for index, row in enumerate(rows[:200], start=1):
+                    if isinstance(row, dict):
+                        row_text = ", ".join(
+                            f"{key}={_json_safe(value)}" for key, value in row.items()
+                        )
+                    else:
+                        row_text = str(row)
+                    lines.append(f"{index}. {row_text}")
+            else:
+                lines.append(json.dumps(payload, ensure_ascii=False, indent=2))
+            return f"{base_name}_{timestamp}.txt", "\n".join(lines).encode("utf-8")
+
+        if report_format != "csv":
+            raise RuntimeError("Nieobsługiwany format raportu. Dozwolone: csv, json, txt.")
+
+        rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+        columns = payload.get("columns") if isinstance(payload.get("columns"), list) else []
+        csv_buffer = io.StringIO(newline="")
+        writer: csv.writer | csv.DictWriter[str]
+
+        if columns:
+            fieldnames = [str(column) for column in columns]
+            writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                if isinstance(row, dict):
+                    writer.writerow({key: _json_safe(row.get(key)) for key in fieldnames})
+                else:
+                    writer.writerow({fieldnames[0]: _json_safe(row)})
+        elif rows and all(isinstance(row, dict) for row in rows):
+            first_row = rows[0]
+            fieldnames = [str(key) for key in first_row.keys()]
+            writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                row_dict = row if isinstance(row, dict) else {}
+                writer.writerow({key: _json_safe(row_dict.get(key)) for key in fieldnames})
+        else:
+            writer = csv.writer(csv_buffer)
+            writer.writerow(["key", "value"])
+            for key in sorted(payload.keys()):
+                writer.writerow([key, json.dumps(_json_safe(payload.get(key)), ensure_ascii=False)])
+
+        return f"{base_name}_{timestamp}.csv", csv_buffer.getvalue().encode("utf-8")
+
     async def _load_schema_columns(self, table_name: str) -> list[dict[str, Any]]:
         columns_stmt = text(
             """
@@ -918,6 +1156,91 @@ class AssistantDataTools:
             "messages": messages,
         }
 
+    def _build_contract_settlement_knowledge_payload(self) -> dict[str, Any]:
+        table_refs: list[dict[str, Any]] = []
+        document_refs: list[dict[str, Any]] = []
+        generated_at_utc: str | None = None
+        knowledge_error: str | None = None
+
+        try:
+            index = _load_firebird_knowledge_index()
+            generated_at_utc = str(index.get("generated_at_utc") or "") or None
+            tables = index.get("tables") if isinstance(index.get("tables"), list) else []
+            documents = index.get("documents") if isinstance(index.get("documents"), list) else []
+            tracked_tables = {"UMOWA", "UMOWACPC", "CPC"}
+            tracked_columns = {
+                "UMOWA": {"DATA_START", "DATA_STOP", "DATA"},
+                "UMOWACPC": {"U_START", "U_STOP", "AKTYWNA", "ROZLICZ"},
+                "CPC": {"ROK", "MIESIAC", "ID_UMOWACPC", "ID_FAKTURA"},
+            }
+            for item in tables:
+                if not isinstance(item, dict):
+                    continue
+                table_name = str(item.get("table_name") or "").strip().upper()
+                if table_name not in tracked_tables:
+                    continue
+                columns = item.get("columns") if isinstance(item.get("columns"), list) else []
+                interesting_columns = [
+                    str(column.get("column_name") or "")
+                    for column in columns
+                    if isinstance(column, dict)
+                    and str(column.get("column_name") or "").strip().upper()
+                    in tracked_columns.get(table_name, set())
+                ]
+                table_refs.append(
+                    {
+                        "table_name": table_name,
+                        "source_path": item.get("source_path"),
+                        "interesting_columns": interesting_columns,
+                    }
+                )
+
+            tracked_docs = (
+                "faktury_umowy.md",
+                "run_C508P203417_nov2025.md",
+                "cpc_update_warning.md",
+            )
+            for item in documents:
+                if not isinstance(item, dict):
+                    continue
+                source_path = str(item.get("source_path") or "").strip()
+                if not source_path:
+                    continue
+                if not any(source_path.endswith(doc_name) for doc_name in tracked_docs):
+                    continue
+                document_refs.append(
+                    {
+                        "title": item.get("title"),
+                        "source_path": source_path,
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            knowledge_error = str(exc).strip() or type(exc).__name__
+
+        summary = (
+            "Rozliczanie umów w MS działa okresowo: ważność umowy określają zakresy dat "
+            "(UMOWA.DATA_START/DATA_STOP oraz UMOWACPC.U_START/U_STOP), a właściwe rozliczenie "
+            "jest miesięczne w tabeli CPC (ROK/MIESIAC) z powiązaniem do faktury przez ID_FAKTURA."
+        )
+        rules = [
+            "Filtr aktywności umowy opiera się o zakres dat obowiązywania, a nie pojedynczą datę.",
+            "Rozliczenie kopii/liczników odbywa się w okresach miesięcznych (CPC.ROK + CPC.MIESIAC).",
+            "Powiązanie rozliczenia z dokumentem sprzedaży realizuje CPC.ID_FAKTURA -> FAKTURA.ID_FAKTURA_TABLE.",
+            "Data wystawienia faktury może być późniejsza niż miesiąc rozliczeniowy CPC (rozliczenia wsteczne).",
+            "Przy raportach okresowych stosuj zakresy START:END i agregację po miesiącach, nie po jednej dacie.",
+        ]
+
+        return {
+            "intent": "contract_settlement_period_explainer",
+            "summary": summary,
+            "rules": rules,
+            "table_references": table_refs,
+            "document_references": document_refs,
+            "knowledge_generated_at_utc": generated_at_utc,
+            "knowledge_error": knowledge_error,
+            "row_count": len(rules),
+        }
+
     def _build_firebird_connect_kwargs(
         self,
         runtime_settings: AssistantToolRuntimeConfig,
@@ -1017,6 +1340,9 @@ class AssistantDataTools:
         months_back: int,
         row_limit: int,
     ) -> dict[str, Any]:
+        if intent == "contract_settlement_period_explainer":
+            return self._build_contract_settlement_knowledge_payload()
+
         connection = self._open_firebird_connection(runtime_settings, runtime_fb_config)
         cursor = None
         try:
@@ -1395,6 +1721,7 @@ class AssistantDataTools:
                 "Dozwolone: devices_by_company, monthly_average_print_by_model, "
                 "company_monthly_print_summary, top_models_by_volume, "
                 "device_monthly_print_by_serial, active_devices_on_contracts, "
+                "contract_settlement_period_explainer, "
                 "active_devices_on_contracts_count."
             )
         finally:
@@ -1464,13 +1791,14 @@ class AssistantDataTools:
 
     async def execute_tool(self, tool_name: str, arguments: dict[str, Any]) -> AssistantToolResult:
         """Uruchamia narzędzie z allowlisty."""
+        result: AssistantToolResult
         if tool_name == "firebird_read":
-            return await self.firebird_read(
+            result = await self.firebird_read(
                 sql=str(arguments.get("sql") or ""),
                 row_limit=arguments.get("row_limit"),
             )
-        if tool_name == "firebird_business_read":
-            return await self.firebird_business_read(
+        elif tool_name == "firebird_business_read":
+            result = await self.firebird_business_read(
                 intent=str(arguments.get("intent") or ""),
                 company_name=(
                     str(arguments.get("company_name")).strip()
@@ -1490,8 +1818,8 @@ class AssistantDataTools:
                 months_back=arguments.get("months_back"),
                 row_limit=arguments.get("row_limit"),
             )
-        if tool_name == "firebird_knowledge_read":
-            return await self.firebird_knowledge_read(
+        elif tool_name == "firebird_knowledge_read":
+            result = await self.firebird_knowledge_read(
                 table_name=(
                     str(arguments.get("table_name")).strip()
                     if arguments.get("table_name") is not None
@@ -1505,8 +1833,8 @@ class AssistantDataTools:
                 include_columns=_to_bool(arguments.get("include_columns"), True),
                 row_limit=arguments.get("row_limit"),
             )
-        if tool_name == "sheets_read":
-            return await self.sheets_read(
+        elif tool_name == "sheets_read":
+            result = await self.sheets_read(
                 worksheet=(
                     str(arguments.get("worksheet")).strip() if arguments.get("worksheet") else None
                 ),
@@ -1517,15 +1845,15 @@ class AssistantDataTools:
                 ),
                 row_limit=arguments.get("row_limit"),
             )
-        if tool_name == "imap_read":
-            return await self.imap_read(
+        elif tool_name == "imap_read":
+            result = await self.imap_read(
                 folder=(str(arguments.get("folder")).strip() if arguments.get("folder") else None),
                 unread_only=_to_bool(arguments.get("unread_only"), True),
                 since_days=arguments.get("since_days"),
                 row_limit=arguments.get("row_limit"),
             )
-        if tool_name == "ctip_schema_read":
-            return await self.ctip_schema_read(
+        elif tool_name == "ctip_schema_read":
+            result = await self.ctip_schema_read(
                 table_name=(
                     str(arguments.get("table_name")).strip()
                     if arguments.get("table_name")
@@ -1535,15 +1863,48 @@ class AssistantDataTools:
                 include_relationships=_to_bool(arguments.get("include_relationships"), True),
                 row_limit=arguments.get("row_limit"),
             )
-        return AssistantToolResult(
-            tool_name=tool_name,
-            status="blocked",
-            payload={},
-            row_count=None,
-            generated_sql=None,
-            error_message="Narzędzie nie znajduje się na liście dozwolonych.",
-            duration_ms=0,
-        )
+        elif tool_name == "email_send_report":
+            result = await self.email_send_report(
+                recipient_email=str(arguments.get("recipient_email") or ""),
+                subject=(
+                    str(arguments.get("subject")).strip()
+                    if arguments.get("subject") is not None
+                    else None
+                ),
+                message_body=(
+                    str(arguments.get("message_body")).strip()
+                    if arguments.get("message_body") is not None
+                    else None
+                ),
+                report_format=(
+                    str(arguments.get("report_format")).strip()
+                    if arguments.get("report_format") is not None
+                    else None
+                ),
+                source_tool=(
+                    str(arguments.get("source_tool")).strip()
+                    if arguments.get("source_tool") is not None
+                    else None
+                ),
+                report_title=(
+                    str(arguments.get("report_title")).strip()
+                    if arguments.get("report_title") is not None
+                    else None
+                ),
+            )
+        else:
+            result = AssistantToolResult(
+                tool_name=tool_name,
+                status="blocked",
+                payload={},
+                row_count=None,
+                generated_sql=None,
+                error_message="Narzędzie nie znajduje się na liście dozwolonych.",
+                duration_ms=0,
+            )
+
+        self._tool_history.append(result)
+        return result
 
 
 __all__ = [

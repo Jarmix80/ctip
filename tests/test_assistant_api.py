@@ -198,6 +198,7 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
                 {"tool": "firebird_knowledge_read", "row_count": 1, "duration_ms": 6},
                 {"tool": "imap_read", "row_count": 2, "duration_ms": 7},
                 {"tool": "ctip_schema_read", "row_count": 1, "duration_ms": 5},
+                {"tool": "email_send_report", "row_count": 1, "duration_ms": 4},
             ],
             blocked_as_change_request=False,
         )
@@ -218,6 +219,7 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["sources"][2]["tool"], "firebird_knowledge_read")
         self.assertEqual(payload["sources"][3]["tool"], "imap_read")
         self.assertEqual(payload["sources"][4]["tool"], "ctip_schema_read")
+        self.assertEqual(payload["sources"][5]["tool"], "email_send_report")
         self.assertFalse(payload["blocked_as_change_request"])
 
     async def test_access_to_foreign_thread_is_forbidden(self) -> None:

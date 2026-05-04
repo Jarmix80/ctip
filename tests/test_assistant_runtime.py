@@ -103,9 +103,11 @@ class AssistantRuntimeConfigTests(unittest.IsolatedAsyncioTestCase):
         names = {item.get("name") for item in tools}
         self.assertIn("firebird_business_read", names)
         self.assertIn("firebird_knowledge_read", names)
+        self.assertIn("email_send_report", names)
         business_tool = next(item for item in tools if item.get("name") == "firebird_business_read")
         intents = business_tool["parameters"]["properties"]["intent"]["enum"]
         self.assertIn("active_devices_on_contracts_count", intents)
+        self.assertIn("contract_settlement_period_explainer", intents)
 
     async def test_build_input_messages_includes_worker_prompt(self) -> None:
         runtime = AssistantRuntime(session=None, secret_key=None)  # type: ignore[arg-type]

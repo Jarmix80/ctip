@@ -81,6 +81,40 @@ class AssistantToolsDispatchTests(unittest.IsolatedAsyncioTestCase):
             row_limit=25,
         )
 
+    async def test_execute_tool_routes_email_send_report(self) -> None:
+        tools = AssistantDataTools(session=None, settings_store_secret=None)  # type: ignore[arg-type]
+        expected = AssistantToolResult(
+            tool_name="email_send_report",
+            status="success",
+            payload={"recipient_email": "user@example.com"},
+            row_count=10,
+            generated_sql=None,
+            error_message=None,
+            duration_ms=8,
+        )
+        tools.email_send_report = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+        result = await tools.execute_tool(
+            "email_send_report",
+            {
+                "recipient_email": "user@example.com",
+                "subject": "Raport",
+                "report_format": "csv",
+                "source_tool": "firebird_business_read",
+                "report_title": "aktywni_klienci",
+            },
+        )
+
+        self.assertEqual(result, expected)
+        tools.email_send_report.assert_awaited_once_with(
+            recipient_email="user@example.com",
+            subject="Raport",
+            message_body=None,
+            report_format="csv",
+            source_tool="firebird_business_read",
+            report_title="aktywni_klienci",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

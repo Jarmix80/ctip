@@ -95,6 +95,7 @@ class AssistantSourceInfo(BaseModel):
         "sheets_read",
         "imap_read",
         "ctip_schema_read",
+        "email_send_report",
     ]
     row_count: int | None = None
     duration_ms: int | None = None

@@ -455,7 +455,7 @@ class AssistantRuntime:
         system_prompt = (
             "Jesteś CTIP AI Asystentem w trybie tylko odczytu. "
             "Możesz korzystać wyłącznie z narzędzi firebird_read, firebird_business_read, "
-            "firebird_knowledge_read, sheets_read, imap_read i ctip_schema_read. "
+            "firebird_knowledge_read, sheets_read, imap_read, ctip_schema_read i email_send_report. "
             "Gdy pytanie dotyczy schematu PostgreSQL CTIP (tabele `ctip.*`, relacje workflow) "
             "użyj ctip_schema_read. "
             "Do pytań o schemat bazy PostgreSQL CTIP nie używaj firebird_read ani sheets_read. "
@@ -469,7 +469,10 @@ class AssistantRuntime:
             "`top_models_by_volume` dla rankingu modeli po wolumenie wydruków, "
             "`device_monthly_print_by_serial` dla historii miesięcznej po numerze seryjnym, "
             "`active_devices_on_contracts` dla listy aktywnych urządzeń na umowach, "
-            "`active_devices_on_contracts_count` dla dokładnej liczby aktywnych urządzeń na umowach. "
+            "`active_devices_on_contracts_count` dla dokładnej liczby aktywnych urządzeń na umowach, "
+            "`contract_settlement_period_explainer` dla wyjaśnienia logiki okresów rozliczeń umów. "
+            "Gdy użytkownik prosi o wysyłkę raportu e-mail, użyj email_send_report "
+            "(odbiorca + temat + format, raport z ostatniego wyniku narzędzia danych). "
             "Jeśli użytkownik nie poda okresu dla modelu, przyjmij ostatnie 12 miesięcy "
             "(ustaw `months_back=12`). "
             "Jeśli model podany przez użytkownika ma różny zapis (np. MPC3004 vs MP C3004), "
@@ -523,6 +526,7 @@ class AssistantRuntime:
                                 "device_monthly_print_by_serial",
                                 "active_devices_on_contracts",
                                 "active_devices_on_contracts_count",
+                                "contract_settlement_period_explainer",
                             ],
                         },
                         "company_name": {"type": "string"},
@@ -532,6 +536,38 @@ class AssistantRuntime:
                         "row_limit": {"type": "integer", "minimum": 1, "maximum": firebird_limit},
                     },
                     "required": ["intent"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "type": "function",
+                "name": "email_send_report",
+                "description": (
+                    "Wysyła raport jako załącznik e-mail przez systemową skrzynkę SMTP CTIP "
+                    "(tę samą, której używają powiadomienia). Raport budowany jest z ostatniego "
+                    "udanego wyniku narzędzia danych."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "recipient_email": {"type": "string"},
+                        "subject": {"type": "string"},
+                        "message_body": {"type": "string"},
+                        "report_format": {"type": "string", "enum": ["csv", "json", "txt"]},
+                        "source_tool": {
+                            "type": "string",
+                            "enum": [
+                                "firebird_read",
+                                "firebird_business_read",
+                                "firebird_knowledge_read",
+                                "sheets_read",
+                                "imap_read",
+                                "ctip_schema_read",
+                            ],
+                        },
+                        "report_title": {"type": "string"},
+                    },
+                    "required": ["recipient_email"],
                     "additionalProperties": False,
                 },
             },

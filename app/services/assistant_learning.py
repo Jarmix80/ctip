@@ -25,6 +25,14 @@ _SERIAL_WORDS_RE = re.compile(r"\b(serial|seryjn)\w*\b", re.IGNORECASE)
 _CONTRACT_WORDS_RE = re.compile(r"\b(umow|kontrakt)\w*\b", re.IGNORECASE)
 _ACTIVE_WORDS_RE = re.compile(r"\b(aktywn|obowiazuj|obowiązuj)\w*\b", re.IGNORECASE)
 _COUNT_WORDS_RE = re.compile(r"\b(ile|ilosc|ilość|liczba|policz|zlicz)\w*\b", re.IGNORECASE)
+_SETTLEMENT_WORDS_RE = re.compile(
+    r"\b(rozlicz|rozliczen|rozliczeń|faktur|okres|zakres|cpc|wstecz)\w*\b",
+    re.IGNORECASE,
+)
+_DATE_SCOPE_WORDS_RE = re.compile(
+    r"\b(data|daty|start|stop|miesiac|miesiąc|miesiecz|miesięcz|rok)\w*\b",
+    re.IGNORECASE,
+)
 _MONTHS_BACK_RE = re.compile(
     r"\b(?:ostatni(?:e|ch)?|za)\s+(\d{1,3})\s+(?:mies|miesiecy|miesięcy|miesi(?:a|ą)c(?:y|e|ach)?)\b",
     re.IGNORECASE,
@@ -172,6 +180,13 @@ def infer_business_intent_from_prompt(
             }
         return {
             "intent": "active_devices_on_contracts",
+        }
+
+    if _CONTRACT_WORDS_RE.search(text) and (
+        _SETTLEMENT_WORDS_RE.search(text) or _DATE_SCOPE_WORDS_RE.search(text)
+    ):
+        return {
+            "intent": "contract_settlement_period_explainer",
         }
 
     model_name = _pick_model_name(text, model_aliases)
@@ -449,6 +464,39 @@ def render_business_tool_answer(payload: dict[str, Any]) -> str:
         if isinstance(total_count, int) and total_count >= 0:
             return f"Dokładna liczba aktywnych urządzeń na umowach: {total_count}."
         return "Nie udało się policzyć aktywnych urządzeń na umowach."
+
+    if intent == "contract_settlement_period_explainer":
+        summary = str(payload.get("summary") or "").strip()
+        rules = payload.get("rules") if isinstance(payload.get("rules"), list) else []
+        table_refs = (
+            payload.get("table_references")
+            if isinstance(payload.get("table_references"), list)
+            else []
+        )
+        lines = [
+            summary
+            or (
+                "Rozliczanie umów działa okresowo: zakres aktywności umowy jest w polach dat, "
+                "a rozliczenie kopii/liczników przebiega miesięcznie po CPC.ROK/CPC.MIESIAC."
+            )
+        ]
+        if rules:
+            lines.append("Kluczowe zasady:")
+            for rule in rules[:8]:
+                lines.append(f"- {str(rule)}")
+        if table_refs:
+            lines.append("Najważniejsze tabele i pola:")
+            for item in table_refs[:6]:
+                if not isinstance(item, dict):
+                    continue
+                table_name = str(item.get("table_name") or "").strip() or "?"
+                fields = item.get("interesting_columns")
+                if isinstance(fields, list) and fields:
+                    fields_text = ", ".join(str(field) for field in fields if str(field).strip())
+                else:
+                    fields_text = "brak"
+                lines.append(f"- {table_name}: {fields_text}")
+        return "\n".join(lines)
 
     if intent == "company_monthly_print_summary":
         company_name = str(criteria.get("company_name") or "").strip() or "wskazana firma"
