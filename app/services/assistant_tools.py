@@ -1300,6 +1300,23 @@ class AssistantDataTools:
                 }
 
             if intent == "active_devices_on_contracts":
+                count_sql = """
+                    SELECT COUNT(*)
+                    FROM MASZYNA m
+                    LEFT JOIN UMOWACPC uc ON uc.ID_UMOWACPC = m.ID_UMOWACPC
+                    WHERE COALESCE(m.ID_UMOWACPC, 0) <> 0
+                      AND (
+                          UPPER(TRIM(COALESCE(m.AKTYWNA, ''))) IN ('T', 'TAK', '1', 'Y', 'YES')
+                          OR UPPER(TRIM(COALESCE(uc.AKTYWNA, ''))) IN ('T', 'TAK', '1', 'Y', 'YES')
+                          OR m.UM_K IS NULL
+                          OR m.UM_K >= CURRENT_DATE
+                          OR uc.U_STOP IS NULL
+                          OR uc.U_STOP >= CURRENT_DATE
+                      )
+                """
+                cursor.execute(count_sql)
+                count_row = cursor.fetchone()
+                total_count = int(count_row[0]) if count_row and count_row[0] is not None else 0
                 sql = """
                     SELECT
                         m.ID_MASZYNA,
@@ -1339,7 +1356,37 @@ class AssistantDataTools:
                     "columns": columns,
                     "rows": mapped_rows,
                     "row_count": len(mapped_rows),
+                    "total_count": total_count,
                     "limited_to": row_limit,
+                    "generated_sql": sql.strip(),
+                }
+
+            if intent == "active_devices_on_contracts_count":
+                sql = """
+                    SELECT COUNT(*)
+                    FROM MASZYNA m
+                    LEFT JOIN UMOWACPC uc ON uc.ID_UMOWACPC = m.ID_UMOWACPC
+                    WHERE COALESCE(m.ID_UMOWACPC, 0) <> 0
+                      AND (
+                          UPPER(TRIM(COALESCE(m.AKTYWNA, ''))) IN ('T', 'TAK', '1', 'Y', 'YES')
+                          OR UPPER(TRIM(COALESCE(uc.AKTYWNA, ''))) IN ('T', 'TAK', '1', 'Y', 'YES')
+                          OR m.UM_K IS NULL
+                          OR m.UM_K >= CURRENT_DATE
+                          OR uc.U_STOP IS NULL
+                          OR uc.U_STOP >= CURRENT_DATE
+                      )
+                """
+                cursor.execute(sql)
+                count_row = cursor.fetchone()
+                total_count = int(count_row[0]) if count_row and count_row[0] is not None else 0
+                return {
+                    "intent": intent,
+                    "criteria": {"active_only": True, "contracts_only": True},
+                    "columns": ["TOTAL_COUNT"],
+                    "rows": [{"TOTAL_COUNT": total_count}],
+                    "row_count": 1,
+                    "total_count": total_count,
+                    "limited_to": 1,
                     "generated_sql": sql.strip(),
                 }
 
@@ -1347,7 +1394,8 @@ class AssistantDataTools:
                 "Nieobsługiwany intent `firebird_business_read`. "
                 "Dozwolone: devices_by_company, monthly_average_print_by_model, "
                 "company_monthly_print_summary, top_models_by_volume, "
-                "device_monthly_print_by_serial, active_devices_on_contracts."
+                "device_monthly_print_by_serial, active_devices_on_contracts, "
+                "active_devices_on_contracts_count."
             )
         finally:
             if cursor is not None:

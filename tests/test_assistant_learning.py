@@ -109,6 +109,11 @@ class AssistantLearningTests(unittest.TestCase):
         self.assertIsNotNone(inferred)
         self.assertEqual(inferred["intent"], "active_devices_on_contracts")
 
+    def test_infers_active_devices_on_contracts_count(self) -> None:
+        inferred = infer_business_intent_from_prompt("Podaj mi ilość urządzeń aktywnych na umowach")
+        self.assertIsNotNone(inferred)
+        self.assertEqual(inferred["intent"], "active_devices_on_contracts_count")
+
 
 if __name__ == "__main__":
     unittest.main()

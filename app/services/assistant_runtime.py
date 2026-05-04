@@ -468,7 +468,8 @@ class AssistantRuntime:
             "`company_monthly_print_summary` dla miesięcznego podsumowania wydruków firmy, "
             "`top_models_by_volume` dla rankingu modeli po wolumenie wydruków, "
             "`device_monthly_print_by_serial` dla historii miesięcznej po numerze seryjnym, "
-            "`active_devices_on_contracts` dla listy aktywnych urządzeń na umowach. "
+            "`active_devices_on_contracts` dla listy aktywnych urządzeń na umowach, "
+            "`active_devices_on_contracts_count` dla dokładnej liczby aktywnych urządzeń na umowach. "
             "Jeśli użytkownik nie poda okresu dla modelu, przyjmij ostatnie 12 miesięcy "
             "(ustaw `months_back=12`). "
             "Jeśli model podany przez użytkownika ma różny zapis (np. MPC3004 vs MP C3004), "
@@ -521,6 +522,7 @@ class AssistantRuntime:
                                 "top_models_by_volume",
                                 "device_monthly_print_by_serial",
                                 "active_devices_on_contracts",
+                                "active_devices_on_contracts_count",
                             ],
                         },
                         "company_name": {"type": "string"},

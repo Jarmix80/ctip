@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AssistantUserProfile
 from app.services.assistant_tools import AssistantToolResult
 
-_DEVICE_WORDS_RE = re.compile(r"\b(urzadzeni|urządzeni|drukark|maszyn)\w*\b", re.IGNORECASE)
+_DEVICE_WORDS_RE = re.compile(
+    r"\b(urzadzen|urządzen|urządzeń|urzadzeni|urządzeni|drukark|maszyn)\w*\b",
+    re.IGNORECASE,
+)
 _PRINT_WORDS_RE = re.compile(
     r"\b(sredni|średni|srednio|średnio|miesiecz|miesięcz|drukuj|wydruk|licznik)\w*\b",
     re.IGNORECASE,
@@ -21,6 +24,7 @@ _TOP_WORDS_RE = re.compile(r"\b(top|najwiecej|najwięcej|ranking|najlepsze model
 _SERIAL_WORDS_RE = re.compile(r"\b(serial|seryjn)\w*\b", re.IGNORECASE)
 _CONTRACT_WORDS_RE = re.compile(r"\b(umow|kontrakt)\w*\b", re.IGNORECASE)
 _ACTIVE_WORDS_RE = re.compile(r"\b(aktywn|obowiazuj|obowiązuj)\w*\b", re.IGNORECASE)
+_COUNT_WORDS_RE = re.compile(r"\b(ile|ilosc|ilość|liczba|policz|zlicz)\w*\b", re.IGNORECASE)
 _MONTHS_BACK_RE = re.compile(
     r"\b(?:ostatni(?:e|ch)?|za)\s+(\d{1,3})\s+(?:mies|miesiecy|miesięcy|miesi(?:a|ą)c(?:y|e|ach)?)\b",
     re.IGNORECASE,
@@ -162,6 +166,10 @@ def infer_business_intent_from_prompt(
         and _CONTRACT_WORDS_RE.search(text)
         and _ACTIVE_WORDS_RE.search(text)
     ):
+        if _COUNT_WORDS_RE.search(text):
+            return {
+                "intent": "active_devices_on_contracts_count",
+            }
         return {
             "intent": "active_devices_on_contracts",
         }
@@ -412,9 +420,16 @@ def render_business_tool_answer(payload: dict[str, Any]) -> str:
         return "\n".join(lines)
 
     if intent == "active_devices_on_contracts":
+        total_count = payload.get("total_count")
         if not rows:
             return "Nie znalazłem aktywnych urządzeń powiązanych z umowami."
-        lines = [f"Znalazłem {len(rows)} aktywnych urządzeń na umowach (limit odpowiedzi)."]
+        if isinstance(total_count, int) and total_count >= 0:
+            lines = [
+                f"Dokładna liczba aktywnych urządzeń na umowach: {total_count}.",
+                f"Poniżej przykładowa lista ({len(rows)} rekordów z limitu odpowiedzi):",
+            ]
+        else:
+            lines = [f"Znalazłem {len(rows)} aktywnych urządzeń na umowach (limit odpowiedzi)."]
         for row in rows[:40]:
             if not isinstance(row, dict):
                 continue
@@ -428,6 +443,12 @@ def render_business_tool_answer(payload: dict[str, Any]) -> str:
                 f"- KLIENT: `{klient}` | MODEL: `{model}` | SERIAL: `{serial}` | EWIDENCJA: `{ewidencja}` | UMOWA: `{umowa}` | AKTYWNA: `{aktywna}`"
             )
         return "\n".join(lines)
+
+    if intent == "active_devices_on_contracts_count":
+        total_count = payload.get("total_count")
+        if isinstance(total_count, int) and total_count >= 0:
+            return f"Dokładna liczba aktywnych urządzeń na umowach: {total_count}."
+        return "Nie udało się policzyć aktywnych urządzeń na umowach."
 
     if intent == "company_monthly_print_summary":
         company_name = str(criteria.get("company_name") or "").strip() or "wskazana firma"
