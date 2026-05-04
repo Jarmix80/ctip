@@ -12,6 +12,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# PowerShell 7+ potrafi traktować stderr z narzędzi natywnych (git/python)
+# jako ErrorRecord mimo poprawnego kodu wyjścia. Wyłączamy to i opieramy
+# walidację na kodach wyjścia.
+if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 function Invoke-GitCommand {
     param(
         [string[]]$GitArgs

@@ -3,7 +3,7 @@ param(
     [string]$GitRemote = "origin",
     [string]$GitBranch = "codex/fix-public-form-checkbox-422",
     [string]$TargetCommit = "",
-    [string]$ExpectedAlembicHead = "8d7a3b9e4c11",
+    [string]$ExpectedAlembicHead = "b8c3e2d91a7f",
     [string[]]$ServiceNames = @("CollectorService", "CTIP-Web", "CTIP-SMS", "CTIP-FormsPublic"),
     [string]$HealthUrl = "http://127.0.0.1:8000/health",
     [switch]$Apply,
@@ -15,6 +15,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# PowerShell 7+ potrafi traktować stderr z narzędzi natywnych (git/python)
+# jako ErrorRecord mimo poprawnego kodu wyjścia. Wyłączamy to i walidujemy
+# wyłącznie po LASTEXITCODE.
+if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Write-Log {
     param([string]$Message)
