@@ -837,6 +837,50 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(setting)
             self.assertEqual(setting.value, "spreadsheet-test-id")
 
+    async def test_update_google_sheets_config_blocked_when_lock_enabled(self):
+        token, _ = await self._login()
+
+        baseline_payload = {
+            "enabled": True,
+            "credentials_path": "/srv/google/prod.json",
+            "spreadsheet_id": "spreadsheet-prod",
+            "workflow_devices_worksheet": "Urzadzenia_magazyn",
+        }
+        response = await self.client.put(
+            "/admin/config/google-sheets",
+            json=baseline_payload,
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+
+        previous_lock = settings.google_sheets_config_lock
+        settings.google_sheets_config_lock = True
+        try:
+            locked_payload = {
+                "enabled": True,
+                "credentials_path": "/srv/google/test.json",
+                "spreadsheet_id": "spreadsheet-test",
+                "workflow_devices_worksheet": "Urzadzenia_magazyn",
+            }
+            response = await self.client.put(
+                "/admin/config/google-sheets",
+                json=locked_payload,
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 423)
+            self.assertIn("GOOGLE_SHEETS_CONFIG_LOCK=true", response.text)
+
+            response = await self.client.get(
+                "/admin/config/google-sheets",
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["credentials_path"], baseline_payload["credentials_path"])
+            self.assertEqual(body["spreadsheet_id"], baseline_payload["spreadsheet_id"])
+        finally:
+            settings.google_sheets_config_lock = previous_lock
+
     @patch("app.api.routes.admin_google_sheets.test_workflow_sheet_connection")
     async def test_google_sheets_test_endpoint_uses_current_configuration(self, mock_test):
         mock_test.return_value = {

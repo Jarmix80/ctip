@@ -317,6 +317,7 @@ Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11`
 | `GOOGLE_APPLICATION_CREDENTIALS` | *(puste)* | Ścieżka do pliku `service account JSON`. Używana tylko wtedy, gdy w panelu admin nie zapisano namespace `google_sheets`. |
 | `GOOGLE_SHEETS_SPREADSHEET_ID` | *(puste)* | Domyślny `spreadsheet_id` skoroszytu FLOW dla fallbacku środowiskowego. |
 | `GOOGLE_SHEETS_WORKFLOW_DEVICES_SHEET` | `Urzadzenia_magazyn` | Domyślna nazwa zakładki urządzeń workflow dla fallbacku środowiskowego. Panel administratora może wskazać inną nazwę, a backend porównuje tytuł zakładki po znormalizowanej postaci. |
+| `GOOGLE_SHEETS_CONFIG_LOCK` | `false` | Gdy ustawione na `true`, backend blokuje zmiany konfiguracji FLOW Google Sheets przez `PUT /admin/config/google-sheets` (HTTP `423 Locked`) i zapisuje próbę w audycie `config_google_sheets_update_blocked_lock`. |
 | `WORKFLOW_SHEET_STATUS_CACHE_SCHEDULER_ENABLED` | `true` | Włącza scheduler okresowego odświeżania lokalnego cache statusów arkusza dla modalu `/flow`. |
 | `WORKFLOW_SHEET_STATUS_CACHE_REFRESH_INTERVAL_SECONDS` | `900` | Interwał odświeżania lokalnego cache statusów arkusza przez scheduler w tle. |
 | `WORKFLOW_SHEET_STATUS_CACHE_STALE_AFTER_SECONDS` | `1800` | Próg oznaczania danych cache jako nieświeżych w UI `/flow`. |

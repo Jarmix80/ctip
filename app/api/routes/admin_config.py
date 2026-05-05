@@ -546,6 +546,48 @@ async def update_google_sheets_config(
     credentials_path = payload.credentials_path.strip()
     spreadsheet_id = normalize_workflow_sheet_spreadsheet_id(payload.spreadsheet_id)
     workflow_devices_worksheet = payload.workflow_devices_worksheet.strip() or "Urzadzenia_magazyn"
+
+    if settings.google_sheets_config_lock:
+        current_config = await load_google_sheets_config(session)
+        requested_differs = any(
+            (
+                payload.enabled != current_config.enabled,
+                credentials_path != current_config.credentials_path,
+                spreadsheet_id != current_config.spreadsheet_id,
+                workflow_devices_worksheet != current_config.workflow_devices_worksheet,
+            )
+        )
+        if requested_differs:
+            await record_audit(
+                session,
+                user_id=admin_user.id,
+                action="config_google_sheets_update_blocked_lock",
+                client_ip=admin_session.client_ip,
+                payload={
+                    "lock_enabled": True,
+                    "current": {
+                        "enabled": current_config.enabled,
+                        "credentials_path": current_config.credentials_path,
+                        "spreadsheet_id": current_config.spreadsheet_id,
+                        "workflow_devices_worksheet": current_config.workflow_devices_worksheet,
+                    },
+                    "requested": {
+                        "enabled": payload.enabled,
+                        "credentials_path": credentials_path,
+                        "spreadsheet_id": spreadsheet_id,
+                        "workflow_devices_worksheet": workflow_devices_worksheet,
+                    },
+                },
+            )
+            await session.commit()
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail=(
+                    "Konfiguracja Google Sheets jest zablokowana "
+                    "(GOOGLE_SHEETS_CONFIG_LOCK=true)."
+                ),
+            )
+
     if payload.enabled and not credentials_path:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

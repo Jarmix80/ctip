@@ -104,6 +104,10 @@ class Settings(BaseSettings):
         default="Urzadzenia_magazyn",
         alias="GOOGLE_SHEETS_WORKFLOW_DEVICES_SHEET",
     )
+    google_sheets_config_lock: bool = Field(
+        default=False,
+        alias="GOOGLE_SHEETS_CONFIG_LOCK",
+    )
     workflow_sheet_status_cache_scheduler_enabled: bool = Field(
         default=True,
         alias="WORKFLOW_SHEET_STATUS_CACHE_SCHEDULER_ENABLED",
