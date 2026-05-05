@@ -2071,8 +2071,10 @@ async def contracts_form_workflow_devices(
                         workflow_case.business_status
                     ),
                 )
-    except RuntimeError as exc:
-        sheet_sync_warning = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        sheet_sync_warning = str(exc).strip() or (
+            f"{type(exc).__name__} podczas synchronizacji arkusza Google."
+        )
 
     if workflow_devices:
         if sheet_sync_result is not None:
@@ -2128,7 +2130,10 @@ async def contracts_form_workflow_devices(
     elif sheet_release_result and not sheet_release_result.get("enabled"):
         sheet_release_warning = str(sheet_release_result.get("reason") or "").strip() or None
     if sheet_sync_warning:
-        message_parts.append("Uwaga: nie udalo sie zsynchronizowac arkusza Google.")
+        message_parts.append(
+            "Uwaga: nie udalo sie zsynchronizowac arkusza Google. "
+            "Zapis pozostaje w CTIP, ale nic nie zapisano w arkuszu."
+        )
     elif sheet_release_warning:
         message_parts.append("Uwaga: nie udalo sie zwolnic poprzednich rezerwacji arkusza.")
     await record_audit(

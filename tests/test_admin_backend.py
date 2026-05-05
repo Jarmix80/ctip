@@ -4999,6 +4999,121 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(devices, [])
 
+    async def test_contracts_form_workflow_devices_survives_sheet_sync_non_runtime_error(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[
+                    {
+                        "row": "21",
+                        "producer": "Ricoh",
+                        "model": "IM 350",
+                        "serial": "",
+                        "ewidencja": "KP/21",
+                        "index": "KP/21",
+                        "name": "Ricoh IM 350",
+                        "status": "Dostepne",
+                        "price": "1900.00",
+                        "price_net": "1544.72",
+                        "price_gross": "1900.00",
+                        "vat_rate": "23",
+                        "reservation": "",
+                        "reservation_status": "brak rezerwacji",
+                        "description": "Ricoh IM 350",
+                        "available_quantity": "1",
+                        "reserved_quantity": "0",
+                        "warehouse_quantity": "1",
+                        "serial_required": "TAK",
+                        "source_type": "firebird_magazyn_28",
+                    }
+                ],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.resolve_workflow_sheet_assignee",
+                new=AsyncMock(
+                    return_value={"id": 17, "login_user": "ls", "label": "Leszek Sprzedaz"}
+                ),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_runtime_config",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                side_effect=ValueError("blad API Google Sheets"),
+            ) as sync_mock,
+            patch(
+                "app.api.routes.admin_contracts.release_workflow_devices_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "released_count": 0,
+                    "rows": [],
+                    "added_headers": [],
+                },
+            ) as release_mock,
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/devices",
+                headers={"X-Admin-Session": token},
+                json={
+                    "devices": [
+                        {
+                            "row": 21,
+                            "source_type": "firebird_magazyn_28",
+                            "price_net": "1544.72",
+                            "price_gross": "1900.00",
+                        }
+                    ],
+                    "sheet_assignee_id": 17,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("Wybor urzadzen zapisany po stronie CTIP.", body["message"])
+        self.assertIn(
+            "Uwaga: nie udalo sie zsynchronizowac arkusza Google. Zapis pozostaje w CTIP, ale nic nie zapisano w arkuszu.",
+            body["message"],
+        )
+        self.assertEqual(body["selected_rows"], [21])
+        sync_mock.assert_called_once()
+        release_mock.assert_not_called()
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form.id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            devices = (
+                (
+                    await session.execute(
+                        select(FormWorkflowDevice).where(
+                            FormWorkflowDevice.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(devices), 1)
+            self.assertEqual(devices[0].source_row, 21)
+            self.assertEqual(devices[0].snapshot.get("sheet_sync_status"), "error")
+            self.assertIn(
+                "Google Sheets",
+                str(devices[0].snapshot.get("sheet_sync_error") or ""),
+            )
+
     async def test_contracts_form_workflow_status_updates_business_status(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()
