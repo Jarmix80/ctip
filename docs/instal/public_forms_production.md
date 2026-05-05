@@ -172,6 +172,23 @@ Jeżeli `HTTP` nadal zwraca `200` zamiast redirectu do `HTTPS`, a `HTTPS` dział
 
 Globalna reguła `forms_public_proxy` z akcją `Rewrite` do `127.0.0.1:8100` spowoduje, że lokalne reguły witryny nie zostaną wykonane dla `HTTP`.
 
+### 3. `500` na `/formularz/{token}` przy działającym `/health`
+Objaw:
+- `https://form.ksero-partner.com.pl/health` zwraca `200`,
+- `https://form.ksero-partner.com.pl/formularz/abc` zwraca `500`,
+- w `D:\CTIP\logs\forms_public\forms_stderr.log` widać błąd połączenia PostgreSQL podczas `get_form_by_token()`.
+
+Zweryfikowane przyczyny:
+- proces `CTIP-FormsPublic` miał niepełne albo nadpisane środowisko `PG*` w `AppEnvironmentExtra`,
+- starszy sterownik `asyncpg` na Windows kończył połączenie błędem `ConnectionDoesNotExistError`, mimo że `psql` i `psycopg` działały poprawnie.
+
+Naprawa utrwalona w repozytorium:
+- aplikacja używa URL SQLAlchemy `postgresql+psycopg://...`,
+- na Windows entrypointy ASGI ustawiają `WindowsSelectorEventLoopPolicy`,
+- skrypt `scripts/windows/fix_forms_public_500.ps1 -Apply` wymusza komplet `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE` w `AppEnvironmentExtra` usługi `CTIP-FormsPublic`; domyślnie ustawia `PGHOST=127.0.0.1`, bo PostgreSQL działa na tym samym serwerze.
+
+Po naprawie fałszywy token powinien zwracać `404` albo `410` ze stroną „Link nieaktywny”, nie `500`.
+
 ## Checklista odbioru
 1. `nslookup form.ksero-partner.com.pl` zwraca publiczny adres IP.
 2. Z Internetu `http://form.ksero-partner.com.pl/health` zwraca `301` i `Location: https://form.ksero-partner.com.pl/health`.

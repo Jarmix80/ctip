@@ -1,21 +1,35 @@
 {
-  "timestamp": "2026-03-03T16:10:00+00:00",
+  "timestamp": "2026-05-05T12:15:00+02:00",
   "summary": [
-    "Wdrożono moduł 'Obsługa umów' pod adresem /contracts (UI + API + integracja z formularzami SUBMITTED).",
-    "Dodano klikalne akcje w dashboardzie umów oraz endpoint /admin/contracts/action (tryb bezpieczny workflow).",
-    "Przebudowano arkusz Google 'Kalendarz_wiersze' pod wielokrotne zdarzenia dzienne i poprawiono formatowanie arkusza 'Urzadzenia'.",
-    "Naprawiono błędy 404/500 po wdrożeniu (restart uvicorn, obsługa błędów Firebird, poprawa ścieżek).",
-    "Skonfigurowano aliasy Firebird dla Menadżera Serwisu: BAZAMS_TEST oraz warianty z doklejanym \\BazaMS.fdb."
+    "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
+    "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
+    "Restart uslug nie wystarczyl: CTIP-FormsPublic nadal zwracal 500, dopoki AppEnvironmentExtra nie zawieral pelnego zestawu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE.",
+    "Na serwerze Windows ustawiono dla CTIP-FormsPublic komplet PG* z D:\\CTIP\\.env z wymuszonym PGHOST=127.0.0.1; po restarcie lokalny i publiczny fałszywy token zwracaja 404.",
+    "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
+    "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
+    "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
+    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
   ],
   "follow_up": [
-    "Dopięcie realnych akcji zapisu do lokalnej Firebird z poziomu modułu 'Obsługa umów'.",
-    "Weryfikacja ręczna pełnego workflow: formularz SUBMITTED -> klient Firebird -> podpięcie urządzeń.",
-    "Utrzymanie testów integracyjnych dla dashboardu i synchronizacji urządzeń z arkusza."
+    "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
+    "Przy kolejnym wdrozeniu sprawdzic: http://127.0.0.1:8100/health, http://127.0.0.1:8100/formularz/abc oraz https://form.ksero-partner.com.pl/formularz/abc.",
+    "Nie usuwac AppEnvironmentExtra PG* z CTIP-FormsPublic, dopoki na serwerze istnieja zmienne procesu/systemu nadpisujace .env."
   ],
   "context": {
-    "branch": "main",
-    "python": "3.12",
+    "repo": "ctip",
+    "branch_local": "codex/fix-public-form-checkbox-422",
     "venv": ".venv",
-    "mode": "contracts-dashboard-firebird-alias-calendar"
+    "focus": "production-public-forms-500-fixed",
+    "verification": [
+      "pre-commit run --all-files: passed",
+      "pytest -q: 371 passed, 1 xfailed, 26 warnings",
+      "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
+      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
+    ],
+    "services": [
+      "CTIP-FormsPublic",
+      "IIS reverse proxy",
+      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
+    ]
   }
 }

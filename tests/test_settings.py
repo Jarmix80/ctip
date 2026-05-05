@@ -24,6 +24,12 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(cfg.sms_test_mode)
         self.assertEqual(cfg.sms_api_url, "")
 
+    def test_database_url_uses_psycopg_async_driver(self) -> None:
+        cfg = Settings(_env_file=None)
+
+        self.assertTrue(cfg.database_url.startswith("postgresql+psycopg://"))
+        self.assertIn("@127.0.0.1:5432/ctip_test", cfg.database_url)
+
     def test_backup_execution_active_respects_explicit_true(self) -> None:
         cfg = Settings(
             BACKUP_EXECUTION_ENABLED=True,

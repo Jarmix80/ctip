@@ -2,10 +2,15 @@
 
 import socket
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_ENV_TEST_FILE = _PROJECT_ROOT / ".env.test"
+_ENV_FILE = _PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -190,7 +195,7 @@ class Settings(BaseSettings):
     office365_folder_optima: str = Field(default="BackupKP/Optima", alias="OFFICE365_FOLDER_OPTIMA")
 
     model_config = SettingsConfigDict(
-        env_file=(".env.test", ".env"),
+        env_file=(str(_ENV_TEST_FILE), str(_ENV_FILE)),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -199,7 +204,7 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         """Zwraca asynchroniczny URL połączenia PostgreSQL."""
         return (
-            f"postgresql+asyncpg://{self.pg_user}:{self.pg_password}"
+            f"postgresql+psycopg://{self.pg_user}:{self.pg_password}"
             f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
         )
 
