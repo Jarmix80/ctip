@@ -703,7 +703,9 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         last_row_separator_y = row_separator_y
         row_y = row_baseline_y - row_step
 
-    totals_row_y = last_row_separator_y - 9.0
+    totals_row_y = last_row_separator_y - 6.0
+    summary_text_shift_y = 5.67  # 2 mm
+    totals_text_y = totals_row_y - summary_text_shift_y
     right_table_left = row_left + sum(col_widths[:4])
     net_total_right = row_left + sum(col_widths[:6]) - 2
     vat_total_right = row_left + sum(col_widths[:8]) - 2
@@ -711,22 +713,22 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     pdf.setLineWidth(1)
     pdf.line(right_table_left, totals_row_y + 6, row_left + sum(col_widths), totals_row_y + 6)
     pdf.setFont(font_bold, 8.9)
-    pdf.drawString(right_table_left, totals_row_y, "Razem:")
+    pdf.drawString(right_table_left, totals_text_y, "Razem:")
     # Kwoty w wierszu "Razem" trzymamy w tej samej typografii co "wg stawki",
     # zeby zachowac idealne wyrownanie startu tekstu dla identycznych wartosci.
     pdf.setFont(font_regular, 7.9)
-    pdf.drawRightString(net_total_right, totals_row_y, str(totals.get("net") or ""))
-    pdf.drawRightString(vat_total_right, totals_row_y, str(totals.get("vat") or ""))
-    pdf.drawRightString(gross_total_right, totals_row_y, str(totals.get("gross") or ""))
+    pdf.drawRightString(net_total_right, totals_text_y, str(totals.get("net") or ""))
+    pdf.drawRightString(vat_total_right, totals_text_y, str(totals.get("vat") or ""))
+    pdf.drawRightString(gross_total_right, totals_text_y, str(totals.get("gross") or ""))
 
     pdf.setFont(font_regular, 7.9)
-    second_totals_y = totals_row_y - 13.2
+    second_totals_y = totals_text_y - 13.2
     pdf.drawString(right_table_left, second_totals_y, "wg stawki 23 %")
     pdf.drawRightString(net_total_right, second_totals_y, str(totals.get("net") or ""))
     pdf.drawRightString(vat_total_right, second_totals_y, str(totals.get("vat") or ""))
     pdf.drawRightString(gross_total_right, second_totals_y, str(totals.get("gross") or ""))
 
-    payment_y = totals_row_y - 28.9
+    payment_y = totals_text_y - 28.9
     pdf.setFont(font_bold_italic, 8.9)
     pdf.drawString(row_left, payment_y, "Razem do zapłaty:")
     pdf.setFont(font_bold, 8.9)
