@@ -703,7 +703,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         last_row_separator_y = row_separator_y
         row_y = row_baseline_y - row_step
 
-    totals_row_y = last_row_separator_y - 6.0
+    totals_row_y = last_row_separator_y - 9.0
     right_table_left = row_left + sum(col_widths[:4])
     net_total_right = row_left + sum(col_widths[:6]) - 2
     vat_total_right = row_left + sum(col_widths[:8]) - 2
