@@ -707,6 +707,9 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     pdf.line(right_table_left, totals_row_y + 6, row_left + sum(col_widths), totals_row_y + 6)
     pdf.setFont(font_bold, 8.9)
     pdf.drawString(right_table_left, totals_row_y, "Razem:")
+    # Kwoty w wierszu "Razem" trzymamy w tej samej typografii co "wg stawki",
+    # zeby zachowac idealne wyrownanie startu tekstu dla identycznych wartosci.
+    pdf.setFont(font_regular, 7.9)
     pdf.drawRightString(net_total_right, totals_row_y, str(totals.get("net") or ""))
     pdf.drawRightString(vat_total_right, totals_row_y, str(totals.get("vat") or ""))
     pdf.drawRightString(gross_total_right, totals_row_y, str(totals.get("gross") or ""))
