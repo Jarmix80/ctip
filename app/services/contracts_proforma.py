@@ -622,7 +622,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
 
     table_header_top_y = 608.20
     table_header_bottom_y = 586.20
-    pdf.setFont(font_bold_italic, 8)
+    pdf.setFont(font_bold_italic, 7.9)
     pdf.setLineWidth(1)
     pdf.line(row_left, table_header_top_y, table_right, table_header_top_y)
     pdf.line(row_left, table_header_bottom_y, table_right, table_header_bottom_y)
@@ -649,17 +649,24 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     pdf.drawCentredString(row_left + sum(col_widths[:7]) + (col_widths[6] / 2), 590.89, "VAT")
     pdf.drawCentredString(row_left + sum(col_widths[:9]) - (col_widths[8] / 2), 590.89, "brutto")
 
-    row_y = 577.12
-    row_font_size = 9.2
-    row_line_step = 10.6
+    row_y = 566.89
+    row_font_size = 7.9
+    row_step = 22.5
+    row_separator_offset = 12.0
+    last_row_separator_y = row_y - row_separator_offset
     pdf.setFont(font_regular, row_font_size)
     for item in line_items:
         if not isinstance(item, dict):
             continue
-        line_label = _build_preview_line_label(item)
-        wrapped_label = simpleSplit(line_label, font_regular, row_font_size, col_widths[1] - 4)
-        predicted_row_height = max(16, len(wrapped_label) * row_line_step + 2)
-        if row_y - predicted_row_height < 180:
+        line_label = _build_pdf_line_label(item)
+        line_label = _truncate_pdf_text_to_width(
+            pdf,
+            line_label,
+            max_width=col_widths[1] - 4,
+            font_name=font_regular,
+            font_size=row_font_size,
+        )
+        if row_y - row_step < 180:
             break
 
         values = [
@@ -674,16 +681,10 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
             str(item.get("gross_value") or ""),
         ]
         row_baseline_y = row_y
-        lowest_text_y = row_baseline_y
         current_x = row_left
         for index, (value, col_width) in enumerate(zip(values, col_widths, strict=False)):
             if index == 1:
-                label_y = row_baseline_y
-                for wrapped_line in wrapped_label:
-                    pdf.drawString(current_x + 2, label_y, wrapped_line)
-                    label_y -= row_line_step
-                if wrapped_label:
-                    lowest_text_y = min(lowest_text_y, label_y + row_line_step - 1.5)
+                pdf.drawString(current_x + 2, row_baseline_y, line_label)
             elif index in {2, 4, 5, 7, 8}:
                 pdf.drawRightString(current_x + col_width - 2, row_baseline_y, value)
             elif index in {0, 3, 6}:
@@ -691,62 +692,64 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
             current_x += col_width
         pdf.setLineWidth(0.55)
         pdf.setDash(1, 2)
-        row_separator_y = lowest_text_y - 8
+        row_separator_y = row_baseline_y - row_separator_offset
         pdf.line(row_left, row_separator_y, table_right, row_separator_y)
         pdf.setDash()
-        row_y = row_separator_y - 9
+        last_row_separator_y = row_separator_y
+        row_y = row_baseline_y - row_step
 
-    totals_y = row_y - 4
+    totals_row_y = last_row_separator_y
     right_table_left = row_left + sum(col_widths[:4])
     net_total_right = row_left + sum(col_widths[:6]) - 2
     vat_total_right = row_left + sum(col_widths[:8]) - 2
     gross_total_right = table_right - 2
     pdf.setLineWidth(1)
-    pdf.line(right_table_left, totals_y + 6, row_left + sum(col_widths), totals_y + 6)
-    pdf.setFont(font_bold, 9)
-    pdf.drawString(right_table_left, totals_y - 6, "Razem:")
-    pdf.drawRightString(net_total_right, totals_y - 6, str(totals.get("net") or ""))
-    pdf.drawRightString(vat_total_right, totals_y - 6, str(totals.get("vat") or ""))
-    pdf.drawRightString(gross_total_right, totals_y - 6, str(totals.get("gross") or ""))
+    pdf.line(right_table_left, totals_row_y + 6, row_left + sum(col_widths), totals_row_y + 6)
+    pdf.setFont(font_bold, 8.9)
+    pdf.drawString(right_table_left, totals_row_y, "Razem:")
+    pdf.drawRightString(net_total_right, totals_row_y, str(totals.get("net") or ""))
+    pdf.drawRightString(vat_total_right, totals_row_y, str(totals.get("vat") or ""))
+    pdf.drawRightString(gross_total_right, totals_row_y, str(totals.get("gross") or ""))
 
-    pdf.setFont(font_regular, 8)
-    pdf.drawString(right_table_left, totals_y - 19, "wg stawki 23 %")
-    pdf.drawRightString(net_total_right, totals_y - 19, str(totals.get("net") or ""))
-    pdf.drawRightString(vat_total_right, totals_y - 19, str(totals.get("vat") or ""))
-    pdf.drawRightString(gross_total_right, totals_y - 19, str(totals.get("gross") or ""))
+    pdf.setFont(font_regular, 7.9)
+    second_totals_y = totals_row_y - 13.2
+    pdf.drawString(right_table_left, second_totals_y, "wg stawki 23 %")
+    pdf.drawRightString(net_total_right, second_totals_y, str(totals.get("net") or ""))
+    pdf.drawRightString(vat_total_right, second_totals_y, str(totals.get("vat") or ""))
+    pdf.drawRightString(gross_total_right, second_totals_y, str(totals.get("gross") or ""))
 
-    payment_y = totals_y - 29
-    pdf.setFont(font_bold_italic, 9)
+    payment_y = totals_row_y - 28.9
+    pdf.setFont(font_bold_italic, 8.9)
     pdf.drawString(row_left, payment_y, "Razem do zapłaty:")
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold, 8.9)
     pdf.drawRightString(row_left + 200, payment_y, str(totals.get("gross") or ""))
-    pdf.setFont(font_bold_italic, 9)
+    pdf.setFont(font_bold_italic, 8.9)
     pdf.drawString(row_left, payment_y - 14, "Zapłacono:")
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold, 8.9)
     pdf.drawRightString(row_left + 200, payment_y - 14, str(totals.get("paid") or ""))
-    pdf.setFont(font_bold_italic, 9)
+    pdf.setFont(font_bold_italic, 8.9)
     pdf.drawString(row_left, payment_y - 28, "Pozostało do zapłaty:")
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold, 8.9)
     pdf.drawRightString(row_left + 200, payment_y - 28, str(totals.get("remaining") or ""))
 
-    pdf.setFont(font_bold_italic, 9)
+    pdf.setFont(font_bold_italic, 7.9)
     pdf.drawString(row_left + 236, payment_y, "Słownie:")
     gross_words = str(totals.get("gross_words") or "")
-    wrapped_words = simpleSplit(gross_words, font_regular, 8.5, 240)
-    pdf.setFont(font_regular, 8.5)
+    wrapped_words = simpleSplit(gross_words, font_regular, 7.9, 240)
+    pdf.setFont(font_regular, 7.9)
     words_y = payment_y - 12
     for wrapped_line in wrapped_words[:2]:
         pdf.drawString(row_left + 236, words_y, wrapped_line)
-        words_y -= 10
+        words_y -= 9
 
-    bank_y = payment_y - 43
-    pdf.setFont(font_bold_italic, 9)
+    bank_y = payment_y - 43.1
+    pdf.setFont(font_bold_italic, 8.9)
     pdf.drawString(row_left, bank_y, "Numer rachunku bankowego:")
-    pdf.setFont(font_regular, 9)
+    pdf.setFont(font_regular, 8.9)
     pdf.drawString(row_left, bank_y - 14, str(seller.get("bank_account") or ""))
 
-    issuer_y = payment_y - 81
-    pdf.setFont(font_regular, 9)
+    issuer_y = payment_y - 81.2
+    pdf.setFont(font_regular, 8.9)
     pdf.drawString(row_left, issuer_y, str(invoice.get("issuer") or ""))
     pdf.line(row_left, issuer_y - 12, row_left + 210, issuer_y - 12)
     pdf.line(row_left + 280, issuer_y - 12, row_left + 490, issuer_y - 12)
@@ -754,20 +757,20 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     pdf.drawCentredString(row_left + 105, issuer_y - 24, "(podpis osoby wystawiającej fakturę)")
     pdf.drawCentredString(row_left + 385, issuer_y - 24, "(podpis osoby odbierającej fakturę)")
 
-    notes_y = issuer_y - 52
+    notes_y = issuer_y - 51.8
     note_text = " | ".join(str(note).strip() for note in notes if str(note).strip())
-    pdf.setFont(font_bold_italic, 9)
+    pdf.setFont(font_bold_italic, 7.9)
     pdf.drawString(row_left, notes_y, "Uwagi:")
     if note_text:
-        pdf.setFont(font_regular, 8.5)
-        wrapped_notes = simpleSplit(note_text, font_regular, 8.5, 340)
+        pdf.setFont(font_regular, 7.9)
+        wrapped_notes = simpleSplit(note_text, font_regular, 7.9, 340)
         draw_y = notes_y
         for wrapped_line in wrapped_notes[:3]:
             pdf.drawString(row_left + 42, draw_y, wrapped_line)
-            draw_y -= 10
+            draw_y -= 9
 
     footer_y = 73.89
-    pdf.setFont(font_italic, 8.5)
+    pdf.setFont(font_italic, 7.9)
     pdf.drawString(
         211.66,
         footer_y,
@@ -954,6 +957,51 @@ def _build_preview_line_label(item: dict[str, Any]) -> str:
     if internal_number and internal_number not in name:
         parts.append(f"nr.wew: {internal_number}")
     return ", ".join(part for part in parts if part).strip() or "Pozycja proformy"
+
+
+def _build_pdf_line_label(item: dict[str, Any]) -> str:
+    """Buduje zwięzłą etykietę pozycji zgodną z wydrukiem wzorca MS."""
+    name = str(item.get("name") or "").strip()
+    serial_number = str(item.get("serial_number") or "").strip()
+    if serial_number and serial_number != "—" and f"S/N :{serial_number}" not in name:
+        if name:
+            return f"{name} S/N :{serial_number}"
+        return f"S/N :{serial_number}"
+    return name or "Pozycja proformy"
+
+
+def _truncate_pdf_text_to_width(
+    pdf,
+    value: str,
+    *,
+    max_width: float,
+    font_name: str,
+    font_size: float,
+) -> str:
+    """Skraca tekst do szerokosci kolumny PDF, dodajac wielokropek."""
+    normalized = " ".join(str(value or "").split())
+    if not normalized:
+        return ""
+    if pdf.stringWidth(normalized, font_name, font_size) <= max_width:
+        return normalized
+
+    ellipsis = "..."
+    lo = 0
+    hi = len(normalized)
+    best = ""
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        candidate = normalized[:mid].rstrip(" ,;:-")
+        if candidate:
+            rendered = f"{candidate}{ellipsis}"
+        else:
+            rendered = ellipsis
+        if pdf.stringWidth(rendered, font_name, font_size) <= max_width:
+            best = rendered
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best or ellipsis
 
 
 def _wrap_pdf_line(text: str, *, width: int) -> list[str]:

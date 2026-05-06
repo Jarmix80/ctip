@@ -77,7 +77,6 @@ def test_render_proforma_pdf_contains_invoice_layout_text():
     assert "Faktura Pro Forma nr: 19/proforma/2026" in text
     assert "GRENKELEASING" in text
     assert "Ricoh MP 401" in text
-    assert "KP/4066" in text
     assert "FLOW formularz 24" in text
     assert "Numer rachunku bankowego:" in text
 
