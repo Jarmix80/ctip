@@ -575,8 +575,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     # Blok metadanych.
     pdf.setFont(font_italic, 7.9)
     pdf.drawString(43.35, 779.80, "Miejsce wystawienia")
-    pdf.drawString(139.08, 779.80, "Data zakończenia dostaw")
-    pdf.drawString(197.62, 770.26, "/usług")
+    pdf.drawString(139.08, 779.80, "Data zakończenia dostaw/usług")
     pdf.drawString(281.12, 779.80, "Data wystawienia")
     pdf.drawString(373.20, 779.80, "Termin płatności")
     pdf.drawString(463.64, 779.80, "Forma płatności")
@@ -606,15 +605,21 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         pdf.setFont(font_bold, 8.9)
         pdf.drawString(buyer_x, name_y_slots[idx], line)
 
+    seller_last_name_y = name_y_slots[min(max(len(seller_name_lines), 1), len(name_y_slots)) - 1]
+    buyer_last_name_y = name_y_slots[min(max(len(buyer_name_lines), 1), len(name_y_slots)) - 1]
+    address_block_top_y = min(seller_last_name_y, buyer_last_name_y) - 17.5
+    city_line_y = address_block_top_y - 15.5
+    nip_line_y = city_line_y - 17.5
+
     pdf.setFont(font_regular, 8.9)
-    pdf.drawString(seller_x, 669.28, str(seller.get("street") or ""))
-    pdf.drawString(buyer_x, 669.28, str(buyer.get("street") or ""))
-    pdf.drawString(seller_x, 652.27, seller_city_line)
-    pdf.drawString(buyer_x, 652.27, buyer_city_line)
-    pdf.drawString(seller_x, 632.43, "NIP:")
-    pdf.drawString(buyer_x, 632.43, "NIP:")
-    pdf.drawString(seller_x + 34.0, 632.43, str(seller.get("nip") or ""))
-    pdf.drawString(buyer_x + 34.0, 632.43, str(buyer.get("nip") or ""))
+    pdf.drawString(seller_x, address_block_top_y, str(seller.get("street") or ""))
+    pdf.drawString(buyer_x, address_block_top_y, str(buyer.get("street") or ""))
+    pdf.drawString(seller_x, city_line_y, seller_city_line)
+    pdf.drawString(buyer_x, city_line_y, buyer_city_line)
+    pdf.drawString(seller_x, nip_line_y, "NIP:")
+    pdf.drawString(buyer_x, nip_line_y, "NIP:")
+    pdf.drawString(seller_x + 34.0, nip_line_y, str(seller.get("nip") or ""))
+    pdf.drawString(buyer_x + 34.0, nip_line_y, str(buyer.get("nip") or ""))
 
     row_left = page_margin
     col_widths = [28, 150, 44, 34, 56, 56, 46, 56, 57]
@@ -698,7 +703,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         last_row_separator_y = row_separator_y
         row_y = row_baseline_y - row_step
 
-    totals_row_y = last_row_separator_y
+    totals_row_y = last_row_separator_y - 6.0
     right_table_left = row_left + sum(col_widths[:4])
     net_total_right = row_left + sum(col_widths[:6]) - 2
     vat_total_right = row_left + sum(col_widths[:8]) - 2
