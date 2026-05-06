@@ -5,11 +5,17 @@ from __future__ import annotations
 import asyncio
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
+from app.db.session import get_db_session
+from app.services.contracts_dashboard import (
+    load_firebird_runtime_config,
+    use_firebird_runtime_config,
+)
 from app.services.contracts_proforma import (
     build_proforma_download_filename,
     build_proforma_pdf_bytes,
@@ -125,20 +131,23 @@ async def flow_invoice_preview_live_page(
     request: Request,
     proforma_firebird_id: int,
     variant: str = Query(default="v1", pattern="^(base|v1)$"),
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> HTMLResponse:
     """Podglad wygenerowanej proformy odczytanej bezposrednio z Firebird."""
-    try:
-        invoice = await _load_invoice_preview_data(proforma_firebird_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        try:
+            invoice = await _load_invoice_preview_data(proforma_firebird_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
 
     if variant == "base":
         return templates.TemplateResponse(
@@ -179,26 +188,31 @@ async def flow_invoice_preview_live_page(
 
 
 @router.get("/flow/proforma/{proforma_firebird_id}/pdf")
-async def flow_invoice_pdf_file(proforma_firebird_id: int) -> Response:
+async def flow_invoice_pdf_file(
+    proforma_firebird_id: int,
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> Response:
     """Zwraca backendowy plik PDF wygenerowanej proformy."""
-    try:
-        invoice = await _load_invoice_preview_data(proforma_firebird_id)
-        pdf_bytes = await _build_invoice_pdf_bytes(proforma_firebird_id, invoice=invoice)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Nie udalo sie wygenerowac PDF: {type(exc).__name__}: {exc}",
-        ) from exc
+    firebird_config = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(firebird_config):
+        try:
+            invoice = await _load_invoice_preview_data(proforma_firebird_id)
+            pdf_bytes = await _build_invoice_pdf_bytes(proforma_firebird_id, invoice=invoice)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Nie udalo sie wygenerowac PDF: {type(exc).__name__}: {exc}",
+            ) from exc
 
     download_filename = build_proforma_download_filename(
         str(invoice.get("document_number") or ""),
