@@ -794,6 +794,25 @@ function initializeGenForm() {
     return `/flow/proforma/${proformaId}/pdf`;
   }
 
+  function buildWorkflowPdfDownloadName(workflow) {
+    const rawNumber = String(workflow?.proforma_number || "").trim();
+    if (rawNumber) {
+      const sanitized = rawNumber
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .replace(/\s+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^[._\s]+|[._\s]+$/g, "");
+      if (sanitized) {
+        return `${sanitized}.pdf`;
+      }
+    }
+    const proformaId = Number(workflow?.proforma_firebird_id || 0);
+    if (Number.isFinite(proformaId) && proformaId > 0) {
+      return `proforma_${proformaId}.pdf`;
+    }
+    return "proforma.pdf";
+  }
+
   function formatMultilineText(lines) {
     return lines.filter(Boolean).map((line) => escapeHtml(line)).join("<br>");
   }
@@ -1304,6 +1323,7 @@ function initializeGenForm() {
   function updateProformaPdfLinks() {
     const workflow = activeWorkflowData?.workflow || {};
     const pdfUrl = getWorkflowPdfUrl(workflow);
+    const downloadName = buildWorkflowPdfDownloadName(workflow);
     [proformaPdfLink, proformaPdfLinkTop].forEach((link) => {
       if (!link) {
         return;
@@ -1311,9 +1331,11 @@ function initializeGenForm() {
       if (pdfUrl) {
         link.hidden = false;
         link.href = pdfUrl;
+        link.setAttribute("download", downloadName);
       } else {
         link.hidden = true;
         link.href = "#";
+        link.removeAttribute("download");
       }
     });
   }
