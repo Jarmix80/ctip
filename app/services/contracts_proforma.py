@@ -527,22 +527,19 @@ def _render_proforma_pdf(invoice: dict[str, Any]) -> bytes:
 
 
 def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
-    from reportlab.lib.pagesizes import A4
     from reportlab.lib.utils import simpleSplit
     from reportlab.pdfgen import canvas
 
-    width, height = A4
+    width, height = (595.2756, 841.8898)
     fonts = _resolve_reportlab_font_names()
     font_regular = fonts.regular
     font_bold = fonts.bold
     font_italic = fonts.italic
     font_bold_italic = fonts.bold_italic
     buffer = BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=A4)
+    pdf = canvas.Canvas(buffer, pagesize=(width, height))
     pdf.setTitle(str(invoice.get("document_number") or "proforma"))
 
-    page_margin = 34
-    content_width = width - (page_margin * 2)
     buyer = invoice.get("buyer") if isinstance(invoice.get("buyer"), dict) else {}
     seller = invoice.get("seller") if isinstance(invoice.get("seller"), dict) else {}
     totals = invoice.get("totals") if isinstance(invoice.get("totals"), dict) else {}
@@ -551,127 +548,118 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     document_title = str(invoice.get("document_title") or "Dokument handlowy").strip()
     document_number = str(invoice.get("document_number") or "").strip()
 
-    buyer_lines = [
-        str(buyer.get("name") or "").strip(),
-        str(buyer.get("street") or "").strip(),
-        " ".join(
-            part.strip()
-            for part in [str(buyer.get("postal_code") or ""), str(buyer.get("city") or "")]
-            if part and part.strip()
-        ).strip(),
-        f"NIP: {str(buyer.get('nip') or '').strip()}",
-    ]
-    seller_lines = [
-        str(seller.get("name") or "").strip(),
-        str(seller.get("street") or "").strip(),
-        " ".join(
-            part.strip()
-            for part in [str(seller.get("postal_code") or ""), str(seller.get("city") or "")]
-            if part and part.strip()
-        ).strip(),
-        f"NIP: {str(seller.get('nip') or '').strip()}",
-    ]
+    seller_city_line = " ".join(
+        part.strip()
+        for part in [str(seller.get("postal_code") or ""), str(seller.get("city") or "")]
+        if part and part.strip()
+    ).strip()
+    buyer_city_line = " ".join(
+        part.strip()
+        for part in [str(buyer.get("postal_code") or ""), str(buyer.get("city") or "")]
+        if part and part.strip()
+    ).strip()
 
-    title_y = height - 62
-    pdf.setFont(font_bold_italic, 15)
-    pdf.drawRightString(
-        width - page_margin,
-        title_y,
-        f"{document_title} nr: {document_number}",
-    )
-    pdf.setLineWidth(1.2)
-    pdf.line(page_margin + 210, title_y - 12, width - page_margin, title_y - 12)
+    seller_name_lines = simpleSplit(str(seller.get("name") or "").strip(), font_bold, 8.9, 232)[:2]
+    buyer_name_lines = simpleSplit(str(buyer.get("name") or "").strip(), font_bold, 8.9, 232)[:2]
 
-    meta_titles = [
-        "Miejsce wystawienia",
-        "Data zakończenia dostaw",
-        "Data wystawienia",
-        "Termin płatności",
-        "Forma płatności",
-    ]
-    meta_values = [
-        str(invoice.get("place_of_issue") or ""),
-        str(invoice.get("service_date") or ""),
-        str(invoice.get("issue_date") or ""),
-        str(invoice.get("payment_due_date") or ""),
-        str(invoice.get("payment_method") or ""),
-    ]
-    meta_y = height - 112
-    meta_widths = [92, 128, 88, 96, 85]
-    current_x = page_margin
-    for title, value, block_width in zip(meta_titles, meta_values, meta_widths, strict=False):
-        wrapped_title = simpleSplit(title, font_italic, 8, block_width)
-        pdf.setFont(font_italic, 8)
-        title_y = meta_y
-        for wrapped_line in wrapped_title[:2]:
-            pdf.drawCentredString(current_x + (block_width / 2), title_y, wrapped_line)
-            title_y -= 8
-        pdf.setFont(font_bold, 9.5)
-        pdf.drawCentredString(current_x + (block_width / 2), meta_y - 20, value)
-        current_x += block_width
+    page_margin = 34
+    right_margin_x = width - page_margin
 
-    parties_top = meta_y - 44
-    party_gap = 28
-    party_width = (content_width - party_gap) / 2
-    party_bottoms: list[float] = []
-    for title, lines, column_x in [
-        ("Nabywca", buyer_lines, page_margin),
-        ("Sprzedawca", seller_lines, page_margin + party_width + party_gap),
-    ]:
-        pdf.setFont(font_bold_italic, 11)
-        pdf.drawString(column_x, parties_top, title)
-        pdf.setLineWidth(1)
-        pdf.line(column_x, parties_top - 7, column_x + party_width, parties_top - 7)
-        line_y = parties_top - 20
-        pdf.setFont(font_regular, 9.5)
-        for line in lines:
-            if not line:
-                continue
-            wrapped_line_parts = simpleSplit(line, font_regular, 9.5, party_width - 4)
-            for wrapped_line in wrapped_line_parts:
-                pdf.drawString(column_x, line_y, wrapped_line)
-                line_y -= 11
-        party_bottoms.append(line_y)
+    # Tytul dokumentu (uklad i pozycja zgodna ze wzorcem MS/Fakturka).
+    title_y = 807.32
+    pdf.setFont(font_bold_italic, 11.9)
+    pdf.drawRightString(right_margin_x, title_y, f"{document_title} nr: {document_number}")
+    pdf.setLineWidth(1.1)
+    pdf.line(212.53, title_y - 10.2, right_margin_x, title_y - 10.2)
 
-    lowest_party_content_y = min(party_bottoms) if party_bottoms else parties_top - 62
-    table_top = lowest_party_content_y - 14
+    # Blok metadanych.
+    pdf.setFont(font_italic, 7.9)
+    pdf.drawString(43.35, 779.80, "Miejsce wystawienia")
+    pdf.drawString(139.08, 779.80, "Data zakończenia dostaw")
+    pdf.drawString(197.62, 770.26, "/usług")
+    pdf.drawString(281.12, 779.80, "Data wystawienia")
+    pdf.drawString(373.20, 779.80, "Termin płatności")
+    pdf.drawString(463.64, 779.80, "Forma płatności")
+
+    pdf.setFont(font_bold, 8.9)
+    pdf.drawString(60.91, 767.58, str(invoice.get("place_of_issue") or ""))
+    pdf.drawString(159.55, 767.58, str(invoice.get("service_date") or ""))
+    pdf.drawString(267.55, 767.58, str(invoice.get("issue_date") or ""))
+    pdf.drawString(359.55, 767.58, str(invoice.get("payment_due_date") or ""))
+    pdf.drawString(456.95, 767.58, str(invoice.get("payment_method") or ""))
+
+    # Naglowki sekcji kontrahentow (we wzorcu: Sprzedawca po lewej, Nabywca po prawej).
+    pdf.setFont(font_bold_italic, 11.9)
+    pdf.drawString(55.76, 737.96, "Sprzedawca")
+    pdf.drawString(296.70, 737.96, "Nabywca")
+    pdf.setLineWidth(1.0)
+    pdf.line(55.76, 730.96, 286.70, 730.96)
+    pdf.line(296.70, 730.96, 527.20, 730.96)
+
+    seller_x = 38.75
+    buyer_x = 279.70
+    name_y_slots = [717.47, 706.97]
+    for idx, line in enumerate(seller_name_lines[:2]):
+        pdf.setFont(font_bold, 8.9)
+        pdf.drawString(seller_x, name_y_slots[idx], line)
+    for idx, line in enumerate(buyer_name_lines[:2]):
+        pdf.setFont(font_bold, 8.9)
+        pdf.drawString(buyer_x, name_y_slots[idx], line)
+
+    pdf.setFont(font_regular, 8.9)
+    pdf.drawString(seller_x, 669.28, str(seller.get("street") or ""))
+    pdf.drawString(buyer_x, 669.28, str(buyer.get("street") or ""))
+    pdf.drawString(seller_x, 652.27, seller_city_line)
+    pdf.drawString(buyer_x, 652.27, buyer_city_line)
+    pdf.drawString(seller_x, 632.43, "NIP:")
+    pdf.drawString(buyer_x, 632.43, "NIP:")
+    pdf.drawString(seller_x + 34.0, 632.43, str(seller.get("nip") or ""))
+    pdf.drawString(buyer_x + 34.0, 632.43, str(buyer.get("nip") or ""))
+
     row_left = page_margin
     col_widths = [28, 150, 44, 34, 56, 56, 46, 56, 57]
-    col_titles = [
-        "Lp.",
-        "Nazwa towaru / usługi",
-        "Ilość",
-        "Jm.",
-        "Cena netto",
-        "Wartość netto",
-        "Stawka VAT",
-        "Kwota VAT",
-        "Wartość brutto",
-    ]
-    current_x = row_left
+    table_right = row_left + sum(col_widths)
+
+    table_header_top_y = 608.20
+    table_header_bottom_y = 586.20
     pdf.setFont(font_bold_italic, 8)
     pdf.setLineWidth(1)
-    pdf.line(row_left, table_top + 10, row_left + sum(col_widths), table_top + 10)
-    pdf.line(row_left, table_top - 12, row_left + sum(col_widths), table_top - 12)
-    for title, col_width in zip(col_titles, col_widths, strict=False):
-        wrapped = simpleSplit(title, font_regular, 7.5, col_width - 4)
-        title_y = table_top + 2
-        for line in wrapped[:2]:
-            pdf.drawCentredString(current_x + (col_width / 2), title_y, line)
-            title_y -= 8
-        current_x += col_width
+    pdf.line(row_left, table_header_top_y, table_right, table_header_top_y)
+    pdf.line(row_left, table_header_bottom_y, table_right, table_header_bottom_y)
 
-    row_y = table_top - 26
+    header_x = row_left
+    pdf.drawCentredString(header_x + (col_widths[0] / 2), 598.89, "Lp.")
+    header_x += col_widths[0]
+    pdf.drawCentredString(header_x + (col_widths[1] / 2), 598.89, "Nazwa towaru / usługi")
+    header_x += col_widths[1]
+    pdf.drawCentredString(header_x + (col_widths[2] / 2), 598.89, "Ilość")
+    header_x += col_widths[2]
+    pdf.drawCentredString(header_x + (col_widths[3] / 2), 598.89, "Jm.")
+    header_x += col_widths[3]
+    pdf.drawCentredString(header_x + (col_widths[4] / 2), 598.89, "Cena netto")
+    header_x += col_widths[4]
+    pdf.drawCentredString(header_x + (col_widths[5] / 2), 598.89, "Wartość")
+    header_x += col_widths[5]
+    pdf.drawCentredString(header_x + (col_widths[6] / 2), 598.89, "Stawka")
+    header_x += col_widths[6]
+    pdf.drawCentredString(header_x + (col_widths[7] / 2), 598.89, "Kwota VAT")
+    header_x += col_widths[7]
+    pdf.drawCentredString(header_x + (col_widths[8] / 2), 598.89, "Wartość")
+    pdf.drawCentredString(row_left + sum(col_widths[:6]) + (col_widths[5] / 2), 590.89, "netto")
+    pdf.drawCentredString(row_left + sum(col_widths[:7]) + (col_widths[6] / 2), 590.89, "VAT")
+    pdf.drawCentredString(row_left + sum(col_widths[:9]) - (col_widths[8] / 2), 590.89, "brutto")
+
+    row_y = 577.12
     row_font_size = 9.2
-    row_line_step = 12
+    row_line_step = 10.6
     pdf.setFont(font_regular, row_font_size)
     for item in line_items:
         if not isinstance(item, dict):
             continue
         line_label = _build_preview_line_label(item)
         wrapped_label = simpleSplit(line_label, font_regular, row_font_size, col_widths[1] - 4)
-        predicted_row_height = max(36, len(wrapped_label) * row_line_step + 14)
-        if row_y - predicted_row_height < 150:
+        predicted_row_height = max(16, len(wrapped_label) * row_line_step + 2)
+        if row_y - predicted_row_height < 180:
             break
 
         values = [
@@ -685,7 +673,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
             str(item.get("vat_value") or ""),
             str(item.get("gross_value") or ""),
         ]
-        row_baseline_y = row_y - 4
+        row_baseline_y = row_y
         lowest_text_y = row_baseline_y
         current_x = row_left
         for index, (value, col_width) in enumerate(zip(values, col_widths, strict=False)):
@@ -695,22 +683,24 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
                     pdf.drawString(current_x + 2, label_y, wrapped_line)
                     label_y -= row_line_step
                 if wrapped_label:
-                    lowest_text_y = min(lowest_text_y, label_y + row_line_step)
+                    lowest_text_y = min(lowest_text_y, label_y + row_line_step - 1.5)
             elif index in {2, 4, 5, 7, 8}:
                 pdf.drawRightString(current_x + col_width - 2, row_baseline_y, value)
             elif index in {0, 3, 6}:
                 pdf.drawCentredString(current_x + (col_width / 2), row_baseline_y, value)
             current_x += col_width
-        pdf.setLineWidth(0.4)
-        row_separator_y = lowest_text_y - 10
-        pdf.line(row_left, row_separator_y, row_left + sum(col_widths), row_separator_y)
-        row_y = row_separator_y - 10
+        pdf.setLineWidth(0.55)
+        pdf.setDash(1, 2)
+        row_separator_y = lowest_text_y - 8
+        pdf.line(row_left, row_separator_y, table_right, row_separator_y)
+        pdf.setDash()
+        row_y = row_separator_y - 9
 
     totals_y = row_y - 4
     right_table_left = row_left + sum(col_widths[:4])
     net_total_right = row_left + sum(col_widths[:6]) - 2
     vat_total_right = row_left + sum(col_widths[:8]) - 2
-    gross_total_right = row_left + sum(col_widths) - 2
+    gross_total_right = table_right - 2
     pdf.setLineWidth(1)
     pdf.line(right_table_left, totals_y + 6, row_left + sum(col_widths), totals_y + 6)
     pdf.setFont(font_bold, 9)
@@ -725,7 +715,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     pdf.drawRightString(vat_total_right, totals_y - 19, str(totals.get("vat") or ""))
     pdf.drawRightString(gross_total_right, totals_y - 19, str(totals.get("gross") or ""))
 
-    payment_y = totals_y - 44
+    payment_y = totals_y - 29
     pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, payment_y, "Razem do zapłaty:")
     pdf.setFont(font_bold, 9)
@@ -749,22 +739,22 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         pdf.drawString(row_left + 236, words_y, wrapped_line)
         words_y -= 10
 
-    bank_y = payment_y - 60
+    bank_y = payment_y - 43
     pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, bank_y, "Numer rachunku bankowego:")
     pdf.setFont(font_regular, 9)
     pdf.drawString(row_left, bank_y - 14, str(seller.get("bank_account") or ""))
 
-    issuer_y = bank_y - 60
+    issuer_y = payment_y - 81
     pdf.setFont(font_regular, 9)
     pdf.drawString(row_left, issuer_y, str(invoice.get("issuer") or ""))
     pdf.line(row_left, issuer_y - 12, row_left + 210, issuer_y - 12)
     pdf.line(row_left + 280, issuer_y - 12, row_left + 490, issuer_y - 12)
-    pdf.setFont(font_regular, 7.5)
+    pdf.setFont(font_italic, 6.9)
     pdf.drawCentredString(row_left + 105, issuer_y - 24, "(podpis osoby wystawiającej fakturę)")
     pdf.drawCentredString(row_left + 385, issuer_y - 24, "(podpis osoby odbierającej fakturę)")
 
-    notes_y = issuer_y - 42
+    notes_y = issuer_y - 52
     note_text = " | ".join(str(note).strip() for note in notes if str(note).strip())
     pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, notes_y, "Uwagi:")
@@ -776,21 +766,28 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
             pdf.drawString(row_left + 42, draw_y, wrapped_line)
             draw_y -= 10
 
-    footer_y = 86
+    footer_y = 73.89
     pdf.setFont(font_italic, 8.5)
     pdf.drawString(
-        row_left,
+        211.66,
         footer_y,
         "ZMIANA NUMERU KONTA ! UWAGA: Towar pozostaje własnością KSERO-PARTNER SK",
     )
     pdf.drawString(
-        row_left,
-        footer_y - 11,
-        "do czasu całkowitej zapłaty. Za zwłokę naliczamy odsetki.",
+        211.66,
+        footer_y - 22.84,
+        "do czasu całkowitej zapłaty. Za zwłokę naliczamy",
     )
-    pdf.setFont(font_italic, 7)
-    pdf.drawString(row_left, footer_y - 27, "Menadżer Serwisu i Fakturka - Serwisoft.pl")
-    pdf.drawRightString(width - page_margin, footer_y - 27, "1 z 1 Strona")
+    pdf.drawString(
+        211.66,
+        footer_y - 32.38,
+        "odsetki.",
+    )
+    pdf.setFont(font_italic, 5.9)
+    pdf.drawString(404.15, 21.34, "Menadżer Serwisu i Fakturka - Serwisoft.pl")
+    pdf.setFont(font_italic, 8.9)
+    pdf.drawString(500.05, 36.32, "1 z 1")
+    pdf.drawString(466.93, 36.32, "Strona")
 
     pdf.showPage()
     pdf.save()
