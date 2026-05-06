@@ -601,6 +601,131 @@ def test_release_workflow_devices_from_sheet_restores_previous_status_and_clears
     )
 
 
+def test_release_workflow_devices_from_sheet_falls_back_when_sheet_row_is_stale():
+    workbook_requests = []
+    worksheet = SimpleNamespace(
+        title="Urzadzenia_magazyn",
+        id=12,
+        values=[
+            [
+                "PRODUCENT",
+                "MODEL",
+                "SERIAL",
+                "EWIDENCJA",
+                "STATUS",
+                "LICZNIK B/W",
+                "LICZNIK KOLOR",
+                "CENA",
+                "UWAGI",
+                "REZERWACJA GRENKE",
+                "Osoba obsługująca",
+                "FORMULARZ CTIP",
+                "FAKTURA PROFORMA GRENKE",
+                "CTIP_FORM_ID",
+                "CTIP_WORKFLOW_CASE_ID",
+                "STATUS HANDLOWY (LEGACY)",
+                "MS_ID_MAGAZYN_TABLE",
+            ],
+            [
+                "Ricoh",
+                "IM 350",
+                "",
+                "KP/9999",
+                "Dostepne",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "99999",
+            ],
+            [
+                "Ricoh",
+                "MP 401",
+                "T605H900327",
+                "KP/4066",
+                "01. Przed zerówką",
+                "",
+                "",
+                "",
+                "Rezerwacja zalozona automatycznie przez CTIP.",
+                "Marcin Jarmuszkiewicz",
+                "",
+                "23",
+                "",
+                "23",
+                "8",
+                "Robocza",
+                "12922",
+            ],
+        ],
+    )
+    worksheet.get_all_values = lambda: [list(row) for row in worksheet.values]
+    worksheet.batch_update = lambda updates, value_input_option=None: _apply_batch_update(
+        worksheet, updates
+    )
+    workbook = SimpleNamespace(
+        title="zerowki_testowy",
+        batch_update=lambda body: workbook_requests.append(body),
+    )
+
+    with (
+        patch.object(
+            workflow_sheet_sync,
+            "_open_workbook",
+            return_value=(workbook, "bot@example.com"),
+        ),
+        patch.object(
+            workflow_sheet_sync,
+            "_resolve_devices_worksheet",
+            return_value=worksheet,
+        ),
+        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+    ):
+        result = workflow_sheet_sync.release_workflow_devices_from_sheet(
+            devices=[
+                {
+                    "source_row": 12922,
+                    "row": 12922,
+                    "sheet_row": 2,
+                    "index": "KP/4066",
+                    "ewidencja": "KP/4066",
+                    "sheet_previous_status": "01. Przed zerówką",
+                }
+            ]
+        )
+
+    assert result["enabled"] is True
+    assert result["released_count"] == 1
+    assert result["rows"][0]["sheet_row"] == 3
+    assert worksheet.values[1][4] == "Dostepne"
+    assert worksheet.values[2][4] == "01. Przed zerówką"
+    assert worksheet.values[2][8] == ""
+    assert worksheet.values[2][9] == ""
+    assert worksheet.values[2][11] == ""
+    assert worksheet.values[2][12] == ""
+    assert worksheet.values[2][13] == ""
+    assert worksheet.values[2][14] == ""
+    assert worksheet.values[2][15] == ""
+    assert any(
+        request.get("repeatCell", {}).get("range", {}).get("startRowIndex") == 2
+        and request.get("repeatCell", {}).get("range", {}).get("endRowIndex") == 3
+        and request.get("repeatCell", {})
+        .get("cell", {})
+        .get("userEnteredFormat", {})
+        .get("backgroundColor")
+        == workflow_sheet_sync.WORKFLOW_DEFAULT_ROW_COLOR
+        for body in workbook_requests
+        for request in body.get("requests", [])
+    )
+
+
 def test_clear_workflow_proforma_from_sheet_clears_only_proforma_column():
     workbook_requests = []
     worksheet = SimpleNamespace(

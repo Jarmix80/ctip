@@ -2076,6 +2076,20 @@ async def contracts_form_workflow_devices(
             f"{type(exc).__name__} podczas synchronizacji arkusza Google."
         )
 
+    if (
+        removed_sheet_payloads
+        and sheet_release_result
+        and sheet_release_result.get("enabled")
+        and not sheet_release_warning
+    ):
+        released_count = int(sheet_release_result.get("released_count") or 0)
+        expected_count = len(removed_sheet_payloads)
+        if released_count < expected_count:
+            sheet_release_warning = (
+                "Nie udalo sie zwolnic wszystkich poprzednich rezerwacji arkusza "
+                f"({released_count}/{expected_count})."
+            )
+
     if workflow_devices:
         if sheet_sync_result is not None:
             if sheet_sync_result.get("enabled"):

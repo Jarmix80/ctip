@@ -1233,6 +1233,32 @@ def _coerce_source_row_text(device: dict[str, Any]) -> str:
     return str(int_value)
 
 
+def _row_matches_device_identity(
+    row_values: list[str],
+    header_index: dict[str, int],
+    device: dict[str, Any],
+) -> bool:
+    source_row_text = _coerce_source_row_text(device)
+    source_idx = header_index.get("ms_id_magazyn_table")
+    if source_row_text and source_idx is not None:
+        if _row_value(row_values, source_idx) != source_row_text:
+            return False
+
+    index_key = _normalize_device_key(device.get("index") or device.get("ewidencja"))
+    index_idx = header_index.get("index")
+    if index_key and index_idx is not None:
+        if _normalize_device_key(_row_value(row_values, index_idx)) != index_key:
+            return False
+
+    serial_key = _normalize_device_key(device.get("serial"))
+    serial_idx = header_index.get("serial")
+    if serial_key and serial_idx is not None:
+        if _normalize_device_key(_row_value(row_values, serial_idx)) != serial_key:
+            return False
+
+    return True
+
+
 def _find_matching_row_number(
     data_rows: list[list[str]],
     header_index: dict[str, int],
@@ -1240,7 +1266,9 @@ def _find_matching_row_number(
 ) -> int | None:
     sheet_row = _coerce_int(device.get("sheet_row"))
     if sheet_row is not None and 2 <= sheet_row <= (len(data_rows) + 1):
-        return sheet_row
+        candidate_row = data_rows[sheet_row - 2]
+        if _row_matches_device_identity(candidate_row, header_index, device):
+            return sheet_row
 
     source_row_text = _coerce_source_row_text(device)
     if source_row_text:

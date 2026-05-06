@@ -5043,6 +5043,119 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(devices, [])
 
+    async def test_contracts_form_workflow_devices_reports_partial_sheet_release(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            workflow_case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="DEVICES_SELECTED",
+                business_status="DRAFT",
+            )
+            session.add(workflow_case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=workflow_case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=21,
+                    producer="Ricoh",
+                    model="IM 350",
+                    ewidencja="KP/21",
+                    price_net="1544.72",
+                    price_gross="1900.00",
+                    snapshot={
+                        "row": 21,
+                        "source_type": "firebird_magazyn_28",
+                        "producer": "Ricoh",
+                        "model": "IM 350",
+                        "ewidencja": "KP/21",
+                        "sheet_row": 11,
+                        "sheet_sync_status": "synced",
+                    },
+                )
+            )
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.load_workflow_sheet_runtime_config",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.api.routes.admin_contracts.release_workflow_devices_from_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "released_count": 0,
+                    "rows": [],
+                    "added_headers": [],
+                },
+            ) as release_mock,
+            patch(
+                "app.api.routes.admin_contracts.sync_workflow_devices_to_sheet",
+                return_value={
+                    "enabled": True,
+                    "reason": None,
+                    "worksheet_title": "Urzadzenia_magazyn",
+                    "synced_count": 0,
+                    "rows": [],
+                    "added_headers": [],
+                },
+            ) as sync_mock,
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/devices",
+                headers={"X-Admin-Session": token},
+                json={"devices": []},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("Usunieto powiazane urzadzenia ze sprawy CTIP.", body["message"])
+        self.assertIn(
+            "Uwaga: nie udalo sie zwolnic poprzednich rezerwacji arkusza.",
+            body["message"],
+        )
+        self.assertEqual(
+            body["sheet_release_warning"],
+            "Nie udalo sie zwolnic wszystkich poprzednich rezerwacji arkusza (0/1).",
+        )
+        release_mock.assert_called_once()
+        sync_mock.assert_not_called()
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form.id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            devices = (
+                (
+                    await session.execute(
+                        select(FormWorkflowDevice).where(
+                            FormWorkflowDevice.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(devices, [])
+
     async def test_contracts_form_workflow_devices_survives_sheet_sync_non_runtime_error(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()

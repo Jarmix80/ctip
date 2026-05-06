@@ -302,6 +302,7 @@ function initializeGenForm() {
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
   let activeArchiveScope = "active";
+  let proformaPdfDownloadBusy = false;
   setDefaultExpiresOn();
 
   function setBusy(element, busy, labelBusy, labelIdle) {
@@ -428,11 +429,14 @@ function initializeGenForm() {
     if (proformaPdfLink) {
       proformaPdfLink.hidden = true;
       proformaPdfLink.href = "#";
+      proformaPdfLink.removeAttribute("aria-disabled");
     }
     if (proformaPdfLinkTop) {
       proformaPdfLinkTop.hidden = true;
       proformaPdfLinkTop.href = "#";
+      proformaPdfLinkTop.removeAttribute("aria-disabled");
     }
+    proformaPdfDownloadBusy = false;
   }
 
   function showLogin(message = "") {
@@ -1338,6 +1342,84 @@ function initializeGenForm() {
         link.removeAttribute("download");
       }
     });
+  }
+
+  function setProformaPdfDownloadBusy(isBusy) {
+    proformaPdfDownloadBusy = isBusy;
+    [proformaPdfLink, proformaPdfLinkTop].forEach((link) => {
+      if (!link) {
+        return;
+      }
+      if (isBusy) {
+        link.dataset.originalLabel = link.dataset.originalLabel || link.textContent || "Zapisz do PDF";
+        link.textContent = "Pobieranie...";
+        link.setAttribute("aria-disabled", "true");
+      } else {
+        link.textContent = link.dataset.originalLabel || "Zapisz do PDF";
+        link.removeAttribute("aria-disabled");
+      }
+    });
+  }
+
+  async function handleProformaPdfDownload(link) {
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (proformaPdfDownloadBusy) {
+      return;
+    }
+    const pdfUrl = String(link.getAttribute("href") || "").trim();
+    if (!pdfUrl || pdfUrl === "#") {
+      showError("Brak aktywnego linku PDF dla tej proformy.");
+      return;
+    }
+
+    clearMessages();
+    setProformaPdfDownloadBusy(true);
+    try {
+      const response = await fetch(pdfUrl, {
+        method: "GET",
+        headers: headers(false),
+      });
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+        if (contentType.includes("application/json")) {
+          const payload = await response.json().catch(() => ({}));
+          if (payload && typeof payload.detail === "string" && payload.detail.trim()) {
+            detail = payload.detail.trim();
+          }
+        }
+        throw new Error(detail);
+      }
+
+      const blob = await response.blob();
+      if (!blob || blob.size <= 0) {
+        throw new Error("Serwer zwrocil pusty plik PDF.");
+      }
+      const objectUrl = window.URL.createObjectURL(blob);
+      try {
+        const downloadName = String(link.getAttribute("download") || "").trim() || "proforma.pdf";
+        const tempLink = document.createElement("a");
+        tempLink.href = objectUrl;
+        tempLink.download = downloadName;
+        tempLink.rel = "noopener";
+        document.body.appendChild(tempLink);
+        tempLink.click();
+        tempLink.remove();
+      } finally {
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+      }
+      showSuccess("Pobieranie proformy PDF rozpoczete.");
+    } catch (err) {
+      const detail =
+        err instanceof Error && err.message
+          ? err.message
+          : "Nie udalo sie pobrac pliku PDF z serwera.";
+      showError(`Nie udalo sie pobrac pliku PDF: ${detail}`);
+    } finally {
+      setProformaPdfDownloadBusy(false);
+    }
   }
 
   function updateProformaState() {
@@ -2511,6 +2593,18 @@ function initializeGenForm() {
   statusCloseBtn?.addEventListener("click", closeStatusModal);
   summaryCloseBtn?.addEventListener("click", closeSummaryModal);
   proformaCloseBtn?.addEventListener("click", closeProformaModal);
+  proformaPdfLink?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (event.currentTarget instanceof HTMLAnchorElement) {
+      void handleProformaPdfDownload(event.currentTarget);
+    }
+  });
+  proformaPdfLinkTop?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (event.currentTarget instanceof HTMLAnchorElement) {
+      void handleProformaPdfDownload(event.currentTarget);
+    }
+  });
   detailDataEnteredBtn?.addEventListener("click", sendDataEnteredNotification);
   detailPrintBtn?.addEventListener("click", () => triggerDetailPrint("print"));
   detailPdfBtn?.addEventListener("click", () => triggerDetailPrint("pdf"));
