@@ -489,13 +489,20 @@ def ensure_proforma_pdf_file(
     proforma_firebird_id: int, *, invoice: dict[str, Any] | None = None
 ) -> Path:
     """Generuje fizyczny plik PDF proformy i zwraca sciezke pliku."""
+    output_path = build_proforma_pdf_storage_path(proforma_firebird_id)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(build_proforma_pdf_bytes(proforma_firebird_id, invoice=invoice))
+    return output_path
+
+
+def build_proforma_pdf_bytes(
+    proforma_firebird_id: int, *, invoice: dict[str, Any] | None = None
+) -> bytes:
+    """Generuje zawartosc PDF proformy bez zapisu na dysku."""
     invoice_payload = (
         invoice if invoice is not None else load_proforma_preview_data(proforma_firebird_id)
     )
-    output_path = build_proforma_pdf_storage_path(proforma_firebird_id)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(_render_proforma_pdf(invoice_payload))
-    return output_path
+    return _render_proforma_pdf(invoice_payload)
 
 
 def _render_proforma_pdf(invoice: dict[str, Any]) -> bytes:
@@ -1565,6 +1572,7 @@ __all__ = [
     "FirebirdProformaWriteResult",
     "amount_to_polish_words",
     "build_proforma_download_filename",
+    "build_proforma_pdf_bytes",
     "build_proforma_pdf_url",
     "build_proforma_preview_url",
     "ensure_proforma_pdf_file",

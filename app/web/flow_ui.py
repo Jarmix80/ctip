@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette import status
 
 from app.services.contracts_proforma import (
     build_proforma_download_filename,
-    ensure_proforma_pdf_file,
+    build_proforma_pdf_bytes,
     load_proforma_preview_data,
 )
 
@@ -179,11 +179,11 @@ async def flow_invoice_preview_live_page(
 
 
 @router.get("/flow/proforma/{proforma_firebird_id}/pdf")
-async def flow_invoice_pdf_file(proforma_firebird_id: int) -> FileResponse:
+async def flow_invoice_pdf_file(proforma_firebird_id: int) -> Response:
     """Zwraca backendowy plik PDF wygenerowanej proformy."""
     try:
         invoice = await _load_invoice_preview_data(proforma_firebird_id)
-        pdf_path = await _ensure_invoice_pdf_file(proforma_firebird_id, invoice=invoice)
+        pdf_bytes = await _build_invoice_pdf_bytes(proforma_firebird_id, invoice=invoice)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -194,14 +194,24 @@ async def flow_invoice_pdf_file(proforma_firebird_id: int) -> FileResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Nie udalo sie wygenerowac PDF: {type(exc).__name__}: {exc}",
+        ) from exc
 
-    return FileResponse(
-        path=pdf_path,
+    download_filename = build_proforma_download_filename(
+        str(invoice.get("document_number") or ""),
+        fallback_id=proforma_firebird_id,
+    )
+    encoded_filename = quote(download_filename, safe="")
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
-        filename=build_proforma_download_filename(
-            str(invoice.get("document_number") or ""),
-            fallback_id=proforma_firebird_id,
-        ),
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Cache-Control": "no-store",
+        },
     )
 
 
@@ -209,10 +219,10 @@ async def _load_invoice_preview_data(proforma_firebird_id: int) -> dict:
     return await asyncio.to_thread(load_proforma_preview_data, proforma_firebird_id)
 
 
-async def _ensure_invoice_pdf_file(
+async def _build_invoice_pdf_bytes(
     proforma_firebird_id: int, *, invoice: dict | None = None
-) -> Path:
-    return await asyncio.to_thread(ensure_proforma_pdf_file, proforma_firebird_id, invoice=invoice)
+) -> bytes:
+    return await asyncio.to_thread(build_proforma_pdf_bytes, proforma_firebird_id, invoice=invoice)
 
 
 __all__ = ["router"]
