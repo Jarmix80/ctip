@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from app.db.session import get_db_session
+from app.api.deps import get_db_session
 from app.services.contracts_dashboard import (
     load_firebird_runtime_config,
     use_firebird_runtime_config,
