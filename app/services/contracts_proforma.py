@@ -36,6 +36,16 @@ DOCUMENT_TITLE_BY_KIND = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class ReportlabFontNames:
+    """Nazwy fontow ReportLab dopasowane do zatwierdzonego wygladu proformy."""
+
+    regular: str
+    bold: str
+    italic: str
+    bold_italic: str
+
+
 @dataclass(slots=True)
 class FirebirdWarehouseDetails:
     """Szczegoly pozycji magazynowej potrzebne do wystawienia proformy."""
@@ -522,7 +532,11 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     from reportlab.pdfgen import canvas
 
     width, height = A4
-    font_regular, font_bold = _resolve_reportlab_font_names()
+    fonts = _resolve_reportlab_font_names()
+    font_regular = fonts.regular
+    font_bold = fonts.bold
+    font_italic = fonts.italic
+    font_bold_italic = fonts.bold_italic
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     pdf.setTitle(str(invoice.get("document_number") or "proforma"))
@@ -559,7 +573,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     ]
 
     title_y = height - 62
-    pdf.setFont(font_bold, 15)
+    pdf.setFont(font_bold_italic, 15)
     pdf.drawRightString(
         width - page_margin,
         title_y,
@@ -586,8 +600,8 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     meta_widths = [92, 128, 88, 96, 85]
     current_x = page_margin
     for title, value, block_width in zip(meta_titles, meta_values, meta_widths, strict=False):
-        wrapped_title = simpleSplit(title, font_regular, 8, block_width)
-        pdf.setFont(font_regular, 8)
+        wrapped_title = simpleSplit(title, font_italic, 8, block_width)
+        pdf.setFont(font_italic, 8)
         title_y = meta_y
         for wrapped_line in wrapped_title[:2]:
             pdf.drawCentredString(current_x + (block_width / 2), title_y, wrapped_line)
@@ -604,7 +618,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         ("Nabywca", buyer_lines, page_margin),
         ("Sprzedawca", seller_lines, page_margin + party_width + party_gap),
     ]:
-        pdf.setFont(font_bold, 11)
+        pdf.setFont(font_bold_italic, 11)
         pdf.drawString(column_x, parties_top, title)
         pdf.setLineWidth(1)
         pdf.line(column_x, parties_top - 7, column_x + party_width, parties_top - 7)
@@ -635,7 +649,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         "Wartość brutto",
     ]
     current_x = row_left
-    pdf.setFont(font_bold, 8)
+    pdf.setFont(font_bold_italic, 8)
     pdf.setLineWidth(1)
     pdf.line(row_left, table_top + 10, row_left + sum(col_widths), table_top + 10)
     pdf.line(row_left, table_top - 12, row_left + sum(col_widths), table_top - 12)
@@ -712,15 +726,20 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
     pdf.drawRightString(gross_total_right, totals_y - 19, str(totals.get("gross") or ""))
 
     payment_y = totals_y - 44
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, payment_y, "Razem do zapłaty:")
+    pdf.setFont(font_bold, 9)
     pdf.drawRightString(row_left + 200, payment_y, str(totals.get("gross") or ""))
+    pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, payment_y - 14, "Zapłacono:")
+    pdf.setFont(font_bold, 9)
     pdf.drawRightString(row_left + 200, payment_y - 14, str(totals.get("paid") or ""))
+    pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, payment_y - 28, "Pozostało do zapłaty:")
+    pdf.setFont(font_bold, 9)
     pdf.drawRightString(row_left + 200, payment_y - 28, str(totals.get("remaining") or ""))
 
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left + 236, payment_y, "Słownie:")
     gross_words = str(totals.get("gross_words") or "")
     wrapped_words = simpleSplit(gross_words, font_regular, 8.5, 240)
@@ -731,7 +750,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         words_y -= 10
 
     bank_y = payment_y - 60
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, bank_y, "Numer rachunku bankowego:")
     pdf.setFont(font_regular, 9)
     pdf.drawString(row_left, bank_y - 14, str(seller.get("bank_account") or ""))
@@ -747,7 +766,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
 
     notes_y = issuer_y - 42
     note_text = " | ".join(str(note).strip() for note in notes if str(note).strip())
-    pdf.setFont(font_bold, 9)
+    pdf.setFont(font_bold_italic, 9)
     pdf.drawString(row_left, notes_y, "Uwagi:")
     if note_text:
         pdf.setFont(font_regular, 8.5)
@@ -758,7 +777,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
             draw_y -= 10
 
     footer_y = 86
-    pdf.setFont(font_regular, 8.5)
+    pdf.setFont(font_italic, 8.5)
     pdf.drawString(
         row_left,
         footer_y,
@@ -769,7 +788,7 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
         footer_y - 11,
         "do czasu całkowitej zapłaty. Za zwłokę naliczamy odsetki.",
     )
-    pdf.setFont(font_regular, 7)
+    pdf.setFont(font_italic, 7)
     pdf.drawString(row_left, footer_y - 27, "Menadżer Serwisu i Fakturka - Serwisoft.pl")
     pdf.drawRightString(width - page_margin, footer_y - 27, "1 z 1 Strona")
 
@@ -779,19 +798,81 @@ def _render_proforma_pdf_reportlab(invoice: dict[str, Any]) -> bytes:
 
 
 @lru_cache(maxsize=1)
-def _resolve_reportlab_font_names() -> tuple[str, str]:
+def _resolve_reportlab_font_names() -> ReportlabFontNames:
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
-    regular_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-    bold_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-    if regular_path.exists() and bold_path.exists():
-        if "DejaVuSansCTIP" not in pdfmetrics.getRegisteredFontNames():
-            pdfmetrics.registerFont(TTFont("DejaVuSansCTIP", str(regular_path)))
-        if "DejaVuSansCTIP-Bold" not in pdfmetrics.getRegisteredFontNames():
-            pdfmetrics.registerFont(TTFont("DejaVuSansCTIP-Bold", str(bold_path)))
-        return "DejaVuSansCTIP", "DejaVuSansCTIP-Bold"
-    return "Helvetica", "Helvetica-Bold"
+    candidate_families: list[tuple[str, Path, Path, Path | None, Path | None]] = [
+        (
+            "VerdanaCTIP",
+            Path("C:/Windows/Fonts/verdana.ttf"),
+            Path("C:/Windows/Fonts/verdanab.ttf"),
+            Path("C:/Windows/Fonts/verdanai.ttf"),
+            Path("C:/Windows/Fonts/verdanaz.ttf"),
+        ),
+        (
+            "DejaVuSansCTIP",
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"),
+        ),
+        (
+            "LiberationSansCTIP",
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-BoldItalic.ttf"),
+        ),
+        (
+            "LiberationSansCTIP",
+            Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf"),
+        ),
+    ]
+
+    registered_names = set(pdfmetrics.getRegisteredFontNames())
+    for family_name, regular_path, bold_path, italic_path, bold_italic_path in candidate_families:
+        if not (regular_path.exists() and bold_path.exists()):
+            continue
+
+        regular_name = family_name
+        bold_name = f"{family_name}-Bold"
+        italic_name = f"{family_name}-Italic"
+        bold_italic_name = f"{family_name}-BoldItalic"
+
+        if regular_name not in registered_names:
+            pdfmetrics.registerFont(TTFont(regular_name, str(regular_path)))
+        if bold_name not in registered_names:
+            pdfmetrics.registerFont(TTFont(bold_name, str(bold_path)))
+
+        if italic_path and italic_path.exists():
+            if italic_name not in registered_names:
+                pdfmetrics.registerFont(TTFont(italic_name, str(italic_path)))
+        else:
+            italic_name = regular_name
+
+        if bold_italic_path and bold_italic_path.exists():
+            if bold_italic_name not in registered_names:
+                pdfmetrics.registerFont(TTFont(bold_italic_name, str(bold_italic_path)))
+        else:
+            bold_italic_name = bold_name
+
+        return ReportlabFontNames(
+            regular=regular_name,
+            bold=bold_name,
+            italic=italic_name,
+            bold_italic=bold_italic_name,
+        )
+
+    return ReportlabFontNames(
+        regular="Helvetica",
+        bold="Helvetica-Bold",
+        italic="Helvetica-Oblique",
+        bold_italic="Helvetica-BoldOblique",
+    )
 
 
 def _build_proforma_pdf_lines(invoice: dict[str, Any]) -> list[str]:

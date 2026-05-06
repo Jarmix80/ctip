@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from pypdf import PdfReader
 
@@ -12,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from app.services import contracts_proforma
 from app.services.contracts_proforma import _render_proforma_pdf, build_proforma_download_filename
 
 
@@ -140,3 +142,44 @@ def test_render_proforma_pdf_keeps_seven_line_items_visible():
     reader = PdfReader(BytesIO(pdf_bytes))
     text = "\n".join((page.extract_text() or "") for page in reader.pages)
     assert "7." in text
+
+
+def test_resolve_reportlab_font_names_prefers_windows_verdana():
+    contracts_proforma._resolve_reportlab_font_names.cache_clear()
+    verdana_files = {
+        "c:/windows/fonts/verdana.ttf",
+        "c:/windows/fonts/verdanab.ttf",
+        "c:/windows/fonts/verdanai.ttf",
+        "c:/windows/fonts/verdanaz.ttf",
+    }
+
+    def fake_exists(path_obj):
+        normalized = str(path_obj).replace("\\", "/").lower()
+        return normalized in verdana_files
+
+    with (
+        patch.object(Path, "exists", fake_exists),
+        patch("reportlab.pdfbase.pdfmetrics.getRegisteredFontNames", return_value=[]),
+        patch("reportlab.pdfbase.pdfmetrics.registerFont"),
+        patch("reportlab.pdfbase.ttfonts.TTFont", side_effect=lambda name, _path: object()),
+    ):
+        names = contracts_proforma._resolve_reportlab_font_names()
+
+    assert names.regular == "VerdanaCTIP"
+    assert names.bold == "VerdanaCTIP-Bold"
+    assert names.italic == "VerdanaCTIP-Italic"
+    assert names.bold_italic == "VerdanaCTIP-BoldItalic"
+    contracts_proforma._resolve_reportlab_font_names.cache_clear()
+
+
+def test_resolve_reportlab_font_names_falls_back_to_helvetica_when_fonts_missing():
+    contracts_proforma._resolve_reportlab_font_names.cache_clear()
+
+    with patch.object(Path, "exists", return_value=False):
+        names = contracts_proforma._resolve_reportlab_font_names()
+
+    assert names.regular == "Helvetica"
+    assert names.bold == "Helvetica-Bold"
+    assert names.italic == "Helvetica-Oblique"
+    assert names.bold_italic == "Helvetica-BoldOblique"
+    contracts_proforma._resolve_reportlab_font_names.cache_clear()
