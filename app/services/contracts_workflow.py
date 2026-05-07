@@ -63,7 +63,7 @@ def build_workflow_proforma_preview_url(proforma_firebird_id: int | None) -> str
     """Buduje URL podgladu proformy zapisanej w Firebird."""
     if not proforma_firebird_id:
         return None
-    return f"/flow/proforma/{proforma_firebird_id}?variant=v1"
+    return f"/flow/proforma/{proforma_firebird_id}?variant=final"
 
 
 def normalize_workflow_device_source_type(

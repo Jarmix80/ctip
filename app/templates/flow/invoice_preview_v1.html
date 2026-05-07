@@ -2,7 +2,7 @@
 <html lang="pl">
   <head>
     <meta charset="utf-8">
-    <title>{{ invoice.document_title }} {{ invoice.document_number }} / wariant 1</title>
+    <title>{{ invoice.document_title }} {{ invoice.document_number }} / wariant finalny</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
     <link rel="stylesheet" href="/static/flow/invoice_preview_v1.css">
@@ -13,9 +13,9 @@
       <header class="invoice-v1-topbar">
         <div>
           <p class="invoice-v1-kicker">{{ preview_kicker or "FLOW / Proforma" }}</p>
-          <h1>{{ preview_title or "Wizualizacja 1" }}</h1>
+          <h1>{{ preview_title or "Wizualizacja finalna" }}</h1>
           <p class="invoice-v1-lead">
-            {{ preview_lead or "Ten wariant jest celowo blizszy oryginalnemu wydrukowi Menadzera Serwisu: wezsza kartka, uklad kolumnowy, lekkie kursywy i blok podsumowania po prawej." }}
+            {{ preview_lead or "To finalny wariant proformy, dopasowany do oryginalnego wydruku Menadzera Serwisu: wezsza kartka, uklad kolumnowy, lekkie kursywy i blok podsumowania po prawej." }}
           </p>
         </div>
         <div class="invoice-v1-topbar-actions">

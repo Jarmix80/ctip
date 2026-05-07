@@ -591,7 +591,7 @@ def test_flow_invoice_preview_page_v1_renders_original_like_layout():
     client = TestClient(app)
     response = client.get("/flow/proforma-wizualizacja1")
     assert response.status_code == 200
-    assert "Wizualizacja 1" in response.text
+    assert "Wizualizacja finalna" in response.text
     assert "Faktura Pro Forma nr:" in response.text
     assert "ul. abpa Antoniego Baraniaka 88" in response.text
     assert "1 z 1 Strona" in response.text
@@ -672,21 +672,17 @@ def test_flow_invoice_preview_live_page_renders_document_from_firebird_data():
 def test_flow_invoice_pdf_file_returns_backend_pdf():
     app = create_app()
     client = TestClient(app)
-    pdf_path = Path("inbox/faktura/generated/test_flow_invoice_70001.pdf")
-    pdf_path.parent.mkdir(parents=True, exist_ok=True)
-    pdf_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n")
-
-    try:
-        with (
-            patch("app.web.flow_ui.ensure_proforma_pdf_file", return_value=pdf_path),
-            patch(
-                "app.web.flow_ui.load_proforma_preview_data",
-                return_value={"document_number": "20/proforma/2026"},
-            ),
-        ):
-            response = client.get("/flow/proforma/70001/pdf")
-    finally:
-        pdf_path.unlink(missing_ok=True)
+    with (
+        patch(
+            "app.web.flow_ui._load_invoice_preview_data",
+            return_value={"document_number": "20/proforma/2026"},
+        ),
+        patch(
+            "app.web.flow_ui._build_invoice_pdf_bytes",
+            return_value=b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n",
+        ),
+    ):
+        response = client.get("/flow/proforma/70001/pdf")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")

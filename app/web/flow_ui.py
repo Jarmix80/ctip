@@ -100,7 +100,7 @@ async def flow_invoice_preview_page(request: Request) -> HTMLResponse:
             ),
             "back_url": "/flow",
             "alternate_url": "/flow/proforma-wizualizacja1",
-            "alternate_label": "Wariant bardziej oryginalny",
+            "alternate_label": "Wariant finalny",
         },
     )
 
@@ -114,9 +114,9 @@ async def flow_invoice_preview_page_v1(request: Request) -> HTMLResponse:
             "request": request,
             "invoice": INVOICE_PREVIEW_SAMPLE,
             "preview_kicker": "FLOW / Proforma",
-            "preview_title": "Wizualizacja 1",
+            "preview_title": "Wizualizacja finalna",
             "preview_lead": (
-                "Ten wariant jest celowo blizszy oryginalnemu wydrukowi z `inbox/FPROFORMA.pdf`: "
+                "To finalny wariant proformy, dopasowany do oryginalnego wydruku z `inbox/FPROFORMA.pdf`: "
                 "blok nabywcy u gory, wąska kartka, uklad metadanych, podpisy i blok ostrzeżenia w stopce."
             ),
             "back_url": "/flow",
@@ -130,7 +130,7 @@ async def flow_invoice_preview_page_v1(request: Request) -> HTMLResponse:
 async def flow_invoice_preview_live_page(
     request: Request,
     proforma_firebird_id: int,
-    variant: str = Query(default="v1", pattern="^(base|v1)$"),
+    variant: str = Query(default="final", pattern="^(base|v1|final)$"),
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> HTMLResponse:
     """Podglad wygenerowanej proformy odczytanej bezposrednio z Firebird."""
@@ -149,7 +149,8 @@ async def flow_invoice_preview_live_page(
                 detail=str(exc),
             ) from exc
 
-    if variant == "base":
+    resolved_variant = "base" if variant == "base" else "final"
+    if resolved_variant == "base":
         return templates.TemplateResponse(
             "flow/invoice_preview.html",
             {
@@ -163,8 +164,8 @@ async def flow_invoice_preview_live_page(
                 ),
                 "backend_pdf_url": f"/flow/proforma/{proforma_firebird_id}/pdf",
                 "back_url": "/flow",
-                "alternate_url": f"/flow/proforma/{proforma_firebird_id}?variant=v1",
-                "alternate_label": "Wariant bardziej oryginalny",
+                "alternate_url": f"/flow/proforma/{proforma_firebird_id}?variant=final",
+                "alternate_label": "Wariant finalny",
             },
         )
 

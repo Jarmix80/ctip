@@ -119,9 +119,10 @@ class FirebirdProformaDeleteResult:
     pdf_deleted: bool
 
 
-def build_proforma_preview_url(proforma_firebird_id: int, *, variant: str = "v1") -> str:
+def build_proforma_preview_url(proforma_firebird_id: int, *, variant: str = "final") -> str:
     """Buduje URL podgladu proformy w FLOW."""
-    chosen_variant = "v1" if variant not in {"base", "v1"} else variant
+    normalized = str(variant or "").strip().lower()
+    chosen_variant = "base" if normalized == "base" else "final"
     return f"/flow/proforma/{proforma_firebird_id}?variant={chosen_variant}"
 
 
