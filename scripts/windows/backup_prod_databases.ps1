@@ -190,7 +190,7 @@ if ($postgresProcess -and $postgresProcess.Path) {
 }
 
 $pgDumpCandidates = @(
-    (if ($postgresBinFromProcess) { Join-Path $postgresBinFromProcess "pg_dump.exe" } else { $null }),
+    $(if ($postgresBinFromProcess) { Join-Path $postgresBinFromProcess "pg_dump.exe" } else { $null }),
     "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe",
     "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe",
     "C:\Program Files\PostgreSQL\15\bin\pg_dump.exe",
@@ -198,7 +198,7 @@ $pgDumpCandidates = @(
 )
 
 $pgDumpAllCandidates = @(
-    (if ($postgresBinFromProcess) { Join-Path $postgresBinFromProcess "pg_dumpall.exe" } else { $null }),
+    $(if ($postgresBinFromProcess) { Join-Path $postgresBinFromProcess "pg_dumpall.exe" } else { $null }),
     "C:\Program Files\PostgreSQL\17\bin\pg_dumpall.exe",
     "C:\Program Files\PostgreSQL\16\bin\pg_dumpall.exe",
     "C:\Program Files\PostgreSQL\15\bin\pg_dumpall.exe",
