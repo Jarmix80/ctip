@@ -94,7 +94,7 @@ function Invoke-Native {
     for ($i = 0; $i -lt $Args.Count; $i++) {
         $item = $Args[$i]
         if ($null -eq $item -or [string]::IsNullOrWhiteSpace([string]$item)) {
-            Fail "$Label: pusty argument na pozycji $i."
+            Fail "${Label}: pusty argument na pozycji $i."
         }
         $normalizedArgs += [string]$item
     }
