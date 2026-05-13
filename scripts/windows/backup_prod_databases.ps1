@@ -90,33 +90,22 @@ function Invoke-Native {
         [switch]$IgnoreErrors
     )
 
-    $tempStdout = [System.IO.Path]::GetTempFileName()
-    $tempStderr = [System.IO.Path]::GetTempFileName()
-    try {
-        Write-Log "$Label"
-        $process = Start-Process `
-            -FilePath $Executable `
-            -ArgumentList $Args `
-            -NoNewWindow `
-            -Wait `
-            -PassThru `
-            -RedirectStandardOutput $tempStdout `
-            -RedirectStandardError $tempStderr
-
-        $stdout = Get-Content -Path $tempStdout -ErrorAction SilentlyContinue
-        $stderr = Get-Content -Path $tempStderr -ErrorAction SilentlyContinue
-
-        if ($stdout) { $stdout | ForEach-Object { Write-Host $_ } }
-        if ($stderr) { $stderr | ForEach-Object { Write-Host $_ } }
-
-        if ($process.ExitCode -ne 0 -and -not $IgnoreErrors) {
-            Fail "$Label zakonczone bledem (exit=$($process.ExitCode))."
+    $normalizedArgs = @()
+    for ($i = 0; $i -lt $Args.Count; $i++) {
+        $item = $Args[$i]
+        if ($null -eq $item -or [string]::IsNullOrWhiteSpace([string]$item)) {
+            Fail "$Label: pusty argument na pozycji $i."
         }
-        return $process.ExitCode
-    } finally {
-        Remove-Item -Path $tempStdout -ErrorAction SilentlyContinue
-        Remove-Item -Path $tempStderr -ErrorAction SilentlyContinue
+        $normalizedArgs += [string]$item
     }
+
+    Write-Log "$Label"
+    & $Executable @normalizedArgs
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -and -not $IgnoreErrors) {
+        Fail "$Label zakonczone bledem (exit=$exitCode)."
+    }
+    return $exitCode
 }
 
 function Require-Env {
