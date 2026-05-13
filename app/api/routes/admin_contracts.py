@@ -223,7 +223,7 @@ ARCHIVE_DAYS_AFTER_DECISION = 14
 RESOURCE_RELEASE_DAYS_AFTER_REJECTION = 7
 
 
-def _tail_text(value: str, *, max_lines: int = 120, max_chars: int = 12000) -> str:
+def _tail_text(value: str, *, max_lines: int = 80, max_chars: int = 4000) -> str:
     lines = value.splitlines()
     tail = "\n".join(lines[-max_lines:])
     if len(tail) > max_chars:

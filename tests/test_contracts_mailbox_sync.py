@@ -275,3 +275,31 @@ def test_persist_encrypted_contract_pdf_saves_file_and_description(tmp_path: Pat
     assert saved["description"] == "Umowa GRENKE (zaszyfrowany PDF z e-maila)."
     assert path.parent.parent.name == "ALFA_TEST_COMPANY"
     assert path.parent.name == "654"
+
+
+def test_parse_args_fail_on_warnings_defaults_to_false(monkeypatch) -> None:
+    module = _load_sync_module()
+    monkeypatch.setattr(sys, "argv", ["contracts_mailbox_sync.py", "--limit", "10"])
+    args = module.parse_args()
+    assert args.limit == 10
+    assert args.fail_on_warnings is False
+
+
+def test_parse_args_fail_on_warnings_flag_sets_true(monkeypatch) -> None:
+    module = _load_sync_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["contracts_mailbox_sync.py", "--limit", "10", "--fail-on-warnings"],
+    )
+    args = module.parse_args()
+    assert args.limit == 10
+    assert args.fail_on_warnings is True
+
+
+def test_truncate_for_log_shortens_over_limit() -> None:
+    module = _load_sync_module()
+    value = "x" * 50
+    result = module._truncate_for_log(value, max_chars=20)
+    assert result.endswith("...")
+    assert len(result) == 20

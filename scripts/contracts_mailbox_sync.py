@@ -58,6 +58,9 @@ DEFAULT_IMAP_FOLDER = "INBOX"
 UNRESOLVED_REASON_UNSUPPORTED_SUBJECT = "unsupported_subject"
 UNRESOLVED_REASON_UNMATCHED_FORM = "unmatched_form"
 UNRESOLVED_REASON_AMBIGUOUS_MATCH = "ambiguous_match"
+MAX_WARNING_LOG_ITEMS = 40
+MAX_WARNING_LOG_CHARS = 600
+MAX_EXTRACT_LOG_CHARS = 1200
 
 
 @dataclass(slots=True)
@@ -139,7 +142,22 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Tryb podglądu: nie zapisuje zmian w bazie ani stanie lokalnym.",
     )
+    parser.add_argument(
+        "--fail-on-warnings",
+        action="store_true",
+        help=(
+            "Zakoncz skrypt kodem != 0, jezeli wykryto ostrzezenia "
+            "(domyslnie: ostrzezenia nie podnosza kodu bledu)."
+        ),
+    )
     return parser.parse_args()
+
+
+def _truncate_for_log(value: str, *, max_chars: int) -> str:
+    text = str(value or "")
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3] + "..."
 
 
 def decode_mime_text(value: str | None) -> str:
@@ -1241,12 +1259,27 @@ async def run_sync(args: argparse.Namespace) -> int:
                 print(f"[WARN] PDF error: {item.get('pdf_error')}")
         extracted = item.get("extracted_data")
         if extracted:
-            print(f"[INFO] OCR/ekstrakcja: {json.dumps(extracted, ensure_ascii=False)}")
-
-    for warning in warnings:
-        print(f"[WARN] {warning}")
+            extracted_json = json.dumps(extracted, ensure_ascii=False)
+            print(
+                "[INFO] OCR/ekstrakcja: "
+                f"{_truncate_for_log(extracted_json, max_chars=MAX_EXTRACT_LOG_CHARS)}"
+            )
 
     if warnings:
+        total_warnings = len(warnings)
+        for index, warning in enumerate(warnings[:MAX_WARNING_LOG_ITEMS], start=1):
+            print(
+                f"[WARN] ({index}/{total_warnings}) "
+                f"{_truncate_for_log(warning, max_chars=MAX_WARNING_LOG_CHARS)}"
+            )
+        hidden_warnings = total_warnings - MAX_WARNING_LOG_ITEMS
+        if hidden_warnings > 0:
+            print(
+                f"[WARN] Pominięto {hidden_warnings} dalszych ostrzeżeń w logu "
+                "(limit wypisywania przekroczony)."
+            )
+
+    if warnings and args.fail_on_warnings:
         return 1
     return 0
 

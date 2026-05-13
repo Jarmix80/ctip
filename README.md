@@ -218,6 +218,13 @@ Tryb podglądu (bez zmian w bazie):
 python scripts/contracts_mailbox_sync.py --limit 30 --dry-run
 ```
 
+Tryb restrykcyjny (kod wyjścia `!= 0` także dla ostrzeżeń, np. `unmatched_form`):
+```bash
+python scripts/contracts_mailbox_sync.py --limit 30 --fail-on-warnings
+```
+
+Domyślnie ostrzeżenia nie oznaczają błędu procesu (skrypt kończy się kodem `0`), żeby scheduler i panel admina nie raportowały `error` tylko przez niedopasowane wiadomości. Logowanie OCR i listy ostrzeżeń jest automatycznie skracane, aby nie zalewać audytu bardzo długim `stdout_tail`.
+
 Wyzwolenie synchronizacji z poziomu panelu/API (wymaga sesji admin/operator i sekcji `generator`):
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/contracts/workflow/mailbox-sync \
@@ -226,7 +233,7 @@ curl -X POST http://127.0.0.1:8000/admin/contracts/workflow/mailbox-sync \
   -d '{"limit":60,"folder":"INBOX","reprocess":false,"dry_run":false,"timeout_seconds":300}'
 ```
 
-Endpoint zwraca skrócony raport (`summary`, `stdout_tail`, `stderr_tail`) i zapisuje zdarzenie audytowe `contracts_mailbox_sync_trigger`.
+Endpoint zwraca skrócony raport (`summary`, `stdout_tail`, `stderr_tail`) i zapisuje zdarzenie audytowe `contracts_mailbox_sync_trigger`. Odcinanie ogona logów jest limitowane (`max_lines=80`, `max_chars=4000`), identycznie jak w schedulerze.
 
 ### Test dostepu do zasobu SMB z .env
 Do szybkiej diagnostyki dostepu do udzialu sieciowego dostepny jest skrypt:
