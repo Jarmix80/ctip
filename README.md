@@ -254,6 +254,15 @@ python scripts/check_smb_resource_access.py --env-file .env --read-file test.txt
 
 Automat mailboxa działa też cyklicznie w tle po starcie backendu (`app/main.py`) jako scheduler `contracts-mailbox-scheduler`. Każdy przebieg zapisuje wpis audytu `contracts_mailbox_sync_scheduler` z podsumowaniem, kodem wyjścia i ogonem logów (`stdout_tail`/`stderr_tail`).
 
+Retencja audytu mailboxa (tylko gdy jawnie wlaczona) jest realizowana automatycznie przez ten sam scheduler:
+- `CONTRACTS_MAILBOX_AUDIT_CLEANUP_ENABLED=1` - wlacza automat retencji (domyslnie wylaczone),
+- `CONTRACTS_MAILBOX_AUDIT_CLEANUP_INTERVAL_SECONDS=21600` - co ile sekund uruchamiac retencje,
+- `CONTRACTS_MAILBOX_AUDIT_COMPACT_AFTER_DAYS=7` - po ilu dniach przycinac dlugie `stdout_tail/stderr_tail`,
+- `CONTRACTS_MAILBOX_AUDIT_COMPACT_MAX_CHARS=1000` - dlugosc zachowywanego ogona historycznego logu,
+- `CONTRACTS_MAILBOX_AUDIT_DELETE_AFTER_DAYS=90` - po ilu dniach usuwac wpisy `contracts_mailbox_sync_*` (0 = bez usuwania).
+
+Zalecenie: wlaczac retencje tylko na produkcji (`.env` na Windows Server), a lokalnie pozostawic `CONTRACTS_MAILBOX_AUDIT_CLEANUP_ENABLED=0`.
+
 Dashboard `GET /admin/contracts/dashboard` zwraca dodatkowo sekcję `mailbox_sync` z metadanymi ostatniego przebiegu synchronizacji e-mail (`source`, `result`, `last_run_at`, `summary`, `exit_code`), dzięki czemu operator widzi aktualność automatu bez przeglądania logów.
 
 ### Smoke-test logowania web i GENFORM/FLOW

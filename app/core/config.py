@@ -161,6 +161,26 @@ class Settings(BaseSettings):
         default=False,
         alias="CONTRACTS_MAILBOX_SYNC_REPROCESS",
     )
+    contracts_mailbox_audit_cleanup_enabled: bool = Field(
+        default=False,
+        alias="CONTRACTS_MAILBOX_AUDIT_CLEANUP_ENABLED",
+    )
+    contracts_mailbox_audit_cleanup_interval_seconds: int = Field(
+        default=21600,
+        alias="CONTRACTS_MAILBOX_AUDIT_CLEANUP_INTERVAL_SECONDS",
+    )
+    contracts_mailbox_audit_compact_after_days: int = Field(
+        default=7,
+        alias="CONTRACTS_MAILBOX_AUDIT_COMPACT_AFTER_DAYS",
+    )
+    contracts_mailbox_audit_compact_max_chars: int = Field(
+        default=1000,
+        alias="CONTRACTS_MAILBOX_AUDIT_COMPACT_MAX_CHARS",
+    )
+    contracts_mailbox_audit_delete_after_days: int = Field(
+        default=90,
+        alias="CONTRACTS_MAILBOX_AUDIT_DELETE_AFTER_DAYS",
+    )
     contracts_mailbox_archive_root: str | None = Field(
         default=None,
         alias="CONTRACTS_MAILBOX_ARCHIVE_ROOT",
