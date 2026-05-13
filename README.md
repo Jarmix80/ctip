@@ -510,7 +510,12 @@ if (-not (Test-Path .venv)) { python -m venv .venv }
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
-3. Co dalej po `pip install -r requirements.txt`:
+3. Backup baz przed wdrozeniem (zalecane):
+```powershell
+.\scripts\windows\backup_prod_databases.ps1 -InstallDir D:\CTIP -GbakPath "C:\Program Files\Firebird\Firebird_2_5\bin\gbak.exe"
+```
+Skrypt tworzy backup PostgreSQL (`pg_dump` + opcjonalnie `pg_dumpall --globals-only --no-role-passwords`) oraz backup Firebird (`gbak`) do katalogu `D:\CTIP\backups\prod_<timestamp>`.
+4. Co dalej po `pip install -r requirements.txt`:
 ```powershell
 # 1) Ustaw/zweryfikuj .env produkcyjne (szczególnie Firebird)
 # FB_MODE=network
@@ -524,11 +529,11 @@ Restart-Service "CTIP-Web"
 Restart-Service "CollectorService"
 Restart-Service "CTIP-SMS"
 ```
-4. Weryfikacja po restarcie:
+5. Weryfikacja po restarcie:
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty StatusCode
 ```
-5. W panelu administratora (`/admin`) przejdź do sekcji `Konfiguracja bazy`, zapisz konfigurację Firebird i wykonaj `Testuj połączenie`.
+6. W panelu administratora (`/admin`) przejdź do sekcji `Konfiguracja bazy`, zapisz konfigurację Firebird i wykonaj `Testuj połączenie`.
 
 Aktualne nazwy usług produkcyjnych (Windows Server):
 - `CollectorService` – Collector Service (`collector_full.py`)
