@@ -137,8 +137,8 @@ function Sanitize-Name {
 function Resolve-FirebirdDsn {
     param(
         [string]$Database,
-        [string]$Host,
-        [string]$Port
+        [string]$FbHost,
+        [string]$FbPort
     )
 
     if ([string]::IsNullOrWhiteSpace($Database)) {
@@ -147,13 +147,13 @@ function Resolve-FirebirdDsn {
 
     $isWindowsPath = $Database -match '^[A-Za-z]:[\\/]'
     if ($isWindowsPath) {
-        if ([string]::IsNullOrWhiteSpace($Host)) {
+        if ([string]::IsNullOrWhiteSpace($FbHost)) {
             return $Database
         }
-        if ([string]::IsNullOrWhiteSpace($Port)) {
-            return "$Host`:$Database"
+        if ([string]::IsNullOrWhiteSpace($FbPort)) {
+            return "$FbHost`:$Database"
         }
-        return "$Host/$Port`:$Database"
+        return "$FbHost/$FbPort`:$Database"
     }
 
     return $Database
@@ -228,7 +228,7 @@ $pgDumpFile = Join-Path $backupDir "postgres_${safePgDb}_${safePgHost}_$stamp.du
 $pgGlobalsFile = Join-Path $backupDir "postgres_globals_${safePgHost}_$stamp.sql"
 $fbBackupFile = Join-Path $backupDir "firebird_${safeFbDb}_$stamp.fbk"
 
-$fbDsn = Resolve-FirebirdDsn -Database $env:FB_DATABASE -Host $env:FB_HOST -Port $env:FB_PORT
+$fbDsn = Resolve-FirebirdDsn -Database $env:FB_DATABASE -FbHost $env:FB_HOST -FbPort $env:FB_PORT
 
 Write-Log "Katalog backupu: $backupDir"
 Write-Log "pg_dump.exe    : $pgDumpExe"
