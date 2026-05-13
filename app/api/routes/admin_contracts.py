@@ -67,6 +67,11 @@ from app.services.contracts_workflow import (
     set_form_workflow_proforma,
     workflow_business_status_label,
 )
+from app.services.workflow_machine_binding import (
+    apply_binding_snapshot,
+    bind_devices_to_workflow_client,
+    notify_binding_issues_to_admins,
+)
 from app.services.workflow_sheet_status_cache import (
     load_workflow_sheet_status_cache_lookup,
     refresh_workflow_sheet_status_cache,
@@ -541,6 +546,7 @@ def _build_saved_workflow_device_payload(device) -> dict[str, str | int | bool]:
         "ms_id_klient": str(
             device.firebird_client_id or snapshot.get("ms_id_klient") or ""
         ).strip(),
+        "ms_id_model": str(snapshot.get("ms_id_model") or "").strip(),
         "ms_id_magazyn_table": str(warehouse_id).strip(),
         "sheet_row": _coerce_int(snapshot.get("sheet_row")),
         "source_type": source_type,
@@ -682,6 +688,7 @@ def _build_available_workflow_devices(
             "serial_required": source_device.get("serial_required") or "",
             "ms_id_maszyna": source_device.get("ms_id_maszyna") or "",
             "ms_id_klient": source_device.get("ms_id_klient") or "",
+            "ms_id_model": source_device.get("ms_id_model") or "",
             "ms_id_magazyn_table": source_device.get("ms_id_magazyn_table")
             or (
                 str(row_number) if source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE else ""
@@ -814,6 +821,15 @@ def _resolve_workflow_sheet_entry(
     return {}
 
 
+def _workflow_case_company_name(workflow_case: FormWorkflowCase | None) -> str:
+    payload = (
+        workflow_case.client_payload_snapshot
+        if workflow_case is not None and isinstance(workflow_case.client_payload_snapshot, dict)
+        else {}
+    )
+    return str(payload.get("company_name") or "").strip()
+
+
 def _build_sheet_device_payload(device) -> dict[str, Any]:
     snapshot = device.snapshot if isinstance(device.snapshot, dict) else {}
     row_value = device.source_row if device.source_row is not None else snapshot.get("row")
@@ -838,6 +854,7 @@ def _build_sheet_device_payload(device) -> dict[str, Any]:
         "name": str(
             snapshot.get("name") or snapshot.get("description") or device.model or ""
         ).strip(),
+        "ms_id_maszyna": _coerce_int(snapshot.get("ms_id_maszyna") or device.firebird_machine_id),
     }
 
 
@@ -2047,6 +2064,37 @@ async def contracts_form_workflow_devices(
     sheet_sync_warning: str | None = None
     sheet_sync_reason: str | None = None
     sheet_release_warning: str | None = None
+    binding_items_payload: list[dict[str, Any]] = []
+    binding_alert_payload: dict[str, Any] | None = None
+    binding_failures_count = 0
+
+    normalized_status = normalize_workflow_business_status(workflow_case.business_status)
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER and workflow_devices:
+        binding_items, _ = await asyncio.to_thread(
+            bind_devices_to_workflow_client,
+            workflow_case=workflow_case,
+            devices=workflow_devices,
+            actor_label=issuer_name,
+        )
+        binding_items_payload = [item.as_dict() for item in binding_items]
+        binding_by_device_id = {item.workflow_device_id: item for item in binding_items}
+        for workflow_device in workflow_devices:
+            apply_binding_snapshot(
+                device=workflow_device,
+                item=binding_by_device_id.get(workflow_device.id),
+            )
+
+        binding_failures = [item for item in binding_items if not item.ok]
+        binding_failures_count = len(binding_failures)
+        if binding_failures:
+            binding_alert_payload = await notify_binding_issues_to_admins(
+                session,
+                workflow_case=workflow_case,
+                form_request_id=item.id,
+                failures=binding_failures,
+                triggered_by_user_id=admin_user.id,
+            )
+
     current_sheet_payloads = [_build_sheet_device_payload(device) for device in workflow_devices]
     removed_sheet_payloads = _build_sheet_release_payloads(
         removed_workflow_devices, include_all=True
@@ -2070,6 +2118,7 @@ async def contracts_form_workflow_devices(
                     business_status_label=workflow_business_status_label(
                         workflow_case.business_status
                     ),
+                    reservation_client_name=_workflow_case_company_name(workflow_case),
                 )
     except Exception as exc:  # noqa: BLE001
         sheet_sync_warning = str(exc).strip() or (
@@ -2129,6 +2178,16 @@ async def contracts_form_workflow_devices(
             else "Usunieto powiazane urzadzenia ze sprawy CTIP."
         )
     ]
+    if binding_items_payload:
+        if binding_failures_count > 0:
+            message_parts.append(
+                "Uwaga: automat wiązania urządzeń zgłosił błędy "
+                f"({binding_failures_count}). Wysłano alert do administratorów."
+            )
+        else:
+            message_parts.append(
+                f"Powiązano urządzenia z klientem MS ({len(binding_items_payload)})."
+            )
     if sheet_sync_result and sheet_sync_result.get("enabled"):
         synced_count = int(sheet_sync_result.get("synced_count") or 0)
         if synced_count > 0:
@@ -2184,6 +2243,8 @@ async def contracts_form_workflow_devices(
                 int(sheet_release_result.get("released_count") or 0) if sheet_release_result else 0
             ),
             "sheet_release_warning": sheet_release_warning,
+            "binding_items": binding_items_payload,
+            "binding_alert": binding_alert_payload,
         },
     )
     await session.commit()
@@ -2200,6 +2261,10 @@ async def contracts_form_workflow_devices(
         "sheet_release_warning": sheet_release_warning,
         "sheet_assignee_id": sheet_assignee_id,
         "sheet_assignee_label": sheet_assignee_label,
+        "binding": {
+            "items": binding_items_payload,
+            "alert": binding_alert_payload,
+        },
     }
 
 
@@ -2265,14 +2330,119 @@ async def contracts_form_workflow_status(
         )
     item.updated_at = datetime.now(UTC)
     workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    response_message_parts = ["Zapisano status sprawy FLOW."]
+    binding_items_payload: list[dict[str, Any]] = []
+    binding_alert_payload: dict[str, Any] | None = None
+    sheet_sync_result: dict[str, Any] | None = None
+    sheet_sync_warning: str | None = None
+    sheet_sync_reason: str | None = None
+
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        issuer_name = (
+            " ".join(
+                part.strip()
+                for part in [admin_user.first_name or "", admin_user.last_name or ""]
+                if part and part.strip()
+            ).strip()
+            or admin_user.email
+        )
+        binding_items, _ = await asyncio.to_thread(
+            bind_devices_to_workflow_client,
+            workflow_case=workflow_case,
+            devices=workflow_devices,
+            actor_label=issuer_name,
+        )
+        binding_items_payload = [item.as_dict() for item in binding_items]
+        binding_by_device_id = {item.workflow_device_id: item for item in binding_items}
+        for workflow_device in workflow_devices:
+            apply_binding_snapshot(
+                device=workflow_device,
+                item=binding_by_device_id.get(workflow_device.id),
+            )
+
+        binding_failures = [item for item in binding_items if not item.ok]
+        if binding_failures:
+            binding_alert_payload = await notify_binding_issues_to_admins(
+                session,
+                workflow_case=workflow_case,
+                form_request_id=item.id,
+                failures=binding_failures,
+                triggered_by_user_id=admin_user.id,
+            )
+            response_message_parts.append(
+                "Status zatwierdzono, ale automat wiązania urządzeń zgłosił błędy "
+                f"({len(binding_failures)}). Wysłano alert do administratorów."
+            )
+        elif binding_items:
+            response_message_parts.append(
+                f"Powiązano urządzenia z klientem MS ({len(binding_items)})."
+            )
+        else:
+            response_message_parts.append("Brak urządzeń do powiązania na etapie zatwierdzenia.")
+
+        if workflow_devices:
+            current_workflow_payload = serialize_workflow_case(workflow_case, workflow_devices)
+            current_sheet_state = current_workflow_payload.get("sheet_sync", {})
+            sheet_assignee_label = (
+                str(current_sheet_state.get("assignee_label") or "").strip() or issuer_name
+            )
+            sheet_payloads = [_build_sheet_device_payload(device) for device in workflow_devices]
+            sheet_config = await load_workflow_sheet_runtime_config(session)
+            try:
+                with use_workflow_sheet_runtime_config(sheet_config):
+                    sheet_sync_result = await asyncio.to_thread(
+                        sync_workflow_devices_to_sheet,
+                        devices=sheet_payloads,
+                        assignee_label=sheet_assignee_label,
+                        proforma_number=workflow_case.proforma_number or "",
+                        form_request_id=item.id,
+                        workflow_case_id=workflow_case.id,
+                        business_status_label=workflow_business_status_label(
+                            workflow_case.business_status
+                        ),
+                        reservation_client_name=_workflow_case_company_name(workflow_case),
+                        overwrite_identity_fields=True,
+                    )
+                operation = "synced" if sheet_sync_result.get("enabled") else "pending"
+                if not sheet_sync_result.get("enabled"):
+                    sheet_sync_reason = str(sheet_sync_result.get("reason") or "").strip() or None
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation=operation,
+                    sheet_result=sheet_sync_result,
+                    assignee_id=_coerce_int(current_sheet_state.get("assignee_id")),
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number,
+                )
+            except Exception as exc:  # noqa: BLE001
+                sheet_sync_warning = str(exc).strip() or (
+                    f"{type(exc).__name__} podczas synchronizacji arkusza."
+                )
+                _apply_sheet_sync_snapshot(
+                    workflow_devices,
+                    operation="error",
+                    sheet_result=None,
+                    assignee_id=_coerce_int(current_sheet_state.get("assignee_id")),
+                    assignee_label=sheet_assignee_label,
+                    proforma_number=workflow_case.proforma_number,
+                    error=sheet_sync_warning,
+                )
+            if sheet_sync_warning:
+                response_message_parts.append(
+                    "Uwaga: nie udało się zaktualizować arkusza po wiązaniu urządzeń."
+                )
+            elif sheet_sync_reason:
+                response_message_parts.append(
+                    f"Synchronizacja arkusza pominięta ({sheet_sync_reason})."
+                )
+
     response_workflow = serialize_workflow_case(workflow_case, workflow_devices)
-    response_message = "Zapisano status sprawy FLOW."
     if normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
         days = _days_until(workflow_case.resources_release_due_at)
-        response_message = (
+        response_message_parts = [
             "Zapisano odmowę GRENKE. Zasoby pozostają w historii sprawy i zostaną "
             f"zwolnione automatycznie za {days} dni, jeżeli nie zostaną zwolnione ręcznie."
-        )
+        ]
 
     await record_audit(
         session,
@@ -2286,13 +2456,27 @@ async def contracts_form_workflow_status(
             "signature_deadline_at": _to_iso(workflow_case.signature_deadline_at),
             "resources_release_due_at": _to_iso(workflow_case.resources_release_due_at),
             "archive_due_at": _to_iso(item.archive_due_at),
+            "binding_items": binding_items_payload,
+            "binding_alert": binding_alert_payload,
+            "sheet_sync_enabled": bool(sheet_sync_result and sheet_sync_result.get("enabled")),
+            "sheet_sync_count": (
+                int(sheet_sync_result.get("synced_count") or 0) if sheet_sync_result else 0
+            ),
+            "sheet_sync_reason": sheet_sync_reason,
+            "sheet_sync_warning": sheet_sync_warning,
         },
     )
     await session.commit()
     return {
         "ok": True,
-        "message": response_message,
+        "message": " ".join(part for part in response_message_parts if part),
         "workflow": response_workflow,
+        "binding": {
+            "items": binding_items_payload,
+            "alert": binding_alert_payload,
+        },
+        "sheet_sync": sheet_sync_result,
+        "sheet_sync_warning": sheet_sync_warning,
         "archive_state": {
             "archive_due_at": _to_iso(item.archive_due_at),
             "days_to_archive": _days_until(item.archive_due_at),
@@ -2476,6 +2660,7 @@ async def contracts_form_workflow_proforma(
                     business_status_label=workflow_business_status_label(
                         workflow_case.business_status
                     ),
+                    reservation_client_name=_workflow_case_company_name(workflow_case),
                 )
             if sheet_sync_result.get("enabled"):
                 _apply_sheet_sync_snapshot(
@@ -2833,6 +3018,7 @@ async def contracts_form_workflow_sheet_sync(
                 form_request_id=item.id,
                 workflow_case_id=workflow_case.id,
                 business_status_label=workflow_business_status_label(workflow_case.business_status),
+                reservation_client_name=_workflow_case_company_name(workflow_case),
             )
     except RuntimeError as exc:
         raise HTTPException(

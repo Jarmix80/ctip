@@ -79,6 +79,10 @@ class FirebirdModelMatch:
     id_model: int | None = None
     marka: str | None = None
     model: str | None = None
+    grupa: str | None = None
+    rodzaj: str | None = None
+    kolor: str | None = None
+    plik: str | None = None
     error: str | None = None
 
 
@@ -358,6 +362,146 @@ def _build_stock_name(
     return _truncate_text(base, 250) or "Urzadzenie"
 
 
+def _normalize_spaces(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _normalize_model_name_for_brand(brand: str | None, model_name: str | None) -> str:
+    """Normalizuje znane warianty zapisu modelu dla producenta."""
+    brand_value = _normalize_spaces(str(brand or ""))
+    model_value = _normalize_spaces(str(model_name or ""))
+    if not brand_value or not model_value:
+        return model_value
+
+    if brand_value.upper() != "RICOH":
+        return model_value
+
+    condensed = re.sub(r"\s+", "", model_value).upper()
+    imc_match = re.match(r"^IMC(\d+[A-Z0-9]*)$", condensed)
+    if imc_match:
+        return f"IM C{imc_match.group(1)}"
+
+    mpc_match = re.match(r"^MPC(\d+[A-Z0-9]*)$", condensed)
+    if mpc_match:
+        return f"MP C{mpc_match.group(1)}"
+
+    return model_value
+
+
+def extract_stock_device_identity(
+    raw_name: str | None,
+    *,
+    index_value: str | None = None,
+    producer: str | None = None,
+    model: str | None = None,
+) -> dict[str, str]:
+    """Wyciąga z nazwy pozycji magazynowej producenta, model, serial i numer wew."""
+    raw = _normalize_spaces(str(raw_name or ""))
+    serial = ""
+    ewidencja = ""
+    if raw:
+        serial_match = re.search(
+            r"(?i)\bS\s*/?\s*N\s*[:#-]?\s*([A-Z0-9][A-Z0-9._/-]{3,})",
+            raw,
+        )
+        if serial_match:
+            serial = _normalize_spaces(serial_match.group(1)).strip(" ,;")
+
+        ewidencja_match = re.search(
+            r"(?i)\bnr\.?\s*wew\.?\s*[:#-]?\s*([^,;]+)",
+            raw,
+        )
+        if ewidencja_match:
+            ewidencja = _normalize_spaces(ewidencja_match.group(1)).strip(" ,;")
+
+    cleaned = re.split(r"(?i)\bS\s*/?\s*N\s*[:#-]?", raw, maxsplit=1)[0]
+    cleaned = re.split(r"(?i)\bnr\.?\s*wew\.?\s*[:#-]?", cleaned, maxsplit=1)[0]
+    cleaned = cleaned.strip(" ,;-")
+    cleaned = _normalize_spaces(cleaned)
+
+    producer_value = _normalize_spaces(str(producer or ""))
+    model_value = _normalize_spaces(str(model or ""))
+
+    if cleaned:
+        if producer_value:
+            prefixed = re.match(
+                rf"(?i)^{re.escape(producer_value)}\s+(.*)$",
+                cleaned,
+            )
+            if prefixed:
+                model_value = _normalize_spaces(prefixed.group(1)) or model_value
+            elif not model_value:
+                model_value = cleaned
+        else:
+            tokens = cleaned.split(" ", 1)
+            if len(tokens) == 2 and re.fullmatch(r"[A-Za-z][A-Za-z0-9._-]{1,30}", tokens[0]):
+                producer_value = tokens[0]
+                model_value = _normalize_spaces(tokens[1])
+            elif not model_value:
+                model_value = cleaned
+
+    model_value = _normalize_model_name_for_brand(producer_value, model_value)
+
+    if not ewidencja:
+        ewidencja = _normalize_spaces(str(index_value or ""))
+
+    return {
+        "producer": producer_value,
+        "model": model_value,
+        "serial": serial,
+        "ewidencja": ewidencja,
+        "name": cleaned or raw,
+    }
+
+
+def _model_search_candidates(model_name: str | None) -> list[str]:
+    """Buduje liste kandydatow modelu, czyszczac techniczne koncowki typu S/N."""
+    raw = _truncate_text(model_name, 160)
+    if not raw:
+        return []
+
+    primary = _normalize_spaces(raw)
+    candidates: list[str] = [primary]
+
+    stripped = re.split(r"(?i)\bS\s*/?\s*N\s*[:#-]?", primary, maxsplit=1)[0]
+    stripped = re.split(r"(?i)\bnr\.?\s*wew\.?\s*[:#-]?", stripped, maxsplit=1)[0]
+    stripped = re.split(r"(?i)\bnr\.?\s*ewid", stripped, maxsplit=1)[0]
+    stripped = stripped.strip(" ,;-")
+    stripped = _normalize_spaces(stripped)
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+
+    if "," in stripped:
+        head = _normalize_spaces(stripped.split(",", maxsplit=1)[0].strip(" ,;-"))
+        if head and head not in candidates:
+            candidates.append(head)
+
+    parsed = extract_stock_device_identity(stripped)
+    parsed_model = _normalize_spaces(parsed.get("model") or "")
+    parsed_producer = _normalize_spaces(parsed.get("producer") or "")
+    if parsed_model and parsed_model not in candidates:
+        candidates.append(parsed_model)
+    if parsed_producer and parsed_model:
+        combined = _normalize_spaces(f"{parsed_producer} {parsed_model}")
+        if combined and combined not in candidates:
+            candidates.append(combined)
+
+    return [candidate[:100] for candidate in candidates if candidate]
+
+
+def _build_model_match_from_row(row: tuple[Any, ...]) -> FirebirdModelMatch:
+    return FirebirdModelMatch(
+        found=True,
+        id_model=int(row[0]) if row[0] is not None else None,
+        marka=_truncate_text(str(row[1]) if row[1] is not None else "", 50),
+        model=_truncate_text(str(row[2]) if row[2] is not None else "", 50),
+        grupa=_truncate_text(str(row[3]) if row[3] is not None else "", 50),
+        rodzaj=_truncate_text(str(row[4]) if row[4] is not None else "", 50),
+        kolor=_truncate_text(str(row[5]) if row[5] is not None else "", 50),
+        plik=_truncate_text(str(row[6]) if row[6] is not None else "", 250),
+    )
+
+
 def create_client_from_submitted_payload(
     payload: dict[str, Any],
     *,
@@ -437,8 +581,72 @@ def create_client_from_submitted_payload(
 
 def find_model_in_firebird(model_name: str | None) -> FirebirdModelMatch:
     """Wyszukuje model po nazwie tekstowej z arkusza."""
-    normalized = _truncate_text(model_name, 50)
-    if not normalized:
+    candidates = _model_search_candidates(model_name)
+    if not candidates:
+        return FirebirdModelMatch(found=False)
+
+    try:
+        connection = _firebird_connection()
+        cursor = connection.cursor()
+        try:
+            for candidate in candidates:
+                cursor.execute(
+                    """
+                    SELECT FIRST 1
+                        ID_MODEL,
+                        MARKA,
+                        MODEL,
+                        GRUPA,
+                        RODZAJ,
+                        KOLOR,
+                        PLIK
+                    FROM MODEL
+                    WHERE UPPER(TRIM(MODEL)) = UPPER(TRIM(?))
+                       OR UPPER(TRIM(MARKA || ' ' || MODEL)) = UPPER(TRIM(?))
+                    ORDER BY ID_MODEL DESC
+                    """,
+                    (candidate, candidate),
+                )
+                row = cursor.fetchone()
+                if row:
+                    return _build_model_match_from_row(row)
+
+                cursor.execute(
+                    """
+                    SELECT FIRST 1
+                        ID_MODEL,
+                        MARKA,
+                        MODEL,
+                        GRUPA,
+                        RODZAJ,
+                        KOLOR,
+                        PLIK
+                    FROM MODEL
+                    WHERE UPPER(TRIM(MODEL)) CONTAINING UPPER(TRIM(?))
+                       OR UPPER(TRIM(MARKA || ' ' || MODEL)) CONTAINING UPPER(TRIM(?))
+                    ORDER BY ID_MODEL DESC
+                    """,
+                    (candidate, candidate),
+                )
+                row = cursor.fetchone()
+                if row:
+                    return _build_model_match_from_row(row)
+
+            return FirebirdModelMatch(found=False)
+        finally:
+            cursor.close()
+            connection.close()
+    except Exception as exc:  # noqa: BLE001
+        return FirebirdModelMatch(found=False, error=str(exc))
+
+
+def find_model_in_firebird_by_id(model_id: int | None) -> FirebirdModelMatch:
+    """Wyszukuje model po ID_MODEL."""
+    try:
+        resolved_id = int(model_id)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        resolved_id = 0
+    if resolved_id <= 0:
         return FirebirdModelMatch(found=False)
 
     try:
@@ -447,41 +655,23 @@ def find_model_in_firebird(model_name: str | None) -> FirebirdModelMatch:
         try:
             cursor.execute(
                 """
-                SELECT FIRST 1 ID_MODEL, MARKA, MODEL
+                SELECT FIRST 1
+                    ID_MODEL,
+                    MARKA,
+                    MODEL,
+                    GRUPA,
+                    RODZAJ,
+                    KOLOR,
+                    PLIK
                 FROM MODEL
-                WHERE UPPER(TRIM(MODEL)) = UPPER(TRIM(?))
-                   OR UPPER(TRIM(MARKA || ' ' || MODEL)) = UPPER(TRIM(?))
-                ORDER BY ID_MODEL DESC
+                WHERE ID_MODEL = ?
                 """,
-                (normalized, normalized),
-            )
-            row = cursor.fetchone()
-            if row:
-                return FirebirdModelMatch(
-                    found=True,
-                    id_model=int(row[0]) if row[0] is not None else None,
-                    marka=_truncate_text(str(row[1]) if row[1] is not None else "", 50),
-                    model=_truncate_text(str(row[2]) if row[2] is not None else "", 50),
-                )
-
-            cursor.execute(
-                """
-                SELECT FIRST 1 ID_MODEL, MARKA, MODEL
-                FROM MODEL
-                WHERE UPPER(TRIM(MODEL)) CONTAINING UPPER(TRIM(?))
-                ORDER BY ID_MODEL DESC
-                """,
-                (normalized,),
+                (resolved_id,),
             )
             row = cursor.fetchone()
             if not row:
                 return FirebirdModelMatch(found=False)
-            return FirebirdModelMatch(
-                found=True,
-                id_model=int(row[0]) if row[0] is not None else None,
-                marka=_truncate_text(str(row[1]) if row[1] is not None else "", 50),
-                model=_truncate_text(str(row[2]) if row[2] is not None else "", 50),
-            )
+            return _build_model_match_from_row(row)
         finally:
             cursor.close()
             connection.close()
@@ -855,6 +1045,7 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
                 f"""
                 SELECT FIRST {safe_limit}
                     ID_MAGAZYN_TABLE,
+                    ID_MODEL,
                     INDEKS,
                     NAZWA,
                     MARKA,
@@ -875,8 +1066,8 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
 
             output: list[dict[str, str]] = []
             for row in cursor.fetchall():
-                total_qty = _decimal_or_zero(row[5])
-                reserved_qty = _decimal_or_zero(row[6])
+                total_qty = _decimal_or_zero(row[6])
+                reserved_qty = _decimal_or_zero(row[7])
                 available_qty = total_qty - reserved_qty
                 if available_qty <= 0:
                     continue
@@ -891,26 +1082,56 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
                     reservation_status = "brak rezerwacji"
                     status = "Dostepne"
 
-                index_value = _truncate_text(str(row[1] or ""), 100) or ""
-                name_value = _truncate_text(str(row[2] or ""), 250) or ""
-                model_value = _truncate_text(str(row[4] or ""), 50) or name_value
-                serial_required = _truncate_text(str(row[10] or ""), 10) or ""
+                index_value = _truncate_text(str(row[2] or ""), 100) or ""
+                name_value = _truncate_text(str(row[3] or ""), 250) or ""
+                parsed_identity = extract_stock_device_identity(
+                    name_value,
+                    index_value=index_value,
+                    producer=str(row[4] or ""),
+                    model=str(row[5] or ""),
+                )
+                producer_value = (
+                    _truncate_text(
+                        str(row[4] or parsed_identity["producer"] or ""),
+                        50,
+                    )
+                    or ""
+                )
+                model_value = (
+                    _truncate_text(
+                        str(row[5] or parsed_identity["model"] or ""),
+                        50,
+                    )
+                    or name_value
+                )
+                serial_value = _truncate_text(str(parsed_identity["serial"] or ""), 100) or ""
+                ewidencja_value = (
+                    _truncate_text(
+                        str(parsed_identity["ewidencja"] or index_value),
+                        100,
+                    )
+                    or index_value
+                )
+                raw_serial_flag = _truncate_text(str(row[11] or ""), 10) or ""
+                serial_required = "TAK" if serial_value else raw_serial_flag
+                model_id_value = str(int(row[1])) if row[1] is not None else ""
 
                 output.append(
                     {
                         "row": str(int(row[0])) if row[0] is not None else "",
                         "ms_id_magazyn_table": str(int(row[0])) if row[0] is not None else "",
-                        "producer": _truncate_text(str(row[3] or ""), 50) or "",
+                        "ms_id_model": model_id_value,
+                        "producer": producer_value,
                         "model": model_value,
-                        "serial": "",
-                        "ewidencja": index_value,
+                        "serial": serial_value,
+                        "ewidencja": ewidencja_value,
                         "index": index_value,
                         "name": name_value,
                         "status": status,
-                        "price": _format_decimal_text(row[8]),
-                        "price_net": _format_decimal_text(row[7]),
-                        "price_gross": _format_decimal_text(row[8]),
-                        "vat_rate": _extract_vat_rate_text(row[9]),
+                        "price": _format_decimal_text(row[9]),
+                        "price_net": _format_decimal_text(row[8]),
+                        "price_gross": _format_decimal_text(row[9]),
+                        "vat_rate": _extract_vat_rate_text(row[10]),
                         "reservation": "",
                         "reservation_status": reservation_status,
                         "description": name_value,
@@ -962,6 +1183,7 @@ def load_devices_from_sheet() -> list[dict[str, str]]:
     reservation_status_idx = headers.get("status rezerwacji")
     description_idx = headers.get("opis")
     ms_id_maszyna_idx = headers.get("ms_id_maszyna")
+    ms_id_model_idx = headers.get("ms_id_model")
     ms_id_klient_idx = headers.get("ms_id_klient")
     ms_nazwa_klienta_idx = headers.get("ms_nazwa_klienta")
     ms_nip_idx = headers.get("ms_nip")
@@ -991,6 +1213,7 @@ def load_devices_from_sheet() -> list[dict[str, str]]:
                 "reservation_status": _cell(row, reservation_status_idx),
                 "description": _cell(row, description_idx),
                 "ms_id_maszyna": _cell(row, ms_id_maszyna_idx),
+                "ms_id_model": _cell(row, ms_id_model_idx),
                 "ms_id_klient": _cell(row, ms_id_klient_idx),
                 "ms_nazwa_klienta": _cell(row, ms_nazwa_klienta_idx),
                 "ms_nip": _cell(row, ms_nip_idx),
@@ -1085,11 +1308,13 @@ __all__ = [
     "FirebirdWarehouseMatch",
     "create_client_from_submitted_payload",
     "find_model_in_firebird",
+    "find_model_in_firebird_by_id",
     "find_warehouse_item_in_firebird",
     "find_client_in_firebird",
     "find_client_in_firebird_by_id",
     "find_device_in_firebird",
     "firebird_writes_enabled",
+    "extract_stock_device_identity",
     "load_contract_forms",
     "load_available_devices_from_firebird_warehouse",
     "load_device_from_sheet_row",

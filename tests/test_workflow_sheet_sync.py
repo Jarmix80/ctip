@@ -214,6 +214,7 @@ def test_bootstrap_workflow_sheet_headers_inserts_header_row_and_repairs_mixed_f
                     "SERIAL",
                     "STATUS",
                     "MS_ID_MAGAZYN_TABLE",
+                    "MS_ID_MASZYNA",
                     "REZERWACJA GRENKE",
                     "FAKTURA PROFORMA GRENKE",
                 ],
@@ -233,7 +234,7 @@ def test_bootstrap_workflow_sheet_headers_inserts_header_row_and_repairs_mixed_f
             if range_name == "A1":
                 self.values[0] = list(values[0])
                 return
-            assert range_name == "A2:U2"
+            assert range_name == "A2:V2"
             self.values[1] = list(values[0])
 
     worksheet = FakeWorksheet()
@@ -267,7 +268,7 @@ def test_bootstrap_workflow_sheet_headers_inserts_header_row_and_repairs_mixed_f
     assert result["worksheet_title"] == "Urzadzenia_magazyn"
     assert result["existing_headers"] == []
     assert "Osoba obsługująca" in result["added_headers"]
-    assert worksheet.values[0][:17] == [
+    assert worksheet.values[0][:18] == [
         "PRODUCENT",
         "MODEL",
         "SERIAL",
@@ -285,8 +286,9 @@ def test_bootstrap_workflow_sheet_headers_inserts_header_row_and_repairs_mixed_f
         "CTIP_WORKFLOW_CASE_ID",
         "STATUS HANDLOWY (LEGACY)",
         "MS_ID_MAGAZYN_TABLE",
+        "MS_ID_MASZYNA",
     ]
-    assert worksheet.values[0][17:] == [""] * 4
+    assert worksheet.values[0][18:] == [""] * 4
     assert worksheet.values[1][:11] == [
         "Ricoh",
         "IM C3500",
@@ -300,8 +302,8 @@ def test_bootstrap_workflow_sheet_headers_inserts_header_row_and_repairs_mixed_f
         "01.Magazyn KP",
         "brak rezerwacji",
     ]
-    assert len(worksheet.values[1]) == 21
-    assert worksheet.values[1][11:] == [""] * 10
+    assert len(worksheet.values[1]) == 22
+    assert worksheet.values[1][11:] == [""] * 11
 
 
 def test_bootstrap_workflow_sheet_headers_removes_duplicate_header_row():
@@ -328,6 +330,7 @@ def test_bootstrap_workflow_sheet_headers_removes_duplicate_header_row():
                     "CTIP_WORKFLOW_CASE_ID",
                     "STATUS HANDLOWY (LEGACY)",
                     "MS_ID_MAGAZYN_TABLE",
+                    "MS_ID_MASZYNA",
                 ],
                 [
                     "PRODUCENT",
@@ -408,6 +411,7 @@ def test_sync_workflow_devices_to_sheet_updates_expected_business_columns():
                 "CTIP_WORKFLOW_CASE_ID",
                 "STATUS HANDLOWY (LEGACY)",
                 "MS_ID_MAGAZYN_TABLE",
+                "MS_ID_MASZYNA",
             ],
             [
                 "Ricoh",
@@ -427,6 +431,7 @@ def test_sync_workflow_devices_to_sheet_updates_expected_business_columns():
                 "",
                 "",
                 "12922",
+                "",
             ],
         ],
     )
@@ -521,6 +526,7 @@ def test_release_workflow_devices_from_sheet_restores_previous_status_and_clears
                 "CTIP_WORKFLOW_CASE_ID",
                 "STATUS HANDLOWY (LEGACY)",
                 "MS_ID_MAGAZYN_TABLE",
+                "MS_ID_MASZYNA",
             ],
             [
                 "Ricoh",
@@ -540,6 +546,7 @@ def test_release_workflow_devices_from_sheet_restores_previous_status_and_clears
                 "8",
                 "Robocza",
                 "12922",
+                "",
             ],
         ],
     )
@@ -625,6 +632,7 @@ def test_release_workflow_devices_from_sheet_falls_back_when_sheet_row_is_stale(
                 "CTIP_WORKFLOW_CASE_ID",
                 "STATUS HANDLOWY (LEGACY)",
                 "MS_ID_MAGAZYN_TABLE",
+                "MS_ID_MASZYNA",
             ],
             [
                 "Ricoh",
@@ -644,6 +652,7 @@ def test_release_workflow_devices_from_sheet_falls_back_when_sheet_row_is_stale(
                 "",
                 "",
                 "99999",
+                "",
             ],
             [
                 "Ricoh",
@@ -663,6 +672,7 @@ def test_release_workflow_devices_from_sheet_falls_back_when_sheet_row_is_stale(
                 "8",
                 "Robocza",
                 "12922",
+                "",
             ],
         ],
     )
@@ -749,6 +759,7 @@ def test_clear_workflow_proforma_from_sheet_clears_only_proforma_column():
                 "CTIP_WORKFLOW_CASE_ID",
                 "STATUS HANDLOWY (LEGACY)",
                 "MS_ID_MAGAZYN_TABLE",
+                "MS_ID_MASZYNA",
             ],
             [
                 "Ricoh",
@@ -768,6 +779,7 @@ def test_clear_workflow_proforma_from_sheet_clears_only_proforma_column():
                 "8",
                 "Robocza",
                 "12922",
+                "",
             ],
         ],
     )

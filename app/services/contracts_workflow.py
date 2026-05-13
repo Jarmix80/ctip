@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FormRequest, FormWorkflowCase, FormWorkflowDevice
+from app.services.workflow_machine_binding import build_binding_status_payload
 
 WORKFLOW_STAGE_FORM_SUBMITTED = "FORM_SUBMITTED"
 WORKFLOW_STAGE_CLIENT_READY = "CLIENT_READY"
@@ -326,6 +327,7 @@ def serialize_workflow_case(
             "delivery_notes": None,
             "delivery_label": None,
             "sheet_sync": _build_sheet_sync_state([]),
+            "service_manager_binding": build_binding_status_payload([]),
         }
 
     preview_url = _resolve_proforma_preview_url(workflow_case)
@@ -400,6 +402,7 @@ def serialize_workflow_case(
         "delivery_notes": workflow_case.delivery_notes,
         "delivery_label": delivery_label,
         "sheet_sync": _build_sheet_sync_state(case_devices),
+        "service_manager_binding": build_binding_status_payload(case_devices),
     }
 
 
@@ -740,10 +743,19 @@ async def map_form_workflow_summaries(
         int(case_id): int(device_count)
         for case_id, device_count in (await session.execute(counts_stmt)).all()
     }
+    devices_stmt = (
+        select(FormWorkflowDevice)
+        .where(FormWorkflowDevice.workflow_case_id.in_(case_ids))
+        .order_by(FormWorkflowDevice.id.asc())
+    )
+    devices_by_case: dict[int, list[FormWorkflowDevice]] = {}
+    for device in (await session.execute(devices_stmt)).scalars().all():
+        devices_by_case.setdefault(int(device.workflow_case_id), []).append(device)
 
     output: dict[int, dict[str, Any]] = {}
     for workflow_case in cases:
         devices_count = counts.get(workflow_case.id, 0)
+        case_devices = devices_by_case.get(int(workflow_case.id), [])
         output[int(workflow_case.form_request_id)] = {
             "exists": True,
             "id": workflow_case.id,
@@ -796,6 +808,7 @@ async def map_form_workflow_summaries(
                 workflow_case.delivery_date,
                 workflow_case.delivery_time_window,
             ),
+            "service_manager_binding": build_binding_status_payload(case_devices),
         }
     return output
 

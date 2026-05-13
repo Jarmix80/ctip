@@ -24,6 +24,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + `app/services/device_dashboard.py` + `app/services/device_intake.py` – wydzielony widok `/device` dla procesu urzadzen: audyt przyjec `PZ` na magazyn `28`, kontrola powiazan `MAGAZYN` / `SERIAL` / `MASZYNA`, lista problemow danych, audyt tabeli `MODEL` oraz automatyzacja kartoteki `AUTO/XXXX` i przyjecia `PZ` (single + batch) z automatycznym utworzeniem wpisu `MASZYNA`.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
+- `app/services/workflow_machine_binding.py` – automat dla statusu `APPROVED_ORDER`: wiązanie urządzeń workflow z klientem w `MASZYNA.ID_KLIENT` (główna operacja), wymuszenie `AKTYWNA=TAK` i `SYNWP=1`, próba normalizacji `MASZYNA.EWIDENCJA` do `KP/<numer>/GRENKE/<reszta>` (brak poprawnego formatu nie blokuje powiązania klienta), tworzenie nowych rekordów `MASZYNA` z mapowaniem danych z tabeli `MODEL` (`ID_MODEL`, `MARKA`, `MODEL`, `GRUPA`, `RODZAJ`, `KOLOROWA`, `TYP`, `RODZAJ_US`) oraz synchronizacja tych pól dla istniejących kart; dla źródła `firebird_magazyn_28` automat dociąga bieżący rekord `MAGAZYN`, parsuje techniczne `NAZWA` (`S/N`, `nr.wew`) i normalizuje warianty modeli Ricoh (`IMC` -> `IM C`, `MPC` -> `MP C`) zanim dopasuje `MODEL`; status zwracany do `/genform` pokazuje też licznik `powiązane/wszystkie` i skrót pierwszych błędów z identyfikatorem urządzenia (`producent`, `model`, `serial` albo `ewidencja`).
 - `app/web/form_ui.py` + `app/templates/public/` – publiczny, jednorazowy formularz klienta pod adresem `/formularz/{token}`.
 - `app/public_forms_app.py` – osobna aplikacja ASGI do publicznego wystawienia wyłącznie `/`, `/health` i `/formularz/{token}` pod niezależną subdomeną.
 - `app/api/routes/portal_auth.py` + `app/static/root/root.js` – centralne logowanie na stronie głównej (`/`) oraz wybór sekcji na osobnym widoku `/choice`.
@@ -65,6 +66,24 @@ Tryb bez `--apply` wykonuje dry-run i zapisuje tylko raporty. Wszystkie raporty 
 - `raport_urzadzenia_prod_sync_maszyna_*.json`
 - `raport_urzadzenia_prod_move_serial_*.json`
 - `raport_urzadzenia_prod_append_notes_*.json`
+
+### Automat workflow dla `APPROVED_ORDER`
+Po ręcznym ustawieniu statusu biznesowego sprawy na `APPROVED_ORDER` endpoint `POST /admin/contracts/forms/{form_id}/workflow/status` uruchamia automat:
+- wiąże każde zapisane urządzenie workflow z klientem sprawy (`firebird_client_id`) po stronie Firebird,
+- dopina `GRENKE` do `EWIDENCJA` zgodnie z regułą `KP/<numer>/GRENKE/<reszta>`; gdy `EWIDENCJA` nie ma formatu `KP/<numer>/...`, klient i tak jest wiązany, a status urządzenia dostaje ostrzeżenie o pominiętej normalizacji,
+- uzupełnia `MS_ID_MASZYNA` oraz aktualne `INDEKS/EWIDENCJA` w arkuszu FLOW,
+- aktualizuje status „Menadżer Serwisu” w `/genform` (zielony/żółty/czerwony); przy częściowym albo pełnym błędzie status zawiera stosunek `powiązane/wszystkie` oraz skrót pierwszych błędów z nazwą urządzenia i `Nr seryjny` lub `EWIDENCJA`,
+- przy błędach wysyła alert SMS i e-mail do aktywnych administratorów, ale nie blokuje zmiany statusu sprawy.
+
+Jeżeli sprawa ma już status `APPROVED_ORDER`, ten sam automat uruchamia się ponownie również przy zapisie wyboru urządzeń (`POST /admin/contracts/forms/{form_id}/workflow/devices`), żeby utrzymać spójność po zmianach listy urządzeń.
+
+W arkuszu FLOW wymagane są nagłówki techniczne:
+- `MS_ID_MAGAZYN_TABLE`,
+- `MS_ID_MASZYNA`.
+
+Kolumna `REZERWACJA GRENKE` jest zapisywana jako dwie linie:
+- linia 1: handlowiec (assignee),
+- linia 2: nazwa klienta z formularza.
 
 ### Uruchomienie Codex
 Skrypt `scripts/run_codex.sh` uruchamia Codex w kontekście repozytorium i automatyzuje kroki wymagane przez `AGENTS.md`:
@@ -356,7 +375,7 @@ Analiza rzeczywistego przeplywu Menadzera Serwisu (model -> magazyn -> PZ -> pro
 
 Biezacy stan modułu FLOW, formularzy testowych i decyzji architektonicznych zapisano dodatkowo w `docs/projekt/flow_status_2026-03-16.md`.
 
-Dla dashboardu `/contracts` oraz modalu workflow w `/flow` zrodlem wyboru urzadzen jest teraz Firebird `MAGAZYN` dla magazynu `28`, filtrowany do pozycji z dodatnim dostepnym stanem (`ILOSC - IL_REZ > 0`). Obecnie sa to wpisy handlowe producent + model + serial zapisane jako osobne pozycje magazynowe; drugi tor oparty bezposrednio o tabele `SERIAL` nie jest jeszcze aktywnym katalogiem handlowca, ale workflow ma juz przygotowany model identyfikacji `source_type + source_row`, zeby oba adaptery mogly wspolistniec bez kolizji rekordow. Dawny import z arkusza Google pozostaje tylko jako tor kompatybilnosci dla starszych rekordow workflow i recznej synchronizacji urzadzenia.
+Dla dashboardu `/contracts` oraz modalu workflow w `/flow` zrodlem wyboru urzadzen jest teraz Firebird `MAGAZYN` dla magazynu `28`, filtrowany do pozycji z dodatnim dostepnym stanem (`ILOSC - IL_REZ > 0`). Jeżeli rekord magazynowy nie ma wypelnionych pol `MARKA` / `MODEL` / `ID_MODEL`, backend wyciąga producenta, model, numer seryjny i numer wew z tekstu `NAZWA`, a dla wybranych wariantow Ricoh dodatkowo normalizuje zapis modelu do postaci zgodnej z tabela `MODEL`. Drugi tor oparty bezposrednio o tabele `SERIAL` nie jest jeszcze aktywnym katalogiem handlowca, ale workflow ma juz przygotowany model identyfikacji `source_type + source_row`, zeby oba adaptery mogly wspolistniec bez kolizji rekordow. Dawny import z arkusza Google pozostaje tylko jako tor kompatybilnosci dla starszych rekordow workflow i recznej synchronizacji urzadzenia.
 
 Akcja `POST /admin/contracts/action`, endpoint workflow `POST /admin/contracts/forms/{id}/workflow/client` oraz automat `SUBMITTED` korzystaja z biezacej konfiguracji Firebird zapisanej w panelu administratora (`admin_setting -> firebird.*`). Zapis pozostaje zablokowany, dopoki w sekcji `Konfiguracja Firebird (Menadżer Serwisu)` nie zostanie wlaczona opcja `Odblokuj zapis do Firebird`; jezeli nie ma jeszcze wpisu w panelu, fallbackiem pozostaje `FB_ALLOW_WRITES`. W trybie `local` zapis moze wskazywac zarowno plik w repozytorium, jak i jawnie ustawiona absolutna sciezke testowa hosta, pod warunkiem ze plik istnieje.
 
@@ -675,7 +694,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /admin/contracts/forms/{id}/workflow` – szczegóły sprawy workflow formularza `SUBMITTED` (podgląd klienta, stan CTIP, lista urządzeń do wyboru).
 - `POST /admin/contracts/workflow/sheet-status-refresh` – recznie odswieza lokalny cache statusow urządzeń z arkusza Google, wykorzystywany przez modal wyboru urządzeń w `/flow`.
 - `POST /admin/contracts/forms/{id}/workflow/client` – tworzy albo potwierdza klienta w Menadżerze Serwisu i zapisuje powiązanie po stronie CTIP.
-- `POST /admin/contracts/forms/{id}/workflow/devices` – zapisuje wybór urządzeń do sprawy formularza razem z recznie wpisaną ceną `netto` i `brutto` dla kazdego wybranego urzadzenia, a nastepnie od razu aktualizuje rezerwacje w arkuszu GRENKE (`UWAGI`, `REZERWACJA GRENKE`, `FORMULARZ CTIP`, `CTIP_FORM_ID`, `CTIP_WORKFLOW_CASE_ID`, `STATUS HANDLOWY (LEGACY)` oraz kolor wiersza; pole statusu jest ruszane tylko wtedy, gdy arkusz ma osobna kolumne `STATUS REZERWACJI`); endpoint blokuje też zapis urządzenia, które jest już przypięte do innego aktywnego formularza workflow, i zwraca wtedy `409` z numerem formularza blokującego.
+- `POST /admin/contracts/forms/{id}/workflow/devices` – zapisuje wybór urządzeń do sprawy formularza razem z recznie wpisaną ceną `netto` i `brutto` dla kazdego wybranego urzadzenia, a nastepnie od razu aktualizuje rezerwacje w arkuszu GRENKE (`UWAGI`, `REZERWACJA GRENKE`, `FORMULARZ CTIP`, `CTIP_FORM_ID`, `CTIP_WORKFLOW_CASE_ID`, `STATUS HANDLOWY (LEGACY)` oraz kolor wiersza; pole statusu jest ruszane tylko wtedy, gdy arkusz ma osobna kolumne `STATUS REZERWACJI`); gdy sprawa ma status `APPROVED_ORDER`, endpoint uruchamia dodatkowo automat wiązania urządzeń z klientem MS i zapisuje wynik w statusie „Menadżer Serwisu”; endpoint blokuje też zapis urządzenia, które jest już przypięte do innego aktywnego formularza workflow, i zwraca wtedy `409` z numerem formularza blokującego.
 - `POST /admin/contracts/forms/{id}/workflow/status` – zapisuje ręczny status GRENKE po stronie CTIP (`WAITING_SIGNATURE`, `APPROVED_ORDER`, `REJECTED_GRENKE`); odmowa nie usuwa historii, tylko ustawia 7-dniowy termin zwolnienia zasobów, a decyzje końcowe ustawiają 14-dniowy termin archiwizacji.
 - `POST /admin/contracts/forms/{id}/workflow/release-resources` – ręcznie zwalnia rezerwacje po odmowie GRENKE, usuwa aktywną proformę i zostawia historię formularza oraz urządzeń.
 - `POST /admin/contracts/forms/{id}/archive` i `POST /admin/contracts/forms/{id}/archive/extend` – przenoszą formularz do archiwum albo przedłużają termin automatycznego przeniesienia o 7 dni.

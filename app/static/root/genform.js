@@ -910,6 +910,20 @@ function initializeGenForm() {
           : item.status === "SUBMITTED"
             ? "Brak klienta w MS"
             : "Poza etapem Menadżera Serwisu";
+        const bindingState = String(
+          workflow?.service_manager_binding?.state || "none"
+        ).toLowerCase();
+        const bindingText = String(
+          workflow?.service_manager_binding?.text || "Brak automatu wiązania urządzeń."
+        );
+        const bindingClass =
+          bindingState === "error"
+            ? "danger"
+            : bindingState === "warning"
+              ? "warning"
+              : bindingState === "ok"
+                ? "success"
+                : "info";
         const grenkeLabel = workflow.business_status
           ? workflowBusinessStatusLabel(workflow.business_status)
           : "Brak";
@@ -941,7 +955,10 @@ function initializeGenForm() {
               <span class="genform-subtle">Adres: ${escapeHtml(customerAddress)}</span>
             </div>
           </td>
-          <td class="genform-ms-cell">${escapeHtml(msLabel)}</td>
+          <td class="genform-ms-cell">
+            <div>${escapeHtml(msLabel)}</div>
+            <div><span class="genform-status ${bindingClass}">${escapeHtml(bindingText)}</span></div>
+          </td>
           <td>${escapeHtml(grenkeLabel)}</td>
           <td>
             <div class="genform-row-actions">
@@ -983,6 +1000,20 @@ function initializeGenForm() {
     const devicesValue = Number(workflow.devices_selected_count || 0) > 0
       ? String(workflow.devices_selected_count)
       : '<span class="genform-status warning">Brak</span>';
+    const bindingState = String(
+      workflow?.service_manager_binding?.state || "none"
+    ).toLowerCase();
+    const bindingText = String(
+      workflow?.service_manager_binding?.text || "Brak automatu wiązania urządzeń."
+    );
+    const bindingClass =
+      bindingState === "error"
+        ? "danger"
+        : bindingState === "warning"
+          ? "warning"
+          : bindingState === "ok"
+            ? "success"
+            : "info";
     const proformaValue = workflow.proforma_number
       ? escapeHtml(workflow.proforma_number)
       : '<span class="genform-status warning">Brak</span>';
@@ -1020,6 +1051,10 @@ function initializeGenForm() {
       <article class="genform-detail-summary-card">
         <dt>Status GRENKE</dt>
         <dd>${escapeHtml(workflowBusinessStatusLabel(workflow.business_status))}</dd>
+      </article>
+      <article class="genform-detail-summary-card">
+        <dt>Menadżer Serwisu</dt>
+        <dd><span class="genform-status ${bindingClass}">${escapeHtml(bindingText)}</span></dd>
       </article>
     `;
   }

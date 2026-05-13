@@ -28,6 +28,7 @@ _HEADER_LABELS = {
     "serial": "SERIAL",
     "status": "STATUS",
     "ms_id_magazyn_table": "MS_ID_MAGAZYN_TABLE",
+    "ms_id_maszyna": "MS_ID_MASZYNA",
     "reservation_grenke": "REZERWACJA GRENKE",
     "proforma_grenke": "FAKTURA PROFORMA GRENKE",
 }
@@ -56,6 +57,12 @@ _HEADER_ALIASES = {
         "id magazyn table",
         "id_magazyn_table",
     },
+    "ms_id_maszyna": {
+        "ms_id_maszyna",
+        "ms id maszyna",
+        "id maszyna",
+        "id_maszyna",
+    },
     "reservation_grenke": {"rezerwacja grenke"},
     "proforma_grenke": {
         "faktura proforma grenke",
@@ -71,6 +78,7 @@ _REQUIRED_HEADER_KEYS = (
     "serial",
     "status",
     "ms_id_magazyn_table",
+    "ms_id_maszyna",
     "reservation_grenke",
     "proforma_grenke",
 )
@@ -95,6 +103,7 @@ _WORKFLOW_BOOTSTRAP_HEADER_LAYOUT = [
     "CTIP_WORKFLOW_CASE_ID",
     "STATUS HANDLOWY (LEGACY)",
     "MS_ID_MAGAZYN_TABLE",
+    "MS_ID_MASZYNA",
 ]
 
 _OPTIONAL_WORKSHEET_HEADER_TOKENS = {
@@ -418,6 +427,7 @@ def load_workflow_sheet_devices_lookup(
         workflow_case_id_value = _row_value(local_row, header_index.get("ctip_workflow_case_id"))
         business_status_value = _row_value(local_row, header_index.get("business_status_legacy"))
         ms_id_value = _row_value(local_row, header_index.get("ms_id_magazyn_table"))
+        ms_machine_id_value = _row_value(local_row, header_index.get("ms_id_maszyna"))
         entry = {
             "sheet_row": str(row_number),
             "status": status_value,
@@ -427,6 +437,7 @@ def load_workflow_sheet_devices_lookup(
             "ctip_workflow_case_id": workflow_case_id_value,
             "business_status_legacy": business_status_value,
             "ms_id_magazyn_table": ms_id_value,
+            "ms_id_maszyna": ms_machine_id_value,
             "index": index_value,
         }
 
@@ -488,6 +499,8 @@ def sync_workflow_devices_to_sheet(
     business_status_label: str | None = None,
     status_value: str = WORKFLOW_RESERVATION_STATUS,
     note_value: str = WORKFLOW_RESERVATION_NOTE,
+    reservation_client_name: str | None = None,
+    overwrite_identity_fields: bool = False,
 ) -> dict[str, Any]:
     """Aktualizuje arkusz urządzeń po zapisie workflow i synchronizacji rezerwacji."""
 
@@ -515,6 +528,7 @@ def sync_workflow_devices_to_sheet(
     highlight_rows: list[int] = []
     next_row_number = len(data_rows) + 2
     normalized_assignee = _normalize_sheet_assignee_label(assignee_label)
+    reservation_label = _build_reservation_cell_label(normalized_assignee, reservation_client_name)
     form_request_text = str(form_request_id).strip() if form_request_id is not None else ""
     workflow_case_text = str(workflow_case_id).strip() if workflow_case_id is not None else ""
     business_status_text = str(business_status_label or "").strip()
@@ -530,7 +544,7 @@ def sync_workflow_devices_to_sheet(
             if should_write_reservation_status:
                 _set_row_value(row_values, header_index, "status", status_value)
             _set_row_value(row_values, header_index, "notes", note_value)
-            _set_row_value(row_values, header_index, "reservation_grenke", normalized_assignee)
+            _set_row_value(row_values, header_index, "reservation_grenke", reservation_label)
             _set_row_value(row_values, header_index, "form_ctip", form_request_text)
             _set_row_value(row_values, header_index, "proforma_grenke", proforma_number)
             _set_row_value(row_values, header_index, "ctip_form_id", form_request_text)
@@ -547,6 +561,12 @@ def sync_workflow_devices_to_sheet(
                 "ms_id_magazyn_table",
                 _coerce_source_row_text(device),
             )
+            _set_row_value(
+                row_values,
+                header_index,
+                "ms_id_maszyna",
+                _coerce_machine_id_text(device),
+            )
 
             worksheet.append_row(row_values, value_input_option="USER_ENTERED")
             row_number = next_row_number
@@ -561,7 +581,12 @@ def sync_workflow_devices_to_sheet(
                 and current_status != status_value
             ):
                 previous_status = current_status
-            _fill_base_device_fields(local_row, header_index, device, only_if_missing=True)
+            _fill_base_device_fields(
+                local_row,
+                header_index,
+                device,
+                only_if_missing=not overwrite_identity_fields,
+            )
             if should_write_reservation_status:
                 _queue_single_cell_update(
                     updates,
@@ -582,7 +607,7 @@ def sync_workflow_devices_to_sheet(
                 row_number,
                 header_index,
                 "reservation_grenke",
-                normalized_assignee,
+                reservation_label,
             )
             _queue_single_cell_update(
                 updates,
@@ -626,6 +651,21 @@ def sync_workflow_devices_to_sheet(
                 "ms_id_magazyn_table",
                 _coerce_source_row_text(device),
             )
+            _queue_single_cell_update(
+                updates,
+                row_number,
+                header_index,
+                "ms_id_maszyna",
+                _coerce_machine_id_text(device),
+            )
+            if overwrite_identity_fields:
+                _queue_single_cell_update(
+                    updates,
+                    row_number,
+                    header_index,
+                    "index",
+                    str(device.get("index") or device.get("ewidencja") or "").strip(),
+                )
             data_rows[row_number - 2] = local_row
 
         highlight_rows.append(row_number)
@@ -1214,6 +1254,16 @@ def _normalize_sheet_assignee_label(value: str | None) -> str:
     return re.sub(r"\s*\([^)]*\)\s*$", "", text).strip()
 
 
+def _build_reservation_cell_label(assignee_label: str | None, client_name: str | None) -> str:
+    assignee = str(assignee_label or "").strip()
+    company = str(client_name or "").strip()
+    if assignee and company:
+        return f"{assignee}\n{company}"
+    if assignee:
+        return assignee
+    return company
+
+
 def _coerce_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
@@ -1227,6 +1277,14 @@ def _coerce_source_row_text(device: dict[str, Any]) -> str:
     value = device.get("source_row")
     if value in (None, ""):
         value = device.get("row")
+    int_value = _coerce_int(value)
+    if int_value is None:
+        return ""
+    return str(int_value)
+
+
+def _coerce_machine_id_text(device: dict[str, Any]) -> str:
+    value = device.get("ms_id_maszyna")
     int_value = _coerce_int(value)
     if int_value is None:
         return ""
