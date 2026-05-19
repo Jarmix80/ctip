@@ -69,6 +69,7 @@ from app.services.email_client import EmailSendResult, EmailTestResult
 from app.services.firebird_client import FirebirdTestResult
 from app.services.firebird_ms_users import FirebirdMsUserOption
 from app.services.form_handling_config import default_public_base_url
+from app.services.grenke_launch import GrenkeLaunchResult
 from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
 from app.services.security import hash_password
 from app.services.settings_store import StoredValue
@@ -6247,6 +6248,135 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertIn("Arkusz Google nie odnalazl", response.json()["detail"])
+
+    async def test_contracts_form_workflow_grenke_launch_requires_proforma_stage(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="DEVICES_SELECTED",
+                business_status="DRAFT",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=220,
+                    producer="Ricoh",
+                    model="IM C300",
+                    serial="X123",
+                    ewidencja="KP/220",
+                    price_net="9800.00",
+                    price_gross="12054.00",
+                )
+            )
+            await session.commit()
+
+        response = await self.client.post(
+            f"/admin/contracts/forms/{form.id}/workflow/grenke-launch",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("PROFORMA_CREATED", response.json()["detail"])
+
+    async def test_contracts_form_workflow_grenke_launch_returns_full_prefill(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="WAITING_SIGNATURE",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70035,
+                proforma_number="35/proforma/2026",
+            )
+            session.add(case)
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_contracts.launch_grenke_prefill",
+            AsyncMock(
+                return_value=GrenkeLaunchResult(
+                    url="https://newonline.leasingoptymalny.pl/kalkulacja/a1b2c3d4",
+                    prefill_state="full",
+                    warnings=[],
+                    session_key="a1b2c3d4",
+                )
+            ),
+        ) as launch_mock:
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/grenke-launch",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["prefill_state"], "full")
+        self.assertEqual(body["warnings"], [])
+        self.assertIn("/kalkulacja/", body["url"])
+        self.assertIn("pelny prefill", body["message"])
+        launch_kwargs = launch_mock.await_args.kwargs
+        self.assertEqual(launch_kwargs["form"].id, form.id)
+        self.assertEqual(launch_kwargs["workflow_case"].form_request_id, form.id)
+
+    async def test_contracts_form_workflow_grenke_launch_returns_partial_prefill(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="WAITING_SIGNATURE",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                proforma_firebird_id=70035,
+                proforma_number="35/proforma/2026",
+            )
+            session.add(case)
+            await session.commit()
+
+        with patch(
+            "app.api.routes.admin_contracts.launch_grenke_prefill",
+            AsyncMock(
+                return_value=GrenkeLaunchResult(
+                    url=(
+                        "https://newonline.leasingoptymalny.pl/kalkulacja/e5f6g7h8?"
+                        "p=Ricoh+IM+C300&c=9800.00"
+                    ),
+                    prefill_state="partial",
+                    warnings=["saveCalculation.php: timeout"],
+                    session_key="e5f6g7h8",
+                )
+            ),
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/grenke-launch",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["prefill_state"], "partial")
+        self.assertEqual(body["warnings"], ["saveCalculation.php: timeout"])
+        self.assertIn("czesciowy prefill", body["message"])
 
     async def test_contracts_form_workflow_sheet_sync_endpoint_updates_device_snapshot(self):
         token, _ = await self._login_operator()

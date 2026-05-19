@@ -73,6 +73,15 @@ class Settings(BaseSettings):
         default="http://localhost:8000/admin", alias="ADMIN_PANEL_URL"
     )
     form_public_base_url: str | None = Field(default=None, alias="FORM_PUBLIC_BASE_URL")
+    grenke_app_base_url: str = Field(
+        default="https://newonline.leasingoptymalny.pl",
+        alias="GRENKE_APP_BASE_URL",
+    )
+    grenke_api_base_url: str = Field(
+        default="https://newonline.leasingoptymalny.pl/API",
+        alias="GRENKE_API_BASE_URL",
+    )
+    grenke_timeout_seconds: float = Field(default=12.0, alias="GRENKE_TIMEOUT_SECONDS")
     cors_allowed_origins_raw: str = Field(
         default="http://localhost:8000,http://127.0.0.1:8000,http://testserver",
         alias="CORS_ALLOWED_ORIGINS",

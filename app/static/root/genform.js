@@ -191,6 +191,10 @@ const BANK_BUYER = {
   city: "Poznań",
   nip: "782-22-75-815",
 };
+const GRENKE_STEP2_EMPLOYEES_NUMBER = "10";
+const GRENKE_STEP2_OTHER_BANK_ACCOUNT = "00000000000000000000000000";
+const GRENKE_STEP3_DEFAULT_COUNTRY_BIRTH = "Polska";
+const GRENKE_STEP3_DEFAULT_CITIZENSHIP = "Polskie";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -202,6 +206,8 @@ function escapeHtml(value) {
 }
 
 function initializeGenForm() {
+  const GRENKE_FALLBACK_BASE_URL = "https://newonline.leasingoptymalny.pl";
+  const GRENKE_FALLBACK_CATEGORY_KEY = "Drukarka IT";
   const shell = document.querySelector(".genform-shell");
   const loginSection = document.getElementById("genform-login");
   const appSection = document.getElementById("genform-app");
@@ -234,9 +240,14 @@ function initializeGenForm() {
   const detailEmpty = document.getElementById("genform-detail-empty");
   const detailCompany = document.getElementById("genform-detail-company");
   const detailRepresentatives = document.getElementById("genform-detail-representatives");
+  const detailGrenkeStep2Block = document.getElementById("genform-detail-grenke-step2-block");
+  const detailGrenkeStep2 = document.getElementById("genform-detail-grenke-step2");
+  const detailGrenkeStep3Block = document.getElementById("genform-detail-grenke-step3-block");
+  const detailGrenkeStep3 = document.getElementById("genform-detail-grenke-step3");
   const detailPrintBtn = document.getElementById("genform-detail-print");
   const detailPdfBtn = document.getElementById("genform-detail-pdf");
   const detailDataEnteredBtn = document.getElementById("genform-detail-data-entered");
+  const detailGrenkeLaunchBtn = document.getElementById("genform-detail-grenke-launch");
   const workflowModal = document.getElementById("genform-workflow-modal");
   const workflowCloseBtn = document.getElementById("genform-workflow-close");
   const workflowSubtitle = document.getElementById("genform-workflow-subtitle");
@@ -298,6 +309,7 @@ function initializeGenForm() {
   let openedFormId = null;
   let currentDetailData = null;
   let detailDataEnteredBusy = false;
+  let detailGrenkeLaunchBusy = false;
   let latestForms = [];
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
@@ -339,6 +351,18 @@ function initializeGenForm() {
     if (detailRepresentatives) {
       detailRepresentatives.innerHTML = "";
     }
+    if (detailGrenkeStep2) {
+      detailGrenkeStep2.innerHTML = "";
+    }
+    if (detailGrenkeStep2Block) {
+      detailGrenkeStep2Block.hidden = true;
+    }
+    if (detailGrenkeStep3) {
+      detailGrenkeStep3.innerHTML = "";
+    }
+    if (detailGrenkeStep3Block) {
+      detailGrenkeStep3Block.hidden = true;
+    }
     if (detailContent) {
       detailContent.hidden = true;
     }
@@ -347,7 +371,9 @@ function initializeGenForm() {
       detailEmpty.textContent = "";
     }
     detailDataEnteredBusy = false;
+    detailGrenkeLaunchBusy = false;
     updateDataEnteredButtonState();
+    updateGrenkeLaunchButtonState();
   }
 
   function closeWorkflowModal() {
@@ -608,6 +634,53 @@ function initializeGenForm() {
     ];
   }
 
+  function buildGrenkeStep2Fields(payload, item) {
+    const mobilePhone = normalizeText(payload.company_phone || item.customer_phone);
+    const contactEmail = normalizeText(payload.company_email || item.customer_email);
+    const billingEmail = normalizeText(payload.billing_email || contactEmail || item.customer_email);
+    return [
+      { label: "NIP", value: payload.company_nip || item.customer_nip || "" },
+      { label: "Telefon komórkowy", value: mobilePhone },
+      { label: "Adres e-mail do kontaktu", value: contactEmail },
+      { label: "Adres e-mail do e-faktur", value: billingEmail },
+      { label: "Liczba pracowników", value: GRENKE_STEP2_EMPLOYEES_NUMBER },
+      { label: "Dodaj inny nr konta", value: "TAK" },
+      { label: "Wskaż numer konta", value: GRENKE_STEP2_OTHER_BANK_ACCOUNT },
+    ];
+  }
+
+  function normalizeGrenkeDocumentType(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) {
+      return "Dowód osobisty";
+    }
+    if (normalized.includes("paszport")) {
+      return "Paszport";
+    }
+    if (normalized.includes("dow")) {
+      return "Dowód osobisty";
+    }
+    return "Inny (np. karta pobytu)";
+  }
+
+  function normalizeDateToIso(value) {
+    const raw = normalizeText(value);
+    if (!raw) {
+      return "";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return raw;
+    }
+    const match = raw.match(/^(\d{2})[-.:](\d{2})[-.:](\d{4})$/);
+    if (!match) {
+      return raw;
+    }
+    const day = match[1];
+    const month = match[2];
+    const year = match[3];
+    return `${year}-${month}-${day}`;
+  }
+
   function buildRepresentativeTitle(item, index) {
     const fullName = [normalizeText(item.first_name), normalizeText(item.last_name)]
       .filter(Boolean)
@@ -636,6 +709,30 @@ function initializeGenForm() {
     };
   }
 
+  function buildGrenkeStep3RepresentativeFields(item, index) {
+    const representativeEmail =
+      item.representative_email || item.email || item.contact_email || "";
+    const representativePhone =
+      item.representative_phone || item.phone || item.contact_phone || item.telephone || "";
+    return {
+      title: buildRepresentativeTitle(item, index),
+      fields: [
+        { label: "Imię", value: item.first_name || "" },
+        { label: "Nazwisko", value: item.last_name || "" },
+        { label: "PESEL", value: item.pesel || "" },
+        { label: "Dokument tożsamości", value: normalizeGrenkeDocumentType(item.document_type) },
+        { label: "Seria i numer dokumentu", value: item.document_number || "" },
+        { label: "Data wydania dokumentu", value: normalizeDateToIso(item.document_issue_date) },
+        { label: "Data ważności dokumentu", value: normalizeDateToIso(item.document_expiry_date) },
+        { label: "Obywatelstwo", value: GRENKE_STEP3_DEFAULT_CITIZENSHIP },
+        { label: "Państwo urodzenia", value: GRENKE_STEP3_DEFAULT_COUNTRY_BIRTH },
+        { label: "Adres e-mail (e-podpis)", value: representativeEmail },
+        { label: "Telefon kom. (e-podpis)", value: representativePhone },
+        { label: "Stan cywilny", value: "Uzupełnij ręcznie" },
+      ],
+    };
+  }
+
   function renderRepresentatives(items) {
     if (!Array.isArray(items) || !items.length) {
       return "<p class=\"genform-detail-empty\">Brak reprezentantów zapisanych w formularzu.</p>";
@@ -655,14 +752,44 @@ function initializeGenForm() {
       .join("");
   }
 
+  function renderGrenkeStep3Representatives(items) {
+    if (!Array.isArray(items) || !items.length) {
+      return "<p class=\"genform-detail-empty\">Brak reprezentantów zapisanych w formularzu.</p>";
+    }
+    return items
+      .map((item, index) => {
+        const representative = buildGrenkeStep3RepresentativeFields(item, index);
+        return `<article class="genform-detail-representative">
+          <header class="genform-detail-representative-header">
+            <h5>${escapeHtml(representative.title)}</h5>
+          </header>
+          <dl class="genform-detail-fields">
+            ${renderFieldCards(representative.fields)}
+          </dl>
+        </article>`;
+      })
+      .join("");
+  }
+
   function renderDetailSections(detailData) {
-    if (!detailSummary || !detailContent || !detailEmpty || !detailCompany || !detailRepresentatives) {
+    if (
+      !detailSummary
+      || !detailContent
+      || !detailEmpty
+      || !detailCompany
+      || !detailRepresentatives
+      || !detailGrenkeStep2
+      || !detailGrenkeStep2Block
+      || !detailGrenkeStep3
+      || !detailGrenkeStep3Block
+    ) {
       return;
     }
     detailSummary.innerHTML = renderFieldCards(buildSummaryFields(detailData), {
       itemClass: "genform-detail-summary-card",
     });
 
+    const item = detailData.item || {};
     const payload =
       detailData.submittedPayload && typeof detailData.submittedPayload === "object"
         ? detailData.submittedPayload
@@ -670,6 +797,10 @@ function initializeGenForm() {
     if (!payload) {
       detailCompany.innerHTML = "";
       detailRepresentatives.innerHTML = "";
+      detailGrenkeStep2.innerHTML = "";
+      detailGrenkeStep3.innerHTML = "";
+      detailGrenkeStep2Block.hidden = true;
+      detailGrenkeStep3Block.hidden = true;
       detailContent.hidden = true;
       detailEmpty.hidden = false;
       detailEmpty.textContent =
@@ -679,6 +810,10 @@ function initializeGenForm() {
 
     detailCompany.innerHTML = renderFieldCards(buildCompanyFields(payload));
     detailRepresentatives.innerHTML = renderRepresentatives(payload.representatives);
+    detailGrenkeStep2.innerHTML = renderFieldCards(buildGrenkeStep2Fields(payload, item));
+    detailGrenkeStep3.innerHTML = renderGrenkeStep3Representatives(payload.representatives);
+    detailGrenkeStep2Block.hidden = false;
+    detailGrenkeStep3Block.hidden = false;
     detailContent.hidden = false;
     detailEmpty.hidden = true;
     detailEmpty.textContent = "";
@@ -883,6 +1018,106 @@ function initializeGenForm() {
       return `Archiwizacja za ${archive.days_to_archive} dni`;
     }
     return "";
+  }
+
+  function findFormRowData(formId) {
+    const numericFormId = Number(formId);
+    if (!Number.isFinite(numericFormId) || numericFormId <= 0) {
+      return null;
+    }
+    return latestForms.find((item) => Number(item?.id || 0) === numericFormId) || null;
+  }
+
+  function resolveCurrentDetailWorkflowStage() {
+    const currentStage = String(currentDetailData?.workflowStage || "").trim();
+    if (currentStage) {
+      return currentStage;
+    }
+    const rowData = findFormRowData(openedFormId);
+    return String(rowData?.workflow?.stage || "").trim();
+  }
+
+  function randomGrenkeKey() {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz";
+    const output = [];
+    for (let i = 0; i < 16; i += 1) {
+      const index = Math.floor(Math.random() * alphabet.length);
+      output.push(alphabet[index]);
+    }
+    return output.join("");
+  }
+
+  function normalizeMoneyToDot(value) {
+    const normalized = String(value ?? "")
+      .replace(/\s+/g, "")
+      .replace(",", ".")
+      .trim();
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return "0.00";
+    }
+    return parsed.toFixed(2);
+  }
+
+  function encodeGrenkeLegacyQueryValue(value) {
+    return encodeURI(String(value ?? ""))
+      .replace(/&/g, "%26")
+      .replace(/=/g, "%3D")
+      .replace(/#/g, "%23");
+  }
+
+  function buildGrenkeLegacyQuery(params) {
+    return Object.entries(params)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeGrenkeLegacyQueryValue(value)}`)
+      .join("&");
+  }
+
+  function buildGrenkeFallbackProductLabel(device) {
+    if (!device || typeof device !== "object") {
+      return "Urządzenie z CTIP";
+    }
+    const rawName = String(device.name || "").trim();
+    if (rawName) {
+      return rawName;
+    }
+    const producer = String(device.producer || "").trim();
+    const model = String(device.model || "").trim();
+    const serial = String(device.serial || "").trim();
+    const ewidencja = String(device.ewidencja || "").trim();
+    const base = [producer, model].filter(Boolean).join(" ").trim() || "Urządzenie";
+    if (serial) {
+      return `${base} S/N :${serial}`;
+    }
+    if (ewidencja) {
+      return `${base} (${ewidencja})`;
+    }
+    return base;
+  }
+
+  async function buildGrenkeLegacyFallbackUrl(formId) {
+    const response = await fetch(`/admin/contracts/forms/${formId}/workflow`, {
+      headers: headers(false),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Nie udało się pobrać danych workflow do fallbacku GRENKE."
+      );
+    }
+    const devices = Array.isArray(data?.sales_packet?.devices) ? data.sales_packet.devices : [];
+    const firstDevice = devices[0] || {};
+    const productName = buildGrenkeFallbackProductLabel(firstDevice);
+    const productPrice = normalizeMoneyToDot(
+      firstDevice.price_gross || firstDevice.price || firstDevice.price_net || ""
+    );
+    const sessionKey = randomGrenkeKey();
+    const query = buildGrenkeLegacyQuery({
+      p: productName,
+      c: productPrice,
+      k: GRENKE_FALLBACK_CATEGORY_KEY,
+      paramsUrl: "1",
+    });
+    return `${GRENKE_FALLBACK_BASE_URL}/kalkulacja/${sessionKey}?${query}`;
   }
 
   function renderItems(items) {
@@ -2164,6 +2399,10 @@ function initializeGenForm() {
       renderArchiveMenu(data.archive_totals || {});
       renderMailboxSyncNote(data.mailbox_sync || null);
       renderItems(latestForms);
+      if (openedFormId && currentDetailData) {
+        currentDetailData.workflowStage = resolveCurrentDetailWorkflowStage();
+        updateGrenkeLaunchButtonState();
+      }
       if (showInfo) {
         showSuccess("Lista formularzy została odświeżona.");
       }
@@ -2269,6 +2508,126 @@ function initializeGenForm() {
     detailDataEnteredBtn.title = "Wyślij klientowi informację o kolejnych krokach umowy.";
   }
 
+  function updateGrenkeLaunchButtonState() {
+    if (!detailGrenkeLaunchBtn) {
+      return;
+    }
+    const isSubmitted = currentDetailData?.item?.status === "SUBMITTED";
+    if (!isSubmitted) {
+      detailGrenkeLaunchBtn.hidden = true;
+      detailGrenkeLaunchBtn.disabled = true;
+      detailGrenkeLaunchBtn.textContent = "Wniosek GRENKE";
+      detailGrenkeLaunchBtn.title = "Przycisk dostępny po wypełnieniu formularza przez klienta.";
+      return;
+    }
+
+    detailGrenkeLaunchBtn.hidden = false;
+    if (detailGrenkeLaunchBusy) {
+      detailGrenkeLaunchBtn.disabled = true;
+      detailGrenkeLaunchBtn.textContent = "Uruchamianie…";
+      detailGrenkeLaunchBtn.title = "Trwa przygotowanie prefillu GRENKE.";
+      return;
+    }
+
+    const workflowStage = resolveCurrentDetailWorkflowStage();
+    const canLaunchGrenke = !workflowStage || workflowStage === "PROFORMA_CREATED";
+    detailGrenkeLaunchBtn.disabled = !canLaunchGrenke;
+    detailGrenkeLaunchBtn.textContent = "Wniosek GRENKE";
+    detailGrenkeLaunchBtn.title = canLaunchGrenke
+      ? "Otwórz nową kartę GRENKE z prefillem danych formularza."
+      : "Przycisk dostępny po etapie workflow „Proforma gotowa”.";
+  }
+
+  async function openGrenkeLaunchWindow() {
+    if (!token) {
+      showLogin("Brak aktywnej sesji.");
+      return;
+    }
+    if (!openedFormId || !currentDetailData || currentDetailData.item?.status !== "SUBMITTED") {
+      showError("Wniosek GRENKE można uruchomić tylko dla formularza w statusie „Wypełniony”.");
+      return;
+    }
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      showError("Przeglądarka zablokowała nowe okno. Odblokuj pop-up i spróbuj ponownie.");
+      return;
+    }
+    try {
+      popup.opener = null;
+      popup.document.open();
+      popup.document.write(
+        "<!doctype html><html><head><meta charset='utf-8'><title>Wniosek GRENKE</title></head>"
+        + "<body style='font-family:Arial,sans-serif;padding:24px;color:#333'>"
+        + "<h3 style='margin:0 0 8px'>Wniosek GRENKE</h3>"
+        + "<p style='margin:0'>Trwa przygotowanie formularza...</p>"
+        + "</body></html>"
+      );
+      popup.document.close();
+    } catch (renderErr) {
+      console.warn("Nie udało się przygotować strony pośredniej GRENKE.", renderErr);
+    }
+
+    clearMessages();
+    detailGrenkeLaunchBusy = true;
+    updateGrenkeLaunchButtonState();
+    try {
+      const response = await fetch(`/admin/contracts/forms/${openedFormId}/workflow/grenke-launch`, {
+        method: "POST",
+        headers: headers(true),
+        body: "{}",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 404) {
+          const fallbackUrl = await buildGrenkeLegacyFallbackUrl(openedFormId);
+          popup.location.href = fallbackUrl;
+          showSuccess(
+            "Endpoint prefillu GRENKE nie jest jeszcze wdrożony na backendzie (404). "
+            + "Uruchomiono tryb kompatybilny."
+          );
+          return;
+        }
+        throw new Error(
+          `${data.detail || "Nie udało się przygotować wniosku GRENKE."} (HTTP ${response.status})`
+        );
+      }
+      const launchUrl = String(data.url || "").trim();
+      if (!launchUrl) {
+        throw new Error("Backend nie zwrócił adresu URL do uruchomienia wniosku.");
+      }
+      popup.location.href = launchUrl;
+      const prefillState = String(data.prefill_state || "").trim().toLowerCase();
+      if (prefillState === "full") {
+        showSuccess(data.message || "Uruchomiono pełny prefill formularza GRENKE.");
+      } else {
+        showSuccess(
+          data.message
+            || "Uruchomiono formularz GRENKE z częściowym prefillem (sprawdź pola w formularzu)."
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Błąd uruchamiania formularza GRENKE.";
+      showError(message);
+      try {
+        popup.document.open();
+        popup.document.write(
+          "<!doctype html><html><head><meta charset='utf-8'><title>Wniosek GRENKE - błąd</title></head>"
+          + "<body style='font-family:Arial,sans-serif;padding:24px;color:#333'>"
+          + "<h3 style='margin:0 0 8px;color:#b00020'>Wniosek GRENKE - błąd</h3>"
+          + `<p style='margin:0 0 12px'>${escapeHtml(message)}</p>`
+          + "<p style='margin:0;color:#666'>Sprawdź komunikat błędu w panelu /genform.</p>"
+          + "</body></html>"
+        );
+        popup.document.close();
+      } catch (renderErr) {
+        console.warn("Nie udało się pokazać błędu w oknie GRENKE.", renderErr);
+      }
+    } finally {
+      detailGrenkeLaunchBusy = false;
+      updateGrenkeLaunchButtonState();
+    }
+  }
+
   async function sendDataEnteredNotification() {
     if (!token) {
       showLogin("Brak aktywnej sesji.");
@@ -2333,6 +2692,7 @@ function initializeGenForm() {
       currentDetailData = {
         item,
         statusMessage: data.status_message || "Brak informacji o statusie.",
+        workflowStage: String(findFormRowData(formId)?.workflow?.stage || "").trim(),
         submittedPayload:
           data.submitted_payload && typeof data.submitted_payload === "object"
             ? data.submitted_payload
@@ -2350,6 +2710,7 @@ function initializeGenForm() {
       openedFormId = formId;
       detailDataEnteredBusy = false;
       updateDataEnteredButtonState();
+      updateGrenkeLaunchButtonState();
       detailModal.hidden = false;
     } catch (err) {
       showError(err instanceof Error ? err.message : "Błąd odczytu szczegółów formularza.");
@@ -2641,6 +3002,7 @@ function initializeGenForm() {
     }
   });
   detailDataEnteredBtn?.addEventListener("click", sendDataEnteredNotification);
+  detailGrenkeLaunchBtn?.addEventListener("click", openGrenkeLaunchWindow);
   detailPrintBtn?.addEventListener("click", () => triggerDetailPrint("print"));
   detailPdfBtn?.addEventListener("click", () => triggerDetailPrint("pdf"));
   detailModal?.addEventListener("click", (event) => {

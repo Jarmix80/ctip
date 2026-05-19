@@ -46,6 +46,7 @@ from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
     WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
     WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+    WORKFLOW_STAGE_PROFORMA_CREATED,
     build_client_preview,
     build_sales_packet,
     build_workflow_business_status_options,
@@ -67,6 +68,7 @@ from app.services.contracts_workflow import (
     set_form_workflow_proforma,
     workflow_business_status_label,
 )
+from app.services.grenke_launch import launch_grenke_prefill
 from app.services.workflow_machine_binding import (
     apply_binding_snapshot,
     bind_devices_to_workflow_client,
@@ -1382,6 +1384,104 @@ async def contracts_form_workflow_detail(
             ),
         },
         "sales_packet": build_sales_packet(workflow_case, workflow_devices),
+    }
+
+
+@router.post(
+    "/forms/{form_id}/workflow/grenke-launch",
+    summary="Przygotuj link do formularza GRENKE z prefillem",
+)
+async def contracts_form_workflow_grenke_launch(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Uruchamia API-only prefill GRENKE dla formularza SUBMITTED."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Formularz nie istnieje.",
+        )
+    if item.status != "SUBMITTED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Workflow jest dostepny tylko dla formularzy ze statusem SUBMITTED.",
+        )
+
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Najpierw zapisz klienta, urzadzenia i proforme dla formularza.",
+        )
+
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    workflow_payload = serialize_workflow_case(workflow_case, workflow_devices)
+    workflow_stage = str(workflow_payload.get("stage") or "")
+    if workflow_stage != WORKFLOW_STAGE_PROFORMA_CREATED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Wniosek GRENKE jest dostepny dopiero po etapie PROFORMA_CREATED "
+                "(utworzona proforma)."
+            ),
+        )
+
+    try:
+        launch_result = await launch_grenke_prefill(
+            form=item,
+            workflow_case=workflow_case,
+            workflow_devices=workflow_devices,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Nie udalo sie przygotowac prefillu GRENKE: {exc}",
+        ) from exc
+
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_flow_grenke_launch",
+        client_ip=admin_session.client_ip,
+        payload={
+            "form_request_id": item.id,
+            "workflow_case_id": workflow_case.id,
+            "workflow_stage": workflow_stage,
+            "prefill_state": launch_result.prefill_state,
+            "warnings": launch_result.warnings,
+            "launch_url": launch_result.url,
+            "session_key": launch_result.session_key,
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": (
+            "Przygotowano pelny prefill GRENKE."
+            if launch_result.prefill_state == "full"
+            else "Przygotowano czesciowy prefill GRENKE."
+        ),
+        "url": launch_result.url,
+        "prefill_state": launch_result.prefill_state,
+        "warnings": launch_result.warnings,
+        "session_key": launch_result.session_key,
+        "workflow_stage": workflow_stage,
     }
 
 

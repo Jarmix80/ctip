@@ -577,6 +577,13 @@ body {
   color: var(--muted);
 }
 
+.genform-detail-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .genform-detail-grid,
 .genform-detail-fields {
   margin: 14px 0 0;

@@ -131,6 +131,7 @@
             </div>
             <div class="genform-actions genform-detail-actions">
               <button id="genform-detail-data-entered" type="button" class="genform-btn-primary">Dane zostały wpisane</button>
+              <button id="genform-detail-grenke-launch" type="button" class="genform-btn-secondary">Wniosek GRENKE</button>
               <button id="genform-detail-print" type="button" class="genform-btn-secondary">Drukuj</button>
               <button id="genform-detail-pdf" type="button" class="genform-btn-secondary">PDF</button>
               <button id="genform-detail-close" type="button" class="genform-btn-secondary">Zamknij</button>
@@ -157,6 +158,20 @@
               <div class="genform-detail-block">
                 <h4>Reprezentanci</h4>
                 <div id="genform-detail-representatives" class="genform-detail-representatives"></div>
+              </div>
+              <div id="genform-detail-grenke-step2-block" class="genform-detail-block" hidden>
+                <h4>Krok 2 GRENKE – dane do wklejenia</h4>
+                <p class="genform-detail-hint">
+                  W kroku 2 wpisz NIP i kliknij „Pobierz dane firmy”, a następnie uzupełnij poniższe pola.
+                </p>
+                <dl id="genform-detail-grenke-step2" class="genform-detail-fields"></dl>
+              </div>
+              <div id="genform-detail-grenke-step3-block" class="genform-detail-block" hidden>
+                <h4>Krok 3 GRENKE – osoby uprawnione do podpisania umowy</h4>
+                <p class="genform-detail-hint">
+                  Zweryfikuj dane reprezentantów i uzupełnij ręcznie tylko pola, których CTIP nie zbiera (np. stan cywilny).
+                </p>
+                <div id="genform-detail-grenke-step3" class="genform-detail-representatives"></div>
               </div>
             </div>
           </section>
