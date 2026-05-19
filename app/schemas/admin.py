@@ -9,7 +9,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-PanelSection = Literal["admin", "operator", "generator"]
+PanelSection = Literal["admin", "operator", "generator", "delivery"]
+PanelRole = Literal["admin", "operator", "serwisant"]
 
 
 class AdminLoginRequest(BaseModel):
@@ -478,7 +479,7 @@ class AdminUserSummary(BaseModel):
     first_name: str | None
     last_name: str | None
     internal_ext: str | None
-    role: Literal["admin", "operator"]
+    role: PanelRole
     is_salesperson: bool = False
     firebird_app_user_id: int | None = None
     firebird_app_user_login: str | None = None
@@ -525,7 +526,7 @@ class AdminUserCreate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     internal_ext: str | None = None
-    role: Literal["admin", "operator"] = "operator"
+    role: PanelRole = "operator"
     is_salesperson: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
@@ -550,7 +551,7 @@ class AdminUserUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     internal_ext: str | None = None
-    role: Literal["admin", "operator"] = "operator"
+    role: PanelRole = "operator"
     is_salesperson: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None

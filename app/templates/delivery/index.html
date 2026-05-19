@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – obsługa dostaw</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/root/section_switcher.css">
+    <link rel="stylesheet" href="/static/delivery/delivery.css">
+    <script defer src="/static/root/section_switcher.js"></script>
+    <script defer src="/static/delivery/delivery.js"></script>
+  </head>
+  <body>
+    <header class="delivery-hero">
+      <div class="delivery-hero-copy">
+        <p class="delivery-kicker">CTIP / logistyka i serwis</p>
+        <h1>Obsługa dostaw</h1>
+        <p>Dostawy GRENKE, odbiory, przygotowanie urządzeń, dokumenty i powiadomienia końców umów.</p>
+      </div>
+      <div class="delivery-hero-actions">
+        <div data-section-switcher hidden></div>
+        <a class="delivery-back" href="/choice">Powrót do wyboru</a>
+      </div>
+    </header>
+
+    <main id="delivery-app" class="delivery-app" hidden>
+      <nav class="delivery-commandbar" aria-label="Akcje modułu dostaw">
+        <button class="delivery-nav-btn active" type="button" data-view="cases">Sprawy</button>
+        <button class="delivery-nav-btn strong" type="button" data-open-dialog="new-delivery-dialog">Nowa dostawa</button>
+        <button class="delivery-nav-btn" type="button" data-open-dialog="pickup-dialog">Zaplanuj odbiór</button>
+        <button class="delivery-nav-btn" type="button" data-view="grenke">Powiadomienia GRENKE</button>
+        <button class="delivery-nav-btn ghost" id="delivery-refresh" type="button">Odśwież</button>
+      </nav>
+
+      <div id="delivery-info" class="delivery-info" hidden></div>
+
+      <section id="view-cases" class="delivery-view delivery-workspace">
+        <aside class="delivery-list-panel">
+          <div class="delivery-panel-head">
+            <div>
+              <h2>Sprawy</h2>
+              <p>Wybierz dostawę albo odbiór. Szczegóły pokażą się obok listy.</p>
+            </div>
+            <select id="case-type-filter" aria-label="Typ sprawy">
+              <option value="">Wszystkie</option>
+              <option value="delivery">Dostawy</option>
+              <option value="pickup">Odbiory</option>
+            </select>
+          </div>
+          <div id="delivery-cases-body" class="delivery-case-list"></div>
+        </aside>
+
+        <section id="case-empty-state" class="delivery-detail-empty">
+          <span>Wybierz sprawę z listy</span>
+          <h2>Tu pojawią się szczegóły dostawy</h2>
+          <p>Po otwarciu sprawy można zapisać termin, dodać urządzenia, zadania, dokumenty i sprawdzić pliki.</p>
+        </section>
+
+        <section id="view-detail" class="delivery-detail" hidden>
+          <div class="delivery-detail-header">
+            <div>
+              <p id="case-detail-badge" class="delivery-pill">Sprawa</p>
+              <h2 id="case-detail-title">Szczegóły sprawy</h2>
+              <p id="case-detail-subtitle"></p>
+            </div>
+            <button class="delivery-secondary" type="button" data-action="back-to-list">Wyczyść wybór</button>
+          </div>
+
+          <div class="delivery-tabs" role="tablist" aria-label="Sekcje sprawy">
+            <button class="delivery-tab active" type="button" data-detail-tab="overview">Ustalenia</button>
+            <button class="delivery-tab" type="button" data-detail-tab="devices">Urządzenia</button>
+            <button class="delivery-tab" type="button" data-detail-tab="tasks">Zadania</button>
+            <button class="delivery-tab" type="button" data-detail-tab="files">Dokumenty</button>
+          </div>
+
+          <section id="detail-tab-overview" class="delivery-tab-panel">
+            <form id="case-update-form" class="delivery-card delivery-form compact">
+              <h3>Ustalenia sprawy</h3>
+              <label>Nazwa sprawy<input name="title"></label>
+              <label>Status
+                <select name="status">
+                  <option value="new">Nowa</option>
+                  <option value="planned">Zaplanowana</option>
+                  <option value="in_progress">W trakcie</option>
+                  <option value="done">Zakończona</option>
+                  <option value="cancelled">Anulowana</option>
+                </select>
+              </label>
+              <label>Data<input name="delivery_date" type="date"></label>
+              <label>Okno godzinowe<input name="delivery_time_window" placeholder="np. 10:00-12:00"></label>
+              <label>Kontakt<input name="delivery_contact_name"></label>
+              <label>Telefon kontaktowy<input name="delivery_contact_phone"></label>
+              <label class="delivery-form-full">Notatki dla dowozu<textarea name="delivery_notes" rows="3"></textarea></label>
+              <label class="delivery-form-full">Notatki serwisowe<textarea name="service_notes" rows="3"></textarea></label>
+              <button type="submit">Zapisz ustalenia</button>
+            </form>
+          </section>
+
+          <section id="detail-tab-devices" class="delivery-tab-panel" hidden>
+            <div class="delivery-card">
+              <div class="delivery-card-head small">
+                <div>
+                  <h3>Urządzenia</h3>
+                  <p id="case-devices-help">Urządzenia dostawy rezerwują się w arkuszu, odbiory nie zmieniają MS na etapie planowania.</p>
+                </div>
+                <button id="load-available-devices" type="button">Pobierz magazyn</button>
+              </div>
+              <div id="case-devices-list" class="delivery-list"></div>
+              <div id="available-devices-panel" class="delivery-select-panel" hidden>
+                <input id="available-device-search" placeholder="Filtruj po modelu, numerze seryjnym lub indeksie">
+                <div id="available-devices-list" class="delivery-check-list"></div>
+                <button id="save-case-devices" type="button">Zapisz wybrane urządzenia</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="detail-tab-tasks" class="delivery-tab-panel" hidden>
+            <div class="delivery-card">
+              <div class="delivery-card-head small">
+                <div>
+                  <h3>Zadania</h3>
+                  <p>Przygotowanie, dowóz, zerówka, kontakt z klientem i zlecenia serwisowe.</p>
+                </div>
+              </div>
+              <form id="task-form" class="delivery-form compact">
+                <label>Typ
+                  <select name="task_type">
+                    <option value="preparation">Przygotowanie</option>
+                    <option value="delivery">Dowóz</option>
+                    <option value="pickup">Odbiór</option>
+                    <option value="zerowka">Zerówka</option>
+                    <option value="customer_contact">Kontakt z klientem</option>
+                    <option value="service_order">Zlecenie serwisowe</option>
+                    <option value="document">Dokument</option>
+                    <option value="other">Inne</option>
+                  </select>
+                </label>
+                <label>Tytuł<input name="title" required></label>
+                <label>Data<input name="due_date" type="date"></label>
+                <label>Godziny<input name="due_time_window"></label>
+                <label class="delivery-form-full">Notatki<textarea name="notes" rows="2"></textarea></label>
+                <button type="submit">Dodaj zadanie</button>
+              </form>
+              <div id="case-tasks-list" class="delivery-list"></div>
+            </div>
+          </section>
+
+          <section id="detail-tab-files" class="delivery-tab-panel" hidden>
+            <div class="delivery-card">
+              <div class="delivery-card-head small">
+                <div>
+                  <h3>Pliki i dokumenty</h3>
+                  <p>Podgląd plików GRENKE z mailboxa, załączniki i generowanie z DOCX.</p>
+                </div>
+              </div>
+              <form id="file-upload-form" class="delivery-form compact">
+                <label>Typ pliku<input name="file_type" value="other"></label>
+                <label>Plik<input name="upload" type="file" required></label>
+                <button type="submit">Dodaj plik</button>
+              </form>
+              <form id="document-form" class="delivery-form compact delivery-document-form">
+                <label class="delivery-form-full">Szablon
+                  <select name="template_key" id="document-template-select"></select>
+                </label>
+                <label class="delivery-form-full">Nazwa wynikowa<input name="file_name" placeholder="np. protokol_dowozu.docx"></label>
+                <button type="submit">Generuj DOCX</button>
+              </form>
+              <div id="case-files-list" class="delivery-list"></div>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <section id="view-grenke" class="delivery-view delivery-grenke" hidden>
+        <div class="delivery-panel-head">
+          <div>
+            <h2>Powiadomienia umów GRENKE</h2>
+            <p>Operator potwierdza datę końca umowy. Dopiero wtedy wpis trafia do harmonogramu powiadomień.</p>
+          </div>
+          <button id="run-grenke-reminders" type="button">Uruchom przypomnienia</button>
+        </div>
+        <form id="grenke-filter-form" class="delivery-filter-form">
+          <label>Status
+            <select name="status_filter">
+              <option value="">Wszystkie</option>
+              <option value="pending_confirmation">Do zatwierdzenia</option>
+              <option value="confirmed">Potwierdzone</option>
+              <option value="cancelled">Anulowane</option>
+            </select>
+          </label>
+          <label>Od<input name="date_from" type="date"></label>
+          <label>Do<input name="date_to" type="date"></label>
+          <label>Szukaj<input name="q" placeholder="klient, nr umowy, ID formularza"></label>
+          <button type="submit">Filtruj</button>
+        </form>
+        <div id="delivery-contracts-body" class="delivery-contracts"></div>
+      </section>
+    </main>
+
+    <section id="delivery-login" class="delivery-login" hidden>
+      <h1>Brak dostępu</h1>
+      <p>Konto nie ma uprawnień do modułu obsługi dostaw.</p>
+      <a href="/choice">Wróć do wyboru sekcji</a>
+    </section>
+
+    <dialog id="new-delivery-dialog" class="delivery-dialog">
+      <form method="dialog" class="dialog-close-form"><button type="submit">×</button></form>
+      <h2>Nowa dostawa</h2>
+      <p>Wyszukaj klienta w Menadżerze Serwisu po NIP lub nazwie. Jeśli go nie ma, uzupełnij dane i utwórz go z CTIP.</p>
+      <form id="delivery-manual-form" class="delivery-form">
+        <label>Klient / firma<input name="company_name" required></label>
+        <label>NIP<input name="company_nip"></label>
+        <button class="delivery-secondary delivery-form-full" type="button" data-action="search-delivery-client">Wyszukaj w MSerwisu</button>
+        <input name="firebird_client_id" type="hidden">
+        <div id="delivery-client-search-result" class="delivery-result delivery-form-full" hidden></div>
+        <label class="delivery-check delivery-form-full"><input name="create_firebird_client" type="checkbox"> Utwórz klienta w MSerwisu, jeśli go nie ma</label>
+        <label>E-mail<input name="company_email" type="email"></label>
+        <label>Telefon<input name="company_phone"></label>
+        <label>Ulica<input name="registered_street"></label>
+        <label>Nr budynku<input name="registered_building_no"></label>
+        <label>Nr lokalu<input name="registered_apartment_no"></label>
+        <label>Kod pocztowy<input name="registered_postal_code"></label>
+        <label>Miasto<input name="registered_city"></label>
+        <label>Data dostawy<input name="delivery_date" type="date"></label>
+        <label>Okno godzinowe<input name="delivery_time_window" placeholder="np. 10:00-12:00"></label>
+        <label>Kontakt<input name="delivery_contact_name"></label>
+        <label>Telefon kontaktowy<input name="delivery_contact_phone"></label>
+        <label class="delivery-form-full">Notatki<textarea name="delivery_notes" rows="3"></textarea></label>
+        <button type="submit">Utwórz dostawę</button>
+      </form>
+    </dialog>
+
+    <dialog id="pickup-dialog" class="delivery-dialog">
+      <form method="dialog" class="dialog-close-form"><button type="submit">×</button></form>
+      <h2>Zaplanuj odbiór</h2>
+      <p>Wyszukaj klienta MS, wybierz urządzenia do odbioru i zapisz sprawę. Samo zaplanowanie nie zmienia danych w Menadżerze Serwisu.</p>
+      <form id="pickup-search-form" class="delivery-form compact">
+        <label>NIP lub nazwa klienta<input name="query" required></label>
+        <button type="submit">Wyszukaj klienta</button>
+      </form>
+      <div id="pickup-client-results" class="delivery-list"></div>
+      <form id="pickup-form" class="delivery-form" hidden>
+        <input name="firebird_client_id" type="hidden">
+        <div id="pickup-selected-client" class="delivery-result delivery-form-full"></div>
+        <div id="pickup-device-list" class="delivery-check-list delivery-form-full"></div>
+        <label>Data odbioru<input name="delivery_date" type="date"></label>
+        <label>Okno godzinowe<input name="delivery_time_window" placeholder="np. 12:00-14:00"></label>
+        <label>Kontakt<input name="delivery_contact_name"></label>
+        <label>Telefon kontaktowy<input name="delivery_contact_phone"></label>
+        <label class="delivery-form-full">Notatki<textarea name="delivery_notes" rows="3"></textarea></label>
+        <button type="submit">Utwórz odbiór</button>
+      </form>
+    </dialog>
+  </body>
+</html>

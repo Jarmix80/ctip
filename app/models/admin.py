@@ -27,7 +27,10 @@ class AdminUser(Base):
 
     __tablename__ = "admin_user"
     __table_args__ = (
-        CheckConstraint("role in ('admin','operator')", name="admin_user_role_check"),
+        CheckConstraint(
+            "role in ('admin','operator','serwisant')",
+            name="admin_user_role_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -304,6 +307,250 @@ class WorkflowSheetStatusCache(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class DeliveryCase(Base):
+    """Sprawa obsługi dostawy, tworzona z FLOW GRENKE albo ręcznie."""
+
+    __tablename__ = "delivery_case"
+    __table_args__ = (
+        CheckConstraint("source in ('grenke','manual')", name="delivery_case_source_check"),
+        CheckConstraint("case_type in ('delivery','pickup')", name="delivery_case_type_check"),
+        CheckConstraint(
+            "status in ('new','planned','in_progress','done','cancelled')",
+            name="delivery_case_status_check",
+        ),
+        UniqueConstraint("workflow_case_id", name="uq_delivery_case_workflow_case_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="manual")
+    case_type: Mapped[str] = mapped_column(Text, nullable=False, default="delivery")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="new")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    form_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.form_request.id", ondelete="SET NULL"), nullable=True
+    )
+    workflow_case_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.form_workflow_case.id", ondelete="SET NULL"), nullable=True
+    )
+    firebird_client_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    customer_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_nip: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delivery_time_window: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_contact_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_contact_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    service_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    form_request: Mapped[FormRequest | None] = relationship()
+    workflow_case: Mapped[FormWorkflowCase | None] = relationship()
+    created_by_user: Mapped[AdminUser | None] = relationship(foreign_keys=[created_by])
+    updated_by_user: Mapped[AdminUser | None] = relationship(foreign_keys=[updated_by])
+    devices: Mapped[list[DeliveryCaseDevice]] = relationship(
+        back_populates="delivery_case", cascade="all, delete-orphan"
+    )
+    tasks: Mapped[list[DeliveryCaseTask]] = relationship(
+        back_populates="delivery_case", cascade="all, delete-orphan"
+    )
+    files: Mapped[list[DeliveryCaseFile]] = relationship(
+        back_populates="delivery_case", cascade="all, delete-orphan"
+    )
+
+
+class DeliveryCaseDevice(Base):
+    """Urządzenie przypisane do sprawy obsługi dostawy."""
+
+    __tablename__ = "delivery_case_device"
+    __table_args__ = (
+        UniqueConstraint(
+            "delivery_case_id",
+            "workflow_device_id",
+            name="uq_delivery_case_device_workflow_device_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    delivery_case_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.delivery_case.id", ondelete="CASCADE"), nullable=False
+    )
+    workflow_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.form_workflow_device.id", ondelete="SET NULL"), nullable=True
+    )
+    producer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    serial: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ewidencja: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_machine_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    device_role: Mapped[str] = mapped_column(Text, nullable=False, default="delivery")
+    source_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    delivery_case: Mapped[DeliveryCase] = relationship(back_populates="devices")
+    workflow_device: Mapped[FormWorkflowDevice | None] = relationship()
+
+
+class DeliveryCaseTask(Base):
+    """Zadanie operacyjne w sprawie dostawy albo odbioru."""
+
+    __tablename__ = "delivery_case_task"
+    __table_args__ = (
+        CheckConstraint(
+            "task_type in ('delivery','preparation','pickup','zerowka','customer_contact','service_order','document','other')",
+            name="delivery_case_task_type_check",
+        ),
+        CheckConstraint(
+            "status in ('todo','planned','done','cancelled')",
+            name="delivery_case_task_status_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    delivery_case_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.delivery_case.id", ondelete="CASCADE"), nullable=False
+    )
+    task_type: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="todo")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_time_window: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assignee_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    delivery_case: Mapped[DeliveryCase] = relationship(back_populates="tasks")
+    assignee_user: Mapped[AdminUser | None] = relationship()
+
+
+class DeliveryCaseFile(Base):
+    """Plik powiązany ze sprawą obsługi dostaw."""
+
+    __tablename__ = "delivery_case_file"
+    __table_args__ = (
+        CheckConstraint(
+            "source in ('upload','mailbox','generated')",
+            name="delivery_case_file_source_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    delivery_case_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.delivery_case.id", ondelete="CASCADE"), nullable=False
+    )
+    file_type: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="upload")
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    original_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uploaded_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    delivery_case: Mapped[DeliveryCase] = relationship(back_populates="files")
+    uploaded_by_user: Mapped[AdminUser | None] = relationship()
+
+
+class DeliveryDocumentTemplate(Base):
+    """Rejestr szablonów dokumentów używanych w obsłudze dostaw."""
+
+    __tablename__ = "delivery_document_template"
+    __table_args__ = (UniqueConstraint("template_key", name="uq_delivery_document_template_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    template_key: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    document_type: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    template_path: Mapped[str] = mapped_column(Text, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    required_fields: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class GrenkeContractEnd(Base):
+    """Wpis kalendarza końca umowy GRENKE wymagający potwierdzenia operatora."""
+
+    __tablename__ = "grenke_contract_end"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending_confirmation','confirmed','cancelled')",
+            name="grenke_contract_end_status_check",
+        ),
+        UniqueConstraint("workflow_case_id", name="uq_grenke_contract_end_workflow_case_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    delivery_case_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.delivery_case.id", ondelete="CASCADE"), nullable=True
+    )
+    form_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.form_request.id", ondelete="SET NULL"), nullable=True
+    )
+    workflow_case_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.form_workflow_case.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending_confirmation")
+    prefilled_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    confirmed_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contract_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notification_history: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    delivery_case: Mapped[DeliveryCase | None] = relationship()
+    form_request: Mapped[FormRequest | None] = relationship()
+    workflow_case: Mapped[FormWorkflowCase | None] = relationship()
+    confirmed_by_user: Mapped[AdminUser | None] = relationship(foreign_keys=[confirmed_by])
+
+
 Index("idx_form_request_status_created", FormRequest.status, FormRequest.created_at.desc())
 Index("idx_form_request_created_by", FormRequest.created_by, FormRequest.created_at.desc())
 Index(
@@ -318,6 +565,26 @@ Index(
     "idx_workflow_sheet_status_cache_index_norm",
     WorkflowSheetStatusCache.device_index_normalized,
 )
+Index("idx_delivery_case_source_status", DeliveryCase.source, DeliveryCase.status)
+Index("idx_delivery_case_type_status", DeliveryCase.case_type, DeliveryCase.status)
+Index("idx_delivery_case_delivery_date", DeliveryCase.delivery_date)
+Index("idx_delivery_case_firebird_client", DeliveryCase.firebird_client_id)
+Index("idx_delivery_case_device_case", DeliveryCaseDevice.delivery_case_id)
+Index("idx_delivery_case_device_machine", DeliveryCaseDevice.firebird_machine_id)
+Index("idx_delivery_case_task_case", DeliveryCaseTask.delivery_case_id)
+Index("idx_delivery_case_task_due", DeliveryCaseTask.status, DeliveryCaseTask.due_date)
+Index("idx_delivery_case_file_case", DeliveryCaseFile.delivery_case_id)
+Index("idx_delivery_document_template_active", DeliveryDocumentTemplate.active)
+Index(
+    "idx_grenke_contract_end_status_date",
+    GrenkeContractEnd.status,
+    GrenkeContractEnd.confirmed_end_date,
+)
+Index(
+    "idx_grenke_contract_end_pending_prefill",
+    GrenkeContractEnd.status,
+    GrenkeContractEnd.prefilled_end_date,
+)
 
 
 __all__ = [
@@ -329,4 +596,10 @@ __all__ = [
     "FormWorkflowCase",
     "FormWorkflowDevice",
     "WorkflowSheetStatusCache",
+    "DeliveryCase",
+    "DeliveryCaseDevice",
+    "DeliveryCaseFile",
+    "DeliveryCaseTask",
+    "DeliveryDocumentTemplate",
+    "GrenkeContractEnd",
 ]

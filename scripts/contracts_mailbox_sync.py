@@ -48,9 +48,11 @@ from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
     WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
     get_or_create_form_workflow_case,
+    list_form_workflow_devices,
     set_form_workflow_business_status,
     set_form_workflow_delivery,
 )
+from app.services.delivery import ensure_delivery_case_for_workflow
 
 STATE_PATH = Path("inbox/mailbox/contracts_mailbox_state.json")
 ATTACHMENTS_BASE_PATH = Path("inbox/mailbox/contracts")
@@ -895,6 +897,23 @@ async def apply_mail_to_workflow(
         saved_files=saved_files,
         archived_contract_file=archived_contract_file,
     )
+    delivery_meta: dict[str, Any] | None = None
+    if new_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        workflow_devices = await list_form_workflow_devices(
+            session, workflow_case_id=workflow_case.id
+        )
+        delivery_case, contract_end = await ensure_delivery_case_for_workflow(
+            session,
+            workflow_case=workflow_case,
+            form_request=form_ctx.form,
+            devices=workflow_devices,
+            updated_by=None,
+        )
+        delivery_meta = {
+            "delivery_case_id": delivery_case.id,
+            "grenke_contract_end_id": contract_end.id,
+            "grenke_contract_end_status": contract_end.status,
+        }
     workflow_case.updated_at = datetime.now(UTC)
     await record_audit(
         session,
@@ -914,6 +933,7 @@ async def apply_mail_to_workflow(
             "extracted_data": extracted_data,
             "saved_files": saved_files,
             "archived_contract_file": archived_contract_file,
+            "delivery": delivery_meta,
         },
     )
     await session.flush()
@@ -925,6 +945,7 @@ async def apply_mail_to_workflow(
         "email_date_utc": mail_ctx.email_date_utc.isoformat(),
         "saved_files_count": len(saved_files),
         "archived_contract_file": archived_contract_file,
+        "delivery": delivery_meta,
     }
 
 

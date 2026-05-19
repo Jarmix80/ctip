@@ -1,35 +1,50 @@
 {
-  "timestamp": "2026-05-05T12:15:00+02:00",
+  "timestamp": "2026-05-15T17:00:09+02:00",
   "summary": [
-    "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
-    "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
-    "Restart uslug nie wystarczyl: CTIP-FormsPublic nadal zwracal 500, dopoki AppEnvironmentExtra nie zawieral pelnego zestawu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE.",
-    "Na serwerze Windows ustawiono dla CTIP-FormsPublic komplet PG* z D:\\CTIP\\.env z wymuszonym PGHOST=127.0.0.1; po restarcie lokalny i publiczny fałszywy token zwracaja 404.",
-    "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
-    "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
-    "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
-    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
+    "Produkcja: CTIP-FormsPublic wymaga kompletnego AppEnvironmentExtra PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE z PGHOST=127.0.0.1; nie usuwać tych zmiennych przy wdrożeniach.",
+    "Produkcja: przejście SQLAlchemy na postgresql+psycopg i polityka WindowsSelectorEventLoopPolicy były krytyczne dla stabilności usług Windows; przy awarii sprawdzać logi CTIP-Web/CTIP-FormsPublic oraz /health.",
+    "Moduł /delivery jest rozwijany jako centrum obsługi dostaw, odbiorów, dokumentów, zadań serwisowych i powiadomień umów GRENKE.",
+    "Rola serwisant oraz sekcja delivery są wymagane dla dostępu do /delivery; serwisant domyślnie ma tylko dostęp do obsługi dostaw.",
+    "Status FLOW APPROVED_ORDER tworzy/odświeża delivery_case, kopiuje urządzenia do delivery_case_device i zakłada kandydat końca umowy w grenke_contract_end.",
+    "Nowa dostawa w /delivery wyszukuje klienta w Menadżerze Serwisu albo pozwala utworzyć klienta mechanizmem formularzy, a urządzenia dostawy mogą rezerwować się w arkuszu Google Sheets.",
+    "Odbiór w /delivery wyszukuje klienta MS i jego aktywne urządzenia; samo planowanie odbioru nie zmienia bazy Firebird.",
+    "UI /delivery po redesignie ma górny pasek akcji, listę kart spraw po lewej i szczegóły wybranej sprawy po prawej z zakładkami Ustalenia/Urządzenia/Zadania/Dokumenty; nie wracać do menu na dole ani tabeli jako głównego widoku.",
+    "Dokumenty /delivery są oparte o katalog inbox/doku; automatyczne generowanie działa dla DOCX z placeholderami {{pole}} albo [[pole]], stare DOC wymagają konwersji.",
+    "Kalendarz końców umów GRENKE wymaga potwierdzenia daty przez operatora; dopiero status confirmed aktywuje przypomnienia SMS/e-mail w progach 60/30/7 dni."
   ],
   "follow_up": [
-    "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
-    "Przy kolejnym wdrozeniu sprawdzic: http://127.0.0.1:8100/health, http://127.0.0.1:8100/formularz/abc oraz https://form.ksero-partner.com.pl/formularz/abc.",
-    "Nie usuwac AppEnvironmentExtra PG* z CTIP-FormsPublic, dopoki na serwerze istnieja zmienne procesu/systemu nadpisujace .env."
+    "Następny etap /delivery: dopracować szablony DOCX z placeholderami dla protokołów, umów wynajmu, aneksów i umów serwisowych.",
+    "Następny etap /delivery: dodać właściwy kalendarz dostaw/odbiorów i osobne zlecenia dla serwisu, jeśli obecna lista zadań będzie niewystarczająca.",
+    "Przy wdrożeniu produkcyjnym wymagane są migracje Alembic 8f1d2c3b4a5e oraz 9b7c6d5e4f3a i restart CTIP-Web.",
+    "Po wdrożeniu sprawdzić /choice, /delivery, wyszukiwanie klienta MS, utworzenie dostawy ręcznej, utworzenie odbioru, APPROVED_ORDER w FLOW oraz potwierdzanie wpisu końca umowy GRENKE.",
+    "Przy każdym wdrożeniu produkcyjnym sprawdzić: http://127.0.0.1:8000/health, /choice, /delivery, http://127.0.0.1:8100/health i testowy nieaktywny formularz publiczny."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "codex/fix-public-form-checkbox-422",
+    "branch_local": "main",
     "venv": ".venv",
-    "focus": "production-public-forms-500-fixed",
+    "focus": "delivery-operations-flow",
     "verification": [
       "pre-commit run --all-files: passed",
-      "pytest -q: 371 passed, 1 xfailed, 26 warnings",
-      "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
-      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
+      "python -m py_compile alembic/versions/8f1d2c3b4a5e_add_delivery_module.py alembic/versions/9b7c6d5e4f3a_extend_delivery_operations.py app/api/routes/admin_delivery.py app/services/delivery.py app/services/delivery_notifications.py app/web/delivery_ui.py: passed",
+      "node --check app/static/delivery/delivery.js: passed",
+      "ruff check touched Python files: passed",
+      "black --check touched Python files: passed",
+      "pytest tests/test_admin_backend.py -q: 140 passed, 1 xfailed",
+      "pytest tests/test_db_schema.py -q: 5 passed",
+      "pytest tests/test_admin_backend.py -k delivery -q: 5 passed po redesignie UI",
+      "alembic upgrade head na .env.test/ctip_test: current 9b7c6d5e4f3a (head)",
+      "restart lokalnego uvicorn w tmux ctip-stack-test:2.0: passed",
+      "HTTP 127.0.0.1:8000 /health, /choice, /delivery, statyki delivery: 200",
+      "HTTP 127.0.0.1:8000/delivery i 192.168.0.9:8000/delivery: 200 po redesignie UI",
+      "HTTP 192.168.0.9:8000/health: 200",
+      "autoryzowane API /admin/delivery/cases, /admin/delivery/cases/{id}, /grenke-contracts, /document-templates: 200"
     ],
     "services": [
+      "CTIP-Web",
       "CTIP-FormsPublic",
-      "IIS reverse proxy",
-      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
+      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8",
+      "Firebird Menadżer Serwisu"
     ]
   }
 }

@@ -1627,7 +1627,10 @@ document.addEventListener("alpine:init", () => {
 
     defaultSectionsForRole(role) {
       if (role === "admin") {
-        return ["admin", "operator", "generator"];
+        return ["admin", "operator", "generator", "delivery"];
+      }
+      if (role === "serwisant") {
+        return ["delivery"];
       }
       return ["operator", "generator"];
     },
@@ -1639,7 +1642,7 @@ document.addEventListener("alpine:init", () => {
       const normalized = [];
       input.forEach((item) => {
         const value = String(item || "").trim().toLowerCase();
-        if (!value || !["admin", "operator", "generator"].includes(value)) {
+        if (!value || !["admin", "operator", "generator", "delivery"].includes(value)) {
           return;
         }
         if (value === "admin" && role !== "admin") {
@@ -1663,8 +1666,28 @@ document.addEventListener("alpine:init", () => {
         admin: "Admin",
         operator: "Operator",
         generator: "Generator",
+        delivery: "Obsługa dostaw",
       };
       return normalized.map((item) => labels[item] || item).join(", ");
+    },
+
+    formatRole(role) {
+      const labels = {
+        admin: "admin",
+        operator: "operator",
+        serwisant: "serwisant",
+      };
+      return labels[role] || role || "—";
+    },
+
+    roleBadgeClass(role) {
+      if (role === "admin") {
+        return "badge-admin";
+      }
+      if (role === "serwisant") {
+        return "badge-info";
+      }
+      return "badge-operator";
     },
 
     resetMessages() {
@@ -1724,14 +1747,11 @@ document.addEventListener("alpine:init", () => {
     },
 
     onCreateRoleChange() {
-      this.form.sections = this.normalizeSectionsForRole(this.form.sections, this.form.role);
+      this.form.sections = this.defaultSectionsForRole(this.form.role);
     },
 
     onModalRoleChange() {
-      this.modalEdit.sections = this.normalizeSectionsForRole(
-        this.modalEdit.sections,
-        this.modalEdit.role,
-      );
+      this.modalEdit.sections = this.defaultSectionsForRole(this.modalEdit.role);
     },
 
     async reload() {

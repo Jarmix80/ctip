@@ -1,0 +1,592 @@
+:root {
+  --page: #eef0e8;
+  --panel: #fffdf6;
+  --panel-strong: #f6f0df;
+  --ink: #172018;
+  --muted: #687365;
+  --line: #d8ddce;
+  --accent: #245c3d;
+  --accent-2: #9b5d2e;
+  --danger: #9f2020;
+  --shadow: 0 18px 42px rgba(23, 32, 25, 0.12);
+  --radius: 22px;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    linear-gradient(115deg, rgba(36, 92, 61, 0.13), transparent 34rem),
+    radial-gradient(circle at 94% 8%, rgba(155, 93, 46, 0.16), transparent 26rem),
+    linear-gradient(180deg, #faf6e9 0%, var(--page) 52%, #e3e9dc 100%);
+  font-family: "Aptos Display", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+.delivery-back,
+.delivery-link {
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+  padding: 10px 16px;
+  text-decoration: none;
+}
+
+button:hover,
+.delivery-back:hover,
+.delivery-link:hover {
+  filter: brightness(1.05);
+}
+
+button:disabled,
+.delivery-check-row.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.delivery-secondary,
+.delivery-nav-btn.ghost,
+.delivery-ghost {
+  background: rgba(36, 92, 61, 0.1);
+  color: var(--accent);
+}
+
+.delivery-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 30px clamp(18px, 4vw, 52px) 14px;
+}
+
+.delivery-hero-copy {
+  max-width: 900px;
+}
+
+.delivery-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.delivery-kicker {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+.delivery-hero h1 {
+  margin-bottom: 8px;
+  font-size: clamp(36px, 5vw, 62px);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.delivery-hero p,
+.delivery-muted,
+.delivery-card p,
+.delivery-panel-head p,
+.delivery-detail-empty p,
+.delivery-list-item span,
+.delivery-list-item small,
+.delivery-contract small,
+.delivery-case-card span {
+  color: var(--muted);
+}
+
+.delivery-app {
+  display: grid;
+  gap: 16px;
+  padding: 0 clamp(18px, 4vw, 52px) 44px;
+}
+
+.delivery-commandbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(216, 221, 206, 0.9);
+  border-radius: 24px;
+  background: rgba(255, 253, 246, 0.92);
+  box-shadow: 0 10px 28px rgba(23, 32, 25, 0.1);
+  backdrop-filter: blur(12px);
+  padding: 12px;
+}
+
+.delivery-nav-btn {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid transparent;
+}
+
+.delivery-nav-btn.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.delivery-nav-btn.strong {
+  background: var(--accent);
+  color: #fff;
+}
+
+.delivery-view,
+.delivery-list-panel,
+.delivery-detail,
+.delivery-detail-empty,
+.delivery-card,
+.delivery-dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 246, 0.95);
+  box-shadow: var(--shadow);
+}
+
+.delivery-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.delivery-list-panel,
+.delivery-detail,
+.delivery-detail-empty,
+.delivery-grenke {
+  padding: 20px;
+}
+
+.delivery-list-panel {
+  align-self: start;
+  position: sticky;
+  top: 92px;
+  max-height: calc(100vh - 116px);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.delivery-panel-head,
+.delivery-detail-header,
+.delivery-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.delivery-panel-head h2,
+.delivery-detail-header h2 {
+  margin-bottom: 6px;
+}
+
+.delivery-panel-head select,
+.delivery-inline-actions select {
+  min-width: 136px;
+}
+
+.delivery-case-list {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding: 4px 4px 4px 0;
+}
+
+.delivery-case-card {
+  border: 1px solid rgba(216, 221, 206, 0.95);
+  border-radius: 18px;
+  background: #fff;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.delivery-case-card:hover,
+.delivery-case-card.active {
+  border-color: rgba(36, 92, 61, 0.55);
+  box-shadow: 0 12px 26px rgba(36, 92, 61, 0.13);
+  transform: translateY(-1px);
+}
+
+.delivery-case-card.active {
+  background: linear-gradient(135deg, #fff 0%, #f3f8ef 100%);
+}
+
+.delivery-case-card-top,
+.delivery-case-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.delivery-case-id,
+.delivery-case-meta span {
+  border-radius: 999px;
+  background: rgba(23, 32, 25, 0.06);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.delivery-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  background: rgba(36, 92, 61, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 5px 9px;
+  text-transform: uppercase;
+}
+
+.delivery-detail-empty {
+  min-height: 520px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 36px;
+}
+
+.delivery-detail-empty span {
+  justify-self: center;
+  border-radius: 999px;
+  background: rgba(155, 93, 46, 0.12);
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  padding: 7px 12px;
+  text-transform: uppercase;
+}
+
+.delivery-detail {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.delivery-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.delivery-tab {
+  background: rgba(23, 32, 25, 0.06);
+  color: var(--ink);
+}
+
+.delivery-tab.active {
+  background: var(--accent-2);
+  color: #fff;
+}
+
+.delivery-tab-panel {
+  min-width: 0;
+}
+
+.delivery-card {
+  padding: 18px;
+}
+
+.delivery-card-head.small {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.delivery-form,
+.delivery-filter-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.delivery-filter-form {
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  margin: 16px 0;
+  padding: 14px;
+}
+
+.delivery-document-form {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.delivery-form label,
+.delivery-filter-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.delivery-form input,
+.delivery-form textarea,
+.delivery-form select,
+.delivery-filter-form input,
+.delivery-filter-form select,
+.delivery-select-panel input,
+.delivery-contract input,
+.delivery-panel-head select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+  color: var(--ink);
+  padding: 10px 12px;
+}
+
+.delivery-form textarea {
+  resize: vertical;
+}
+
+.delivery-form-full,
+.delivery-form button,
+.delivery-filter-form button,
+.delivery-select-panel,
+.delivery-result {
+  grid-column: 1 / -1;
+}
+
+.delivery-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.delivery-check input {
+  width: auto;
+}
+
+.delivery-info,
+.delivery-result {
+  border: 1px solid rgba(36, 92, 61, 0.28);
+  border-radius: 16px;
+  background: rgba(36, 92, 61, 0.08);
+  color: var(--accent);
+  padding: 11px 14px;
+}
+
+.delivery-info.error {
+  border-color: rgba(159, 32, 32, 0.3);
+  background: rgba(159, 32, 32, 0.08);
+  color: var(--danger);
+}
+
+.delivery-list,
+.delivery-contracts,
+.delivery-check-list {
+  display: grid;
+  gap: 10px;
+}
+
+.delivery-list {
+  margin-top: 12px;
+}
+
+.delivery-list-item,
+.delivery-contract,
+.delivery-check-row {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 13px;
+}
+
+.delivery-list-item {
+  display: grid;
+  gap: 6px;
+}
+
+.delivery-list-item button,
+.delivery-list-item .delivery-link {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.delivery-check-list {
+  max-height: 430px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.delivery-check-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.delivery-check-row input {
+  margin-top: 5px;
+}
+
+.delivery-select-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.delivery-grenke {
+  padding: 20px;
+}
+
+.delivery-contracts {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.delivery-contract {
+  display: grid;
+  gap: 8px;
+}
+
+.delivery-contract-confirm {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
+.delivery-dialog {
+  width: min(880px, calc(100% - 28px));
+  max-height: min(88vh, 940px);
+  overflow: auto;
+  padding: 24px;
+}
+
+.delivery-dialog::backdrop {
+  background: rgba(23, 32, 25, 0.46);
+  backdrop-filter: blur(3px);
+}
+
+.dialog-close-form {
+  float: right;
+}
+
+.dialog-close-form button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+#delivery-client-search-result button {
+  display: block;
+  margin-top: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.delivery-login {
+  width: min(520px, calc(100% - 32px));
+  margin: 80px auto;
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .delivery-workspace {
+    grid-template-columns: 360px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .delivery-hero,
+  .delivery-detail-header,
+  .delivery-panel-head,
+  .delivery-card-head {
+    flex-direction: column;
+  }
+
+  .delivery-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-list-panel {
+    position: static;
+    max-height: none;
+  }
+
+  .delivery-case-list {
+    max-height: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .delivery-app,
+  .delivery-hero {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .delivery-commandbar {
+    border-radius: 18px;
+    position: static;
+  }
+
+  .delivery-nav-btn {
+    flex: 1 1 160px;
+  }
+
+  .delivery-form,
+  .delivery-filter-form,
+  .delivery-contract-confirm {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-list-panel,
+  .delivery-detail,
+  .delivery-detail-empty,
+  .delivery-grenke,
+  .delivery-card {
+    padding: 14px;
+  }
+}

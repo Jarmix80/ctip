@@ -42,3 +42,16 @@
 - Rozszerzono `ctip.form_request` o kolumny `archive_bucket`, `archived_at` i `archive_due_at` do obsługi sekcji archiwum GenForm (`accepted`, `rejected`, `unfilled`) oraz terminów automatycznego przenoszenia.
 - Rozszerzono `ctip.form_workflow_case` o statusy `WAITING_SIGNATURE`, `APPROVED_ORDER`, `REJECTED_GRENKE` oraz pola terminów i historii: `signature_deadline_at`, `resources_release_due_at`, `resources_released_at`, `status_changed_at`, `status_source`, `status_history`.
 - Dodano indeksy `ix_form_request_archive_bucket`, `ix_form_request_archive_due_at` i `ix_form_workflow_case_resources_release_due_at` dla list archiwum i automatycznego zwalniania zasobów.
+
+## 2026-05-14
+- Rozszerzono ograniczenie `admin_user_role_check` o rolę `serwisant`, przeznaczoną do dostępu do modułu obsługi dostaw.
+- Dodano tabelę `ctip.delivery_case`, która przechowuje sprawy dostaw tworzone automatycznie z workflow GRENKE po statusie `APPROVED_ORDER` albo ręcznie z poziomu modułu `/delivery`.
+- Dodano tabelę `ctip.delivery_case_device`, która przechowuje urządzenia przypisane do sprawy dostawy wraz z referencją do urządzenia workflow, numerem seryjnym, ewidencją i identyfikatorem `MASZYNA`.
+- Dodano tabelę `ctip.grenke_contract_end`, która przechowuje kandydatów oraz potwierdzone daty końca umów GRENKE; dopiero status `confirmed` aktywuje przypomnienia.
+- Dodano indeksy `idx_delivery_case_source_status`, `idx_delivery_case_delivery_date`, `idx_delivery_case_firebird_client`, `idx_delivery_case_device_case`, `idx_grenke_contract_end_status_date` i `idx_grenke_contract_end_pending_prefill` dla list dostaw oraz kalendarza końców umów.
+
+## 2026-05-15
+- Rozszerzono `ctip.delivery_case` o kolumnę `case_type`, aby jedna lista obsługiwała dostawy oraz odbiory urządzeń od klienta.
+- Rozszerzono `ctip.delivery_case_device` o kolumnę `device_role`, rozróżniającą urządzenia dowożone i odbierane.
+- Dodano tabele `ctip.delivery_case_task`, `ctip.delivery_case_file` oraz `ctip.delivery_document_template` do planowania prac serwisu, przechowywania plików spraw i rejestrowania wzorów dokumentów.
+- Dodano indeksy `idx_delivery_case_type_status`, `idx_delivery_case_device_machine`, `idx_delivery_case_task_case`, `idx_delivery_case_task_due`, `idx_delivery_case_file_case` i `idx_delivery_document_template_active` dla widoku `/delivery`.

@@ -37,9 +37,15 @@ from app.models import (
     CallEvent,
     Contact,
     ContactDevice,
+    DeliveryCase,
+    DeliveryCaseDevice,
+    DeliveryCaseFile,
+    DeliveryCaseTask,
+    DeliveryDocumentTemplate,
     FormRequest,
     FormWorkflowCase,
     FormWorkflowDevice,
+    GrenkeContractEnd,
     IvrMap,
     SmsOut,
     SmsTemplate,
@@ -109,6 +115,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     FormWorkflowCase.__table__,
                     FormWorkflowDevice.__table__,
                     WorkflowSheetStatusCache.__table__,
+                    DeliveryCase.__table__,
+                    DeliveryCaseDevice.__table__,
+                    DeliveryCaseTask.__table__,
+                    DeliveryCaseFile.__table__,
+                    DeliveryDocumentTemplate.__table__,
+                    GrenkeContractEnd.__table__,
                     Call.__table__,
                     CallEvent.__table__,
                     Contact.__table__,
@@ -137,9 +149,21 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self._previous_workflow_sheet_status_cache_scheduler_enabled = (
             settings.workflow_sheet_status_cache_scheduler_enabled
         )
+        self._previous_contracts_workflow_maintenance_scheduler_enabled = (
+            settings.contracts_workflow_maintenance_scheduler_enabled
+        )
+        self._previous_contracts_mailbox_scheduler_enabled = (
+            settings.contracts_mailbox_scheduler_enabled
+        )
+        self._previous_delivery_notifications_scheduler_enabled = (
+            settings.delivery_notifications_scheduler_enabled
+        )
         settings.admin_secret_key = Fernet.generate_key().decode("ascii")
         settings.backup_scheduler_enabled = False
         settings.workflow_sheet_status_cache_scheduler_enabled = False
+        settings.contracts_workflow_maintenance_scheduler_enabled = False
+        settings.contracts_mailbox_scheduler_enabled = False
+        settings.delivery_notifications_scheduler_enabled = False
 
         async with self.session_factory() as session:
             now = datetime.now(UTC)
@@ -181,6 +205,15 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         settings.workflow_sheet_status_cache_scheduler_enabled = (
             self._previous_workflow_sheet_status_cache_scheduler_enabled
         )
+        settings.contracts_workflow_maintenance_scheduler_enabled = (
+            self._previous_contracts_workflow_maintenance_scheduler_enabled
+        )
+        settings.contracts_mailbox_scheduler_enabled = (
+            self._previous_contracts_mailbox_scheduler_enabled
+        )
+        settings.delivery_notifications_scheduler_enabled = (
+            self._previous_delivery_notifications_scheduler_enabled
+        )
         await self.engine.dispose()
 
     async def _login_as(self, email: str, password: str) -> tuple[str, dict]:
@@ -205,6 +238,17 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "password": "Operator123!",
                 "remember_me": remember,
             },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        token = data["token"]
+        self.assertTrue(token)
+        return token, data
+
+    async def _login_portal_as(self, email: str, password: str) -> tuple[str, dict]:
+        response = await self.client.post(
+            "/auth/login",
+            json={"email": email, "password": password},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -5106,6 +5150,44 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(device.snapshot.get("ms_binding_status"), "ok")
             self.assertEqual(device.snapshot.get("ms_id_maszyna"), 12922)
             self.assertEqual(device.snapshot.get("ms_id_klient"), 2897)
+            delivery_case = (
+                (
+                    await session.execute(
+                        select(DeliveryCase).where(
+                            DeliveryCase.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(delivery_case.source, "grenke")
+            self.assertEqual(delivery_case.form_request_id, form.id)
+            delivery_devices = (
+                (
+                    await session.execute(
+                        select(DeliveryCaseDevice).where(
+                            DeliveryCaseDevice.delivery_case_id == delivery_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(delivery_devices), 1)
+            self.assertEqual(delivery_devices[0].firebird_machine_id, 12922)
+            contract_end = (
+                (
+                    await session.execute(
+                        select(GrenkeContractEnd).where(
+                            GrenkeContractEnd.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(contract_end.status, "pending_confirmation")
 
     async def test_contracts_form_workflow_devices_releases_removed_rows_from_sheet(self):
         token, _ = await self._login_operator()
@@ -5615,6 +5697,43 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .one()
             )
             self.assertEqual(device.snapshot.get("ms_binding_status"), "error")
+            delivery_case = (
+                (
+                    await session.execute(
+                        select(DeliveryCase).where(
+                            DeliveryCase.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(delivery_case.source, "grenke")
+            self.assertEqual(delivery_case.customer_name, "FLOW TEST")
+            delivery_device = (
+                (
+                    await session.execute(
+                        select(DeliveryCaseDevice).where(
+                            DeliveryCaseDevice.delivery_case_id == delivery_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(delivery_device.serial, "RICOH-33")
+            contract_end = (
+                (
+                    await session.execute(
+                        select(GrenkeContractEnd).where(
+                            GrenkeContractEnd.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(contract_end.status, "pending_confirmation")
 
     async def test_contracts_form_workflow_delivery_save_and_delete(self):
         token, _ = await self._login_operator()
@@ -6794,6 +6913,119 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             headers={"X-Admin-Session": token},
         )
         self.assertEqual(response.status_code, 403)
+
+    async def test_delivery_section_is_available_for_service_user(self):
+        async with self.session_factory() as session:
+            now = datetime.now(UTC)
+            session.add(
+                AdminUser(
+                    email="serwisant@example.com",
+                    first_name="Stefan",
+                    last_name="Serwis",
+                    role="serwisant",
+                    password_hash=hash_password("Serwis123!"),
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await session.commit()
+
+        token, login_data = await self._login_portal_as("serwisant@example.com", "Serwis123!")
+        self.assertEqual(login_data["sections"], ["delivery"])
+
+        response = await self.client.get(
+            "/admin/delivery/cases",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"], [])
+
+    async def test_operator_without_delivery_section_cannot_open_delivery_api(self):
+        token, _ = await self._login_operator()
+        response = await self.client.get(
+            "/admin/delivery/cases",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    async def test_admin_can_create_manual_delivery_case(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/delivery/cases",
+            headers={"X-Admin-Session": token},
+            json={
+                "company_name": "Klient Dostawy",
+                "company_nip": "900-000-12-34",
+                "company_email": "dostawa@example.com",
+                "company_phone": "+48600111222",
+                "delivery_date": (date.today() + timedelta(days=3)).isoformat(),
+                "delivery_time_window": "08:00-10:00",
+                "devices": [
+                    {
+                        "producer": "Ricoh",
+                        "model": "IM C3000",
+                        "serial": "TEST-SN-1",
+                        "ewidencja": "KP/100",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        item = body["item"]
+        self.assertEqual(item["source"], "manual")
+        self.assertEqual(item["status"], "planned")
+        self.assertEqual(item["customer_name"], "Klient Dostawy")
+        self.assertEqual(item["customer_nip"], "9000001234")
+        self.assertEqual(len(item["devices"]), 1)
+        self.assertEqual(item["devices"][0]["serial"], "TEST-SN-1")
+
+        async with self.session_factory() as session:
+            case = (await session.execute(select(DeliveryCase))).scalars().one()
+            self.assertEqual(case.title, "Dostawa: Klient Dostawy")
+            device = (await session.execute(select(DeliveryCaseDevice))).scalars().one()
+            self.assertEqual(device.delivery_case_id, case.id)
+
+    async def test_admin_can_confirm_grenke_contract_end(self):
+        token, _ = await self._login()
+        async with self.session_factory() as session:
+            now = datetime.now(UTC)
+            case = DeliveryCase(
+                source="grenke",
+                status="new",
+                title="GRENKE test",
+                customer_name="Klient GRENKE",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(case)
+            await session.flush()
+            contract_end = GrenkeContractEnd(
+                delivery_case_id=case.id,
+                status="pending_confirmation",
+                customer_name="Klient GRENKE",
+                prefilled_end_date=date.today() + timedelta(days=90),
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(contract_end)
+            await session.commit()
+            contract_end_id = contract_end.id
+
+        confirmed = date.today() + timedelta(days=120)
+        response = await self.client.post(
+            f"/admin/delivery/grenke-contracts/{contract_end_id}/confirm",
+            headers={"X-Admin-Session": token},
+            json={"confirmed_end_date": confirmed.isoformat(), "contract_number": "G/1/2026"},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["item"]["status"], "confirmed")
+        self.assertEqual(body["item"]["confirmed_end_date"], confirmed.isoformat())
+        self.assertEqual(body["item"]["contract_number"], "G/1/2026")
 
     async def test_sms_logs_endpoint_returns_tail(self):
         token, _ = await self._login()

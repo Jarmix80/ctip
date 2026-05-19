@@ -137,6 +137,22 @@ class Settings(BaseSettings):
         default=3600,
         alias="CONTRACTS_WORKFLOW_MAINTENANCE_INTERVAL_SECONDS",
     )
+    delivery_notifications_scheduler_enabled: bool = Field(
+        default=True,
+        alias="DELIVERY_NOTIFICATIONS_SCHEDULER_ENABLED",
+    )
+    delivery_notifications_interval_seconds: int = Field(
+        default=86400,
+        alias="DELIVERY_NOTIFICATIONS_INTERVAL_SECONDS",
+    )
+    delivery_files_root: str = Field(
+        default="inbox/delivery/files",
+        alias="DELIVERY_FILES_ROOT",
+    )
+    delivery_document_templates_root: str = Field(
+        default="inbox/doku",
+        alias="DELIVERY_DOCUMENT_TEMPLATES_ROOT",
+    )
 
     mailbox_email_address: str | None = Field(default=None, alias="MAILBOX_EMAIL_ADDRESS")
     mailbox_email_password: str | None = Field(default=None, alias="MAILBOX_EMAIL_PASSWORD")

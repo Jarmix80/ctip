@@ -610,7 +610,8 @@ async def create_form_request(
 
     now = datetime.now(UTC)
     if expires_on is not None:
-        if expires_on < now.date():
+        local_today = now.astimezone().date()
+        if expires_on < local_today:
             raise ValueError("Data ważności formularza nie może być z przeszłości.")
         expires_at = datetime(
             year=expires_on.year,

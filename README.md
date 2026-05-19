@@ -8,6 +8,9 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Pomocniczy skrypt operatorski (Windows, bez `Read-Host`) do wykonania kroku Google Sheets + mailbox dry-run po wdrozeniu: `inbox/krok9_10_google_sheets_mailbox_noninteractive.ps1`.
 
+## Dokumentacja operacyjna (poza zakresem CTIP)
+- Raport z optymalizacji wydajnosci testowej bazy Menadzer Serwisu (Firebird), obejmujacy benchmarki zapytan i dodane indeksy: `docs/firebird/przyspieszenie_bazy_bazams_test_2026-05-14.md`.
+
 ## Najważniejsze komponenty
 - `collector_full.py` – produkcyjny kolektor CTIP: łączy się z centralą, koreluje zdarzenia, persystuje rekordy w schemacie `ctip` oraz rejestruje zadania SMS.
 - `collector_service.py` – wrapper w formie usługi Windows utrzymujący działanie `collector_full.py` i restartujący proces po awarii; automatycznie dopina ścieżki `pywin32` oraz dodaje katalog `pywin32_system32` do ścieżki DLL (start jako `pythonservice.exe`), wymagane wcześniejsze `pywin32_postinstall`.
@@ -21,6 +24,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_forms.py` + `app/services/form_generator.py` – generator jednorazowych formularzy klienta (token haszowany, zapis danych zaszyfrowanych, automatyczna weryfikacja klienta po NIP w Menadżerze Serwisu po statusie `SUBMITTED`, z użyciem bieżącej konfiguracji Firebird zapisanej w panelu administratora).
 - `app/web/genform_ui.py` + `app/templates/genform/` – osobny flow handlowca pod adresem `/genform` (logowanie, generowanie linku, tabela formularzy z kolumnami operacyjnymi FLOW, osobny modal wyboru urządzeń i osobny modal proformy oraz dezaktywacja formularza z przywracaniem rezerwacji arkusza).
 - `app/web/flow_ui.py` + `app/templates/flow/` + `app/static/flow/` – widok `/flow` z bocznym menu dla sekcji „Obsługa umów”, „Obsługa urządzeń” i „Harmonogram dowozów”, nagłówkiem użytkownika, podglądem danych formularza z kopiowaniem pojedynczych pól, osobnym modalem workflow do prowadzenia sprawy klienta i wyboru urządzeń po stronie CTIP oraz stronami wizualizacji proformy `/flow/proforma-wizualizacja` i `/flow/proforma-wizualizacja1`.
+- `app/web/delivery_ui.py` + `app/templates/delivery/` + `app/static/delivery/` + `app/api/routes/admin_delivery.py` + `app/services/delivery.py` – moduł `/delivery` („Obsługa dostaw”): lista dostaw z FLOW GRENKE po statusie `APPROVED_ORDER`, ręczne zakładanie dostaw spoza GRENKE, powiązanie z klientem Firebird oraz kalendarz końców umów GRENKE wymagający potwierdzenia operatora.
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + `app/services/device_dashboard.py` + `app/services/device_intake.py` – wydzielony widok `/device` dla procesu urzadzen: audyt przyjec `PZ` na magazyn `28`, kontrola powiazan `MAGAZYN` / `SERIAL` / `MASZYNA`, lista problemow danych, audyt tabeli `MODEL` oraz automatyzacja kartoteki `AUTO/XXXX` i przyjecia `PZ` (single + batch) z automatycznym utworzeniem wpisu `MASZYNA`.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
@@ -77,6 +81,34 @@ Po ręcznym ustawieniu statusu biznesowego sprawy na `APPROVED_ORDER` endpoint `
 - przy błędach wysyła alert SMS i e-mail do aktywnych administratorów, ale nie blokuje zmiany statusu sprawy.
 
 Jeżeli sprawa ma już status `APPROVED_ORDER`, ten sam automat uruchamia się ponownie również przy zapisie wyboru urządzeń (`POST /admin/contracts/forms/{form_id}/workflow/devices`), żeby utrzymać spójność po zmianach listy urządzeń.
+
+### Obsługa dostaw i kalendarz końców umów GRENKE
+Status `APPROVED_ORDER` przekazuje formularz z FLOW do modułu `/delivery`. W tym momencie CTIP tworzy albo odświeża sprawę `delivery_case`, kopiuje listę urządzeń do `delivery_case_device` i zakłada wpis `grenke_contract_end` jako kandydat do kalendarza końca umowy. Data końca umowy jest traktowana jako roboczy prefill: operator musi ją potwierdzić, zanim system zacznie wysyłać przypomnienia.
+
+Moduł `/delivery` obejmuje:
+- listę dostaw GRENKE, dostaw ręcznych oraz odbiorów urządzeń od klientów,
+- ręczne utworzenie dostawy spoza GRENKE z wyszukaniem istniejącego klienta Firebird albo utworzeniem klienta tym samym mechanizmem, którego używają formularze,
+- zaplanowanie odbioru urządzeń: operator wyszukuje klienta MS, wybiera jego aktywne urządzenia i tworzy sprawę bez modyfikowania bazy Firebird na etapie planowania,
+- planowanie terminu, okna czasowego, danych kontaktowych, zadań przygotowania, dowozu, odbioru, zerówki i kontaktu z klientem,
+- dodawanie plików sprawy oraz generowanie dokumentów z szablonów DOCX umieszczonych w katalogu `inbox/doku`,
+- kalendarz końców umów GRENKE z potwierdzeniem daty przez operatora,
+- przypomnienia SMS i e-mail dla progów `60`, `30` i `7` dni przed potwierdzoną datą końca umowy.
+
+Widok użytkownika `/delivery` jest pulpitem roboczym: górny pasek zawiera główne akcje, lewa kolumna pokazuje karty spraw, a prawa kolumna otwiera szczegóły wybranej dostawy albo odbioru. Szczegóły są podzielone na zakładki `Ustalenia`, `Urządzenia`, `Zadania` i `Dokumenty`, aby operator nie musiał przechodzić między osobnymi ekranami przy codziennej obsłudze.
+
+Wzory dokumentów:
+- katalog źródłowy wzorów określa `DELIVERY_DOCUMENT_TEMPLATES_ROOT` (domyślnie `inbox/doku`),
+- katalog plików spraw określa `DELIVERY_FILES_ROOT` (domyślnie `inbox/delivery/files`),
+- automatyczne wypełnianie działa tylko dla `.docx` z placeholderami `{{nazwa_pola}}` albo `[[nazwa_pola]]`; pliki `.doc` są katalogowane jako wzory, ale wymagają wcześniejszej konwersji do DOCX.
+
+Konfiguracja przypomnień:
+- `DELIVERY_NOTIFICATIONS_SCHEDULER_ENABLED=true|false` – włącza dzienny scheduler przypomnień końców umów.
+- `DELIVERY_NOTIFICATIONS_INTERVAL_SECONDS=86400` – interwał przebiegu schedulera.
+
+Uprawnienia:
+- sekcja `delivery` jest wymagana do API `/admin/delivery/*` i widoku `/delivery`,
+- rola `serwisant` domyślnie dostaje tylko sekcję `delivery`,
+- administrator może nadal ręcznie przypisać sekcję `delivery` kontom operatorów albo administratorów.
 
 W arkuszu FLOW wymagane są nagłówki techniczne:
 - `MS_ID_MAGAZYN_TABLE`,
@@ -655,7 +687,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Strona `/flow/proforma/{id}` renderuje juz rzeczywista proforme odczytana z aktywnej konfiguracji Firebird (runtime z panelu administratora, ten sam co dla workflow/proformy); domyslny wariant finalny to `?variant=final` (alias zgodnosciowy: `?variant=v1`) i jest zblizony do wzorca `inbox/FPROFORMA.pdf`.
 - Endpointy `/flow/proforma/{id}` oraz `/flow/proforma/{id}/pdf` korzystaja z zaleznosci `get_db_session` importowanej z `app.api.deps`; bledna podmiana importu na `app.db.session` powoduje awarie startu `CTIP-Web` (usluga Windows moze pozostac `Running`, ale `/health` na porcie `8000` nie odpowiada).
 - Backend zapisuje tez fizyczny plik PDF proformy do `inbox/faktura/generated/proforma_<ID>.pdf`; endpoint `/flow/proforma/{id}/pdf` zwraca pobranie jako strumien bajtów PDF (z nagłówkiem `Content-Disposition`) i nie zależy od `FileResponse`, a w workflow CTIP kolumna `proforma_pdf_path` trzyma sciezke do zapisanego pliku. Generator PDF buduje uklad A4 wzorowany na `inbox/FPROFORMA.pdf` (w tym rodzina fontow Verdana z fallbackami systemowymi), a sekcje naglowka/tabeli/podsumowania sa pozycjonowane pod produkcyjny wzorzec MS (`Faktura nr <numer_proformy>.pdf`), zamiast prostego dumpu tekstowego; nazwa pobieranego pliku jest aliasem numeru dokumentu (np. `20/proforma/2026` -> `20_proforma_2026.pdf`). Wiersz pozycji proformy w wariancie `v1` jest renderowany jednolinijkowo (bez dodatkowego `nr.wew`), z szerokosciowym przycinaniem tekstu i mniejsza typografia sekcji podsumowania/uwag/stopki, aby uniknac nachodzenia tresci; kwoty w wierszu `Razem` sa celowo wyrownane typograficznie do wiersza `wg stawki 23 %`, etykieta `Data zakończenia dostaw/usług` jest w jednej linii, blok adresowy `Sprzedawca/Nabywca` ma zaciesnione odstepy pionowe, a ciagla linia sekcji podsumowania pozostaje na poziomie `v4` przy jednoczesnym przesunieciu calego tekstu pod nia o `2 mm` w dol.
-- Sekcja Użytkownicy umożliwia przypisanie dostępu do sekcji (`admin`, `operator`, `generator`) niezależnie od roli konta; strona główna i API respektują te uprawnienia przy prezentacji i autoryzacji modułów. Dodatkowo konto może być oznaczone znacznikiem biznesowym `Handlowiec`, niezależnym od roli i sekcji, powiązane z użytkownikiem Menadżera Serwisu przez listę `Użytkownik MS`, a także posiadać konfigurację IMAP (admin-only) przypisaną per użytkownik do odczytu nagłówków wiadomości przez moduł chatu.
+- Sekcja Użytkownicy umożliwia przypisanie dostępu do sekcji (`admin`, `operator`, `generator`, `delivery`) niezależnie od roli konta; strona główna i API respektują te uprawnienia przy prezentacji i autoryzacji modułów. Rola `serwisant` domyślnie otrzymuje dostęp do sekcji `delivery`. Dodatkowo konto może być oznaczone znacznikiem biznesowym `Handlowiec`, niezależnym od roli i sekcji, powiązane z użytkownikiem Menadżera Serwisu przez listę `Użytkownik MS`, a także posiadać konfigurację IMAP (admin-only) przypisaną per użytkownik do odczytu nagłówków wiadomości przez moduł chatu.
 - Treści SMS zawierające link jednorazowy lub potwierdzenie wypełnienia formularza są maskowane w historii panelu (`Treść ukryta`), aby nie ujawniać danych wrażliwych.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP, Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów) oraz Generatora formularzy. Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
 - W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
@@ -734,6 +766,23 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /admin/contracts/delivery/schedule?day_from=YYYY-MM-DD&day_to=YYYY-MM-DD` – zwraca harmonogram dowozow w zadanym zakresie dat.
 - `POST /admin/contracts/delivery/{workflow_case_id}/move` – przenosi wpis harmonogramu na inny dzien.
 - `DELETE /admin/contracts/delivery/{workflow_case_id}` – usuwa wpis harmonogramu dla wskazanej sprawy workflow.
+- `GET /delivery` – widok modułu „Obsługa dostaw” dostępny przez `/choice` dla sekcji `delivery`.
+- `GET /admin/delivery/clients/search?q=...&nip=...` – wyszukuje klienta w Menadżerze Serwisu dla nowej dostawy albo odbioru.
+- `GET /admin/delivery/clients/{client_id}/devices` – pobiera aktywne urządzenia klienta MS do planowania odbioru.
+- `GET /admin/delivery/devices/available` – pobiera dostępne urządzenia magazynowe MS z informacją o rezerwacjach CTIP.
+- `GET /admin/delivery/cases` – lista spraw dostaw i odbiorów (`source=grenke|manual`, `case_type=delivery|pickup`, `status_filter=...`, `include_done=true|false`).
+- `GET /admin/delivery/cases/{case_id}` – szczegóły sprawy, urządzenia, zadania, pliki i pliki mailboxa GRENKE.
+- `POST /admin/delivery/cases` – ręczne utworzenie sprawy dostawy spoza GRENKE; opcjonalnie używa `firebird_client_id` albo `create_firebird_client=true`.
+- `POST /admin/delivery/pickups` – tworzy sprawę odbioru urządzeń od klienta MS bez zmiany powiązań Firebird na etapie planowania.
+- `PATCH /admin/delivery/cases/{case_id}` – aktualizacja nazwy, terminu, okna czasowego, kontaktu, notatek i statusu sprawy.
+- `POST /admin/delivery/cases/{case_id}/devices` – zapisuje urządzenia sprawy; dla dostaw aktualizuje rezerwacje w arkuszu Google Sheets, jeżeli synchronizacja jest aktywna.
+- `GET /admin/delivery/cases/{case_id}/tasks`, `POST /admin/delivery/cases/{case_id}/tasks`, `PATCH /admin/delivery/cases/{case_id}/tasks/{task_id}` – obsługa zadań operacyjnych sprawy.
+- `GET /admin/delivery/cases/{case_id}/files`, `POST /admin/delivery/cases/{case_id}/files`, `GET /admin/delivery/files/{file_id}/download` – obsługa plików sprawy.
+- `GET /admin/delivery/document-templates` i `POST /admin/delivery/cases/{case_id}/documents/generate` – lista szablonów i generowanie dokumentów DOCX.
+- `GET /admin/delivery/grenke-contracts` – lista wpisów kalendarza końców umów GRENKE z filtrami `status_filter`, `date_from`, `date_to` i `q`.
+- `POST /admin/delivery/grenke-contracts/{item_id}/confirm` – potwierdza datę końca umowy i aktywuje przypomnienia.
+- `POST /admin/delivery/grenke-contracts/{item_id}/cancel` – anuluje wpis kalendarza końca umowy.
+- `POST /admin/delivery/grenke-contracts/reminders/run` – ręczne uruchomienie przypomnień końców umów.
 - `GET /formularz/{token}`, `POST /formularz/{token}` – publiczny formularz klienta oparty o jednorazowy token.
 - `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
 - `GET /admin/backup/config`, `PUT /admin/backup/config` – odczyt i zapis konfiguracji modułu kopii zapasowych (harmonogram, zakres, lokalizacja, Office 365, konfiguracja SQL Optimy i wybór baz do archiwizacji).
