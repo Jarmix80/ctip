@@ -25,14 +25,40 @@ Interpretacja:
 - `:8100/health` musi zwrocic `200`.
 - `:8100/formularz/abc` moze zwrocic `404` (PowerShell pokazuje `WebException`), ale tresc strony ma byc "Link formularza jest nieaktywny" i to jest poprawny stan.
 
-## 2. CTIP-Web nie odpowiada na `:8000`
+## 2. CollectorService / CTIP-SMS sa zatrzymane
 
-### 2.1. Objaw
+### 2.1 Objaw
+- `Get-Service CollectorService,CTIP-SMS` pokazuje `Stopped`.
+- Panel (`CTIP-Web`) moze dzialac, ale nie ma nowych zdarzen CTIP i/lub wysylki SMS.
+
+### 2.2 Szybka naprawa
+```powershell
+cd D:\CTIP
+Start-Service CollectorService
+Start-Service CTIP-SMS
+Start-Sleep -Seconds 8
+Get-Service CollectorService,CTIP-SMS,CTIP-Web | Select-Object Name,Status,StartType
+```
+
+### 2.3 Walidacja po starcie
+```powershell
+cd D:\CTIP
+.\scripts\windows\check_ctip_health.ps1 -InstallDir "D:\CTIP"
+```
+
+### 2.4 Dlaczego uslugi mogly zostac zatrzymane
+- `scripts/windows/update_ctip.ps1` zatrzymuje uslugi przed `git pull` i testami.
+- Jezeli aktualizacja zakonczy sie bledem, skrypt domyslnie zostawia uslugi zatrzymane.
+- Aby wymusic restart nawet po bledzie aktualizacji, uruchamiaj update z przelacznikiem `-ForceStartOnFailure`.
+
+## 3. CTIP-Web nie odpowiada na `:8000`
+
+### 3.1. Objaw
 - `Invoke-WebRequest http://127.0.0.1:8000/health` zwraca `Unable to connect to the remote server`.
 - W `web_stderr.log` widac:
   `Psycopg cannot use the 'ProactorEventLoop' ... WindowsSelectorEventLoopPolicy()`.
 
-### 2.2. Naprawa docelowa
+### 3.2. Naprawa docelowa
 `CTIP-Web` ma startowac przez wrapper:
 `D:\CTIP\scripts\windows\run_ctip_web.py`
 
@@ -49,7 +75,7 @@ Invoke-WebRequest http://127.0.0.1:8000/assistant -UseBasicParsing
 Invoke-WebRequest http://127.0.0.1:8000/choice -UseBasicParsing
 ```
 
-### 2.3. Gdy brakuje wrappera
+### 3.3. Gdy brakuje wrappera
 
 ```powershell
 $code = @'
@@ -66,7 +92,7 @@ if __name__ == "__main__":
 Set-Content -Path D:\CTIP\scripts\windows\run_ctip_web.py -Value $code -Encoding UTF8
 ```
 
-## 3. Formularze publiczne zwracaja `500`
+## 4. Formularze publiczne zwracaja `500`
 
 Uruchom skrypt naprawczy:
 
@@ -80,7 +106,7 @@ Skrypt:
 - wymusza `PGHOST=127.0.0.1` dla `CTIP-FormsPublic`,
 - restartuje usluge i testuje endpointy.
 
-## 4. Standardowa aktualizacja po merge do `main`
+## 5. Standardowa aktualizacja po merge do `main`
 
 ```powershell
 cd D:\CTIP
@@ -91,14 +117,14 @@ git pull --ff-only origin main
 Restart-Service CTIP-Web,CTIP-FormsPublic,CTIP-SMS,CollectorService -Force
 ```
 
-## 5. Minimalna diagnostyka logow
+## 6. Minimalna diagnostyka logow
 
 ```powershell
 Get-Content -Tail 120 D:\CTIP\logs\web\web_stderr.log
 Get-Content -Tail 120 D:\CTIP\logs\forms_public\forms_stderr.log
 ```
 
-## 6. Zasady operacyjne (zeby nie powtorzyc awarii)
+## 7. Zasady operacyjne (zeby nie powtorzyc awarii)
 
 - Nie uruchamiaj opisow tekstowych jako komend PowerShell (np. "Jesli dalej...").
 - Po kazdym `git pull` wykonaj check z punktu 1.

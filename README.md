@@ -592,6 +592,26 @@ Aktualne nazwy usług produkcyjnych (Windows Server):
 - `CTIP-SMS` – moduł wysyłki SMS
 - `CTIP-Web` – backend/panel web
 
+### Szybka diagnostyka uslug po aktualizacji (Windows)
+Po wdrozeniu uruchom jeden skrypt kontrolny:
+
+```powershell
+cd D:\CTIP
+.\scripts\windows\check_ctip_health.ps1 -InstallDir "D:\CTIP"
+```
+
+Skrypt sprawdza:
+- status uslug `CollectorService`, `CTIP-Web`, `CTIP-SMS` (opcjonalnie `CTIP-FormsPublic`),
+- lacznosc TCP do PBX i PostgreSQL na podstawie `.env`,
+- biezace logi dzienne (`docs/LOG/Centralka`, `docs/LOG/sms`) i logi uslug (`logs/collector`, `logs/sms`),
+- typowe wzorce awarii (m.in. blad autoryzacji PostgreSQL i petla restartow kolektora).
+
+Kod wyjscia:
+- `0` – brak bledow krytycznych,
+- `2` – wykryto blad krytyczny (wymagana interwencja).
+
+Uwaga operacyjna: `scripts/windows/update_ctip.ps1` zatrzymuje dzialajace uslugi na czas aktualizacji i domyslnie **nie** uruchomi ich ponownie, gdy aktualizacja zakonczy sie bledem (chyba ze uzyjesz `-ForceStartOnFailure`).
+
 ## Backend API (FastAPI)
 Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w katalogu `app/`. Do pracy wymaga zależności opisanych w `pyproject.toml` (`fastapi`, `uvicorn`, `sqlalchemy`, `psycopg`, `pydantic-settings`).
 
