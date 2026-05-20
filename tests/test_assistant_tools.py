@@ -115,6 +115,24 @@ class AssistantToolsDispatchTests(unittest.IsolatedAsyncioTestCase):
             report_title="aktywni_klienci",
         )
 
+    async def test_execute_tool_routes_workflow_devices_audit(self) -> None:
+        tools = AssistantDataTools(session=None, settings_store_secret=None)  # type: ignore[arg-type]
+        expected = AssistantToolResult(
+            tool_name="workflow_devices_audit",
+            status="success",
+            payload={"summary": {"stage_rows_count": 2}},
+            row_count=2,
+            generated_sql=None,
+            error_message=None,
+            duration_ms=12,
+        )
+        tools.workflow_devices_audit = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+        result = await tools.execute_tool("workflow_devices_audit", {})
+
+        self.assertEqual(result, expected)
+        tools.workflow_devices_audit.assert_awaited_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

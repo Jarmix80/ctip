@@ -42,3 +42,6 @@
 - Rozszerzono `ctip.form_request` o kolumny `archive_bucket`, `archived_at` i `archive_due_at` do obsługi sekcji archiwum GenForm (`accepted`, `rejected`, `unfilled`) oraz terminów automatycznego przenoszenia.
 - Rozszerzono `ctip.form_workflow_case` o statusy `WAITING_SIGNATURE`, `APPROVED_ORDER`, `REJECTED_GRENKE` oraz pola terminów i historii: `signature_deadline_at`, `resources_release_due_at`, `resources_released_at`, `status_changed_at`, `status_source`, `status_history`.
 - Dodano indeksy `ix_form_request_archive_bucket`, `ix_form_request_archive_due_at` i `ix_form_workflow_case_resources_release_due_at` dla list archiwum i automatycznego zwalniania zasobów.
+
+## 2026-05-20
+- Rozszerzono ograniczenie `assistant_tool_call_log_tool_name_check` o narzędzia `workflow_devices_audit` oraz `email_send_report`, aby log narzędzi asystenta akceptował deterministyczny audyt urządzeń i raporty e-mail.

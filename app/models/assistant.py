@@ -107,7 +107,7 @@ class AssistantToolCallLog(Base):
     __tablename__ = "assistant_tool_call_log"
     __table_args__ = (
         CheckConstraint(
-            "tool_name in ('firebird_read','firebird_business_read','firebird_knowledge_read','sheets_read','imap_read','ctip_schema_read')",
+            "tool_name in ('firebird_read','firebird_business_read','firebird_knowledge_read','workflow_devices_audit','sheets_read','imap_read','ctip_schema_read','email_send_report')",
             name="assistant_tool_call_log_tool_name_check",
         ),
         CheckConstraint(

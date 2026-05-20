@@ -22,6 +22,11 @@ from app.services.assistant_learning import (
 )
 from app.services.assistant_tools import AssistantDataTools, AssistantToolResult
 from app.services.assistant_workers import get_worker_profile
+from app.services.assistant_workflow_devices import (
+    build_workflow_devices_pending_action,
+    is_workflow_devices_audit_prompt,
+    render_workflow_devices_audit_answer,
+)
 from app.services.settings_store import build_store
 
 _SETTINGS_NAMESPACE = "assistant"
@@ -64,6 +69,7 @@ class AssistantGenerationResult:
     tool_results: list[AssistantToolResult]
     sources: list[dict[str, Any]]
     blocked_as_change_request: bool
+    pending_action: dict[str, Any] | None = None
 
 
 def _to_bool(value: Any, default: bool) -> bool:
@@ -258,6 +264,46 @@ class AssistantRuntime:
                 blocked_as_change_request=False,
             )
 
+        tools = AssistantDataTools(
+            self._session,
+            settings_store_secret=self._secret_key,
+            user_id=user_id,
+        )
+        if is_workflow_devices_audit_prompt(clean_prompt):
+            audit_result = await tools.execute_tool("workflow_devices_audit", {})
+            if audit_result.status == "success":
+                pending_action = build_workflow_devices_pending_action(audit_result.payload)
+                return AssistantGenerationResult(
+                    answer_text=render_workflow_devices_audit_answer(audit_result.payload),
+                    response_id=None,
+                    model_name="rule-based-workflow-devices-audit",
+                    input_tokens=None,
+                    output_tokens=None,
+                    tool_results=[audit_result],
+                    sources=[
+                        {
+                            "tool": audit_result.tool_name,
+                            "row_count": audit_result.row_count,
+                            "duration_ms": audit_result.duration_ms,
+                        }
+                    ],
+                    blocked_as_change_request=False,
+                    pending_action=pending_action,
+                )
+            return AssistantGenerationResult(
+                answer_text=(
+                    "Nie udało się wykonać audytu urządzeń Firebird vs Google Sheets: "
+                    f"{audit_result.error_message or 'błąd narzędzia'}."
+                ),
+                response_id=None,
+                model_name="rule-based-workflow-devices-audit",
+                input_tokens=None,
+                output_tokens=None,
+                tool_results=[audit_result],
+                sources=[],
+                blocked_as_change_request=False,
+            )
+
         if detect_change_intent(clean_prompt):
             return AssistantGenerationResult(
                 answer_text=(
@@ -289,11 +335,6 @@ class AssistantRuntime:
                 blocked_as_change_request=False,
             )
 
-        tools = AssistantDataTools(
-            self._session,
-            settings_store_secret=self._secret_key,
-            user_id=user_id,
-        )
         worker_profile = get_worker_profile(worker_key)
         user_preferences = await load_user_assistant_preferences(self._session, user_id=user_id)
         inferred_business_intent = infer_business_intent_from_prompt(
@@ -455,7 +496,8 @@ class AssistantRuntime:
         system_prompt = (
             "Jesteś CTIP AI Asystentem w trybie tylko odczytu. "
             "Możesz korzystać wyłącznie z narzędzi firebird_read, firebird_business_read, "
-            "firebird_knowledge_read, sheets_read, imap_read, ctip_schema_read i email_send_report. "
+            "firebird_knowledge_read, workflow_devices_audit, sheets_read, imap_read, "
+            "ctip_schema_read i email_send_report. "
             "Gdy pytanie dotyczy schematu PostgreSQL CTIP (tabele `ctip.*`, relacje workflow) "
             "użyj ctip_schema_read. "
             "Do pytań o schemat bazy PostgreSQL CTIP nie używaj firebird_read ani sheets_read. "
@@ -473,6 +515,8 @@ class AssistantRuntime:
             "`contract_settlement_period_explainer` dla wyjaśnienia logiki okresów rozliczeń umów. "
             "Gdy użytkownik prosi o wysyłkę raportu e-mail, użyj email_send_report "
             "(odbiorca + temat + format, raport z ostatniego wyniku narzędzia danych). "
+            "Gdy użytkownik pyta o porównanie urządzeń z Firebird Menadżera Serwisu "
+            "z arkuszem Google/Zerowki_prod, użyj workflow_devices_audit. "
             "Jeśli użytkownik nie poda okresu dla modelu, przyjmij ostatnie 12 miesięcy "
             "(ustaw `months_back=12`). "
             "Jeśli model podany przez użytkownika ma różny zapis (np. MPC3004 vs MP C3004), "
@@ -563,6 +607,7 @@ class AssistantRuntime:
                                 "sheets_read",
                                 "imap_read",
                                 "ctip_schema_read",
+                                "workflow_devices_audit",
                             ],
                         },
                         "report_title": {"type": "string"},
@@ -605,6 +650,21 @@ class AssistantRuntime:
                         "row_limit": {"type": "integer", "minimum": 1, "maximum": firebird_limit},
                     },
                     "required": ["sql"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "type": "function",
+                "name": "workflow_devices_audit",
+                "description": (
+                    "Porównuje urządzenia workflow w Firebird Menadżera Serwisu "
+                    "z arkuszem Google Zerowki_prod/Urzadzenia_magazyn i przygotowuje "
+                    "bezpieczny staging do zakładki urzadzenia_chat. Narzędzie tylko liczy raport; "
+                    "nie zapisuje do arkusza."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
                     "additionalProperties": False,
                 },
             },

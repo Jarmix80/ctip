@@ -26,6 +26,7 @@ from app.models import AdminUser
 from app.services.admin_user_imap import load_user_imap_config
 from app.services.admin_users import resolve_email_delivery_settings
 from app.services.assistant_sql_guard import AssistantSqlGuardError, guard_readonly_sql
+from app.services.assistant_workflow_devices import build_workflow_devices_audit_result
 from app.services.contracts_dashboard import load_firebird_runtime_config
 from app.services.email_client import send_smtp_message
 from app.services.settings_store import build_store
@@ -152,6 +153,7 @@ _EMAIL_REPORT_ALLOWED_SOURCE_TOOLS = {
     "firebird_read",
     "firebird_business_read",
     "firebird_knowledge_read",
+    "workflow_devices_audit",
     "sheets_read",
     "imap_read",
     "ctip_schema_read",
@@ -541,6 +543,37 @@ class AssistantDataTools:
             generated_sql=None,
             error_message=None,
             duration_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    async def workflow_devices_audit(self) -> AssistantToolResult:
+        """Wykonuje deterministyczny audyt urządzeń Firebird vs Google Sheets FLOW."""
+
+        runtime = await self.load_runtime_config()
+        started = time.monotonic()
+        try:
+            audit = await build_workflow_devices_audit_result(
+                self._session,
+                timeout_seconds=runtime.tool_timeout_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return AssistantToolResult(
+                tool_name="workflow_devices_audit",
+                status="error",
+                payload={},
+                row_count=None,
+                generated_sql=None,
+                error_message=str(exc).strip() or type(exc).__name__,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+        summary = audit.payload.get("summary") if isinstance(audit.payload, dict) else {}
+        return AssistantToolResult(
+            tool_name="workflow_devices_audit",
+            status="success",
+            payload=audit.payload,
+            row_count=int(summary.get("stage_rows_count") or 0),
+            generated_sql=None,
+            error_message=None,
+            duration_ms=audit.duration_ms,
         )
 
     async def imap_read(
@@ -1845,6 +1878,8 @@ class AssistantDataTools:
                 ),
                 row_limit=arguments.get("row_limit"),
             )
+        elif tool_name == "workflow_devices_audit":
+            result = await self.workflow_devices_audit()
         elif tool_name == "imap_read":
             result = await self.imap_read(
                 folder=(str(arguments.get("folder")).strip() if arguments.get("folder") else None),

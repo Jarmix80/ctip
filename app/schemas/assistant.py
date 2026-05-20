@@ -96,9 +96,20 @@ class AssistantSourceInfo(BaseModel):
         "imap_read",
         "ctip_schema_read",
         "email_send_report",
+        "workflow_devices_audit",
     ]
     row_count: int | None = None
     duration_ms: int | None = None
+
+
+class AssistantPendingActionInfo(BaseModel):
+    """Akcja oczekująca na świadome wykonanie przez użytkownika."""
+
+    id: int
+    type: Literal["workflow_devices_chat_sheet_stage"]
+    label: str
+    description: str | None = None
+    summary: dict[str, Any] | None = None
 
 
 class AssistantChatMessageResponse(BaseModel):
@@ -109,6 +120,7 @@ class AssistantChatMessageResponse(BaseModel):
     sources: list[AssistantSourceInfo] = Field(default_factory=list)
     blocked_as_change_request: bool = False
     change_request_id: int | None = None
+    pending_action: AssistantPendingActionInfo | None = None
 
 
 class AssistantChangeRequestCreate(BaseModel):
@@ -159,6 +171,13 @@ class AssistantChangeRequestRead(BaseModel):
     decision_note: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class AssistantActionExecutionResponse(BaseModel):
+    """Wynik wykonania kontrolowanej akcji asystenta."""
+
+    change_request: AssistantChangeRequestRead
+    result: dict[str, Any]
 
 
 class AssistantWeeklyInsightRead(BaseModel):

@@ -199,6 +199,7 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
                 {"tool": "imap_read", "row_count": 2, "duration_ms": 7},
                 {"tool": "ctip_schema_read", "row_count": 1, "duration_ms": 5},
                 {"tool": "email_send_report", "row_count": 1, "duration_ms": 4},
+                {"tool": "workflow_devices_audit", "row_count": 2, "duration_ms": 8},
             ],
             blocked_as_change_request=False,
         )
@@ -220,7 +221,71 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["sources"][3]["tool"], "imap_read")
         self.assertEqual(payload["sources"][4]["tool"], "ctip_schema_read")
         self.assertEqual(payload["sources"][5]["tool"], "email_send_report")
+        self.assertEqual(payload["sources"][6]["tool"], "workflow_devices_audit")
         self.assertFalse(payload["blocked_as_change_request"])
+
+    async def test_message_with_pending_workflow_devices_action_creates_change_request(
+        self,
+    ) -> None:
+        create_response = await self.client.post(
+            "/assistant/chats",
+            headers={"X-Admin-Session": "operator-token"},
+            json={"title": "Audyt urządzeń"},
+        )
+        chat_id = create_response.json()["id"]
+
+        generation = AssistantGenerationResult(
+            answer_text="Raport audytu urządzeń.",
+            response_id=None,
+            model_name="rule-based-workflow-devices-audit",
+            input_tokens=None,
+            output_tokens=None,
+            tool_results=[],
+            sources=[{"tool": "workflow_devices_audit", "row_count": 1, "duration_ms": 11}],
+            blocked_as_change_request=False,
+            pending_action={
+                "type": "workflow_devices_chat_sheet_stage",
+                "label": "Zapisz do urzadzenia_chat",
+                "request_text": "Zapisz wynik audytu do zakładki roboczej.",
+                "justification": "Docelowy arkusz pozostaje bez zmian.",
+                "summary": {
+                    "stage_rows_count": 1,
+                    "stage_fill_ms_id_count": 1,
+                    "stage_append_count": 0,
+                },
+                "stage": {
+                    "type": "workflow_devices_chat_sheet_stage",
+                    "headers": ["MS_ID_MAGAZYN_TABLE"],
+                    "rows": [{"target_values": ["18408"]}],
+                    "row_count": 1,
+                },
+            },
+        )
+        with patch(
+            "app.api.routes.assistant.AssistantRuntime.generate", AsyncMock(return_value=generation)
+        ):
+            response = await self.client.post(
+                f"/assistant/chats/{chat_id}/messages",
+                headers={"X-Admin-Session": "operator-token"},
+                json={"prompt": "Sprawdź urządzenia w arkuszu i Firebird", "stream": False},
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertIsNotNone(body["change_request_id"])
+        self.assertEqual(body["pending_action"]["id"], body["change_request_id"])
+        self.assertEqual(
+            body["pending_action"]["type"],
+            "workflow_devices_chat_sheet_stage",
+        )
+        self.assertEqual(body["pending_action"]["summary"]["stage_rows_count"], 1)
+
+        async with self.session_factory() as session:
+            item = await session.get(AssistantChangeRequest, body["change_request_id"])
+            self.assertIsNotNone(item)
+            self.assertEqual(item.status, "pending")
+            self.assertEqual(item.created_by, 2)
+            self.assertEqual(item.payload["type"], "workflow_devices_chat_sheet_stage")
 
     async def test_access_to_foreign_thread_is_forbidden(self) -> None:
         create_response = await self.client.post(
@@ -298,6 +363,56 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(approve_response.status_code, status.HTTP_200_OK)
         self.assertEqual(approve_response.json()["status"], "approved")
         self.assertEqual(approve_response.json()["decided_by"], 1)
+
+    async def test_operator_can_execute_own_workflow_devices_stage_request(self) -> None:
+        now = datetime.now(UTC)
+        async with self.session_factory() as session:
+            item = AssistantChangeRequest(
+                created_by=2,
+                request_text="Zapisz staging urządzeń.",
+                justification="Test stagingu.",
+                payload={
+                    "type": "workflow_devices_chat_sheet_stage",
+                    "stage": {
+                        "headers": ["MS_ID_MAGAZYN_TABLE"],
+                        "rows": [{"target_values": ["18408"]}],
+                        "row_count": 1,
+                    },
+                },
+                status="pending",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(item)
+            await session.commit()
+            await session.refresh(item)
+            request_id = item.id
+
+        result_payload = {
+            "spreadsheet_id": "sheet-1",
+            "spreadsheet_title": "Zerowki_prod",
+            "worksheet_title": "urzadzenia_chat",
+            "written_rows": 1,
+        }
+        with patch(
+            "app.api.routes.assistant.execute_workflow_devices_chat_sheet_stage",
+            AsyncMock(return_value=result_payload),
+        ) as execute_mock:
+            response = await self.client.post(
+                f"/assistant/change-requests/{request_id}/execute-workflow-devices-chat-sheet",
+                headers={"X-Admin-Session": "operator-token"},
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["result"]["written_rows"], 1)
+        self.assertEqual(body["change_request"]["status"], "executed")
+        self.assertEqual(body["change_request"]["decided_by"], 2)
+        execute_mock.assert_awaited_once()
+        async with self.session_factory() as session:
+            item = await session.get(AssistantChangeRequest, request_id)
+            self.assertEqual(item.status, "executed")
+            self.assertEqual(item.payload["execution_result"]["written_rows"], 1)
 
     async def test_weekly_insight_generation_for_admin(self) -> None:
         response = await self.client.get(

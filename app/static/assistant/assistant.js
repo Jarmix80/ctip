@@ -54,7 +54,61 @@ function renderSources(sourcesList, sources = []) {
   }
 }
 
-function renderChangeRequestInfo(element, payload) {
+function formatSummaryLine(summary) {
+  if (!summary || typeof summary !== "object") {
+    return "";
+  }
+  const stageRows = summary.stage_rows_count ?? 0;
+  const fillRows = summary.stage_fill_ms_id_count ?? 0;
+  const appendRows = summary.stage_append_count ?? 0;
+  return `Do zapisania: ${stageRows} wierszy, uzupełnienie MS_ID: ${fillRows}, nowe wiersze: ${appendRows}.`;
+}
+
+function renderChangeRequestInfo(element, payload, token) {
+  const pendingAction = payload?.pending_action;
+  if (pendingAction?.type === "workflow_devices_chat_sheet_stage" && pendingAction?.id) {
+    const wrapper = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `Akcja #${pendingAction.id}: ${pendingAction.label || "Zapisz staging"}`;
+    const description = document.createElement("p");
+    description.textContent =
+      pendingAction.description ||
+      "Zapisze świeży wynik audytu do zakładki roboczej urzadzenia_chat.";
+    const summary = document.createElement("p");
+    summary.textContent = formatSummaryLine(pendingAction.summary);
+    const status = document.createElement("p");
+    status.className = "assistant-action-status";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "assistant-pending-action-btn";
+    button.textContent = "Zapisz do urzadzenia_chat";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      status.textContent = "Trwa zapis do zakładki urzadzenia_chat...";
+      try {
+        const result = await requestJson(
+          `/assistant/change-requests/${pendingAction.id}/execute-workflow-devices-chat-sheet`,
+          { method: "POST" },
+          token,
+        );
+        const writtenRows = result?.result?.written_rows ?? 0;
+        const worksheetTitle = result?.result?.worksheet_title || "urzadzenia_chat";
+        status.textContent = `Zapisano ${writtenRows} wierszy do zakładki ${worksheetTitle}.`;
+        button.textContent = "Zapis wykonany";
+      } catch (err) {
+        button.disabled = false;
+        status.textContent =
+          err instanceof Error ? err.message : "Nie udało się wykonać zapisu.";
+      }
+    });
+    wrapper.append(title, description);
+    if (summary.textContent) {
+      wrapper.appendChild(summary);
+    }
+    wrapper.append(button, status);
+    element.replaceChildren(wrapper);
+    return;
+  }
   if (!payload?.blocked_as_change_request) {
     element.textContent = "Brak nowych wniosków.";
     return;
@@ -209,7 +263,7 @@ async function bootstrapAssistantPage() {
       appendMessage(messagesEl, item.role, item.content, item.created_at);
     }
     renderSources(sourcesList, []);
-    renderChangeRequestInfo(changeRequestInfo, null);
+    renderChangeRequestInfo(changeRequestInfo, null, token);
   };
 
   const createNewThread = async () => {
@@ -315,7 +369,7 @@ async function bootstrapAssistantPage() {
         await loadThread(state.activeThreadId);
       }
       renderSources(sourcesList, donePayload?.sources || []);
-      renderChangeRequestInfo(changeRequestInfo, donePayload || {});
+      renderChangeRequestInfo(changeRequestInfo, donePayload || {}, token);
     } catch (err) {
       appendMessage(
         messagesEl,

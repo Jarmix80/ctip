@@ -22,6 +22,7 @@ from app.models import (
     AssistantWeeklyInsight,
 )
 from app.schemas.assistant import (
+    AssistantActionExecutionResponse,
     AssistantChangeRequestCreate,
     AssistantChangeRequestDecision,
     AssistantChangeRequestRead,
@@ -33,6 +34,7 @@ from app.schemas.assistant import (
     AssistantChatSummary,
     AssistantLearningProfileRead,
     AssistantLearningProfileUpdate,
+    AssistantPendingActionInfo,
     AssistantSourceInfo,
     AssistantWeeklyInsightRead,
     AssistantWorkerInfo,
@@ -43,6 +45,10 @@ from app.services.assistant_workers import (
     DEFAULT_WORKER_KEY,
     get_worker_profile,
     list_worker_profiles,
+)
+from app.services.assistant_workflow_devices import (
+    WORKFLOW_DEVICES_STAGE_REQUEST_TYPE,
+    execute_workflow_devices_chat_sheet_stage,
 )
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -158,6 +164,11 @@ async def _build_stream_response(
             "assistant_message_id": payload.assistant_message.id,
             "blocked_as_change_request": payload.blocked_as_change_request,
             "change_request_id": payload.change_request_id,
+            "pending_action": (
+                payload.pending_action.model_dump(mode="json")
+                if payload.pending_action is not None
+                else None
+            ),
         }
         yield f"event: meta\ndata: {json.dumps(meta, ensure_ascii=False)}\n\n"
         for chunk in _chunk_text(payload.assistant_message.content):
@@ -359,6 +370,7 @@ async def send_chat_message(
     )
 
     change_request_id: int | None = None
+    pending_action_info: AssistantPendingActionInfo | None = None
     if generation.blocked_as_change_request:
         change_request = AssistantChangeRequest(
             created_by=admin_user.id,
@@ -374,6 +386,35 @@ async def send_chat_message(
         session.add(change_request)
         await session.flush()
         change_request_id = change_request.id
+    elif generation.pending_action:
+        action_payload = dict(generation.pending_action)
+        change_request = AssistantChangeRequest(
+            created_by=admin_user.id,
+            thread_id=thread.id,
+            message_id=user_message.id,
+            request_text=str(
+                action_payload.get("request_text") or "Akcja asystenta oczekująca na wykonanie."
+            ),
+            justification=str(action_payload.get("justification") or ""),
+            payload=action_payload,
+            status="pending",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        session.add(change_request)
+        await session.flush()
+        change_request_id = change_request.id
+        pending_action_info = AssistantPendingActionInfo(
+            id=change_request.id,
+            type=action_payload.get("type"),  # type: ignore[arg-type]
+            label=str(action_payload.get("label") or "Wykonaj akcję"),
+            description=str(action_payload.get("justification") or "") or None,
+            summary=(
+                action_payload.get("summary")
+                if isinstance(action_payload.get("summary"), dict)
+                else None
+            ),
+        )
 
     thread.updated_at = datetime.now(UTC)
     thread.last_activity_at = datetime.now(UTC)
@@ -399,10 +440,12 @@ async def send_chat_message(
                 "imap_read",
                 "ctip_schema_read",
                 "email_send_report",
+                "workflow_devices_audit",
             }
         ],
         blocked_as_change_request=generation.blocked_as_change_request,
         change_request_id=change_request_id,
+        pending_action=pending_action_info,
     )
 
     if payload.stream:
@@ -547,6 +590,64 @@ async def reject_change_request(
     await session.commit()
     await session.refresh(item)
     return _map_change_request(item)
+
+
+@router.post(
+    "/change-requests/{request_id}/execute-workflow-devices-chat-sheet",
+    response_model=AssistantActionExecutionResponse,
+    summary="Wykonaj staging urządzeń do urzadzenia_chat",
+)
+async def execute_workflow_devices_chat_sheet_request(
+    request_id: int = Path(..., ge=1),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> AssistantActionExecutionResponse:
+    """Czyści i zapisuje zakładkę roboczą `urzadzenia_chat` na podstawie zatwierdzonej paczki."""
+
+    _, admin_user = admin_context
+    stmt = select(AssistantChangeRequest).where(AssistantChangeRequest.id == request_id)
+    item = (await session.execute(stmt)).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wniosek nie istnieje.")
+    if item.created_by != admin_user.id and admin_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Brak uprawnień do wykonania tej akcji.",
+        )
+    if item.status not in {"pending", "approved"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Wniosek nie jest gotowy do wykonania.",
+        )
+    payload = item.payload if isinstance(item.payload, dict) else {}
+    if payload.get("type") != WORKFLOW_DEVICES_STAGE_REQUEST_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Wniosek nie dotyczy stagingu urządzeń do urzadzenia_chat.",
+        )
+
+    try:
+        result = await execute_workflow_devices_chat_sheet_stage(session, payload=payload)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc).strip() or type(exc).__name__,
+        ) from exc
+
+    item.status = "executed"
+    item.decided_by = admin_user.id
+    item.decided_at = datetime.now(UTC)
+    item.decision_note = (
+        f"Zapisano {result.get('written_rows', 0)} wierszy do zakładki urzadzenia_chat."
+    )
+    item.payload = {**payload, "execution_result": result}
+    item.updated_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(item)
+    return AssistantActionExecutionResponse(
+        change_request=_map_change_request(item),
+        result=result,
+    )
 
 
 @router.get(
