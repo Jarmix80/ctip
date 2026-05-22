@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import html
 import imaplib
@@ -48,8 +49,14 @@ from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
     WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
     get_or_create_form_workflow_case,
+    list_form_workflow_devices,
     set_form_workflow_business_status,
     set_form_workflow_delivery,
+)
+from app.services.workflow_machine_binding import (
+    apply_binding_snapshot,
+    bind_devices_to_workflow_client,
+    notify_binding_issues_to_admins,
 )
 
 STATE_PATH = Path("inbox/mailbox/contracts_mailbox_state.json")
@@ -817,7 +824,11 @@ async def apply_mail_to_workflow(
     pdf_text: str = "",
     archived_contract_file: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Aktualizuje workflow formularza na podstawie pojedynczej wiadomości."""
+    """Aktualizuje workflow formularza na podstawie pojedynczej wiadomości.
+
+    Dla zgody na realizację zamówienia automat mailboxa musi uruchomić ten sam
+    tor wiązania urządzeń, którego używa ręczna zmiana statusu w panelu.
+    """
     workflow_case = form_ctx.workflow_case
     if workflow_case is None:
         workflow_case = await get_or_create_form_workflow_case(
@@ -895,6 +906,35 @@ async def apply_mail_to_workflow(
         saved_files=saved_files,
         archived_contract_file=archived_contract_file,
     )
+    binding_items_payload: list[dict[str, Any]] = []
+    binding_alert_payload: dict[str, Any] | None = None
+    if new_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        workflow_devices = await list_form_workflow_devices(
+            session, workflow_case_id=workflow_case.id
+        )
+        binding_items, _ = await asyncio.to_thread(
+            bind_devices_to_workflow_client,
+            workflow_case=workflow_case,
+            devices=workflow_devices,
+            actor_label="Automat skrzynki GRENKE",
+        )
+        binding_items_payload = [item.as_dict() for item in binding_items]
+        binding_by_device_id = {item.workflow_device_id: item for item in binding_items}
+        for workflow_device in workflow_devices:
+            apply_binding_snapshot(
+                device=workflow_device,
+                item=binding_by_device_id.get(workflow_device.id),
+            )
+
+        binding_failures = [item for item in binding_items if not item.ok]
+        if binding_failures:
+            binding_alert_payload = await notify_binding_issues_to_admins(
+                session,
+                workflow_case=workflow_case,
+                form_request_id=form_ctx.form.id,
+                failures=binding_failures,
+                triggered_by_user_id=None,
+            )
     workflow_case.updated_at = datetime.now(UTC)
     await record_audit(
         session,
@@ -914,6 +954,8 @@ async def apply_mail_to_workflow(
             "extracted_data": extracted_data,
             "saved_files": saved_files,
             "archived_contract_file": archived_contract_file,
+            "binding_items": binding_items_payload,
+            "binding_alert": binding_alert_payload,
         },
     )
     await session.flush()

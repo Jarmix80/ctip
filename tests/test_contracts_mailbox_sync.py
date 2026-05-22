@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.util
 import sys
@@ -303,3 +304,149 @@ def test_truncate_for_log_shortens_over_limit() -> None:
     result = module._truncate_for_log(value, max_chars=20)
     assert result.endswith("...")
     assert len(result) == 20
+
+
+def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch) -> None:
+    module = _load_sync_module()
+
+    form = SimpleNamespace(id=39, archive_due_at=None)
+    workflow_case = SimpleNamespace(
+        id=11,
+        delivery_notes="",
+        delivery_time_window=None,
+        delivery_contact_name=None,
+        delivery_contact_phone=None,
+        updated_at=None,
+        client_payload_snapshot={},
+        firebird_client_id=2926,
+    )
+    device = SimpleNamespace(
+        id=19,
+        snapshot={},
+        source_row=18410,
+        source_type="firebird_magazyn_28",
+        producer="NASHUATEC",
+        model="IMC 3000",
+        serial="3101R131123",
+        ewidencja="KP/5139",
+    )
+    form_ctx = module.FormContext(
+        form=form,
+        payload={"company_name": "ACME"},
+        workflow_case=workflow_case,
+        application_no_normalized="173025167",
+    )
+    mail_ctx = module.MailContext(
+        imap_id="100",
+        message_id="<approval@test>",
+        subject="Zgoda na realizację zamówienia",
+        sender="system@grenke.pl",
+        body_text="Umowa została podpisana.",
+        email_date_utc=datetime(2026, 5, 22, 12, 22, 36, tzinfo=UTC),
+        event_type="approval_for_delivery",
+        application_no_raw="173-025167",
+        application_no_normalized="173025167",
+        attachments=[],
+        proforma_no_raw="39/proforma/2026",
+        proforma_no_normalized="39/proforma/2026",
+    )
+
+    captured: dict[str, object] = {}
+
+    async def fake_set_form_workflow_business_status(*args, **kwargs):
+        captured["status_source"] = kwargs["status_source"]
+        workflow_case.business_status = kwargs["business_status"]
+        return workflow_case
+
+    async def fake_set_form_workflow_delivery(*args, **kwargs):
+        workflow_case.delivery_notes = kwargs["delivery_notes"]
+        return workflow_case
+
+    async def fake_list_form_workflow_devices(*args, **kwargs):
+        captured["workflow_case_id"] = kwargs["workflow_case_id"]
+        return [device]
+
+    def fake_bind_devices_to_workflow_client(*, workflow_case, devices, actor_label):
+        captured["binding_actor_label"] = actor_label
+        captured["binding_device_ids"] = [item.id for item in devices]
+
+        class _BindingItem:
+            workflow_device_id = 19
+            source_row = 18410
+            source_type = "firebird_magazyn_28"
+            ok = True
+            message = "Powiązano urządzenie z klientem MS."
+            producer = "NASHUATEC"
+            model = "IMC 3000"
+            serial = "3101R131123"
+            machine_id = 7001
+            previous_client_id = None
+            current_client_id = 2926
+            previous_ewidencja = None
+            current_ewidencja = "KP/5139/GRENKE/1"
+            ewidencja_changed = True
+
+            def as_dict(self):
+                return {
+                    "workflow_device_id": self.workflow_device_id,
+                    "ok": self.ok,
+                    "message": self.message,
+                    "machine_id": self.machine_id,
+                    "current_client_id": self.current_client_id,
+                    "current_ewidencja": self.current_ewidencja,
+                }
+
+        return ([_BindingItem()], [])
+
+    async def fake_notify_binding_issues_to_admins(*args, **kwargs):
+        raise AssertionError("Alert nie powinien być wysłany dla poprawnego wiązania.")
+
+    async def fake_record_audit(*args, **kwargs):
+        captured["audit_payload"] = kwargs["payload"]
+
+    class _FakeSession:
+        async def flush(self) -> None:
+            captured["flushed"] = True
+
+    monkeypatch.setattr(
+        module,
+        "set_form_workflow_business_status",
+        fake_set_form_workflow_business_status,
+    )
+    monkeypatch.setattr(module, "set_form_workflow_delivery", fake_set_form_workflow_delivery)
+    monkeypatch.setattr(module, "list_form_workflow_devices", fake_list_form_workflow_devices)
+    monkeypatch.setattr(
+        module, "bind_devices_to_workflow_client", fake_bind_devices_to_workflow_client
+    )
+    monkeypatch.setattr(
+        module,
+        "notify_binding_issues_to_admins",
+        fake_notify_binding_issues_to_admins,
+    )
+    monkeypatch.setattr(module, "record_audit", fake_record_audit)
+    monkeypatch.setattr(module, "persist_mail_attachments", lambda **kwargs: [])
+    monkeypatch.setattr(module, "attach_mailbox_meta", lambda *args, **kwargs: None)
+
+    result = asyncio.run(
+        module.apply_mail_to_workflow(
+            _FakeSession(),
+            form_ctx=form_ctx,
+            mail_ctx=mail_ctx,
+            extracted_data={"application_no": "173-025167"},
+        )
+    )
+
+    assert result["new_business_status"] == module.WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
+    assert captured["status_source"] == "mailbox"
+    assert captured["binding_actor_label"] == "Automat skrzynki GRENKE"
+    assert captured["binding_device_ids"] == [19]
+    assert captured["flushed"] is True
+    assert device.snapshot["ms_binding_status"] == "ok"
+    assert device.snapshot["ms_binding_message"] == "Powiązano urządzenie z klientem MS."
+    assert device.snapshot["ms_id_maszyna"] == 7001
+    assert device.snapshot["ms_id_klient"] == 2926
+    assert device.snapshot["ewidencja"] == "KP/5139/GRENKE/1"
+    assert workflow_case.delivery_notes == "Data podpisania umowy (mail): 2026-05-22"
+    audit_payload = captured["audit_payload"]
+    assert audit_payload["binding_items"][0]["workflow_device_id"] == 19
+    assert audit_payload["binding_alert"] is None
