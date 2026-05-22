@@ -7,6 +7,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 ## Dokumenty wdrożeniowe
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Pomocniczy skrypt operatorski (Windows, bez `Read-Host`) do wykonania kroku Google Sheets + mailbox dry-run po wdrozeniu: `inbox/krok9_10_google_sheets_mailbox_noninteractive.ps1`.
+- Hotfix produkcyjny dla toru `mailbox -> APPROVED_ORDER` z jednorazowa naprawa formularza `39`: `docs/instal/hotfix_mailbox_binding_prod_2026-05-22.md`.
 
 ## Najważniejsze komponenty
 - `collector_full.py` – produkcyjny kolektor CTIP: łączy się z centralą, koreluje zdarzenia, persystuje rekordy w schemacie `ctip` oraz rejestruje zadania SMS.
@@ -182,7 +183,7 @@ Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP
 ### Synchronizacja wiadomości umów z FLOW
 Skrypt `scripts/contracts_mailbox_sync.py` analizuje wiadomości z `INBOX`, rozpoznaje tematy:
 - `Decyzja do wniosku ...` -> ustawia status `WAITING_SIGNATURE`, a gdy treść wiadomości/PDF zawiera odmowę (`odmowa`, `decyzja negatywna`, `wniosek odrzucony`, `brak zgody`) ustawia `REJECTED_GRENKE` i termin zwolnienia zasobów,
-- `Zgoda na realizację zamówienia do wniosku ...` -> ustawia status `APPROVED_ORDER`, zapisuje datę e-mail jako datę podpisania umowy (`delivery_date`) i wyznacza termin archiwizacji.
+- `Zgoda na realizację zamówienia do wniosku ...` -> ustawia status `APPROVED_ORDER`, zapisuje datę e-mail jako datę podpisania umowy (`delivery_date`), uruchamia automat wiązania urządzeń z klientem Menadżera Serwisu i wyznacza termin archiwizacji.
 
 Dodatkowo skrypt:
 - próbuje powiązać wiadomość z formularzem `SUBMITTED` po numerze wniosku, numerze proformy (`.../proforma/...`) i treści (NIP/nazwa/reprezentant),
