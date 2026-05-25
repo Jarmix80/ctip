@@ -12,7 +12,10 @@
     <div>
       <h2>Konfiguracja Firebird (Menadżer Serwisu)</h2>
       <p>Parametry połączenia do bazy programu Menadżer Serwisu oraz ścieżka lokalnej kopii roboczej.</p>
-      <p class="input-help">Sekcja zapisuje namespace <code>firebird</code> i testuje polaczenie przez <code>/admin/firebird/test</code>.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="testStatus"></span>
@@ -24,7 +27,7 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="fb-mode">Aktywna baza</label>
-        <select id="fb-mode" x-model="mode" required>
+        <select id="fb-mode" x-model="mode" required :disabled="!editable" :class="{ 'input-disabled': !editable }">
           <option value="network">Baza sieciowa</option>
           <option value="local">Baza lokalna</option>
         </select>
@@ -37,15 +40,15 @@
           type="text"
           x-model="host"
           :required="mode === 'network'"
-          :disabled="mode === 'local'"
-          :class="{ 'input-disabled': mode === 'local' }"
+          :disabled="mode === 'local' || !editable"
+          :class="{ 'input-disabled': mode === 'local' || !editable }"
           placeholder="np. 127.0.0.1"
         >
         <p class="input-help" x-show="mode === 'local'">W trybie lokalnym host jest ustawiany automatycznie na 127.0.0.1.</p>
       </div>
       <div class="form-field">
         <label for="fb-port">Port</label>
-        <input id="fb-port" type="number" min="1" max="65535" x-model="port" required>
+        <input id="fb-port" type="number" min="1" max="65535" x-model="port" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-database">Ścieżka bazy sieciowej</label>
@@ -54,45 +57,45 @@
           type="text"
           x-model="database"
           required
-          :disabled="mode === 'local'"
-          :class="{ 'input-disabled': mode === 'local' }"
+          :disabled="mode === 'local' || !editable"
+          :class="{ 'input-disabled': mode === 'local' || !editable }"
           placeholder="np. C:/MS/BAZA/MS.FDB"
         >
         <p class="input-help" x-show="mode === 'local'">Pole nie bierze udziału w teście lokalnym, ale pozostaje zapisane dla trybu sieciowego.</p>
       </div>
       <div class="form-field">
         <label for="fb-user">Użytkownik</label>
-        <input id="fb-user" type="text" x-model="user" required>
+        <input id="fb-user" type="text" x-model="user" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-password">Hasło</label>
-        <input id="fb-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="fb-password" type="password" x-model="password" placeholder="Hasło jest zarządzane w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="fb-charset">Kodowanie</label>
-        <input id="fb-charset" type="text" x-model="charset" required placeholder="WIN1250">
+        <input id="fb-charset" type="text" x-model="charset" required placeholder="WIN1250" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-role">Rola (opcjonalnie)</label>
-        <input id="fb-role" type="text" x-model="role" placeholder="np. RDB$ADMIN">
+        <input id="fb-role" type="text" x-model="role" placeholder="np. RDB$ADMIN" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-local-copy">Ścieżka bazy lokalnej</label>
-        <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb">
+        <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field form-field-wide">
         <label class="users-section-option users-flag-option" for="fb-allow-writes">
-          <input id="fb-allow-writes" type="checkbox" x-model="allowWrites">
-          Odblokuj zapis do Firebird
+          <input id="fb-allow-writes" type="checkbox" x-model="allowWrites" :disabled="!editable">
+          Zezwalaj na zapis do Firebird (`FB_ALLOW_WRITES`)
         </label>
-        <p class="input-help">Opcja steruje automatycznym dopisywaniem klienta do Menadżera Serwisu po wysłaniu formularza i zastępuje ręczne ustawianie blokady w środowisku aktywnej usługi.</p>
+        <p class="input-help">Flaga jest odczytywana wyłącznie z `.env` aktywnej usługi i steruje automatycznym dopisywaniem klienta do Menadżera Serwisu po wysłaniu formularza.</p>
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
       <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
         <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>

@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 _scheduler_task: asyncio.Task[None] | None = None
 _scheduler_stop_event: asyncio.Event | None = None
 _scheduler_last_run: dict[str, str] = {}
+BACKUP_ENV_LOCK_REASON = (
+    "Dane połączeniowe i sekretne modułu backupów są zarządzane wyłącznie z pliku .env."
+)
 
 
 def _ensure_admin(role: str) -> None:
@@ -95,7 +98,6 @@ def _resolve_cloud_targets(cfg: BackupConfigResponse) -> list[str]:
 async def _execute_backup_job(
     *,
     cfg: BackupConfigResponse,
-    stored: dict[str, str],
     label: str | None,
     compress: bool,
     cloud_upload_enabled: bool,
@@ -112,11 +114,11 @@ async def _execute_backup_job(
     upload_urls: list[str] = []
 
     if cloud_upload_enabled and cfg.cloud_provider == "office365":
-        tenant_id = stored.get("office_tenant_id") or settings.office365_tenant_id or ""
-        client_id = stored.get("office_client_id") or settings.office365_client_id or ""
-        client_secret = stored.get("office_client_secret") or settings.office365_client_secret or ""
-        site_id = stored.get("office_site_id") or settings.office365_site_id
-        drive_id = stored.get("office_drive_id") or settings.office365_drive_id
+        tenant_id = cfg.office_tenant_id or ""
+        client_id = cfg.office_client_id or ""
+        client_secret = settings.office365_client_secret or ""
+        site_id = cfg.office_site_id
+        drive_id = cfg.office_drive_id
 
         for folder_path in _resolve_cloud_targets(cfg):
             try:
@@ -155,8 +157,9 @@ async def _execute_backup_job(
 async def load_backup_config(session: AsyncSession) -> BackupConfigResponse:
     """Wczytuje konfigurację modułu kopii zapasowych."""
     stored = await settings_store.get_namespace(session, "backup")
-    office_secret_set = bool(stored.get("office_client_secret") or settings.office365_client_secret)
-    optima_password_set = bool(stored.get("optima_password") or settings.optima_sql_password)
+    office_secret_set = bool(settings.office365_client_secret)
+    optima_password_set = bool(settings.optima_sql_password)
+    optima_auth_mode = (settings.optima_sql_auth_mode or "mixed").strip().lower() or "mixed"
     return BackupConfigResponse(
         schedule_morning=stored.get("schedule_morning") or "06:00",
         schedule_evening=stored.get("schedule_evening") or "20:00",
@@ -168,36 +171,34 @@ async def load_backup_config(session: AsyncSession) -> BackupConfigResponse:
         archive_firebird_test=_to_bool(stored.get("archive_firebird_test"), True),
         archive_optima=_to_bool(stored.get("archive_optima"), True),
         storage_mode=stored.get("storage_mode") or "local",
-        local_directory=stored.get("local_directory") or settings.backup_default_local_dir,
+        local_directory=settings.backup_default_local_dir,
         network_directory=stored.get("network_directory"),
         cloud_provider=stored.get("cloud_provider") or "office365",
         cloud_only_evening=_to_bool(stored.get("cloud_only_evening"), True),
-        office_tenant_id=stored.get("office_tenant_id") or settings.office365_tenant_id,
-        office_client_id=stored.get("office_client_id") or settings.office365_client_id,
-        office_site_id=stored.get("office_site_id") or settings.office365_site_id,
-        office_drive_id=stored.get("office_drive_id") or settings.office365_drive_id,
-        office_folder_path=stored.get("office_folder_path") or settings.office365_folder_path,
-        office_folder_ctip=stored.get("office_folder_ctip") or settings.office365_folder_ctip,
-        office_folder_firebird_prod=stored.get("office_folder_firebird_prod")
-        or settings.office365_folder_firebird_prod,
-        office_folder_firebird_test=stored.get("office_folder_firebird_test")
-        or settings.office365_folder_firebird_test,
-        office_folder_optima=stored.get("office_folder_optima") or settings.office365_folder_optima,
+        office_tenant_id=settings.office365_tenant_id,
+        office_client_id=settings.office365_client_id,
+        office_site_id=settings.office365_site_id,
+        office_drive_id=settings.office365_drive_id,
+        office_folder_path=settings.office365_folder_path,
+        office_folder_ctip=settings.office365_folder_ctip,
+        office_folder_firebird_prod=settings.office365_folder_firebird_prod,
+        office_folder_firebird_test=settings.office365_folder_firebird_test,
+        office_folder_optima=settings.office365_folder_optima,
         office_client_secret_set=office_secret_set,
-        optima_server_instance=stored.get("optima_server_instance")
-        or settings.optima_sql_server_instance,
-        optima_host=stored.get("optima_host")
-        or settings.optima_sql_host
-        or settings.optima_sql_host_ip,
-        optima_port=_to_int(stored.get("optima_port"), settings.optima_sql_port),
-        optima_auth_mode=stored.get("optima_auth_mode") or settings.optima_sql_auth_mode or "mixed",
-        optima_login=stored.get("optima_login") or settings.optima_sql_login,
+        optima_server_instance=settings.optima_sql_server_instance,
+        optima_host=settings.optima_sql_host or settings.optima_sql_host_ip,
+        optima_port=settings.optima_sql_port,
+        optima_auth_mode=optima_auth_mode,
+        optima_login=settings.optima_sql_login,
         optima_password_set=optima_password_set,
-        optima_db_it_partner=stored.get("optima_db_it_partner") or settings.optima_db_it_partner,
-        optima_db_ksero_partner=stored.get("optima_db_ksero_partner")
-        or settings.optima_db_ksero_partner,
-        optima_db_config=stored.get("optima_db_config") or settings.optima_db_config,
+        optima_db_it_partner=settings.optima_db_it_partner,
+        optima_db_ksero_partner=settings.optima_db_ksero_partner,
+        optima_db_config=settings.optima_db_config,
         execution_enabled=settings.backup_execution_active,
+        integration_source="env",
+        integration_editable=False,
+        operational_editable=True,
+        lock_reason=BACKUP_ENV_LOCK_REASON,
     )
 
 
@@ -227,14 +228,12 @@ async def backup_scheduler_tick() -> None:
         if _scheduler_last_run.get(slot) == day_key:
             return
 
-        stored = await settings_store.get_namespace(session, "backup")
         cloud_upload_enabled = not (cfg.cloud_only_evening and slot == "morning")
         label = f"auto_{slot}"
 
         try:
             outcome = await _execute_backup_job(
                 cfg=cfg,
-                stored=stored,
                 label=label,
                 compress=True,
                 cloud_upload_enabled=cloud_upload_enabled,
@@ -339,11 +338,82 @@ async def backup_update_config(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> BackupConfigResponse:
-    """Zapisuje konfigurację harmonogramu i zakresu backupu."""
+    """Zapisuje tylko operacyjne ustawienia backupu; dane połączeniowe są env-only."""
     admin_session, admin_user = admin_context
     _ensure_admin(admin_user.role)
 
     from app.services.settings_store import StoredValue
+
+    current = await load_backup_config(session)
+    env_locked_changes = {
+        "local_directory": payload.local_directory,
+        "office_tenant_id": payload.office_tenant_id,
+        "office_client_id": payload.office_client_id,
+        "office_site_id": payload.office_site_id,
+        "office_drive_id": payload.office_drive_id,
+        "office_folder_path": payload.office_folder_path,
+        "office_folder_ctip": payload.office_folder_ctip,
+        "office_folder_firebird_prod": payload.office_folder_firebird_prod,
+        "office_folder_firebird_test": payload.office_folder_firebird_test,
+        "office_folder_optima": payload.office_folder_optima,
+        "office_client_secret": payload.office_client_secret,
+        "optima_server_instance": payload.optima_server_instance,
+        "optima_host": payload.optima_host,
+        "optima_port": payload.optima_port,
+        "optima_auth_mode": payload.optima_auth_mode,
+        "optima_login": payload.optima_login,
+        "optima_password": payload.optima_password,
+        "optima_db_it_partner": payload.optima_db_it_partner,
+        "optima_db_ksero_partner": payload.optima_db_ksero_partner,
+        "optima_db_config": payload.optima_db_config,
+    }
+    current_env_values = {
+        "local_directory": current.local_directory,
+        "office_tenant_id": current.office_tenant_id,
+        "office_client_id": current.office_client_id,
+        "office_site_id": current.office_site_id,
+        "office_drive_id": current.office_drive_id,
+        "office_folder_path": current.office_folder_path,
+        "office_folder_ctip": current.office_folder_ctip,
+        "office_folder_firebird_prod": current.office_folder_firebird_prod,
+        "office_folder_firebird_test": current.office_folder_firebird_test,
+        "office_folder_optima": current.office_folder_optima,
+        "office_client_secret": "__present__" if current.office_client_secret_set else None,
+        "optima_server_instance": current.optima_server_instance,
+        "optima_host": current.optima_host,
+        "optima_port": current.optima_port,
+        "optima_auth_mode": current.optima_auth_mode,
+        "optima_login": current.optima_login,
+        "optima_password": "__present__" if current.optima_password_set else None,
+        "optima_db_it_partner": current.optima_db_it_partner,
+        "optima_db_ksero_partner": current.optima_db_ksero_partner,
+        "optima_db_config": current.optima_db_config,
+    }
+    changed_env_fields: dict[str, object] = {}
+    for key, value in env_locked_changes.items():
+        if key in {"office_client_secret", "optima_password"}:
+            if value:
+                changed_env_fields[key] = "__provided__"
+            continue
+        if value != current_env_values[key]:
+            changed_env_fields[key] = value
+    if changed_env_fields:
+        await record_audit(
+            session,
+            user_id=admin_user.id,
+            action="backup_config_update_blocked_env",
+            client_ip=admin_session.client_ip,
+            payload={"fields": changed_env_fields},
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=(
+                f"{BACKUP_ENV_LOCK_REASON} W panelu możesz zmieniać tylko harmonogram, "
+                "retencję, zakres archiwizacji, tryb zapisu, katalog sieciowy i przełącznik "
+                "cloud_only_evening."
+            ),
+        )
 
     values = {
         "schedule_morning": StoredValue(payload.schedule_morning, False),
@@ -356,32 +426,10 @@ async def backup_update_config(
         "archive_firebird_test": StoredValue(str(payload.archive_firebird_test).lower(), False),
         "archive_optima": StoredValue(str(payload.archive_optima).lower(), False),
         "storage_mode": StoredValue(payload.storage_mode, False),
-        "local_directory": StoredValue(payload.local_directory, False),
         "network_directory": StoredValue(payload.network_directory or "", False),
         "cloud_provider": StoredValue(payload.cloud_provider, False),
         "cloud_only_evening": StoredValue(str(payload.cloud_only_evening).lower(), False),
-        "office_tenant_id": StoredValue(payload.office_tenant_id or "", False),
-        "office_client_id": StoredValue(payload.office_client_id or "", False),
-        "office_site_id": StoredValue(payload.office_site_id or "", False),
-        "office_drive_id": StoredValue(payload.office_drive_id or "", False),
-        "office_folder_path": StoredValue(payload.office_folder_path or "", False),
-        "office_folder_ctip": StoredValue(payload.office_folder_ctip, False),
-        "office_folder_firebird_prod": StoredValue(payload.office_folder_firebird_prod, False),
-        "office_folder_firebird_test": StoredValue(payload.office_folder_firebird_test, False),
-        "office_folder_optima": StoredValue(payload.office_folder_optima, False),
-        "optima_server_instance": StoredValue(payload.optima_server_instance or "", False),
-        "optima_host": StoredValue(payload.optima_host or "", False),
-        "optima_port": StoredValue(str(payload.optima_port), False),
-        "optima_auth_mode": StoredValue(payload.optima_auth_mode, False),
-        "optima_login": StoredValue(payload.optima_login or "", False),
-        "optima_db_it_partner": StoredValue(payload.optima_db_it_partner or "", False),
-        "optima_db_ksero_partner": StoredValue(payload.optima_db_ksero_partner or "", False),
-        "optima_db_config": StoredValue(payload.optima_db_config or "", False),
     }
-    if payload.office_client_secret is not None:
-        values["office_client_secret"] = StoredValue(payload.office_client_secret, True)
-    if payload.optima_password is not None:
-        values["optima_password"] = StoredValue(payload.optima_password, True)
 
     await settings_store.set_namespace(session, "backup", values, user_id=admin_user.id)
     await record_audit(
@@ -400,29 +448,10 @@ async def backup_update_config(
             "archive_firebird_test": payload.archive_firebird_test,
             "archive_optima": payload.archive_optima,
             "storage_mode": payload.storage_mode,
-            "local_directory": payload.local_directory,
             "network_directory": payload.network_directory,
             "cloud_provider": payload.cloud_provider,
             "cloud_only_evening": payload.cloud_only_evening,
-            "office_tenant_id_set": bool(payload.office_tenant_id),
-            "office_client_id_set": bool(payload.office_client_id),
-            "office_site_id_set": bool(payload.office_site_id),
-            "office_drive_id_set": bool(payload.office_drive_id),
-            "office_folder_path_set": bool(payload.office_folder_path),
-            "office_folder_ctip": payload.office_folder_ctip,
-            "office_folder_firebird_prod": payload.office_folder_firebird_prod,
-            "office_folder_firebird_test": payload.office_folder_firebird_test,
-            "office_folder_optima": payload.office_folder_optima,
-            "office_client_secret_changed": payload.office_client_secret is not None,
-            "optima_server_instance_set": bool(payload.optima_server_instance),
-            "optima_host_set": bool(payload.optima_host),
-            "optima_port": payload.optima_port,
-            "optima_auth_mode": payload.optima_auth_mode,
-            "optima_login_set": bool(payload.optima_login),
-            "optima_password_changed": payload.optima_password is not None,
-            "optima_db_it_partner_set": bool(payload.optima_db_it_partner),
-            "optima_db_ksero_partner_set": bool(payload.optima_db_ksero_partner),
-            "optima_db_config_set": bool(payload.optima_db_config),
+            "integration_source": "env",
         },
     )
     await session.commit()
@@ -442,18 +471,13 @@ async def backup_test_office365(
     admin_session, admin_user = admin_context
     _ensure_admin(admin_user.role)
 
-    stored = await settings_store.get_namespace(session, "backup")
-    tenant_id = stored.get("office_tenant_id") or settings.office365_tenant_id or ""
-    client_id = stored.get("office_client_id") or settings.office365_client_id or ""
-    client_secret = stored.get("office_client_secret") or settings.office365_client_secret or ""
-    site_id = stored.get("office_site_id") or settings.office365_site_id
-    drive_id = stored.get("office_drive_id") or settings.office365_drive_id
-    folder_path = (
-        stored.get("office_folder_ctip")
-        or stored.get("office_folder_path")
-        or settings.office365_folder_ctip
-        or settings.office365_folder_path
-    )
+    cfg = await load_backup_config(session)
+    tenant_id = cfg.office_tenant_id or ""
+    client_id = cfg.office_client_id or ""
+    client_secret = settings.office365_client_secret or ""
+    site_id = cfg.office_site_id
+    drive_id = cfg.office_drive_id
+    folder_path = cfg.office_folder_ctip or cfg.office_folder_path
 
     try:
         result = await test_office365_connection(
@@ -474,16 +498,6 @@ async def backup_test_office365(
         )
         await session.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    if not stored.get("office_drive_id") and result.drive_id:
-        from app.services.settings_store import StoredValue
-
-        await settings_store.set_namespace(
-            session,
-            "backup",
-            {"office_drive_id": StoredValue(result.drive_id, False)},
-            user_id=admin_user.id,
-        )
 
     await record_audit(
         session,
@@ -576,12 +590,10 @@ async def backup_run(
         )
 
     cfg = await load_backup_config(session)
-    stored = await settings_store.get_namespace(session, "backup")
 
     try:
         outcome = await _execute_backup_job(
             cfg=cfg,
-            stored=stored,
             label=payload.label,
             compress=payload.compress,
             cloud_upload_enabled=True,

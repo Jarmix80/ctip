@@ -15,11 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services import firebird_ms_users
-from app.services.settings_store import build_store
 
 SHEET_DEFAULT_WORKSHEET = "Urzadzenia_magazyn"
 SHEET_FALLBACK_WORKSHEETS = ("Urzadzenia",)
-GOOGLE_SHEETS_NAMESPACE = "google_sheets"
 
 _HEADER_LABELS = {
     "producer": "PRODUCENT",
@@ -131,7 +129,6 @@ class WorkflowSheetRuntimeConfig:
     source: str = "env"
 
 
-_settings_store = build_store(settings.admin_secret_key)
 _workflow_sheet_runtime_config_var: ContextVar[WorkflowSheetRuntimeConfig | None] = ContextVar(
     "workflow_sheet_runtime_config",
     default=None,
@@ -141,14 +138,6 @@ WORKFLOW_RESERVATION_STATUS = "04. Rezerwacja GRENKE"
 WORKFLOW_RESERVATION_NOTE = "Rezerwacja zalozona automatycznie przez CTIP."
 WORKFLOW_RESERVED_ROW_COLOR = {"red": 0.98, "green": 0.89, "blue": 0.89}
 WORKFLOW_DEFAULT_ROW_COLOR = {"red": 1.0, "green": 1.0, "blue": 1.0}
-
-
-def _coerce_bool(value: str | bool | None, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return value.strip().lower() in {"1", "true", "t", "yes", "on"}
 
 
 def normalize_workflow_sheet_spreadsheet_id(value: str | None) -> str:
@@ -183,7 +172,7 @@ def normalize_workflow_sheet_spreadsheet_id(value: str | None) -> str:
 
 def _default_workflow_sheet_runtime_config() -> WorkflowSheetRuntimeConfig:
     return WorkflowSheetRuntimeConfig(
-        enabled=True,
+        enabled=bool(settings.google_sheets_enabled),
         credentials_path=(settings.google_application_credentials or "").strip(),
         spreadsheet_id=normalize_workflow_sheet_spreadsheet_id(
             settings.google_sheets_spreadsheet_id
@@ -197,23 +186,10 @@ def _default_workflow_sheet_runtime_config() -> WorkflowSheetRuntimeConfig:
 
 
 async def load_workflow_sheet_runtime_config(session: AsyncSession) -> WorkflowSheetRuntimeConfig:
-    """Ładuje konfigurację Google Sheets dla FLOW z panelu admin z fallbackiem do env."""
+    """Ładuje konfigurację Google Sheets dla FLOW wyłącznie z `.env`."""
 
-    defaults = _default_workflow_sheet_runtime_config()
-    stored = await _settings_store.get_namespace(session, GOOGLE_SHEETS_NAMESPACE)
-    if not stored:
-        return defaults
-
-    return WorkflowSheetRuntimeConfig(
-        enabled=_coerce_bool(stored.get("enabled"), True),
-        credentials_path=(stored.get("credentials_path") or "").strip(),
-        spreadsheet_id=normalize_workflow_sheet_spreadsheet_id(stored.get("spreadsheet_id")),
-        workflow_devices_worksheet=(
-            stored.get("workflow_devices_worksheet") or SHEET_DEFAULT_WORKSHEET
-        ).strip()
-        or SHEET_DEFAULT_WORKSHEET,
-        source="admin",
-    )
+    del session
+    return _default_workflow_sheet_runtime_config()
 
 
 def _resolve_workflow_sheet_runtime_config() -> WorkflowSheetRuntimeConfig:
@@ -241,15 +217,11 @@ def workflow_sheet_sync_configured(
 
     active_config = config or _resolve_workflow_sheet_runtime_config()
     if not active_config.enabled:
-        return False, "Synchronizacja arkusza jest wyłączona w panelu administratora."
+        return False, "Synchronizacja arkusza jest wyłączona w konfiguracji środowiskowej."
 
     if not active_config.credentials_path:
-        if active_config.source == "admin":
-            return False, "Brak ścieżki do credentials Google Sheets."
         return False, "Brak GOOGLE_APPLICATION_CREDENTIALS."
     if not active_config.spreadsheet_id:
-        if active_config.source == "admin":
-            return False, "Brak spreadsheet_id Google Sheets."
         return False, "Brak GOOGLE_SHEETS_SPREADSHEET_ID."
     if not active_config.workflow_devices_worksheet:
         return False, "Brak nazwy zakładki urządzeń workflow."

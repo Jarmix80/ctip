@@ -243,24 +243,24 @@ def _coerce_bool(value: str | bool | None, default: bool) -> bool:
 
 
 async def resolve_email_delivery_settings(session: AsyncSession) -> EmailDeliverySettings | None:
-    """Pobiera skonfigurowane parametry SMTP (lub None, jeśli niekompletne)."""
-    stored = await _settings_store.get_namespace(session, "email")
-    host = (stored.get("host") or settings.email_host or "").strip()
-    sender_address = (stored.get("sender_address") or settings.email_sender_address or "").strip()
+    """Pobiera skonfigurowane parametry SMTP z `.env` (lub `None`, jeśli niekompletne)."""
+    del session
+    host = (settings.email_host or "").strip()
+    sender_address = (settings.email_sender_address or "").strip()
     if not host or not sender_address:
         return None
 
-    port_value = stored.get("port") or settings.email_port
+    port_value = settings.email_port
     try:
         port = int(port_value)
     except (TypeError, ValueError):
         port = settings.email_port or 587
 
-    username = (stored.get("username") or settings.email_username or "").strip() or None
-    password = stored.get("password") or settings.email_password
-    sender_name = (stored.get("sender_name") or settings.email_sender_name or "").strip() or None
-    use_tls = _coerce_bool(stored.get("use_tls"), settings.email_use_tls)
-    use_ssl = _coerce_bool(stored.get("use_ssl"), settings.email_use_ssl)
+    username = (settings.email_username or "").strip() or None
+    password = settings.email_password
+    sender_name = (settings.email_sender_name or "").strip() or None
+    use_tls = bool(settings.email_use_tls)
+    use_ssl = bool(settings.email_use_ssl)
     if use_tls and use_ssl:
         # STARTTLS ma pierwszeństwo – unikamy konfliktu konfiguracji
         use_ssl = False

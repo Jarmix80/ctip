@@ -15,7 +15,6 @@ from app.api.routes.admin_config import (
     load_database_config,
     load_email_config,
     load_sms_config,
-    settings_store,
 )
 from app.api.routes.admin_ctip import load_ivr_sms_history
 from app.api.routes.admin_sms import load_sms_history
@@ -135,9 +134,8 @@ async def _ctip_status(session: AsyncSession) -> dict[str, Any]:
 
 async def _sms_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[str, Any]]:
     config = await load_sms_config(session)
-    stored = await settings_store.get_namespace(session, "sms")
-    token = stored.get("api_token") or settings.sms_api_token
-    password = stored.get("api_password") or settings.sms_api_password
+    token = settings.sms_api_token
+    password = settings.sms_api_password
     credentials_ok = bool(token or (config.api_username and password))
     if credentials_ok:
         status = f"Nadawca: {config.default_sender}"
@@ -287,8 +285,7 @@ async def _ivr_automation_status(session: AsyncSession) -> tuple[dict[str, Any],
 
 async def _email_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[str, Any]]:
     config = await load_email_config(session)
-    stored = await settings_store.get_namespace(session, "email")
-    password_present = bool(stored.get("password") or settings.email_password)
+    password_present = bool(settings.email_password)
 
     encryption = (
         "STARTTLS" if config.use_tls else "SSL/TLS" if config.use_ssl else "Brak szyfrowania"

@@ -53,6 +53,7 @@ from app.services.contracts_workflow import (
     set_form_workflow_business_status,
     set_form_workflow_delivery,
 )
+from app.services.delivery import ensure_delivery_case_for_workflow
 from app.services.workflow_machine_binding import (
     apply_binding_snapshot,
     bind_devices_to_workflow_client,
@@ -906,6 +907,7 @@ async def apply_mail_to_workflow(
         saved_files=saved_files,
         archived_contract_file=archived_contract_file,
     )
+    delivery_meta: dict[str, Any] | None = None
     binding_items_payload: list[dict[str, Any]] = []
     binding_alert_payload: dict[str, Any] | None = None
     if new_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
@@ -935,6 +937,18 @@ async def apply_mail_to_workflow(
                 failures=binding_failures,
                 triggered_by_user_id=None,
             )
+        delivery_case, contract_end = await ensure_delivery_case_for_workflow(
+            session,
+            workflow_case=workflow_case,
+            form_request=form_ctx.form,
+            devices=workflow_devices,
+            updated_by=None,
+        )
+        delivery_meta = {
+            "delivery_case_id": delivery_case.id,
+            "grenke_contract_end_id": contract_end.id,
+            "grenke_contract_end_status": contract_end.status,
+        }
     workflow_case.updated_at = datetime.now(UTC)
     await record_audit(
         session,
@@ -956,6 +970,7 @@ async def apply_mail_to_workflow(
             "archived_contract_file": archived_contract_file,
             "binding_items": binding_items_payload,
             "binding_alert": binding_alert_payload,
+            "delivery": delivery_meta,
         },
     )
     await session.flush()
@@ -967,6 +982,7 @@ async def apply_mail_to_workflow(
         "email_date_utc": mail_ctx.email_date_utc.isoformat(),
         "saved_files_count": len(saved_files),
         "archived_contract_file": archived_contract_file,
+        "delivery": delivery_meta,
     }
 
 

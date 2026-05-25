@@ -1627,7 +1627,10 @@ document.addEventListener("alpine:init", () => {
 
     defaultSectionsForRole(role) {
       if (role === "admin") {
-        return ["admin", "operator", "generator"];
+        return ["admin", "operator", "generator", "delivery"];
+      }
+      if (role === "serwisant") {
+        return ["delivery"];
       }
       return ["operator", "generator"];
     },
@@ -1639,7 +1642,7 @@ document.addEventListener("alpine:init", () => {
       const normalized = [];
       input.forEach((item) => {
         const value = String(item || "").trim().toLowerCase();
-        if (!value || !["admin", "operator", "generator"].includes(value)) {
+        if (!value || !["admin", "operator", "generator", "delivery"].includes(value)) {
           return;
         }
         if (value === "admin" && role !== "admin") {
@@ -1663,8 +1666,28 @@ document.addEventListener("alpine:init", () => {
         admin: "Admin",
         operator: "Operator",
         generator: "Generator",
+        delivery: "Obsługa dostaw",
       };
       return normalized.map((item) => labels[item] || item).join(", ");
+    },
+
+    formatRole(role) {
+      const labels = {
+        admin: "admin",
+        operator: "operator",
+        serwisant: "serwisant",
+      };
+      return labels[role] || role || "—";
+    },
+
+    roleBadgeClass(role) {
+      if (role === "admin") {
+        return "badge-admin";
+      }
+      if (role === "serwisant") {
+        return "badge-info";
+      }
+      return "badge-operator";
     },
 
     resetMessages() {
@@ -1724,14 +1747,11 @@ document.addEventListener("alpine:init", () => {
     },
 
     onCreateRoleChange() {
-      this.form.sections = this.normalizeSectionsForRole(this.form.sections, this.form.role);
+      this.form.sections = this.defaultSectionsForRole(this.form.role);
     },
 
     onModalRoleChange() {
-      this.modalEdit.sections = this.normalizeSectionsForRole(
-        this.modalEdit.sections,
-        this.modalEdit.role,
-      );
+      this.modalEdit.sections = this.defaultSectionsForRole(this.modalEdit.role);
     },
 
     async reload() {
@@ -2200,6 +2220,9 @@ document.addEventListener("alpine:init", () => {
     sslmode: "disable",
     password: "",
     passwordSet: false,
+    source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     testing: false,
     error: null,
@@ -2216,6 +2239,9 @@ document.addEventListener("alpine:init", () => {
       this.sslmode = initial.sslmode || "disable";
       this.password = "";
       this.passwordSet = Boolean(initial.password_set);
+      this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
     },
 
     _readInitial() {
@@ -2241,7 +2267,16 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    get sourceLabel() {
+      return this.source === "env" ? ".env" : this.source;
+    },
+
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -2275,6 +2310,9 @@ document.addEventListener("alpine:init", () => {
         this.sslmode = data.sslmode;
         this.password = "";
         this.passwordSet = true;
+        this.source = data.source || "env";
+        this.editable = Boolean(data.editable);
+        this.lockReason = data.lock_reason || "";
         this.success = "Konfiguracja została zapisana.";
         showToast("Zapisano konfigurację bazy", "success");
         this.$el.dataset.initial = JSON.stringify(data);
@@ -2334,6 +2372,9 @@ document.addEventListener("alpine:init", () => {
     localCopyPath: "",
     allowWrites: false,
     passwordSet: false,
+    source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     testing: false,
     error: null,
@@ -2355,6 +2396,9 @@ document.addEventListener("alpine:init", () => {
       this.allowWrites = Boolean(initial.allow_writes);
       this.password = "";
       this.passwordSet = Boolean(initial.password_set);
+      this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
 
       this.$watch("mode", (mode, prevMode) => {
         if (mode === prevMode) {
@@ -2410,7 +2454,16 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    get sourceLabel() {
+      return this.source === "env" ? ".env" : this.source;
+    },
+
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -2456,6 +2509,9 @@ document.addEventListener("alpine:init", () => {
         this.allowWrites = Boolean(data.allow_writes);
         this.password = "";
         this.passwordSet = Boolean(data.password_set);
+        this.source = data.source || "env";
+        this.editable = Boolean(data.editable);
+        this.lockReason = data.lock_reason || "";
         this.success = `Konfiguracja Firebird (${this.configLabel}) została zapisana.`;
         showToast(this.success, "success");
         this.$el.dataset.initial = JSON.stringify(data);
@@ -2524,6 +2580,8 @@ document.addEventListener("alpine:init", () => {
     spreadsheetId: "",
     workflowDevicesWorksheet: "Urzadzenia_magazyn",
     source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     testing: false,
     bootstrapping: false,
@@ -2545,6 +2603,8 @@ document.addEventListener("alpine:init", () => {
       this.spreadsheetId = initial.spreadsheet_id || "";
       this.workflowDevicesWorksheet = initial.workflow_devices_worksheet || "Urzadzenia_magazyn";
       this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
       this.resetResultDetails();
     },
 
@@ -2561,7 +2621,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     get sourceLabel() {
-      return this.source === "admin" ? "panel admin" : "env (fallback)";
+      return this.source === "env" ? ".env" : this.source;
     },
 
     _readInitial() {
@@ -2601,11 +2661,18 @@ document.addEventListener("alpine:init", () => {
       this.credentialsPath = data.credentials_path || "";
       this.spreadsheetId = data.spreadsheet_id || "";
       this.workflowDevicesWorksheet = data.workflow_devices_worksheet || "Urzadzenia_magazyn";
-      this.source = data.source || "admin";
+      this.source = data.source || "env";
+      this.editable = Boolean(data.editable);
+      this.lockReason = data.lock_reason || "";
       this.$el.dataset.initial = JSON.stringify(data);
     },
 
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -2741,6 +2808,9 @@ document.addEventListener("alpine:init", () => {
     charset: "WIN1250",
     role: "",
     passwordSet: false,
+    source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     testing: false,
     error: null,
@@ -2758,6 +2828,9 @@ document.addEventListener("alpine:init", () => {
       this.role = initial.role || "";
       this.password = "";
       this.passwordSet = Boolean(initial.password_set);
+      this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
     },
 
     get configLabel() {
@@ -2795,7 +2868,16 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    get sourceLabel() {
+      return this.source === "env" ? ".env" : this.source;
+    },
+
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -2830,6 +2912,9 @@ document.addEventListener("alpine:init", () => {
         this.role = data.role || "";
         this.password = "";
         this.passwordSet = Boolean(data.password_set);
+        this.source = data.source || "env";
+        this.editable = Boolean(data.editable);
+        this.lockReason = data.lock_reason || "";
         this.success = `Konfiguracja Firebird (${this.configLabel}) została zapisana.`;
         this.$el.dataset.initial = JSON.stringify(data);
         showToast(this.success, "success");
@@ -2892,6 +2977,12 @@ document.addEventListener("alpine:init", () => {
     csvDirectory: "",
     csvPattern: "DPLAC*.csv",
     emailLookbackMonths: 5,
+    csvDirectorySource: "env",
+    csvPatternSource: "env",
+    csvEditable: false,
+    emailLookbackSource: "env",
+    emailLookbackEditable: true,
+    lockReason: "",
     latestFile: "",
     saving: false,
     testing: false,
@@ -2905,6 +2996,12 @@ document.addEventListener("alpine:init", () => {
       this.csvDirectory = initial.csv_directory || "";
       this.csvPattern = initial.csv_pattern || "DPLAC*.csv";
       this.emailLookbackMonths = Number(initial.email_lookback_months || 5);
+      this.csvDirectorySource = initial.csv_directory_source || "env";
+      this.csvPatternSource = initial.csv_pattern_source || "env";
+      this.csvEditable = Boolean(initial.csv_editable);
+      this.emailLookbackSource = initial.email_lookback_source || "env";
+      this.emailLookbackEditable = initial.email_lookback_editable !== false;
+      this.lockReason = initial.lock_reason || "";
       this.latestFile = "";
     },
 
@@ -2931,7 +3028,20 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    get csvSourceLabel() {
+      return this.csvDirectorySource === "env" ? ".env" : this.csvDirectorySource;
+    },
+
+    get emailLookbackSourceLabel() {
+      return this.emailLookbackSource === "env" ? ".env" : "panel admin";
+    },
+
     async save() {
+      if (!this.emailLookbackEditable) {
+        this.error = "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -2955,6 +3065,12 @@ document.addEventListener("alpine:init", () => {
         this.csvDirectory = data.csv_directory || "";
         this.csvPattern = data.csv_pattern || "DPLAC*.csv";
         this.emailLookbackMonths = Number(data.email_lookback_months || 0);
+        this.csvDirectorySource = data.csv_directory_source || "env";
+        this.csvPatternSource = data.csv_pattern_source || "env";
+        this.csvEditable = Boolean(data.csv_editable);
+        this.emailLookbackSource = data.email_lookback_source || "env";
+        this.emailLookbackEditable = data.email_lookback_editable !== false;
+        this.lockReason = data.lock_reason || "";
         this.$el.dataset.initial = JSON.stringify(data);
         this.success = "Konfiguracja źródeł KP została zapisana.";
         showToast(this.success, "success");
@@ -3280,6 +3396,9 @@ document.addEventListener("alpine:init", () => {
     port: "",
     pin: "",
     pinSet: false,
+    source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     error: null,
     success: null,
@@ -3290,6 +3409,9 @@ document.addEventListener("alpine:init", () => {
       this.port = String(initial.port || "");
       this.pin = "";
       this.pinSet = Boolean(initial.pin_set);
+      this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
     },
 
     _readInitial() {
@@ -3329,7 +3451,16 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    get sourceLabel() {
+      return this.source === "env" ? ".env" : this.source;
+    },
+
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -3358,6 +3489,9 @@ document.addEventListener("alpine:init", () => {
         this.port = String(data.port);
         this.pinSet = Boolean(data.pin_set);
         this.pin = "";
+        this.source = data.source || "env";
+        this.editable = Boolean(data.editable);
+        this.lockReason = data.lock_reason || "";
         this.success = "Konfiguracja została zapisana.";
         showToast("Zapisano konfigurację CTIP", "success");
         this.$el.dataset.initial = JSON.stringify(data);
@@ -3564,6 +3698,9 @@ document.addEventListener("alpine:init", () => {
     tokenSet: false,
     passwordSet: false,
     testMode: true,
+    source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     error: null,
     success: null,
@@ -3583,6 +3720,9 @@ document.addEventListener("alpine:init", () => {
       this.apiToken = "";
       this.tokenSet = Boolean(initial.api_token_set);
       this.passwordSet = Boolean(initial.api_password_set);
+      this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
       const rawTestMode = initial.test_mode;
       if (typeof rawTestMode === "string") {
         this.testMode = ["1", "true", "t", "yes", "on"].includes(rawTestMode.toLowerCase());
@@ -3616,7 +3756,16 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
+    get sourceLabel() {
+      return this.source === "env" ? ".env" : this.source;
+    },
+
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -3656,6 +3805,9 @@ document.addEventListener("alpine:init", () => {
         this.passwordSet = Boolean(data.api_password_set);
         this.apiPassword = "";
         this.apiToken = "";
+        this.source = data.source || "env";
+        this.editable = Boolean(data.editable);
+        this.lockReason = data.lock_reason || "";
         this.success = "Konfiguracja zapisana.";
         showToast("Zapisano konfigurację SerwerSMS", "success");
         this.$el.dataset.initial = JSON.stringify(data);
@@ -4123,6 +4275,9 @@ document.addEventListener("alpine:init", () => {
     senderAddress: "",
     useTls: true,
     useSsl: false,
+    source: "env",
+    editable: false,
+    lockReason: "",
     saving: false,
     testing: false,
     error: null,
@@ -4146,6 +4301,9 @@ document.addEventListener("alpine:init", () => {
       this.senderAddress = initial.sender_address || "";
       this.useTls = Boolean(initial.use_tls);
       this.useSsl = Boolean(initial.use_ssl);
+      this.source = initial.source || "env";
+      this.editable = Boolean(initial.editable);
+      this.lockReason = initial.lock_reason || "";
       if (this.useTls && this.useSsl) {
         this.useSsl = false;
       }
@@ -4193,6 +4351,10 @@ document.addEventListener("alpine:init", () => {
       return "Konfiguracja niepełna";
     },
 
+    get sourceLabel() {
+      return this.source === "env" ? ".env" : this.source;
+    },
+
     handleToggle(mode) {
       if (mode === "tls" && this.useTls) {
         this.useSsl = false;
@@ -4212,6 +4374,11 @@ document.addEventListener("alpine:init", () => {
     },
 
     async save() {
+      if (!this.editable) {
+        this.error = this.lockReason || "Ta sekcja jest tylko do odczytu.";
+        showToast(this.error, "warning");
+        return;
+      }
       if (this.saving) {
         return;
       }
@@ -4249,6 +4416,9 @@ document.addEventListener("alpine:init", () => {
         }
         this.password = "";
         this.passwordSet = Boolean(data.password_set);
+        this.source = data.source || "env";
+        this.editable = Boolean(data.editable);
+        this.lockReason = data.lock_reason || "";
         this.success = "Konfiguracja SMTP została zapisana.";
         showToast(this.success, "success");
         this.$el.dataset.initial = JSON.stringify(data);

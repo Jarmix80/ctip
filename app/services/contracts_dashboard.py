@@ -1,4 +1,4 @@
-"""Logika dashboardu obslugi umow (formularze + Firebird + legacy Google Sheets)."""
+"""Logika dashboardu obslugi umow (formularze + Firebird + Google Sheets)."""
 
 from __future__ import annotations
 
@@ -16,12 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import FormRequest
-from app.services.settings_store import build_store
 
 
 @dataclass(slots=True, frozen=True)
 class FirebirdRuntimeConfig:
-    """Aktywna konfiguracja Firebird pobrana z panelu administratora lub srodowiska."""
+    """Aktywna konfiguracja Firebird pobrana wyłącznie ze środowiska."""
 
     mode: str
     host: str
@@ -35,7 +34,6 @@ class FirebirdRuntimeConfig:
     allow_writes: bool
 
 
-_settings_store = build_store(settings.admin_secret_key)
 _firebird_runtime_config_var: ContextVar[FirebirdRuntimeConfig | None] = ContextVar(
     "firebird_runtime_config",
     default=None,
@@ -65,6 +63,49 @@ class FirebirdClientMatch:
     telefon: str | None = None
     email: str | None = None
     error: str | None = None
+
+
+@dataclass(slots=True)
+class FirebirdClientDevice:
+    """Urządzenie serwisowe przypisane do klienta w Menadżerze Serwisu."""
+
+    id_maszyna: int | None
+    id_maszyna_table: int | None
+    id_klient: int | None
+    id_umowacpc: int | None
+    id_model: int | None
+    marka: str | None
+    model: str | None
+    grupa: str | None
+    serial: str | None
+    serial2: str | None
+    ewidencja: str | None
+    aktywna: str | None
+    synwp: int | None
+    rodzaj_us: str | None
+    typ: str | None
+    kolorowa: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Zwraca urządzenie jako słownik bezpieczny do odpowiedzi API."""
+        return {
+            "id_maszyna": self.id_maszyna,
+            "id_maszyna_table": self.id_maszyna_table,
+            "id_klient": self.id_klient,
+            "id_umowacpc": self.id_umowacpc,
+            "id_model": self.id_model,
+            "marka": self.marka,
+            "model": self.model,
+            "grupa": self.grupa,
+            "serial": self.serial,
+            "serial2": self.serial2,
+            "ewidencja": self.ewidencja,
+            "aktywna": self.aktywna,
+            "synwp": self.synwp,
+            "rodzaj_us": self.rodzaj_us,
+            "typ": self.typ,
+            "kolorowa": self.kolorowa,
+        }
 
 
 @dataclass(slots=True)
@@ -164,24 +205,9 @@ def _default_firebird_runtime_config() -> FirebirdRuntimeConfig:
 
 
 async def load_firebird_runtime_config(session: AsyncSession) -> FirebirdRuntimeConfig:
-    """Laduje biezaca konfiguracje Firebird z panelu administratora z fallbackiem do `.env`."""
-    defaults = _default_firebird_runtime_config()
-    stored = await _settings_store.get_namespace(session, "firebird")
-    raw_role = stored.get("role")
-    role = defaults.role if raw_role is None else (raw_role.strip() or None)
-    return FirebirdRuntimeConfig(
-        mode=_normalize_firebird_mode(stored.get("mode") or defaults.mode),
-        host=(stored.get("host") or defaults.host).strip(),
-        port=_coerce_firebird_port(stored.get("port"), defaults.port),
-        database=(stored.get("database") or defaults.database).strip(),
-        user=(stored.get("user") or defaults.user).strip(),
-        password=stored.get("password") or defaults.password,
-        charset=(stored.get("charset") or defaults.charset).strip() or defaults.charset,
-        role=role,
-        local_copy_path=(stored.get("local_copy_path") or defaults.local_copy_path).strip()
-        or defaults.local_copy_path,
-        allow_writes=_coerce_firebird_bool(stored.get("allow_writes"), defaults.allow_writes),
-    )
+    """Ładuje bieżącą konfigurację Firebird wyłącznie z `.env`."""
+    del session
+    return _default_firebird_runtime_config()
 
 
 def _resolve_firebird_runtime_config() -> FirebirdRuntimeConfig:
@@ -250,7 +276,8 @@ def firebird_writes_enabled() -> tuple[bool, str | None]:
     if not runtime.allow_writes:
         return (
             False,
-            'Zapis do Firebird jest zablokowany w panelu administratora. Wlacz opcje "Odblokuj zapis do Firebird" w konfiguracji Menadzera Serwisu.',
+            "Zapis do Firebird jest zablokowany w konfiguracji środowiskowej. "
+            "Ustaw `FB_ALLOW_WRITES=true` w aktywnym pliku `.env`, a następnie uruchom ponownie usługę.",
         )
 
     if runtime.mode == "network":
@@ -996,6 +1023,150 @@ def find_client_in_firebird_by_id(client_id: int | None) -> FirebirdClientMatch:
         return FirebirdClientMatch(found=False, error=str(exc))
 
 
+def search_clients_in_firebird(
+    query: str | None = None,
+    *,
+    nip: str | None = None,
+    limit: int = 20,
+) -> list[FirebirdClientMatch]:
+    """Wyszukuje klientów po NIP albo fragmencie nazwy w aktywnej bazie Firebird."""
+    cleaned_nip = normalize_nip(nip or query or "")
+    text_query = str(query or "").strip()
+    safe_limit = max(1, min(int(limit), 100))
+    if not cleaned_nip and len(text_query) < 2:
+        return []
+
+    conditions: list[str] = []
+    params: list[Any] = []
+    if cleaned_nip:
+        conditions.append(
+            """
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(REPLACE(UPPER(COALESCE(NIP, '')), 'PL', ''), '-', ''),
+                        ' ',
+                        ''
+                    ),
+                    '.',
+                    ''
+                ),
+                '/',
+                ''
+            ) CONTAINING ?
+            """
+        )
+        params.append(cleaned_nip)
+    if text_query and not text_query.isdigit():
+        conditions.append("UPPER(COALESCE(NAZWA, '')) CONTAINING ?")
+        params.append(text_query.upper())
+
+    if not conditions:
+        return []
+
+    try:
+        connection = _firebird_connection()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT FIRST {safe_limit} ID_KLIENT, NAZWA, NIP, TELEFON, E_MAIL
+                FROM KLIENT
+                WHERE {' OR '.join(conditions)}
+                ORDER BY NAZWA ASC, ID_KLIENT ASC
+                """,
+                tuple(params),
+            )
+            output: list[FirebirdClientMatch] = []
+            for row in cursor.fetchall():
+                output.append(
+                    FirebirdClientMatch(
+                        found=True,
+                        id_klient=int(row[0]) if row[0] is not None else None,
+                        nazwa=str(row[1]) if row[1] is not None else None,
+                        nip=str(row[2]) if row[2] is not None else None,
+                        telefon=str(row[3]) if row[3] is not None else None,
+                        email=str(row[4]) if row[4] is not None else None,
+                    )
+                )
+            return output
+        finally:
+            cursor.close()
+            connection.close()
+    except Exception as exc:  # noqa: BLE001
+        return [FirebirdClientMatch(found=False, error=str(exc))]
+
+
+def _build_firebird_client_device(row: tuple[Any, ...]) -> FirebirdClientDevice:
+    return FirebirdClientDevice(
+        id_maszyna=int(row[0]) if row[0] is not None else None,
+        id_maszyna_table=int(row[1]) if row[1] is not None else None,
+        id_klient=int(row[2]) if row[2] is not None else None,
+        id_umowacpc=int(row[3]) if row[3] is not None else None,
+        id_model=int(row[4]) if row[4] is not None else None,
+        marka=str(row[5]) if row[5] is not None else None,
+        model=str(row[6]) if row[6] is not None else None,
+        grupa=str(row[7]) if row[7] is not None else None,
+        serial=str(row[8]) if row[8] is not None else None,
+        serial2=str(row[9]) if row[9] is not None else None,
+        ewidencja=str(row[10]) if row[10] is not None else None,
+        aktywna=str(row[11]) if row[11] is not None else None,
+        synwp=int(row[12]) if row[12] is not None else None,
+        rodzaj_us=str(row[13]) if row[13] is not None else None,
+        typ=str(row[14]) if row[14] is not None else None,
+        kolorowa=str(row[15]) if row[15] is not None else None,
+    )
+
+
+def load_client_devices_from_firebird(
+    client_id: int,
+    *,
+    include_inactive: bool = False,
+    limit: int = 500,
+) -> list[FirebirdClientDevice]:
+    """Pobiera urządzenia serwisowe klienta z tabeli MASZYNA."""
+    safe_limit = max(1, min(int(limit), 2000))
+    try:
+        connection = _firebird_connection()
+        cursor = connection.cursor()
+        try:
+            active_filter = ""
+            if not include_inactive:
+                active_filter = "AND UPPER(COALESCE(AKTYWNA, 'TAK')) <> 'NIE'"
+            cursor.execute(
+                f"""
+                SELECT FIRST {safe_limit}
+                    ID_MASZYNA,
+                    ID_MASZYNA_TABLE,
+                    ID_KLIENT,
+                    ID_UMOWACPC,
+                    ID_MODEL,
+                    MARKA,
+                    MODEL,
+                    GRUPA,
+                    SERIAL,
+                    SERIAL2,
+                    EWIDENCJA,
+                    AKTYWNA,
+                    SYNWP,
+                    RODZAJ_US,
+                    TYP,
+                    KOLOROWA
+                FROM MASZYNA
+                WHERE ID_KLIENT = ?
+                {active_filter}
+                ORDER BY ID_MASZYNA DESC
+                """,
+                (int(client_id),),
+            )
+            return [_build_firebird_client_device(row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            connection.close()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Nie udało się pobrać urządzeń klienta z Firebird: {exc}") from exc
+
+
 def _sheet_headers_map(headers: list[str]) -> dict[str, int]:
     mapped: dict[str, int] = {}
     for idx, col in enumerate(headers):
@@ -1301,6 +1472,7 @@ def find_device_in_firebird(serial: str | None, ewidencja: str | None) -> Device
 __all__ = [
     "DeviceMatch",
     "FirebirdClientWriteResult",
+    "FirebirdClientDevice",
     "FirebirdClientMatch",
     "FirebirdDeviceSyncResult",
     "FirebirdModelMatch",
@@ -1317,12 +1489,14 @@ __all__ = [
     "extract_stock_device_identity",
     "load_contract_forms",
     "load_available_devices_from_firebird_warehouse",
+    "load_client_devices_from_firebird",
     "load_device_from_sheet_row",
     "load_devices_from_sheet",
     "load_firebird_runtime_config",
     "load_submitted_forms",
     "normalize_device_key",
     "normalize_nip",
+    "search_clients_in_firebird",
     "synchronize_device_from_sheet_row",
     "use_firebird_runtime_config",
 ]

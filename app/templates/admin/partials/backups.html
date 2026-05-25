@@ -60,6 +60,7 @@
 
     <section class="backup-config-group">
       <h4>Magazyn lokalny i sieciowy</h4>
+      <p class="backup-hint">Folder lokalny jest zarządzany z pliku <code>.env</code>. W panelu możesz zmieniać tylko tryb zapisu i katalog sieciowy.</p>
       <div class="backup-grid">
         <label>
           Tryb zapisu
@@ -70,7 +71,7 @@
         </label>
         <label>
           Folder lokalny
-          <input type="text" name="local_directory" value="D:\\Backup_CTIP_MS_optima" required>
+          <input type="text" name="local_directory" value="D:\\Backup_CTIP_MS_optima" required readonly>
         </label>
         <label>
           Folder sieciowy (UNC)
@@ -85,6 +86,7 @@
 
     <section class="backup-config-group">
       <h4>Office 365 / SharePoint</h4>
+      <p class="backup-hint">Połączenie Office 365 i ścieżki SharePoint są zarządzane wyłącznie z pliku <code>.env</code>.</p>
       <div class="backup-grid">
         <label>
           Chmura
@@ -95,65 +97,66 @@
         </label>
         <label>
           Office Tenant ID
-          <input type="text" name="office_tenant_id">
+          <input type="text" name="office_tenant_id" readonly>
         </label>
         <label>
           Office Client ID
-          <input type="text" name="office_client_id">
+          <input type="text" name="office_client_id" readonly>
         </label>
         <label>
           Site ID
-          <input type="text" name="office_site_id">
+          <input type="text" name="office_site_id" readonly>
         </label>
         <label>
           Drive ID
-          <input type="text" name="office_drive_id">
+          <input type="text" name="office_drive_id" readonly>
         </label>
         <label>
           Client Secret
-          <input type="password" name="office_client_secret" placeholder="••••••••">
+          <input type="password" name="office_client_secret" placeholder="••••••••" disabled>
         </label>
         <label>
           Folder CTIP
-          <input type="text" name="office_folder_ctip" placeholder="BackupKP/CTIP">
+          <input type="text" name="office_folder_ctip" placeholder="BackupKP/CTIP" readonly>
         </label>
         <label>
           Folder FB prod
-          <input type="text" name="office_folder_firebird_prod" placeholder="BackupKP/Menadzer_Serwisu/prod">
+          <input type="text" name="office_folder_firebird_prod" placeholder="BackupKP/Menadzer_Serwisu/prod" readonly>
         </label>
         <label>
           Folder FB test
-          <input type="text" name="office_folder_firebird_test" placeholder="BackupKP/Menadzer_Serwisu/test">
+          <input type="text" name="office_folder_firebird_test" placeholder="BackupKP/Menadzer_Serwisu/test" readonly>
         </label>
         <label>
           Folder Optima
-          <input type="text" name="office_folder_optima" placeholder="BackupKP/Optima">
+          <input type="text" name="office_folder_optima" placeholder="BackupKP/Optima" readonly>
         </label>
         <label>
           Folder legacy
-          <input type="text" name="office_folder_path" placeholder="opcjonalnie">
+          <input type="text" name="office_folder_path" placeholder="opcjonalnie" readonly>
         </label>
       </div>
     </section>
 
     <section class="backup-config-group">
       <h4>Połączenie SQL Optimy</h4>
+      <p class="backup-hint">Parametry połączenia SQL Optimy są zarządzane wyłącznie z pliku <code>.env</code>.</p>
       <div class="backup-grid">
         <label>
           Serwer/instancja
-          <input type="text" name="optima_server_instance" placeholder="SERWER1\\OPTIMA">
+          <input type="text" name="optima_server_instance" placeholder="SERWER1\\OPTIMA" readonly>
         </label>
         <label>
           Host SQL
-          <input type="text" name="optima_host" placeholder="SERWER1 lub 192.168.0.8">
+          <input type="text" name="optima_host" placeholder="SERWER1 lub 192.168.0.8" readonly>
         </label>
         <label>
           Port SQL Optimy
-          <input type="number" name="optima_port" min="1" max="65535" value="1433" required>
+          <input type="number" name="optima_port" min="1" max="65535" value="1433" required readonly>
         </label>
         <label>
           Tryb logowania
-          <select name="optima_auth_mode">
+          <select name="optima_auth_mode" disabled>
             <option value="mixed">Mixed</option>
             <option value="sql">SQL</option>
             <option value="windows">Windows</option>
@@ -161,23 +164,23 @@
         </label>
         <label>
           Login SQL
-          <input type="text" name="optima_login" placeholder="automate_backup">
+          <input type="text" name="optima_login" placeholder="automate_backup" readonly>
         </label>
         <label>
           Hasło SQL
-          <input type="password" name="optima_password" placeholder="••••••••">
+          <input type="password" name="optima_password" placeholder="••••••••" disabled>
         </label>
         <label>
           Baza IT_PARTNER
-          <input type="text" name="optima_db_it_partner" placeholder="CDN_IT_Partner">
+          <input type="text" name="optima_db_it_partner" placeholder="CDN_IT_Partner" readonly>
         </label>
         <label>
           Baza KSERO_PARTNER
-          <input type="text" name="optima_db_ksero_partner" placeholder="CDN_Ksero_Partner1">
+          <input type="text" name="optima_db_ksero_partner" placeholder="CDN_Ksero_Partner1" readonly>
         </label>
         <label>
           Baza konfig.
-          <input type="text" name="optima_db_config" placeholder="CDN_KNF_Ksero_Partner">
+          <input type="text" name="optima_db_config" placeholder="CDN_KNF_Ksero_Partner" readonly>
         </label>
       </div>
     </section>
@@ -277,9 +280,13 @@
     form.archive_optima.checked = Boolean(cfg.archive_optima);
     form.cloud_only_evening.checked = Boolean(cfg.cloud_only_evening);
     if (noteEl) {
-      noteEl.textContent = cfg.execution_enabled
+      const executionState = cfg.execution_enabled
         ? "Tryb produkcyjny: wykonywanie backupu aktywne."
         : "Tryb nieprodukcyjny: wykonywanie backupu wyłączone.";
+      const integrationState = cfg.integration_source === "env"
+        ? " Integracje i sekrety są zarządzane z pliku .env."
+        : "";
+      noteEl.textContent = `${executionState}${integrationState}`;
     }
   };
 

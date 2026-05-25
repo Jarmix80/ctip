@@ -125,7 +125,7 @@ async def load_workflow_sheet_status_cache_metadata(
     if not active_config.enabled:
         return {
             "enabled": False,
-            "reason": "Synchronizacja arkusza jest wyłączona w panelu administratora.",
+            "reason": "Synchronizacja arkusza jest wyłączona w konfiguracji środowiskowej.",
             "worksheet_title": None,
             "last_sync_at": None,
             "last_error": None,

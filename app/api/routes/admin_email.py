@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.api.routes.admin_config import load_email_config, settings_store
+from app.api.routes.admin_config import load_email_config
 from app.core.config import settings
 from app.schemas.admin import EmailTestRequest, EmailTestResponse
 from app.services.audit import record_audit
@@ -29,8 +29,7 @@ async def test_email_configuration(
     admin_session, admin_user = admin_context
     config = await load_email_config(session)
 
-    stored = await settings_store.get_namespace(session, "email")
-    password = stored.get("password") if stored.get("password") else settings.email_password
+    password = settings.email_password
 
     host = payload.host if payload and payload.host is not None else config.host
     port = payload.port if payload and payload.port is not None else config.port

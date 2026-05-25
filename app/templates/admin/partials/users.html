@@ -70,6 +70,7 @@
           <label for="user-role">Rola</label>
           <select id="user-role" x-model="form.role" @change="onCreateRoleChange()">
             <option value="operator">Operator</option>
+            <option value="serwisant">Serwisant</option>
             <option value="admin">Administrator</option>
           </select>
         </div>
@@ -125,6 +126,10 @@
             <label class="users-section-option">
               <input type="checkbox" value="generator" x-model="form.sections">
               Sekcja Generator
+            </label>
+            <label class="users-section-option">
+              <input type="checkbox" value="delivery" x-model="form.sections">
+              Sekcja Obsługa dostaw
             </label>
           </div>
         </div>
@@ -188,7 +193,7 @@
             </td>
             <td x-text="formatMsUser(user)"></td>
             <td>
-              <span class="badge" :class="user.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="user.role"></span>
+              <span class="badge" :class="roleBadgeClass(user.role)" x-text="formatRole(user.role)"></span>
             </td>
             <td>
               <span class="status-chip" :class="user.is_salesperson ? 'success' : 'info'" x-text="user.is_salesperson ? 'Tak' : 'Nie'"></span>
@@ -311,7 +316,7 @@
                 </dl>
               </div>
               <div>
-                <span class="badge" :class="modalDetail.role === 'admin' ? 'badge-admin' : 'badge-operator'" x-text="modalDetail.role"></span>
+                <span class="badge" :class="roleBadgeClass(modalDetail.role)" x-text="formatRole(modalDetail.role)"></span>
                 <div class="users-modal-stat">
                   <strong x-text="modalDetail.sessions_active"></strong>
                   <span>Aktywnych sesji</span>
@@ -372,6 +377,7 @@
                   <label for="modal-user-role">Rola</label>
                   <select id="modal-user-role" x-model="modalEdit.role" @change="onModalRoleChange()">
                     <option value="operator">Operator</option>
+                    <option value="serwisant">Serwisant</option>
                     <option value="admin">Administrator</option>
                   </select>
                 </div>
@@ -442,6 +448,10 @@
                     <label class="users-section-option">
                       <input type="checkbox" value="generator" x-model="modalEdit.sections">
                       Sekcja Generator
+                    </label>
+                    <label class="users-section-option">
+                      <input type="checkbox" value="delivery" x-model="modalEdit.sections">
+                      Sekcja Obsługa dostaw
                     </label>
                   </div>
                 </div>

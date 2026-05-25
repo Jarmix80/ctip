@@ -11,7 +11,6 @@ from app.api.deps import get_admin_session_context, get_db_session
 from app.api.routes.admin_config import (
     load_firebird_config,
     load_firebird_vmaintenance_config,
-    settings_store,
 )
 from app.core.config import settings
 from app.schemas.admin import (
@@ -35,17 +34,6 @@ def _normalize_mode(value: str | None) -> str:
     return mode
 
 
-def _stored_password(
-    stored: dict[str, str],
-    key: str,
-    default: str | None,
-) -> str | None:
-    value = stored.get(key)
-    if value:
-        return value
-    return default
-
-
 @router.post("/test", response_model=FirebirdTestResponse, summary="Sprawdź połączenie Firebird")
 async def test_firebird_configuration(
     payload: FirebirdTestRequest | None = None,
@@ -61,8 +49,7 @@ async def test_firebird_configuration(
         )
 
     config = await load_firebird_config(session)
-    stored = await settings_store.get_namespace(session, "firebird")
-    password = _stored_password(stored, "password", settings.fb_password)
+    password = settings.fb_password
 
     mode = _normalize_mode(payload.mode if payload and payload.mode is not None else config.mode)
     host = payload.host if payload and payload.host is not None else config.host
@@ -144,8 +131,7 @@ async def test_firebird_vmaintenance_configuration(
         )
 
     config = await load_firebird_vmaintenance_config(session)
-    stored = await settings_store.get_namespace(session, "firebird_vmaintenance")
-    password = _stored_password(stored, "password", settings.fb_v_password)
+    password = settings.fb_v_password
 
     host = payload.host if payload and payload.host is not None else config.host
     port = payload.port if payload and payload.port is not None else config.port

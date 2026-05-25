@@ -10,6 +10,10 @@
     <div>
       <h2>Konfiguracja SMTP</h2>
       <p>Dane serwera e-mail wykorzystywane do wysyłki powiadomień.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="statusState"></span>
@@ -21,39 +25,39 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="smtp-host">Host SMTP</label>
-        <input id="smtp-host" type="text" x-model="host" required>
+        <input id="smtp-host" type="text" x-model="host" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="smtp-port">Port</label>
-        <input id="smtp-port" type="number" min="1" max="65535" x-model="port" required>
+        <input id="smtp-port" type="number" min="1" max="65535" x-model="port" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="smtp-username">Login</label>
-        <input id="smtp-username" type="text" x-model="username" placeholder="opcjonalnie">
+        <input id="smtp-username" type="text" x-model="username" placeholder="opcjonalnie" :readonly="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="username ? 'Login zostanie zapisany.' : 'Pozostaw puste, jeśli serwer nie wymaga autoryzacji.'"></p>
       </div>
       <div class="form-field">
         <label for="smtp-password">Hasło</label>
-        <input id="smtp-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="smtp-password" type="password" x-model="password" placeholder="Hasło jest zarządzane w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="smtp-sender-name">Nazwa nadawcy</label>
-        <input id="smtp-sender-name" type="text" x-model="senderName" placeholder="np. Biuro Ksero-Partner">
+        <input id="smtp-sender-name" type="text" x-model="senderName" placeholder="np. Biuro Ksero-Partner" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="smtp-sender-address">Adres nadawcy</label>
-        <input id="smtp-sender-address" type="email" x-model="senderAddress" placeholder="np. powiadomienia@ksero-partner.com.pl">
+        <input id="smtp-sender-address" type="email" x-model="senderAddress" placeholder="np. powiadomienia@ksero-partner.com.pl" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="smtp-use-tls">Szyfrowanie</label>
         <div class="toggle">
           <label style="display:flex; align-items:center; gap:8px;">
-            <input id="smtp-use-tls" type="checkbox" x-model="useTls" @change="handleToggle('tls')">
+            <input id="smtp-use-tls" type="checkbox" x-model="useTls" @change="handleToggle('tls')" :disabled="!editable">
             STARTTLS
           </label>
           <label style="display:flex; align-items:center; gap:8px;">
-            <input id="smtp-use-ssl" type="checkbox" x-model="useSsl" @change="handleToggle('ssl')">
+            <input id="smtp-use-ssl" type="checkbox" x-model="useSsl" @change="handleToggle('ssl')" :disabled="!editable">
             SSL/TLS
           </label>
         </div>
@@ -62,8 +66,8 @@
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
         <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
           <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>

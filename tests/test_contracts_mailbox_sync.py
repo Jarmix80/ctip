@@ -401,6 +401,13 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     async def fake_notify_binding_issues_to_admins(*args, **kwargs):
         raise AssertionError("Alert nie powinien być wysłany dla poprawnego wiązania.")
 
+    async def fake_ensure_delivery_case_for_workflow(*args, **kwargs):
+        captured["delivery_devices"] = [item.id for item in kwargs["devices"]]
+        return (
+            SimpleNamespace(id=501),
+            SimpleNamespace(id=901, status="pending_confirmation"),
+        )
+
     async def fake_record_audit(*args, **kwargs):
         captured["audit_payload"] = kwargs["payload"]
 
@@ -423,6 +430,11 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
         "notify_binding_issues_to_admins",
         fake_notify_binding_issues_to_admins,
     )
+    monkeypatch.setattr(
+        module,
+        "ensure_delivery_case_for_workflow",
+        fake_ensure_delivery_case_for_workflow,
+    )
     monkeypatch.setattr(module, "record_audit", fake_record_audit)
     monkeypatch.setattr(module, "persist_mail_attachments", lambda **kwargs: [])
     monkeypatch.setattr(module, "attach_mailbox_meta", lambda *args, **kwargs: None)
@@ -440,6 +452,7 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     assert captured["status_source"] == "mailbox"
     assert captured["binding_actor_label"] == "Automat skrzynki GRENKE"
     assert captured["binding_device_ids"] == [19]
+    assert captured["delivery_devices"] == [19]
     assert captured["flushed"] is True
     assert device.snapshot["ms_binding_status"] == "ok"
     assert device.snapshot["ms_binding_message"] == "Powiązano urządzenie z klientem MS."
@@ -450,3 +463,4 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     audit_payload = captured["audit_payload"]
     assert audit_payload["binding_items"][0]["workflow_device_id"] == 19
     assert audit_payload["binding_alert"] is None
+    assert audit_payload["delivery"]["delivery_case_id"] == 501

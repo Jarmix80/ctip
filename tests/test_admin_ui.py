@@ -112,6 +112,9 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "user": "appuser",
                 "sslmode": "disable",
                 "password_set": True,
+                "source": "env",
+                "editable": False,
+                "lock_reason": "Źródłem prawdy jest plik .env.",
             }
 
     class DummyFirebirdConfig:
@@ -127,6 +130,9 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "local_copy_path": "inbox/firebird/ms_local.fdb",
                 "allow_writes": True,
                 "password_set": True,
+                "source": "env",
+                "editable": False,
+                "lock_reason": "Źródłem prawdy jest plik .env.",
             }
 
     class DummyFirebirdVConfig:
@@ -139,6 +145,9 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "charset": "WIN1250",
                 "role": None,
                 "password_set": True,
+                "source": "env",
+                "editable": False,
+                "lock_reason": "Źródłem prawdy jest plik .env.",
             }
 
     class DummyGoogleSheetsConfig:
@@ -148,7 +157,9 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "credentials_path": "/srv/google/test.json",
                 "spreadsheet_id": "spreadsheet-test-id",
                 "workflow_devices_worksheet": "Urzadzenia_magazyn",
-                "source": "admin",
+                "source": "env",
+                "editable": False,
+                "lock_reason": "Źródłem prawdy jest plik .env.",
             }
 
     class DummyKpSourceConfig:
@@ -157,6 +168,12 @@ def test_database_partial_uses_span_labels_in_action_buttons():
                 "csv_directory": "inbox/ewidencja",
                 "csv_pattern": "DPLAC*.csv",
                 "email_lookback_months": 5,
+                "csv_directory_source": "env",
+                "csv_pattern_source": "env",
+                "csv_editable": False,
+                "email_lookback_source": "admin",
+                "email_lookback_editable": True,
+                "lock_reason": "Źródłem prawdy jest plik .env.",
             }
 
     with (
@@ -192,7 +209,7 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="saving">' not in html
     assert '<template x-if="!testing">' not in html
     assert '<template x-if="testing">' not in html
-    assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
+    assert "Edycja tylko w .env" in html
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
     assert 'id="firebird-ms-config"' in html
     assert 'x-data="firebirdMsConfig()"' in html
@@ -211,7 +228,8 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert "C:/MS/BAZA/MS.FDB" in html
     assert "D:/bazavmantenance/BAZA_CPC.FDB" in html
     assert 'id="fb-allow-writes"' in html
-    assert "Odblokuj zapis do Firebird" in html
+    assert "Zezwalaj na zapis do Firebird (`FB_ALLOW_WRITES`)" in html
+    assert "Źródło konfiguracji" in html
 
 
 def test_firebird_partial_requires_authentication():
@@ -240,6 +258,9 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
                 "local_copy_path": "inbox/firebird/ms_local.fdb",
                 "allow_writes": False,
                 "password_set": True,
+                "source": "env",
+                "editable": False,
+                "lock_reason": "Źródłem prawdy jest plik .env.",
             }
 
     with patch(
@@ -257,7 +278,7 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="saving">' not in html
     assert '<template x-if="!testing">' not in html
     assert '<template x-if="testing">' not in html
-    assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
+    assert "Edycja tylko w .env" in html
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
     assert 'x-data="firebirdMsConfig()"' in html
     assert 'data-config-label="Menadżer Serwisu"' in html
@@ -265,9 +286,10 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert 'data-test-endpoint="/admin/firebird/test"' in html
     assert '<option value="network">Baza sieciowa</option>' in html
     assert '<option value="local">Baza lokalna</option>' in html
-    assert ":disabled=\"mode === 'local'\"" in html
+    assert ":disabled=\"mode === 'local' || !editable\"" in html
     assert 'id="fb-allow-writes"' in html
     assert 'x-model="allowWrites"' in html
+    assert "Źródło konfiguracji" in html
 
 
 def test_kp_repair_partial_requires_authentication():

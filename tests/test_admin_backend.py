@@ -37,9 +37,15 @@ from app.models import (
     CallEvent,
     Contact,
     ContactDevice,
+    DeliveryCase,
+    DeliveryCaseDevice,
+    DeliveryCaseFile,
+    DeliveryCaseTask,
+    DeliveryDocumentTemplate,
     FormRequest,
     FormWorkflowCase,
     FormWorkflowDevice,
+    GrenkeContractEnd,
     IvrMap,
     SmsOut,
     SmsTemplate,
@@ -109,6 +115,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     FormWorkflowCase.__table__,
                     FormWorkflowDevice.__table__,
                     WorkflowSheetStatusCache.__table__,
+                    DeliveryCase.__table__,
+                    DeliveryCaseDevice.__table__,
+                    DeliveryCaseTask.__table__,
+                    DeliveryCaseFile.__table__,
+                    DeliveryDocumentTemplate.__table__,
+                    GrenkeContractEnd.__table__,
                     Call.__table__,
                     CallEvent.__table__,
                     Contact.__table__,
@@ -137,9 +149,21 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self._previous_workflow_sheet_status_cache_scheduler_enabled = (
             settings.workflow_sheet_status_cache_scheduler_enabled
         )
+        self._previous_contracts_workflow_maintenance_scheduler_enabled = (
+            settings.contracts_workflow_maintenance_scheduler_enabled
+        )
+        self._previous_contracts_mailbox_scheduler_enabled = (
+            settings.contracts_mailbox_scheduler_enabled
+        )
+        self._previous_delivery_notifications_scheduler_enabled = (
+            settings.delivery_notifications_scheduler_enabled
+        )
         settings.admin_secret_key = Fernet.generate_key().decode("ascii")
         settings.backup_scheduler_enabled = False
         settings.workflow_sheet_status_cache_scheduler_enabled = False
+        settings.contracts_workflow_maintenance_scheduler_enabled = False
+        settings.contracts_mailbox_scheduler_enabled = False
+        settings.delivery_notifications_scheduler_enabled = False
 
         async with self.session_factory() as session:
             now = datetime.now(UTC)
@@ -181,6 +205,15 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         settings.workflow_sheet_status_cache_scheduler_enabled = (
             self._previous_workflow_sheet_status_cache_scheduler_enabled
         )
+        settings.contracts_workflow_maintenance_scheduler_enabled = (
+            self._previous_contracts_workflow_maintenance_scheduler_enabled
+        )
+        settings.contracts_mailbox_scheduler_enabled = (
+            self._previous_contracts_mailbox_scheduler_enabled
+        )
+        settings.delivery_notifications_scheduler_enabled = (
+            self._previous_delivery_notifications_scheduler_enabled
+        )
         await self.engine.dispose()
 
     async def _login_as(self, email: str, password: str) -> tuple[str, dict]:
@@ -205,6 +238,17 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "password": "Operator123!",
                 "remember_me": remember,
             },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        token = data["token"]
+        self.assertTrue(token)
+        return token, data
+
+    async def _login_portal_as(self, email: str, password: str) -> tuple[str, dict]:
+        response = await self.client.post(
+            "/auth/login",
+            json={"email": email, "password": password},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -679,209 +723,192 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response_forbidden_delete.status_code, 403)
 
-    async def test_update_database_config_persists_values(self):
+    async def test_database_config_reads_env_and_blocks_update(self):
         token, _ = await self._login()
-        update_payload = {
-            "host": "10.0.0.5",
-            "port": 5544,
-            "database": "ctip_prod",
-            "user": "collector",
-            "sslmode": "require",
-            "password": "NoweHaslo!",
-        }
-        response = await self.client.put(
-            "/admin/config/database",
-            json=update_payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["password_set"])
-        self.assertEqual(body["host"], update_payload["host"])
-        self.assertEqual(body["port"], update_payload["port"])
+        with (
+            patch.object(settings, "pg_host", "10.0.0.5"),
+            patch.object(settings, "pg_port", 5544),
+            patch.object(settings, "pg_database", "ctip_prod"),
+            patch.object(settings, "pg_user", "collector"),
+            patch.object(settings, "pg_password", "NoweHaslo!"),
+            patch.object(settings, "pg_sslmode", "require"),
+        ):
+            response = await self.client.get(
+                "/admin/config/database",
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["host"], "10.0.0.5")
+            self.assertEqual(body["port"], 5544)
+            self.assertEqual(body["database"], "ctip_prod")
+            self.assertEqual(body["user"], "collector")
+            self.assertEqual(body["sslmode"], "require")
+            self.assertTrue(body["password_set"])
+            self.assertEqual(body["source"], "env")
+            self.assertFalse(body["editable"])
 
-        # ponowny odczyt powinien zwrócić te same wartości
-        response = await self.client.get(
-            "/admin/config/database",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["user"], update_payload["user"])
-        self.assertEqual(body["sslmode"], "require")
-
-        # w bazie powinno być zapisane ustawienie host
-        async with self.session_factory() as session:
-            setting = await session.get(AdminSetting, "database.host")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, "10.0.0.5")
-
-    async def test_update_firebird_config_persists_values(self):
-        token, _ = await self._login()
-        update_payload = {
-            "mode": "network",
-            "host": "192.168.0.8",
-            "port": 3050,
-            "database": "C:/MS/BAZA/MS.FDB",
-            "user": "SYSDBA",
-            "password": "masterkey",
-            "charset": "UTF8",
-            "role": "RDB$ADMIN",
-            "local_copy_path": "inbox/firebird/ms_local.fdb",
-            "allow_writes": True,
-        }
-        response = await self.client.put(
-            "/admin/config/firebird",
-            json=update_payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["mode"], "network")
-        self.assertEqual(body["host"], update_payload["host"])
-        self.assertEqual(body["database"], update_payload["database"])
-        self.assertEqual(body["charset"], "UTF8")
-        self.assertEqual(body["role"], "RDB$ADMIN")
-        self.assertEqual(body["local_copy_path"], update_payload["local_copy_path"])
-        self.assertTrue(body["allow_writes"])
-        self.assertTrue(body["password_set"])
-
-        response = await self.client.get(
-            "/admin/config/firebird",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["user"], update_payload["user"])
-        self.assertEqual(body["port"], update_payload["port"])
-        self.assertTrue(body["allow_writes"])
-
-        async with self.session_factory() as session:
-            setting = await session.get(AdminSetting, "firebird.host")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, update_payload["host"])
-            allow_writes_setting = await session.get(AdminSetting, "firebird.allow_writes")
-            self.assertIsNotNone(allow_writes_setting)
-            assert allow_writes_setting is not None
-            self.assertEqual(allow_writes_setting.value, "true")
-
-    async def test_update_firebird_vmaintenance_config_persists_values(self):
-        token, _ = await self._login()
-        update_payload = {
-            "host": "192.168.0.8",
-            "port": 3050,
-            "database": "D:/bazavmantenance/BAZA_CPC.FDB",
-            "user": "SYSDBA",
-            "password": "masterkey",
-            "charset": "WIN1250",
-            "role": "RDB$ADMIN",
-        }
-        response = await self.client.put(
-            "/admin/config/firebird-vmaintenance",
-            json=update_payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["host"], update_payload["host"])
-        self.assertEqual(body["database"], update_payload["database"])
-        self.assertEqual(body["role"], update_payload["role"])
-        self.assertTrue(body["password_set"])
-
-        response = await self.client.get(
-            "/admin/config/firebird-vmaintenance",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["user"], update_payload["user"])
-        self.assertEqual(body["port"], update_payload["port"])
-
-        async with self.session_factory() as session:
-            setting = await session.get(AdminSetting, "firebird_vmaintenance.host")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, update_payload["host"])
-
-    async def test_update_google_sheets_config_persists_values(self):
-        token, _ = await self._login()
-        update_payload = {
-            "enabled": True,
-            "credentials_path": "/home/marcin/projects/secrets/google-sheets.json",
-            "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-test-id/edit#gid=0",
-            "workflow_devices_worksheet": "Urzadzenia_magazyn",
-        }
-        response = await self.client.put(
-            "/admin/config/google-sheets",
-            json=update_payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["enabled"])
-        self.assertEqual(body["credentials_path"], update_payload["credentials_path"])
-        self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
-        self.assertEqual(
-            body["workflow_devices_worksheet"],
-            update_payload["workflow_devices_worksheet"],
-        )
-        self.assertEqual(body["source"], "admin")
-
-        response = await self.client.get(
-            "/admin/config/google-sheets",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
-
-        async with self.session_factory() as session:
-            setting = await session.get(AdminSetting, "google_sheets.spreadsheet_id")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, "spreadsheet-test-id")
-
-    async def test_update_google_sheets_config_blocked_when_lock_enabled(self):
-        token, _ = await self._login()
-
-        baseline_payload = {
-            "enabled": True,
-            "credentials_path": "/srv/google/prod.json",
-            "spreadsheet_id": "spreadsheet-prod",
-            "workflow_devices_worksheet": "Urzadzenia_magazyn",
-        }
-        response = await self.client.put(
-            "/admin/config/google-sheets",
-            json=baseline_payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-
-        previous_lock = settings.google_sheets_config_lock
-        settings.google_sheets_config_lock = True
-        try:
-            locked_payload = {
-                "enabled": True,
-                "credentials_path": "/srv/google/test.json",
-                "spreadsheet_id": "spreadsheet-test",
-                "workflow_devices_worksheet": "Urzadzenia_magazyn",
-            }
             response = await self.client.put(
-                "/admin/config/google-sheets",
-                json=locked_payload,
+                "/admin/config/database",
+                json={
+                    "host": "127.0.0.2",
+                    "port": 5433,
+                    "database": "other",
+                    "user": "other",
+                    "sslmode": "disable",
+                    "password": "inne",
+                },
                 headers={"X-Admin-Session": token},
             )
             self.assertEqual(response.status_code, 423)
-            self.assertIn("GOOGLE_SHEETS_CONFIG_LOCK=true", response.text)
 
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "database.host")
+            self.assertIsNone(setting)
+
+    async def test_firebird_config_reads_env_and_blocks_update(self):
+        token, _ = await self._login()
+        with (
+            patch.object(settings, "fb_mode", "network"),
+            patch.object(settings, "fb_host", "192.168.0.8"),
+            patch.object(settings, "fb_port", 3050),
+            patch.object(settings, "fb_database", "C:/MS/BAZA/MS.FDB"),
+            patch.object(settings, "fb_user", "SYSDBA"),
+            patch.object(settings, "fb_password", "masterkey"),
+            patch.object(settings, "fb_charset", "UTF8"),
+            patch.object(settings, "fb_role", "RDB$ADMIN"),
+            patch.object(settings, "fb_local_copy_path", "inbox/firebird/ms_local.fdb"),
+            patch.object(settings, "fb_allow_writes", True),
+        ):
+            response = await self.client.get(
+                "/admin/config/firebird",
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["mode"], "network")
+            self.assertEqual(body["host"], "192.168.0.8")
+            self.assertEqual(body["database"], "C:/MS/BAZA/MS.FDB")
+            self.assertEqual(body["charset"], "UTF8")
+            self.assertEqual(body["role"], "RDB$ADMIN")
+            self.assertEqual(body["local_copy_path"], "inbox/firebird/ms_local.fdb")
+            self.assertTrue(body["allow_writes"])
+            self.assertTrue(body["password_set"])
+            self.assertEqual(body["source"], "env")
+            self.assertFalse(body["editable"])
+
+            response = await self.client.put(
+                "/admin/config/firebird",
+                json={
+                    "mode": "local",
+                    "host": "127.0.0.1",
+                    "port": 3051,
+                    "database": "D:/NEW.FDB",
+                    "user": "TEST",
+                    "password": "sekret",
+                    "charset": "WIN1250",
+                    "role": None,
+                    "local_copy_path": "inbox/firebird/other.fdb",
+                    "allow_writes": False,
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 423)
+
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "firebird.host")
+            self.assertIsNone(setting)
+
+    async def test_firebird_vmaintenance_config_reads_env_and_blocks_update(self):
+        token, _ = await self._login()
+        with (
+            patch.object(settings, "fb_v_host", "192.168.0.8"),
+            patch.object(settings, "fb_v_port", 3050),
+            patch.object(settings, "fb_v_database", "D:/bazavmantenance/BAZA_CPC.FDB"),
+            patch.object(settings, "fb_v_user", "SYSDBA"),
+            patch.object(settings, "fb_v_password", "masterkey"),
+            patch.object(settings, "fb_v_charset", "WIN1250"),
+            patch.object(settings, "fb_v_role", "RDB$ADMIN"),
+        ):
+            response = await self.client.get(
+                "/admin/config/firebird-vmaintenance",
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["host"], "192.168.0.8")
+            self.assertEqual(body["database"], "D:/bazavmantenance/BAZA_CPC.FDB")
+            self.assertEqual(body["role"], "RDB$ADMIN")
+            self.assertTrue(body["password_set"])
+            self.assertEqual(body["source"], "env")
+            self.assertFalse(body["editable"])
+
+            response = await self.client.put(
+                "/admin/config/firebird-vmaintenance",
+                json={
+                    "host": "192.168.0.9",
+                    "port": 3051,
+                    "database": "D:/test/BAZA_CPC.FDB",
+                    "user": "TEST",
+                    "password": "sekret",
+                    "charset": "UTF8",
+                    "role": None,
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 423)
+
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "firebird_vmaintenance.host")
+            self.assertIsNone(setting)
+
+    async def test_google_sheets_config_reads_env_and_blocks_update(self):
+        token, _ = await self._login()
+        with (
+            patch.object(settings, "google_sheets_enabled", True),
+            patch.object(
+                settings,
+                "google_application_credentials",
+                "/home/marcin/projects/secrets/google-sheets.json",
+            ),
+            patch.object(settings, "google_sheets_spreadsheet_id", "spreadsheet-test-id"),
+            patch.object(
+                settings,
+                "google_sheets_workflow_devices_sheet",
+                "Urzadzenia_magazyn",
+            ),
+        ):
             response = await self.client.get(
                 "/admin/config/google-sheets",
                 headers={"X-Admin-Session": token},
             )
             self.assertEqual(response.status_code, 200)
             body = response.json()
-            self.assertEqual(body["credentials_path"], baseline_payload["credentials_path"])
-            self.assertEqual(body["spreadsheet_id"], baseline_payload["spreadsheet_id"])
-        finally:
-            settings.google_sheets_config_lock = previous_lock
+            self.assertTrue(body["enabled"])
+            self.assertEqual(
+                body["credentials_path"],
+                "/home/marcin/projects/secrets/google-sheets.json",
+            )
+            self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
+            self.assertEqual(body["workflow_devices_worksheet"], "Urzadzenia_magazyn")
+            self.assertEqual(body["source"], "env")
+            self.assertFalse(body["editable"])
+
+            response = await self.client.put(
+                "/admin/config/google-sheets",
+                json={
+                    "enabled": True,
+                    "credentials_path": "/srv/google/test.json",
+                    "spreadsheet_id": "spreadsheet-test",
+                    "workflow_devices_worksheet": "Urzadzenia_magazyn",
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 423)
+
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "google_sheets.spreadsheet_id")
+            self.assertIsNone(setting)
 
     @patch("app.api.routes.admin_google_sheets.test_workflow_sheet_connection")
     async def test_google_sheets_test_endpoint_uses_current_configuration(self, mock_test):
@@ -895,36 +922,35 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "missing_headers": [],
         }
         token, _ = await self._login()
-        await self.client.put(
-            "/admin/config/google-sheets",
-            json={
-                "enabled": True,
-                "credentials_path": "/srv/google/current.json",
-                "spreadsheet_id": "spreadsheet-current",
-                "workflow_devices_worksheet": "Urzadzenia_magazyn",
-            },
-            headers={"X-Admin-Session": token},
-        )
-
-        response = await self.client.post(
-            "/admin/google-sheets/test",
-            json={
-                "credentials_path": "/srv/google/override.json",
-                "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-override/edit",
-                "workflow_devices_worksheet": "Urzadzenia_magazyn",
-            },
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["success"])
-        self.assertEqual(body["spreadsheet_title"], "zerowki_testowy")
-        mock_test.assert_called_once()
-        config = mock_test.call_args.args[0]
-        self.assertTrue(config.enabled)
-        self.assertEqual(config.credentials_path, "/srv/google/override.json")
-        self.assertEqual(config.spreadsheet_id, "spreadsheet-override")
-        self.assertEqual(config.workflow_devices_worksheet, "Urzadzenia_magazyn")
+        with (
+            patch.object(settings, "google_sheets_enabled", True),
+            patch.object(settings, "google_application_credentials", "/srv/google/current.json"),
+            patch.object(settings, "google_sheets_spreadsheet_id", "spreadsheet-current"),
+            patch.object(
+                settings,
+                "google_sheets_workflow_devices_sheet",
+                "Urzadzenia_magazyn",
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/google-sheets/test",
+                json={
+                    "credentials_path": "/srv/google/override.json",
+                    "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-override/edit",
+                    "workflow_devices_worksheet": "Urzadzenia_magazyn",
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["success"])
+            self.assertEqual(body["spreadsheet_title"], "zerowki_testowy")
+            mock_test.assert_called_once()
+            config = mock_test.call_args.args[0]
+            self.assertTrue(config.enabled)
+            self.assertEqual(config.credentials_path, "/srv/google/override.json")
+            self.assertEqual(config.spreadsheet_id, "spreadsheet-override")
+            self.assertEqual(config.workflow_devices_worksheet, "Urzadzenia_magazyn")
 
     @patch("app.api.routes.admin_google_sheets.bootstrap_workflow_sheet_headers")
     async def test_google_sheets_bootstrap_headers_endpoint_uses_current_configuration(
@@ -941,44 +967,43 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "existing_headers": ["PRODUCENT", "MODEL"],
         }
         token, _ = await self._login()
-        await self.client.put(
-            "/admin/config/google-sheets",
-            json={
-                "enabled": True,
-                "credentials_path": "/srv/google/current.json",
-                "spreadsheet_id": "spreadsheet-current",
-                "workflow_devices_worksheet": "Urzadzenia_magazyn",
-            },
-            headers={"X-Admin-Session": token},
-        )
+        with (
+            patch.object(settings, "google_sheets_enabled", True),
+            patch.object(settings, "google_application_credentials", "/srv/google/current.json"),
+            patch.object(settings, "google_sheets_spreadsheet_id", "spreadsheet-current"),
+            patch.object(
+                settings,
+                "google_sheets_workflow_devices_sheet",
+                "Urzadzenia_magazyn",
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/google-sheets/bootstrap-headers",
+                json={
+                    "credentials_path": "/srv/google/override.json",
+                    "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-bootstrap/edit",
+                    "workflow_devices_worksheet": "Urzadzenia_magazyn",
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["success"])
+            self.assertEqual(body["added_headers"], ["SERIAL"])
+            self.assertEqual(body["existing_headers"], ["PRODUCENT", "MODEL"])
+            mock_bootstrap.assert_called_once()
+            config = mock_bootstrap.call_args.args[0]
+            self.assertTrue(config.enabled)
+            self.assertEqual(config.credentials_path, "/srv/google/override.json")
+            self.assertEqual(config.spreadsheet_id, "spreadsheet-bootstrap")
+            self.assertEqual(config.workflow_devices_worksheet, "Urzadzenia_magazyn")
 
-        response = await self.client.post(
-            "/admin/google-sheets/bootstrap-headers",
-            json={
-                "credentials_path": "/srv/google/override.json",
-                "spreadsheet_id": "https://docs.google.com/spreadsheets/d/spreadsheet-bootstrap/edit",
-                "workflow_devices_worksheet": "Urzadzenia_magazyn",
-            },
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["success"])
-        self.assertEqual(body["added_headers"], ["SERIAL"])
-        self.assertEqual(body["existing_headers"], ["PRODUCENT", "MODEL"])
-        mock_bootstrap.assert_called_once()
-        config = mock_bootstrap.call_args.args[0]
-        self.assertTrue(config.enabled)
-        self.assertEqual(config.credentials_path, "/srv/google/override.json")
-        self.assertEqual(config.spreadsheet_id, "spreadsheet-bootstrap")
-        self.assertEqual(config.workflow_devices_worksheet, "Urzadzenia_magazyn")
-
-    async def test_update_kp_repair_source_config_persists_values(self):
+    async def test_update_kp_repair_source_config_updates_only_email_lookback(self):
         token, _ = await self._login()
         update_payload = {
-            "csv_directory": "inbox/ewidencja",
-            "csv_pattern": "DPLAC*.csv",
-            "email_lookback_months": 5,
+            "csv_directory": settings.kp_csv_directory,
+            "csv_pattern": settings.kp_csv_pattern,
+            "email_lookback_months": 7,
         }
         response = await self.client.put(
             "/admin/config/kp-repair-source",
@@ -987,14 +1012,19 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["csv_directory"], update_payload["csv_directory"])
-        self.assertEqual(body["csv_pattern"], update_payload["csv_pattern"])
-        self.assertEqual(body["email_lookback_months"], update_payload["email_lookback_months"])
+        self.assertEqual(body["csv_directory"], settings.kp_csv_directory)
+        self.assertEqual(body["csv_pattern"], settings.kp_csv_pattern)
+        self.assertEqual(body["email_lookback_months"], 7)
+        self.assertFalse(body["csv_editable"])
+        self.assertTrue(body["email_lookback_editable"])
 
         async with self.session_factory() as session:
-            setting = await session.get(AdminSetting, "kp_repair.csv_directory")
+            self.assertIsNone(await session.get(AdminSetting, "kp_repair.csv_directory"))
+            self.assertIsNone(await session.get(AdminSetting, "kp_repair.csv_pattern"))
+            setting = await session.get(AdminSetting, "kp_repair.email_lookback_months")
             self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, update_payload["csv_directory"])
+            assert setting is not None
+            self.assertEqual(setting.value, "7")
 
     @patch("app.api.routes.admin_firebird.test_firebird_connection")
     async def test_firebird_test_endpoint_uses_current_configuration(self, mock_test):
@@ -1004,50 +1034,44 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             engine_version="4.0.4",
         )
         token, _ = await self._login()
-        await self.client.put(
-            "/admin/config/firebird",
-            json={
-                "mode": "network",
-                "host": "192.168.0.8",
-                "port": 3050,
-                "database": "C:/MS/BAZA/MS.FDB",
-                "user": "SYSDBA",
-                "password": "masterkey",
-                "charset": "UTF8",
-                "role": None,
-                "local_copy_path": "inbox/firebird/ms_local.fdb",
-                "allow_writes": False,
-            },
-            headers={"X-Admin-Session": token},
-        )
-
-        response = await self.client.post(
-            "/admin/firebird/test",
-            json={
-                "mode": "network",
-                "host": "192.168.0.9",
-                "port": 3051,
-                "database": "D:/SERWIS/BAZA.FDB",
-                "user": "TESTER",
-                "password": "Sekret!",
-                "charset": "WIN1250",
-                "role": "RDB$ADMIN",
-            },
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["success"])
-        self.assertEqual(body["engine_version"], "4.0.4")
-        mock_test.assert_called_once()
-        kwargs = mock_test.call_args.kwargs
-        self.assertEqual(kwargs["host"], "192.168.0.9")
-        self.assertEqual(kwargs["port"], 3051)
-        self.assertEqual(kwargs["database"], "D:/SERWIS/BAZA.FDB")
-        self.assertEqual(kwargs["user"], "TESTER")
-        self.assertEqual(kwargs["password"], "Sekret!")
-        self.assertEqual(kwargs["charset"], "WIN1250")
-        self.assertEqual(kwargs["role"], "RDB$ADMIN")
+        with (
+            patch.object(settings, "fb_mode", "network"),
+            patch.object(settings, "fb_host", "192.168.0.8"),
+            patch.object(settings, "fb_port", 3050),
+            patch.object(settings, "fb_database", "C:/MS/BAZA/MS.FDB"),
+            patch.object(settings, "fb_user", "SYSDBA"),
+            patch.object(settings, "fb_password", "masterkey"),
+            patch.object(settings, "fb_charset", "UTF8"),
+            patch.object(settings, "fb_role", None),
+            patch.object(settings, "fb_local_copy_path", "inbox/firebird/ms_local.fdb"),
+        ):
+            response = await self.client.post(
+                "/admin/firebird/test",
+                json={
+                    "mode": "network",
+                    "host": "192.168.0.9",
+                    "port": 3051,
+                    "database": "D:/SERWIS/BAZA.FDB",
+                    "user": "TESTER",
+                    "password": "Sekret!",
+                    "charset": "WIN1250",
+                    "role": "RDB$ADMIN",
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["success"])
+            self.assertEqual(body["engine_version"], "4.0.4")
+            mock_test.assert_called_once()
+            kwargs = mock_test.call_args.kwargs
+            self.assertEqual(kwargs["host"], "192.168.0.9")
+            self.assertEqual(kwargs["port"], 3051)
+            self.assertEqual(kwargs["database"], "D:/SERWIS/BAZA.FDB")
+            self.assertEqual(kwargs["user"], "TESTER")
+            self.assertEqual(kwargs["password"], "Sekret!")
+            self.assertEqual(kwargs["charset"], "WIN1250")
+            self.assertEqual(kwargs["role"], "RDB$ADMIN")
 
     @patch("app.api.routes.admin_firebird.test_firebird_connection")
     async def test_firebird_test_endpoint_uses_local_database_in_local_mode(self, mock_test):
@@ -1057,100 +1081,87 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             engine_version="2.5.9",
         )
         token, _ = await self._login()
-        await self.client.put(
-            "/admin/config/firebird",
-            json={
-                "mode": "local",
-                "host": "192.168.0.8",
-                "port": 3050,
-                "database": "D:/PROD/BAZAMS.FDB",
-                "user": "SYSDBA",
-                "password": "masterkey",
-                "charset": "WIN1250",
-                "role": None,
-                "local_copy_path": "/srv/firebird/local/BAZAMS_LOCAL.FDB",
-                "allow_writes": False,
-            },
-            headers={"X-Admin-Session": token},
-        )
+        with (
+            patch.object(settings, "fb_mode", "local"),
+            patch.object(settings, "fb_host", "192.168.0.8"),
+            patch.object(settings, "fb_port", 3050),
+            patch.object(settings, "fb_database", "D:/PROD/BAZAMS.FDB"),
+            patch.object(settings, "fb_user", "SYSDBA"),
+            patch.object(settings, "fb_password", "masterkey"),
+            patch.object(settings, "fb_charset", "WIN1250"),
+            patch.object(settings, "fb_role", None),
+            patch.object(settings, "fb_local_copy_path", "/srv/firebird/local/BAZAMS_LOCAL.FDB"),
+        ):
+            response = await self.client.post(
+                "/admin/firebird/test",
+                json={"mode": "local"},
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["success"])
+            self.assertEqual(body["engine_version"], "2.5.9")
+            kwargs = mock_test.call_args.kwargs
+            self.assertEqual(kwargs["host"], "127.0.0.1")
+            self.assertEqual(kwargs["database"], "/srv/firebird/local/BAZAMS_LOCAL.FDB")
 
-        response = await self.client.post(
-            "/admin/firebird/test",
-            json={"mode": "local"},
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["success"])
-        self.assertEqual(body["engine_version"], "2.5.9")
-        kwargs = mock_test.call_args.kwargs
-        self.assertEqual(kwargs["host"], "127.0.0.1")
-        self.assertEqual(kwargs["database"], "/srv/firebird/local/BAZAMS_LOCAL.FDB")
+    async def test_firebird_client_lookup_uses_runtime_configuration_from_env(self):
+        with (
+            patch.object(settings, "fb_mode", "network"),
+            patch.object(settings, "fb_host", "192.168.0.8"),
+            patch.object(settings, "fb_port", 3050),
+            patch.object(settings, "fb_database", "D:/MS/BAZAMS.FDB"),
+            patch.object(settings, "fb_user", "SYSDBA"),
+            patch.object(settings, "fb_password", "sekret-ms"),
+            patch.object(settings, "fb_charset", "WIN1250"),
+            patch.object(settings, "fb_role", "RDB$ADMIN"),
+            patch.object(settings, "fb_local_copy_path", "inbox/firebird/test_ms_local.fdb"),
+            patch.object(settings, "fb_allow_writes", True),
+        ):
+            async with self.session_factory() as session:
+                config = await load_firebird_runtime_config(session)
 
-    async def test_firebird_client_lookup_uses_runtime_configuration_from_admin_settings(self):
-        token, _ = await self._login()
-        response = await self.client.put(
-            "/admin/config/firebird",
-            json={
-                "mode": "network",
-                "host": "192.168.0.8",
-                "port": 3050,
-                "database": "D:/MS/BAZAMS.FDB",
-                "user": "SYSDBA",
-                "password": "sekret-ms",
-                "charset": "WIN1250",
-                "role": "RDB$ADMIN",
-                "local_copy_path": "inbox/firebird/test_ms_local.fdb",
-                "allow_writes": True,
-            },
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
+            self.assertTrue(config.allow_writes)
 
-        async with self.session_factory() as session:
-            config = await load_firebird_runtime_config(session)
+            connect_calls: list[dict[str, object]] = []
 
-        self.assertTrue(config.allow_writes)
+            class DummyCursor:
+                def execute(self, _query, _params=None):
+                    return None
 
-        connect_calls: list[dict[str, object]] = []
+                def fetchone(self):
+                    return None
 
-        class DummyCursor:
-            def execute(self, _query, _params=None):
-                return None
+                def close(self):
+                    return None
 
-            def fetchone(self):
-                return None
+            class DummyConnection:
+                def cursor(self):
+                    return DummyCursor()
 
-            def close(self):
-                return None
+                def close(self):
+                    return None
 
-        class DummyConnection:
-            def cursor(self):
-                return DummyCursor()
+            class DummyFirebirdSql:
+                @staticmethod
+                def connect(**kwargs):
+                    connect_calls.append(kwargs)
+                    return DummyConnection()
 
-            def close(self):
-                return None
+            with patch.dict(sys.modules, {"firebirdsql": DummyFirebirdSql}):
+                with use_firebird_runtime_config(config):
+                    match = find_client_in_firebird("525-000-11-11")
 
-        class DummyFirebirdSql:
-            @staticmethod
-            def connect(**kwargs):
-                connect_calls.append(kwargs)
-                return DummyConnection()
-
-        with patch.dict(sys.modules, {"firebirdsql": DummyFirebirdSql}):
-            with use_firebird_runtime_config(config):
-                match = find_client_in_firebird("525-000-11-11")
-
-        self.assertFalse(match.found)
-        self.assertIsNone(match.error)
-        self.assertEqual(len(connect_calls), 1)
-        self.assertEqual(connect_calls[0]["host"], "192.168.0.8")
-        self.assertEqual(connect_calls[0]["port"], 3050)
-        self.assertEqual(connect_calls[0]["database"], "D:/MS/BAZAMS.FDB")
-        self.assertEqual(connect_calls[0]["user"], "SYSDBA")
-        self.assertEqual(connect_calls[0]["password"], "sekret-ms")
-        self.assertEqual(connect_calls[0]["charset"], "WIN1250")
-        self.assertEqual(connect_calls[0]["role"], "RDB$ADMIN")
+            self.assertFalse(match.found)
+            self.assertIsNone(match.error)
+            self.assertEqual(len(connect_calls), 1)
+            self.assertEqual(connect_calls[0]["host"], "192.168.0.8")
+            self.assertEqual(connect_calls[0]["port"], 3050)
+            self.assertEqual(connect_calls[0]["database"], "D:/MS/BAZAMS.FDB")
+            self.assertEqual(connect_calls[0]["user"], "SYSDBA")
+            self.assertEqual(connect_calls[0]["password"], "sekret-ms")
+            self.assertEqual(connect_calls[0]["charset"], "WIN1250")
+            self.assertEqual(connect_calls[0]["role"], "RDB$ADMIN")
 
     def test_firebird_writes_enabled_accepts_existing_local_database_outside_repo(self):
         runtime = FirebirdRuntimeConfig(
@@ -1190,35 +1201,31 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             engine_version="4.0.4",
         )
         token, _ = await self._login()
-        await self.client.put(
-            "/admin/config/firebird-vmaintenance",
-            json={
-                "host": "192.168.0.8",
-                "port": 3050,
-                "database": "D:/bazavmantenance/BAZA_CPC.FDB",
-                "user": "SYSDBA",
-                "password": "masterkey",
-                "charset": "WIN1250",
-                "role": None,
-            },
-            headers={"X-Admin-Session": token},
-        )
-        response = await self.client.post(
-            "/admin/firebird/test-vmaintenance",
-            json={
-                "host": "192.168.0.9",
-                "port": 3051,
-                "database": "D:/test/BAZA_CPC.FDB",
-                "user": "TESTER",
-                "password": "Sekret!",
-                "charset": "UTF8",
-                "role": "RDB$ADMIN",
-            },
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["success"])
+        with (
+            patch.object(settings, "fb_v_host", "192.168.0.8"),
+            patch.object(settings, "fb_v_port", 3050),
+            patch.object(settings, "fb_v_database", "D:/bazavmantenance/BAZA_CPC.FDB"),
+            patch.object(settings, "fb_v_user", "SYSDBA"),
+            patch.object(settings, "fb_v_password", "masterkey"),
+            patch.object(settings, "fb_v_charset", "WIN1250"),
+            patch.object(settings, "fb_v_role", None),
+        ):
+            response = await self.client.post(
+                "/admin/firebird/test-vmaintenance",
+                json={
+                    "host": "192.168.0.9",
+                    "port": 3051,
+                    "database": "D:/test/BAZA_CPC.FDB",
+                    "user": "TESTER",
+                    "password": "Sekret!",
+                    "charset": "UTF8",
+                    "role": "RDB$ADMIN",
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["success"])
         kwargs = mock_test.call_args.kwargs
         self.assertEqual(kwargs["host"], "192.168.0.9")
         self.assertEqual(kwargs["port"], 3051)
@@ -1292,102 +1299,114 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_backup_config_get_and_update(self):
         token, _ = await self._login()
+        with (
+            patch.object(settings, "backup_default_local_dir", "D:\\Backup_CTIP_MS"),
+            patch.object(settings, "office365_tenant_id", "tenant-id"),
+            patch.object(settings, "office365_client_id", "client-id"),
+            patch.object(settings, "office365_client_secret", "top-secret"),
+            patch.object(settings, "office365_site_id", "tenant.sharepoint.com,site-id,web-id"),
+            patch.object(settings, "office365_drive_id", "drive-id"),
+            patch.object(settings, "office365_folder_path", "CTIP-Backup"),
+            patch.object(settings, "office365_folder_ctip", "BackupKP/CTIP"),
+            patch.object(
+                settings,
+                "office365_folder_firebird_prod",
+                "BackupKP/Menadzer_Serwisu/prod",
+            ),
+            patch.object(
+                settings,
+                "office365_folder_firebird_test",
+                "BackupKP/Menadzer_Serwisu/test",
+            ),
+            patch.object(settings, "office365_folder_optima", "BackupKP/Optima"),
+            patch.object(settings, "optima_sql_server_instance", "SERWER1\\\\OPTIMA"),
+            patch.object(settings, "optima_sql_host", "192.168.0.8"),
+            patch.object(settings, "optima_sql_port", 1433),
+            patch.object(settings, "optima_sql_auth_mode", "mixed"),
+            patch.object(settings, "optima_sql_login", "automate_backup"),
+            patch.object(settings, "optima_sql_password", "secret123"),
+            patch.object(settings, "optima_db_it_partner", "CDN_IT_Partner"),
+            patch.object(settings, "optima_db_ksero_partner", "CDN_Ksero_Partner1"),
+            patch.object(settings, "optima_db_config", "CDN_KNF_Ksero_Partner"),
+        ):
+            response = await self.client.get(
+                "/admin/backup/config",
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["schedule_morning"], "06:00")
+            self.assertEqual(data["schedule_evening"], "20:00")
+            self.assertEqual(data["retention_local_copies"], 14)
+            self.assertEqual(data["storage_mode"], "local")
+            self.assertEqual(data["local_directory"], "D:\\Backup_CTIP_MS")
+            self.assertEqual(data["office_tenant_id"], "tenant-id")
+            self.assertTrue(data["office_client_secret_set"])
+            self.assertEqual(data["optima_server_instance"], "SERWER1\\\\OPTIMA")
+            self.assertEqual(data["integration_source"], "env")
+            self.assertFalse(data["integration_editable"])
+            self.assertTrue(data["operational_editable"])
 
-        response = await self.client.get(
-            "/admin/backup/config",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["schedule_morning"], "06:00")
-        self.assertEqual(data["schedule_evening"], "20:00")
-        self.assertEqual(data["retention_local_copies"], 14)
-        self.assertEqual(data["storage_mode"], "local")
-
-        update_payload = {
-            "schedule_morning": "05:30",
-            "schedule_evening": "21:15",
-            "retention_local_copies": 14,
-            "retention_cloud_copies": 7,
-            "archive_ctip_files": True,
-            "archive_ctip_db": True,
-            "archive_firebird_prod": True,
-            "archive_firebird_test": False,
-            "archive_optima": True,
-            "storage_mode": "network",
-            "local_directory": "D:\\\\Backup_CTIP_MS",
-            "network_directory": "\\\\NAS\\\\CTIP",
-            "cloud_provider": "office365",
-            "cloud_only_evening": True,
-            "office_tenant_id": "tenant-id",
-            "office_client_id": "client-id",
-            "office_site_id": "tenant.sharepoint.com,site-id,web-id",
-            "office_drive_id": "drive-id",
-            "office_folder_path": "CTIP-Backup",
-            "office_folder_ctip": "BackupKP/CTIP",
-            "office_folder_firebird_prod": "BackupKP/Menadzer_Serwisu/prod",
-            "office_folder_firebird_test": "BackupKP/Menadzer_Serwisu/test",
-            "office_folder_optima": "BackupKP/Optima",
-            "office_client_secret": "top-secret",
-            "optima_server_instance": "SERWER1\\\\OPTIMA",
-            "optima_host": "192.168.0.8",
-            "optima_port": 1433,
-            "optima_auth_mode": "mixed",
-            "optima_login": "automate_backup",
-            "optima_password": "secret123",
-            "optima_db_it_partner": "CDN_IT_Partner",
-            "optima_db_ksero_partner": "CDN_Ksero_Partner1",
-            "optima_db_config": "CDN_KNF_Ksero_Partner",
-        }
-        response = await self.client.put(
-            "/admin/backup/config",
-            headers={"X-Admin-Session": token},
-            json=update_payload,
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["schedule_morning"], "05:30")
-        self.assertEqual(data["schedule_evening"], "21:15")
-        self.assertEqual(data["storage_mode"], "network")
-        self.assertTrue(data["office_client_secret_set"])
-        self.assertEqual(data["optima_server_instance"], "SERWER1\\\\OPTIMA")
-        self.assertEqual(data["optima_host"], "192.168.0.8")
-        self.assertEqual(data["optima_port"], 1433)
-        self.assertEqual(data["optima_auth_mode"], "mixed")
-        self.assertEqual(data["optima_login"], "automate_backup")
-        self.assertEqual(data["office_folder_ctip"], "BackupKP/CTIP")
-        self.assertEqual(data["office_folder_firebird_prod"], "BackupKP/Menadzer_Serwisu/prod")
-        self.assertEqual(data["office_folder_firebird_test"], "BackupKP/Menadzer_Serwisu/test")
-        self.assertEqual(data["office_folder_optima"], "BackupKP/Optima")
-        self.assertTrue(data["optima_password_set"])
-        self.assertEqual(data["optima_db_it_partner"], "CDN_IT_Partner")
-        self.assertEqual(data["optima_db_ksero_partner"], "CDN_Ksero_Partner1")
-        self.assertEqual(data["optima_db_config"], "CDN_KNF_Ksero_Partner")
+            update_payload = {
+                "schedule_morning": "05:30",
+                "schedule_evening": "21:15",
+                "retention_local_copies": 14,
+                "retention_cloud_copies": 7,
+                "archive_ctip_files": True,
+                "archive_ctip_db": True,
+                "archive_firebird_prod": True,
+                "archive_firebird_test": False,
+                "archive_optima": True,
+                "storage_mode": "network",
+                "local_directory": "D:\\Backup_CTIP_MS",
+                "network_directory": "\\\\NAS\\\\CTIP",
+                "cloud_provider": "office365",
+                "cloud_only_evening": True,
+                "office_tenant_id": "tenant-id",
+                "office_client_id": "client-id",
+                "office_site_id": "tenant.sharepoint.com,site-id,web-id",
+                "office_drive_id": "drive-id",
+                "office_folder_path": "CTIP-Backup",
+                "office_folder_ctip": "BackupKP/CTIP",
+                "office_folder_firebird_prod": "BackupKP/Menadzer_Serwisu/prod",
+                "office_folder_firebird_test": "BackupKP/Menadzer_Serwisu/test",
+                "office_folder_optima": "BackupKP/Optima",
+                "office_client_secret": None,
+                "optima_server_instance": "SERWER1\\\\OPTIMA",
+                "optima_host": "192.168.0.8",
+                "optima_port": 1433,
+                "optima_auth_mode": "mixed",
+                "optima_login": "automate_backup",
+                "optima_password": None,
+                "optima_db_it_partner": "CDN_IT_Partner",
+                "optima_db_ksero_partner": "CDN_Ksero_Partner1",
+                "optima_db_config": "CDN_KNF_Ksero_Partner",
+            }
+            response = await self.client.put(
+                "/admin/backup/config",
+                headers={"X-Admin-Session": token},
+                json=update_payload,
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["schedule_morning"], "05:30")
+            self.assertEqual(data["schedule_evening"], "21:15")
+            self.assertEqual(data["storage_mode"], "network")
+            self.assertEqual(data["network_directory"], "\\\\NAS\\\\CTIP")
+            self.assertEqual(data["local_directory"], "D:\\Backup_CTIP_MS")
+            self.assertEqual(data["office_tenant_id"], "tenant-id")
+            self.assertTrue(data["office_client_secret_set"])
+            self.assertTrue(data["optima_password_set"])
 
         async with self.session_factory() as session:
             stored = await settings_store.get_namespace(session, "backup")
             self.assertEqual(stored.get("schedule_morning"), "05:30")
             self.assertEqual(stored.get("network_directory"), "\\\\NAS\\\\CTIP")
-            self.assertEqual(stored.get("office_tenant_id"), "tenant-id")
-            self.assertEqual(stored.get("office_client_secret"), "top-secret")
-            self.assertEqual(stored.get("office_site_id"), "tenant.sharepoint.com,site-id,web-id")
-            self.assertEqual(stored.get("office_folder_ctip"), "BackupKP/CTIP")
-            self.assertEqual(
-                stored.get("office_folder_firebird_prod"), "BackupKP/Menadzer_Serwisu/prod"
-            )
-            self.assertEqual(
-                stored.get("office_folder_firebird_test"), "BackupKP/Menadzer_Serwisu/test"
-            )
-            self.assertEqual(stored.get("office_folder_optima"), "BackupKP/Optima")
-            self.assertEqual(stored.get("optima_server_instance"), "SERWER1\\\\OPTIMA")
-            self.assertEqual(stored.get("optima_host"), "192.168.0.8")
-            self.assertEqual(stored.get("optima_port"), "1433")
-            self.assertEqual(stored.get("optima_auth_mode"), "mixed")
-            self.assertEqual(stored.get("optima_login"), "automate_backup")
-            self.assertEqual(stored.get("optima_password"), "secret123")
-            self.assertEqual(stored.get("optima_db_it_partner"), "CDN_IT_Partner")
-            self.assertEqual(stored.get("optima_db_ksero_partner"), "CDN_Ksero_Partner1")
-            self.assertEqual(stored.get("optima_db_config"), "CDN_KNF_Ksero_Partner")
+            self.assertIsNone(stored.get("office_tenant_id"))
+            self.assertIsNone(stored.get("office_client_secret"))
+            self.assertIsNone(stored.get("office_site_id"))
+            self.assertIsNone(stored.get("optima_server_instance"))
+            self.assertIsNone(stored.get("optima_password"))
 
             result = await session.execute(
                 select(AdminAuditLog).where(AdminAuditLog.action == "backup_config_update")
@@ -1397,22 +1416,6 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_backup_office365_test_resolves_drive(self):
         token, _ = await self._login()
-        async with self.session_factory() as session:
-            await settings_store.set_namespace(
-                session,
-                "backup",
-                {
-                    "office_tenant_id": StoredValue("tenant-id", False),
-                    "office_client_id": StoredValue("client-id", False),
-                    "office_client_secret": StoredValue("secret", True),
-                    "office_site_id": StoredValue("kseropartner.sharepoint.com,site,web", False),
-                    "office_folder_path": StoredValue("CTIP-Backup/Prod", False),
-                    "office_folder_ctip": StoredValue("BackupKP/CTIP", False),
-                },
-                user_id=1,
-            )
-            await session.commit()
-
         fake_result = Office365ConnectionResult(
             ok=True,
             message="Połączenie z Office 365 (SharePoint) działa poprawnie.",
@@ -1420,9 +1423,18 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             drive_id="b!drive",
             folder_path="CTIP-Backup/Prod",
         )
-        with patch(
-            "app.api.routes.admin_backup.test_office365_connection",
-            new=AsyncMock(return_value=fake_result),
+        with (
+            patch.object(settings, "office365_tenant_id", "tenant-id"),
+            patch.object(settings, "office365_client_id", "client-id"),
+            patch.object(settings, "office365_client_secret", "secret"),
+            patch.object(settings, "office365_site_id", "kseropartner.sharepoint.com,site,web"),
+            patch.object(settings, "office365_drive_id", None),
+            patch.object(settings, "office365_folder_path", "CTIP-Backup/Prod"),
+            patch.object(settings, "office365_folder_ctip", "BackupKP/CTIP"),
+            patch(
+                "app.api.routes.admin_backup.test_office365_connection",
+                new=AsyncMock(return_value=fake_result),
+            ),
         ):
             response = await self.client.post(
                 "/admin/backup/office365/test",
@@ -1436,7 +1448,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.session_factory() as session:
             stored = await settings_store.get_namespace(session, "backup")
-            self.assertEqual(stored.get("office_drive_id"), "b!drive")
+            self.assertIsNone(stored.get("office_drive_id"))
 
     async def test_backup_run_dry_creates_audit_entry(self):
         token, _ = await self._login()
@@ -5106,6 +5118,44 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(device.snapshot.get("ms_binding_status"), "ok")
             self.assertEqual(device.snapshot.get("ms_id_maszyna"), 12922)
             self.assertEqual(device.snapshot.get("ms_id_klient"), 2897)
+            delivery_case = (
+                (
+                    await session.execute(
+                        select(DeliveryCase).where(
+                            DeliveryCase.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(delivery_case.source, "grenke")
+            self.assertEqual(delivery_case.form_request_id, form.id)
+            delivery_devices = (
+                (
+                    await session.execute(
+                        select(DeliveryCaseDevice).where(
+                            DeliveryCaseDevice.delivery_case_id == delivery_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(delivery_devices), 1)
+            self.assertEqual(delivery_devices[0].firebird_machine_id, 12922)
+            contract_end = (
+                (
+                    await session.execute(
+                        select(GrenkeContractEnd).where(
+                            GrenkeContractEnd.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(contract_end.status, "pending_confirmation")
 
     async def test_contracts_form_workflow_devices_releases_removed_rows_from_sheet(self):
         token, _ = await self._login_operator()
@@ -5615,6 +5665,43 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .one()
             )
             self.assertEqual(device.snapshot.get("ms_binding_status"), "error")
+            delivery_case = (
+                (
+                    await session.execute(
+                        select(DeliveryCase).where(
+                            DeliveryCase.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(delivery_case.source, "grenke")
+            self.assertEqual(delivery_case.customer_name, "FLOW TEST")
+            delivery_device = (
+                (
+                    await session.execute(
+                        select(DeliveryCaseDevice).where(
+                            DeliveryCaseDevice.delivery_case_id == delivery_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(delivery_device.serial, "RICOH-33")
+            contract_end = (
+                (
+                    await session.execute(
+                        select(GrenkeContractEnd).where(
+                            GrenkeContractEnd.workflow_case_id == workflow_case.id
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(contract_end.status, "pending_confirmation")
 
     async def test_contracts_form_workflow_delivery_save_and_delete(self):
         token, _ = await self._login_operator()
@@ -6795,6 +6882,119 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    async def test_delivery_section_is_available_for_service_user(self):
+        async with self.session_factory() as session:
+            now = datetime.now(UTC)
+            session.add(
+                AdminUser(
+                    email="serwisant@example.com",
+                    first_name="Stefan",
+                    last_name="Serwis",
+                    role="serwisant",
+                    password_hash=hash_password("Serwis123!"),
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await session.commit()
+
+        token, login_data = await self._login_portal_as("serwisant@example.com", "Serwis123!")
+        self.assertEqual(login_data["sections"], ["delivery"])
+
+        response = await self.client.get(
+            "/admin/delivery/cases",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"], [])
+
+    async def test_operator_without_delivery_section_cannot_open_delivery_api(self):
+        token, _ = await self._login_operator()
+        response = await self.client.get(
+            "/admin/delivery/cases",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    async def test_admin_can_create_manual_delivery_case(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/delivery/cases",
+            headers={"X-Admin-Session": token},
+            json={
+                "company_name": "Klient Dostawy",
+                "company_nip": "900-000-12-34",
+                "company_email": "dostawa@example.com",
+                "company_phone": "+48600111222",
+                "delivery_date": (date.today() + timedelta(days=3)).isoformat(),
+                "delivery_time_window": "08:00-10:00",
+                "devices": [
+                    {
+                        "producer": "Ricoh",
+                        "model": "IM C3000",
+                        "serial": "TEST-SN-1",
+                        "ewidencja": "KP/100",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        item = body["item"]
+        self.assertEqual(item["source"], "manual")
+        self.assertEqual(item["status"], "planned")
+        self.assertEqual(item["customer_name"], "Klient Dostawy")
+        self.assertEqual(item["customer_nip"], "9000001234")
+        self.assertEqual(len(item["devices"]), 1)
+        self.assertEqual(item["devices"][0]["serial"], "TEST-SN-1")
+
+        async with self.session_factory() as session:
+            case = (await session.execute(select(DeliveryCase))).scalars().one()
+            self.assertEqual(case.title, "Dostawa: Klient Dostawy")
+            device = (await session.execute(select(DeliveryCaseDevice))).scalars().one()
+            self.assertEqual(device.delivery_case_id, case.id)
+
+    async def test_admin_can_confirm_grenke_contract_end(self):
+        token, _ = await self._login()
+        async with self.session_factory() as session:
+            now = datetime.now(UTC)
+            case = DeliveryCase(
+                source="grenke",
+                status="new",
+                title="GRENKE test",
+                customer_name="Klient GRENKE",
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(case)
+            await session.flush()
+            contract_end = GrenkeContractEnd(
+                delivery_case_id=case.id,
+                status="pending_confirmation",
+                customer_name="Klient GRENKE",
+                prefilled_end_date=date.today() + timedelta(days=90),
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(contract_end)
+            await session.commit()
+            contract_end_id = contract_end.id
+
+        confirmed = date.today() + timedelta(days=120)
+        response = await self.client.post(
+            f"/admin/delivery/grenke-contracts/{contract_end_id}/confirm",
+            headers={"X-Admin-Session": token},
+            json={"confirmed_end_date": confirmed.isoformat(), "contract_number": "G/1/2026"},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["item"]["status"], "confirmed")
+        self.assertEqual(body["item"]["confirmed_end_date"], confirmed.isoformat())
+        self.assertEqual(body["item"]["contract_number"], "G/1/2026")
+
     async def test_sms_logs_endpoint_returns_tail(self):
         token, _ = await self._login()
         now = datetime.now()
@@ -7314,45 +7514,50 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Automatyczne SMS", card["title"])
             self.assertIn("recent", diagnostics)
 
-    async def test_update_email_config_persists_values(self):
+    async def test_email_config_reads_env_and_blocks_update(self):
         token, _ = await self._login()
-        payload = {
-            "host": "smtp.mail.local",
-            "port": 2525,
-            "username": "mailer",
-            "password": "Sekret!123",
-            "sender_name": "Powiadomienia CTIP",
-            "sender_address": "powiadomienia@example.com",
-            "use_tls": True,
-            "use_ssl": False,
-        }
-        response = await self.client.put(
-            "/admin/config/email",
-            json=payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["host"], payload["host"])
-        self.assertEqual(body["port"], payload["port"])
-        self.assertEqual(body["username"], payload["username"])
-        self.assertEqual(body["sender_address"], payload["sender_address"])
-        self.assertTrue(body["password_set"])
-        self.assertEqual(body["username"], payload["username"])
-        self.assertEqual(body["sender_name"], payload["sender_name"])
-        self.assertEqual(body["sender_address"], payload["sender_address"])
-        self.assertTrue(body["use_tls"])
-        self.assertFalse(body["use_ssl"])
-        self.assertTrue(body["password_set"])
+        with (
+            patch.object(settings, "email_host", "smtp.mail.local"),
+            patch.object(settings, "email_port", 2525),
+            patch.object(settings, "email_username", "mailer"),
+            patch.object(settings, "email_password", "Sekret!123"),
+            patch.object(settings, "email_sender_name", "Powiadomienia CTIP"),
+            patch.object(settings, "email_sender_address", "powiadomienia@example.com"),
+            patch.object(settings, "email_use_tls", True),
+            patch.object(settings, "email_use_ssl", False),
+        ):
+            response = await self.client.get(
+                "/admin/config/email",
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["host"], "smtp.mail.local")
+            self.assertEqual(body["port"], 2525)
+            self.assertEqual(body["username"], "mailer")
+            self.assertEqual(body["sender_name"], "Powiadomienia CTIP")
+            self.assertEqual(body["sender_address"], "powiadomienia@example.com")
+            self.assertTrue(body["use_tls"])
+            self.assertFalse(body["use_ssl"])
+            self.assertTrue(body["password_set"])
+            self.assertEqual(body["source"], "env")
+            self.assertFalse(body["editable"])
 
-        response = await self.client.get(
-            "/admin/config/email",
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["host"], payload["host"])
-        self.assertEqual(body["port"], payload["port"])
+            response = await self.client.put(
+                "/admin/config/email",
+                json={
+                    "host": "smtp.other.local",
+                    "port": 465,
+                    "username": "other",
+                    "password": "inne",
+                    "sender_name": "Other",
+                    "sender_address": "other@example.com",
+                    "use_tls": False,
+                    "use_ssl": True,
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 423)
 
     async def test_update_form_handling_config_persists_values(self):
         token, _ = await self._login()
@@ -7623,45 +7828,39 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_email_test_endpoint_uses_current_configuration(self, mock_test):
         mock_test.return_value = EmailTestResult(True, "Połączenie OK")
         token, _ = await self._login()
-        # zapisz konfigurację, żeby ustawić hasło
-        await self.client.put(
-            "/admin/config/email",
-            json={
-                "host": "smtp.mail.local",
-                "port": 2525,
-                "username": "mailer",
-                "password": "Sekret!",
-                "sender_address": "powiadomienia@example.com",
-                "use_tls": True,
-                "use_ssl": False,
-            },
-            headers={"X-Admin-Session": token},
-        )
-
-        response = await self.client.post(
-            "/admin/email/test",
-            json={
-                "host": "smtp.test.local",
-                "port": 2500,
-                "use_tls": False,
-                "use_ssl": True,
-                "username": "tester",
-                "password": "NoweHaslo!",
-                "sender_address": "alerts@example.com",
-            },
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["success"])
-        mock_test.assert_called_once()
-        args, kwargs = mock_test.call_args
-        self.assertEqual(kwargs["host"], "smtp.test.local")
-        self.assertEqual(kwargs["port"], 2500)
-        self.assertEqual(kwargs["username"], "tester")
-        self.assertEqual(kwargs["password"], "NoweHaslo!")
-        self.assertFalse(kwargs["use_tls"])
-        self.assertTrue(kwargs["use_ssl"])
+        with (
+            patch.object(settings, "email_host", "smtp.mail.local"),
+            patch.object(settings, "email_port", 2525),
+            patch.object(settings, "email_username", "mailer"),
+            patch.object(settings, "email_password", "Sekret!"),
+            patch.object(settings, "email_sender_address", "powiadomienia@example.com"),
+            patch.object(settings, "email_use_tls", True),
+            patch.object(settings, "email_use_ssl", False),
+        ):
+            response = await self.client.post(
+                "/admin/email/test",
+                json={
+                    "host": "smtp.test.local",
+                    "port": 2500,
+                    "use_tls": False,
+                    "use_ssl": True,
+                    "username": "tester",
+                    "password": "NoweHaslo!",
+                    "sender_address": "alerts@example.com",
+                },
+                headers={"X-Admin-Session": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["success"])
+            mock_test.assert_called_once()
+            _args, kwargs = mock_test.call_args
+            self.assertEqual(kwargs["host"], "smtp.test.local")
+            self.assertEqual(kwargs["port"], 2500)
+            self.assertEqual(kwargs["username"], "tester")
+            self.assertEqual(kwargs["password"], "NoweHaslo!")
+            self.assertFalse(kwargs["use_tls"])
+            self.assertTrue(kwargs["use_ssl"])
 
     async def test_ctip_events_endpoint_returns_recent_entries(self):
         token, _ = await self._login()

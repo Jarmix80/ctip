@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from sysconfig import get_paths
 
+from dotenv import dotenv_values
+
 
 def _ensure_pywin32_paths():
     exe = Path(sys.executable).resolve()
@@ -41,6 +43,18 @@ win32serviceutil = importlib.import_module("win32serviceutil")
 
 DEFAULT_ROOT = Path(r"D:\CTIP")
 DEFAULT_CONFIG_NAME = "collector_service_config.json"
+
+
+def _load_env_overrides(env_file: str | os.PathLike[str] | None) -> dict[str, str]:
+    """Ładuje wartości z pliku `.env` i zwraca tylko kompletne wpisy."""
+
+    if not env_file:
+        return {}
+    path = Path(env_file)
+    if not path.exists():
+        return {}
+    values = dotenv_values(path)
+    return {key: str(value) for key, value in values.items() if key and value is not None}
 
 
 def _load_config():
@@ -76,6 +90,7 @@ class CollectorService(win32serviceutil.ServiceFramework):
             self.work_dir, ".venv", "Scripts", "python.exe"
         )
         self.script = cfg.get("script") or os.path.join(self.work_dir, "collector_full.py")
+        self.env_file = cfg.get("env_file") or os.path.join(self.work_dir, ".env")
 
         default_log_dir = cfg.get("log_dir") or os.path.join(self.work_dir, "logs", "collector")
         stdout_default = os.path.join(default_log_dir, "collector_stdout.log")
@@ -91,6 +106,7 @@ class CollectorService(win32serviceutil.ServiceFramework):
         err_f = open(self.stderr_log, "ab", buffering=0)
         err_f.write(b"\n=== starting collector_full.py ===\n")
         child_env = os.environ.copy()
+        child_env.update(_load_env_overrides(self.env_file))
         child_env.setdefault("PYTHONIOENCODING", "utf-8")
         self.proc = subprocess.Popen(
             [self.python, self.script],

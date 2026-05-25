@@ -9,6 +9,10 @@
     <div>
       <h2>Konfiguracja PostgreSQL</h2>
       <p>Parametry połączenia wykorzystywane przez kolektor CTIP oraz API.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="testStatus"></span>
@@ -20,28 +24,28 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="db-host">Host</label>
-        <input id="db-host" type="text" x-model="host" required>
+        <input id="db-host" type="text" x-model="host" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="db-port">Port</label>
-        <input id="db-port" type="number" min="1" max="65535" x-model="port" required>
+        <input id="db-port" type="number" min="1" max="65535" x-model="port" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="db-name">Baza</label>
-        <input id="db-name" type="text" x-model="database" required>
+        <input id="db-name" type="text" x-model="database" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="db-user">Użytkownik</label>
-        <input id="db-user" type="text" x-model="user" required>
+        <input id="db-user" type="text" x-model="user" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="db-password">Hasło</label>
-        <input id="db-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="db-password" type="password" x-model="password" placeholder="Hasło jest zarządzane w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="db-ssl">SSL mode</label>
-        <select id="db-ssl" x-model="sslmode">
+        <select id="db-ssl" x-model="sslmode" :disabled="!editable" :class="{ 'input-disabled': !editable }">
           <option value="disable">disable</option>
           <option value="require">require</option>
           <option value="verify-ca">verify-ca</option>
@@ -51,8 +55,8 @@
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
       <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
         <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
@@ -83,7 +87,10 @@
     <div>
       <h2>Konfiguracja Firebird (Menadżer Serwisu)</h2>
       <p>Parametry połączenia do bazy Menadżera Serwisu oraz lokalnej kopii roboczej.</p>
-      <p class="input-help">Sekcja zapisuje namespace <code>firebird</code> i testuje polaczenie przez <code>/admin/firebird/test</code>.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="testStatus"></span>
@@ -95,7 +102,7 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="fb-mode">Aktywna baza</label>
-        <select id="fb-mode" x-model="mode" required>
+        <select id="fb-mode" x-model="mode" required :disabled="!editable" :class="{ 'input-disabled': !editable }">
           <option value="network">Baza sieciowa</option>
           <option value="local">Baza lokalna</option>
         </select>
@@ -108,14 +115,14 @@
           type="text"
           x-model="host"
           :required="mode === 'network'"
-          :disabled="mode === 'local'"
-          :class="{ 'input-disabled': mode === 'local' }"
+          :disabled="mode === 'local' || !editable"
+          :class="{ 'input-disabled': mode === 'local' || !editable }"
           placeholder="np. 127.0.0.1"
         >
       </div>
       <div class="form-field">
         <label for="fb-port">Port</label>
-        <input id="fb-port" type="number" min="1" max="65535" x-model="port" required>
+        <input id="fb-port" type="number" min="1" max="65535" x-model="port" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-database">Ścieżka bazy sieciowej</label>
@@ -124,44 +131,44 @@
           type="text"
           x-model="database"
           required
-          :disabled="mode === 'local'"
-          :class="{ 'input-disabled': mode === 'local' }"
+          :disabled="mode === 'local' || !editable"
+          :class="{ 'input-disabled': mode === 'local' || !editable }"
           placeholder="np. C:/MS/BAZA/MS.FDB"
         >
       </div>
       <div class="form-field">
         <label for="fb-user">Użytkownik</label>
-        <input id="fb-user" type="text" x-model="user" required>
+        <input id="fb-user" type="text" x-model="user" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-password">Hasło</label>
-        <input id="fb-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="fb-password" type="password" x-model="password" placeholder="Hasło jest zarządzane w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="fb-charset">Kodowanie</label>
-        <input id="fb-charset" type="text" x-model="charset" required placeholder="WIN1250">
+        <input id="fb-charset" type="text" x-model="charset" required placeholder="WIN1250" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-role">Rola (opcjonalnie)</label>
-        <input id="fb-role" type="text" x-model="role" placeholder="np. RDB$ADMIN">
+        <input id="fb-role" type="text" x-model="role" placeholder="np. RDB$ADMIN" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fb-local-copy">Ścieżka bazy lokalnej</label>
-        <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb">
+        <input id="fb-local-copy" type="text" x-model="localCopyPath" required placeholder="np. /home/user/inbox/firebird/ms_local.fdb" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field form-field-wide">
         <label class="users-section-option users-flag-option" for="fb-allow-writes">
-          <input id="fb-allow-writes" type="checkbox" x-model="allowWrites">
-          Odblokuj zapis do Firebird
+          <input id="fb-allow-writes" type="checkbox" x-model="allowWrites" :disabled="!editable">
+          Zezwalaj na zapis do Firebird (`FB_ALLOW_WRITES`)
         </label>
-        <p class="input-help">Opcja steruje automatycznym dopisywaniem klienta do Menadżera Serwisu po wysłaniu formularza i zastępuje ręczne ustawianie blokady w środowisku aktywnej usługi.</p>
+        <p class="input-help">Flaga jest odczytywana wyłącznie z `.env` aktywnej usługi i steruje automatycznym dopisywaniem klienta do Menadżera Serwisu po wysłaniu formularza.</p>
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
       <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
         <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
@@ -192,8 +199,8 @@
       <h2>Konfiguracja Google Sheets (FLOW)</h2>
       <p>Arkusz używany do wpisywania rezerwacji GRENKE i numerów proform w module FLOW.</p>
       <p class="input-help">
-        Aktywne źródło konfiguracji: <strong x-text="sourceLabel">env</strong>.
-        Wartość <code>admin</code> nadpisuje fallback środowiskowy.
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
       </p>
     </div>
     <div class="config-meta">
@@ -206,30 +213,30 @@
     <div class="form-grid">
       <div class="form-field form-field-wide">
         <label class="users-section-option users-flag-option" for="gs-enabled">
-          <input id="gs-enabled" type="checkbox" x-model="enabled">
+          <input id="gs-enabled" type="checkbox" x-model="enabled" :disabled="!editable">
           Włącz synchronizację Google Sheets dla FLOW
         </label>
         <p class="input-help">Wyłączenie blokuje synchronizację arkusza niezależnie od wartości z pliku <code>.env</code>.</p>
       </div>
       <div class="form-field form-field-wide">
         <label for="gs-credentials-path">Ścieżka do credentials JSON</label>
-        <input id="gs-credentials-path" type="text" x-model="credentialsPath" placeholder="/home/user/secrets/google-sheets.json">
+        <input id="gs-credentials-path" type="text" x-model="credentialsPath" placeholder="/home/user/secrets/google-sheets.json" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field form-field-wide">
         <label for="gs-spreadsheet-id">Spreadsheet ID</label>
-        <input id="gs-spreadsheet-id" type="text" x-model="spreadsheetId" placeholder="ID z URL arkusza Google">
+        <input id="gs-spreadsheet-id" type="text" x-model="spreadsheetId" placeholder="ID z URL arkusza Google" :readonly="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help">Możesz wkleić samo ID albo pełny URL Google Sheets. System zapisze wyłącznie ID skoroszytu.</p>
       </div>
       <div class="form-field">
         <label for="gs-workflow-worksheet">Zakładka urządzeń workflow</label>
-        <input id="gs-workflow-worksheet" type="text" x-model="workflowDevicesWorksheet" required placeholder="Urzadzenia_magazyn">
+        <input id="gs-workflow-worksheet" type="text" x-model="workflowDevicesWorksheet" required placeholder="Urzadzenia_magazyn" :readonly="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help">Wymagane nagłówki FLOW: <code>PRODUCENT</code>, <code>MODEL</code>, <code>INDEKS</code>, <code>SERIAL</code>, <code>STATUS</code>, <code>MS_ID_MAGAZYN_TABLE</code>, <code>MS_ID_MASZYNA</code>, <code>REZERWACJA GRENKE</code>, <code>FAKTURA PROFORMA GRENKE</code>.</p>
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
       <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
         <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
@@ -287,7 +294,10 @@
     <div>
       <h2>Konfiguracja bazy FB v-maintenance</h2>
       <p>Źródło urządzeń serwisowanych do oznaczeń /V/.</p>
-      <p class="input-help">Sekcja zapisuje namespace <code>firebird_vmaintenance</code> i testuje polaczenie przez <code>/admin/firebird/test-vmaintenance</code>.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="testStatus"></span>
@@ -299,38 +309,38 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="fbv-host">Host</label>
-        <input id="fbv-host" type="text" x-model="host" required>
+        <input id="fbv-host" type="text" x-model="host" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fbv-port">Port</label>
-        <input id="fbv-port" type="number" min="1" max="65535" x-model="port" required>
+        <input id="fbv-port" type="number" min="1" max="65535" x-model="port" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fbv-database">Ścieżka bazy</label>
-        <input id="fbv-database" type="text" x-model="database" required placeholder="np. D:/bazavmantenance/BAZA_CPC.FDB">
+        <input id="fbv-database" type="text" x-model="database" required placeholder="np. D:/bazavmantenance/BAZA_CPC.FDB" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fbv-user">Użytkownik</label>
-        <input id="fbv-user" type="text" x-model="user" required>
+        <input id="fbv-user" type="text" x-model="user" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fbv-password">Hasło</label>
-        <input id="fbv-password" type="password" x-model="password" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="fbv-password" type="password" x-model="password" placeholder="Hasło jest zarządzane w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="password ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="fbv-charset">Kodowanie</label>
-        <input id="fbv-charset" type="text" x-model="charset" required placeholder="WIN1250">
+        <input id="fbv-charset" type="text" x-model="charset" required placeholder="WIN1250" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="fbv-role">Rola (opcjonalnie)</label>
-        <input id="fbv-role" type="text" x-model="role" placeholder="np. RDB$ADMIN">
+        <input id="fbv-role" type="text" x-model="role" placeholder="np. RDB$ADMIN" :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
       <button type="button" class="btn-secondary" :disabled="testing" @click.prevent="testConnection">
         <span x-text="testing ? 'Testowanie…' : 'Testuj połączenie'">Testuj połączenie</span>
@@ -356,6 +366,10 @@
     <div>
       <h2>Źródło CSV dla /R/</h2>
       <p>Wskaż katalog i wzorzec plików CSV (np. produkcja: `D:\\Remote_csv`).</p>
+      <p class="input-help">
+        Katalog i wzorzec pochodzą z <strong x-text="csvSourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="testStatus"></span>
@@ -367,15 +381,16 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="kp-csv-directory">Katalog CSV</label>
-        <input id="kp-csv-directory" type="text" x-model="csvDirectory" required placeholder="np. D:\\Remote_csv">
+        <input id="kp-csv-directory" type="text" x-model="csvDirectory" required placeholder="np. D:\\Remote_csv" :readonly="!csvEditable" :class="{ 'input-disabled': !csvEditable }">
       </div>
       <div class="form-field">
         <label for="kp-csv-pattern">Wzorzec pliku</label>
-        <input id="kp-csv-pattern" type="text" x-model="csvPattern" required placeholder="DPLAC*.csv">
+        <input id="kp-csv-pattern" type="text" x-model="csvPattern" required placeholder="DPLAC*.csv" :readonly="!csvEditable" :class="{ 'input-disabled': !csvEditable }">
       </div>
       <div class="form-field">
         <label for="kp-email-lookback">Email lookback (miesiące)</label>
         <input id="kp-email-lookback" type="number" min="0" max="36" x-model="emailLookbackMonths" required>
+        <p class="input-help">Źródło parametru: <strong x-text="emailLookbackSourceLabel">.env</strong>.</p>
       </div>
     </div>
 

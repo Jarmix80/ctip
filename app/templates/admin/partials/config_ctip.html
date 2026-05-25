@@ -8,6 +8,10 @@
     <div>
       <h2>Konfiguracja CTIP</h2>
       <p>Adres centrali Slican oraz PIN wymagany do komendy LOGA.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
     <div class="config-meta">
       <span class="config-dot" :class="pinState"></span>
@@ -19,22 +23,22 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="ctip-host">Adres centrali</label>
-        <input id="ctip-host" type="text" x-model="host" required>
+        <input id="ctip-host" type="text" x-model="host" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="ctip-port">Port</label>
-        <input id="ctip-port" type="number" min="1" max="65535" x-model="port" required>
+        <input id="ctip-port" type="number" min="1" max="65535" x-model="port" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="ctip-pin">PIN (LOGA)</label>
-        <input id="ctip-pin" type="password" x-model="pin" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="ctip-pin" type="password" x-model="pin" placeholder="PIN jest zarządzany w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="pin ? 'PIN zostanie zaktualizowany.' : (pinSet ? 'PIN jest ustawiony.' : 'Brak PIN-u w konfiguracji.')"></p>
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
     </div>
 

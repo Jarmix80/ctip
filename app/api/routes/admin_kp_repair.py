@@ -13,7 +13,6 @@ from app.api.routes.admin_config import (
     load_firebird_config,
     load_firebird_vmaintenance_config,
     load_kp_repair_source_config,
-    settings_store,
 )
 from app.core.config import settings
 from app.schemas.admin import (
@@ -110,11 +109,8 @@ async def _load_configs(
     fb_v = await load_firebird_vmaintenance_config(session)
     source = await load_kp_repair_source_config(session)
 
-    stored_main = await settings_store.get_namespace(session, "firebird")
-    main_password = stored_main.get("password") or settings.fb_password
-
-    stored_v = await settings_store.get_namespace(session, "firebird_vmaintenance")
-    v_password = stored_v.get("password") or settings.fb_v_password
+    main_password = settings.fb_password
+    v_password = settings.fb_v_password
 
     main_cfg = _main_firebird_connection(
         mode=fb_main.mode,

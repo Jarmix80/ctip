@@ -10,7 +10,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.api.routes.admin_config import load_sms_config, settings_store
+from app.api.routes.admin_config import load_sms_config
+from app.core.config import settings
 from app.models import SmsOut
 from app.schemas.sms import SMS_E164_PATTERN, normalize_sms_destination
 from app.services.sms_provider import HttpSmsProvider, SmsTransportError
@@ -96,11 +97,9 @@ async def send_test_sms(
     _, admin_user = context
     _ensure_admin(admin_user.role)
     config = await load_sms_config(session)
-    stored = await settings_store.get_namespace(session, "sms")
-
-    token = stored.get("api_token") or None
-    username = stored.get("api_username") or None
-    password = stored.get("api_password") or None
+    token = settings.sms_api_token or None
+    username = settings.sms_api_username or None
+    password = settings.sms_api_password or None
 
     if not token and not (username and password):
         raise HTTPException(
@@ -191,7 +190,7 @@ def collect_sms_log_entries(
     now: datetime | None = None,
 ) -> tuple[list[SmsLogEntry], str | None, datetime]:
     """Zwraca listę wpisów logu sms_sender wraz ze ścieżką pliku."""
-    now = now or datetime.now(UTC)
+    now = now or datetime.now()
     lines = read_log_tail("sms", "sms_sender", limit=limit, now=now)
     path = daily_log_path("sms", "sms_sender", now).as_posix()
     entries = [parse_sms_log_line(line) for line in lines]

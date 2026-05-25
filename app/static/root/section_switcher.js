@@ -13,6 +13,7 @@ function sectionLabel(section) {
     admin: "Panel administracyjny",
     operator: "Panel operatora",
     generator: "Generator formularzy",
+    delivery: "Obsługa dostaw",
   };
   return labels[section] || section;
 }
@@ -22,6 +23,7 @@ function sectionPath(section) {
     admin: "/admin",
     operator: "/operator",
     generator: "/genform",
+    delivery: "/delivery",
   };
   return paths[section] || "/choice";
 }

@@ -149,14 +149,17 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $config = [ordered]@{
     work_dir  = $InstallDir
     python    = $pythonExe
-    script    = Join-Path $InstallDir "collector_full.py"
+    script    = Join-Path $InstallDir "scripts\\windows\\run_collector_env_bootstrap.py"
+    env_file  = Join-Path $InstallDir ".env"
     log_dir   = $logDir
     stdout_log = Join-Path $logDir "collector_stdout.log"
     stderr_log = Join-Path $logDir "collector_stderr.log"
 }
 
 $configPath = Join-Path $InstallDir "collector_service_config.json"
-$config | ConvertTo-Json -Depth 2 | Set-Content -Encoding UTF8 -Path $configPath
+$configJson = $config | ConvertTo-Json -Depth 2
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($configPath, $configJson, $utf8NoBom)
 Write-Host "Zapisano konfiguracje uslugi: $configPath"
 
 $envFile = Join-Path $InstallDir ".env"
