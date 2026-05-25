@@ -87,6 +87,8 @@ function Invoke-Native {
         [string]$Executable,
         [string[]]$Args,
         [string]$Label,
+        [string]$StdoutPath,
+        [string]$StderrPath,
         [switch]$IgnoreErrors
     )
 
@@ -100,12 +102,66 @@ function Invoke-Native {
     }
 
     Write-Log "$Label"
-    & $Executable @normalizedArgs
-    $exitCode = $LASTEXITCODE
+
+    if ($StdoutPath) {
+        $stdoutDir = Split-Path -Parent $StdoutPath
+        if ($stdoutDir) {
+            New-Item -ItemType Directory -Path $stdoutDir -Force | Out-Null
+        }
+        if (Test-Path $StdoutPath) {
+            Remove-Item $StdoutPath -Force
+        }
+    }
+
+    if ($StderrPath) {
+        $stderrDir = Split-Path -Parent $StderrPath
+        if ($stderrDir) {
+            New-Item -ItemType Directory -Path $stderrDir -Force | Out-Null
+        }
+        if (Test-Path $StderrPath) {
+            Remove-Item $StderrPath -Force
+        }
+    }
+
+    $startProcessArgs = @{
+        FilePath    = $Executable
+        ArgumentList = $normalizedArgs
+        NoNewWindow = $true
+        Wait        = $true
+        PassThru    = $true
+    }
+    if ($StdoutPath) {
+        $startProcessArgs.RedirectStandardOutput = $StdoutPath
+    }
+    if ($StderrPath) {
+        $startProcessArgs.RedirectStandardError = $StderrPath
+    }
+    $process = Start-Process @startProcessArgs
+
+    $exitCode = $process.ExitCode
     if ($exitCode -ne 0 -and -not $IgnoreErrors) {
+        if ($StderrPath -and (Test-Path $StderrPath) -and (Get-Item $StderrPath).Length -gt 0) {
+            Write-Host (Get-Content $StderrPath -Raw)
+        }
         Fail "$Label zakonczone bledem (exit=$exitCode)."
     }
     return $exitCode
+}
+
+function Assert-OutputFile {
+    param(
+        [string]$Path,
+        [string]$Label
+    )
+
+    if (-not (Test-Path $Path)) {
+        Fail "$Label nie utworzyl pliku: $Path"
+    }
+
+    $item = Get-Item $Path
+    if ($item.Length -le 0) {
+        Fail "$Label utworzyl pusty plik: $Path"
+    }
 }
 
 function Require-Env {
@@ -136,9 +192,13 @@ function Resolve-FirebirdDsn {
 
     $isWindowsPath = $Database -match '^[A-Za-z]:[\\/]'
     if ($isWindowsPath) {
-        if ([string]::IsNullOrWhiteSpace($FbHost)) {
-            return $Database
-        }
+        $normalizedDatabase = $Database -replace '/', '\'
+        $resolvedHost = if ([string]::IsNullOrWhiteSpace($FbHost)) { "127.0.0.1" } else { $FbHost }
+        $resolvedPort = if ([string]::IsNullOrWhiteSpace($FbPort)) { "3050" } else { $FbPort }
+        return "$resolvedHost/$resolvedPort`:$normalizedDatabase"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($FbHost)) {
         if ([string]::IsNullOrWhiteSpace($FbPort)) {
             return "$FbHost`:$Database"
         }
@@ -216,6 +276,8 @@ $safeFbDb = Sanitize-Name (Split-Path -Leaf $env:FB_DATABASE)
 $pgDumpFile = Join-Path $backupDir "postgres_${safePgDb}_${safePgHost}_$stamp.dump"
 $pgGlobalsFile = Join-Path $backupDir "postgres_globals_${safePgHost}_$stamp.sql"
 $fbBackupFile = Join-Path $backupDir "firebird_${safeFbDb}_$stamp.fbk"
+$toolLogDir = Join-Path $backupDir "_logs"
+New-Item -ItemType Directory -Path $toolLogDir -Force | Out-Null
 
 $fbDsn = Resolve-FirebirdDsn -Database $env:FB_DATABASE -FbHost $env:FB_HOST -FbPort $env:FB_PORT
 
@@ -226,31 +288,39 @@ Write-Log "gbak.exe       : $gbakExe"
 Write-Log "FB DSN         : $fbDsn"
 
 $pgDumpArgs = @(
-    "-h", $env:PGHOST,
-    "-p", $env:PGPORT,
-    "-U", $env:PGUSER,
-    "-d", $env:PGDATABASE,
-    "-F", "c",
+    "--host=$($env:PGHOST)",
+    "--port=$($env:PGPORT)",
+    "--username=$($env:PGUSER)",
+    "--dbname=$($env:PGDATABASE)",
+    "--format=custom",
     "--no-owner",
     "--no-privileges",
-    "-f", $pgDumpFile
+    "--file=$pgDumpFile"
 )
-Invoke-Native -Executable $pgDumpExe -Args $pgDumpArgs -Label "Backup PostgreSQL (pg_dump)"
+Invoke-Native `
+    -Executable $pgDumpExe `
+    -Args $pgDumpArgs `
+    -Label "Backup PostgreSQL (pg_dump)" `
+    -StdoutPath (Join-Path $toolLogDir "pg_dump_stdout.log") `
+    -StderrPath (Join-Path $toolLogDir "pg_dump_stderr.log")
+Assert-OutputFile -Path $pgDumpFile -Label "Backup PostgreSQL (pg_dump)"
 
 if (-not $SkipPgGlobals) {
     $pgDumpAllArgs = @(
-        "-h", $env:PGHOST,
-        "-p", $env:PGPORT,
-        "-U", $env:PGUSER,
+        "--host=$($env:PGHOST)",
+        "--port=$($env:PGPORT)",
+        "--username=$($env:PGUSER)",
         "--globals-only",
         "--no-role-passwords",
-        "-f", $pgGlobalsFile
+        "--file=$pgGlobalsFile"
     )
 
     $globalsExit = Invoke-Native `
         -Executable $pgDumpAllExe `
         -Args $pgDumpAllArgs `
         -Label "Backup globalnych obiektow PostgreSQL (pg_dumpall --globals-only --no-role-passwords)" `
+        -StdoutPath (Join-Path $toolLogDir "pg_dumpall_stdout.log") `
+        -StderrPath (Join-Path $toolLogDir "pg_dumpall_stderr.log") `
         -IgnoreErrors
 
     if ($globalsExit -ne 0) {
@@ -258,18 +328,25 @@ if (-not $SkipPgGlobals) {
             Fail "Backup globalnych obiektow PostgreSQL zakonczony bledem."
         }
         Write-Warning "Backup globalnych obiektow PostgreSQL nieudany. Kontynuuje, bo nie ustawiono -FailOnPgGlobalsError."
+    } else {
+        Assert-OutputFile -Path $pgGlobalsFile -Label "Backup globalnych obiektow PostgreSQL"
     }
 }
 
 $gbakArgs = @(
     "-b",
-    "-v",
     "-user", $env:FB_USER,
     "-password", $env:FB_PASSWORD,
     $fbDsn,
     $fbBackupFile
 )
-Invoke-Native -Executable $gbakExe -Args $gbakArgs -Label "Backup Firebird (gbak)"
+Invoke-Native `
+    -Executable $gbakExe `
+    -Args $gbakArgs `
+    -Label "Backup Firebird (gbak)" `
+    -StdoutPath (Join-Path $toolLogDir "gbak_stdout.log") `
+    -StderrPath (Join-Path $toolLogDir "gbak_stderr.log")
+Assert-OutputFile -Path $fbBackupFile -Label "Backup Firebird (gbak)"
 
 Write-Host ""
 Write-Host "Backup zakonczony powodzeniem:"
@@ -278,3 +355,4 @@ if (-not $SkipPgGlobals) {
     Write-Host "  PostgreSQL globals: $pgGlobalsFile"
 }
 Write-Host "  Firebird gbak     : $fbBackupFile"
+Write-Host "  Logi narzedzi     : $toolLogDir"

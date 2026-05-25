@@ -8,6 +8,10 @@
     <div>
       <h2>Konfiguracja SerwerSMS</h2>
       <p>Parametry połączeniowe API operatora oraz ustawienia trybu demo.</p>
+      <p class="input-help">
+        Źródło konfiguracji: <strong x-text="sourceLabel">.env</strong>.
+        <span x-text="lockReason"></span>
+      </p>
     </div>
   </header>
 
@@ -15,43 +19,43 @@
     <div class="form-grid">
       <div class="form-field">
         <label for="sms-url">Adres API</label>
-        <input id="sms-url" type="text" x-model="apiUrl" required>
+        <input id="sms-url" type="text" x-model="apiUrl" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="sms-sender">Nadawca domyślny</label>
-        <input id="sms-sender" type="text" x-model="defaultSender" required>
+        <input id="sms-sender" type="text" x-model="defaultSender" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="sms-type">Typ wiadomości</label>
-        <input id="sms-type" type="text" x-model="smsType" placeholder="np. eco+" required>
+        <input id="sms-type" type="text" x-model="smsType" placeholder="np. eco+" required :readonly="!editable" :class="{ 'input-disabled': !editable }">
       </div>
       <div class="form-field">
         <label for="sms-username">Login API</label>
-        <input id="sms-username" type="text" x-model="apiUsername" placeholder="opcjonalnie">
+        <input id="sms-username" type="text" x-model="apiUsername" placeholder="opcjonalnie" :readonly="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="apiUsername ? 'Login zostanie zapisany.' : 'Możesz użyć tokenu zamiast loginu.'"></p>
       </div>
       <div class="form-field">
         <label for="sms-password">Hasło API</label>
-        <input id="sms-password" type="password" x-model="apiPassword" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="sms-password" type="password" x-model="apiPassword" placeholder="Hasło jest zarządzane w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="apiPassword ? 'Hasło zostanie zaktualizowane.' : (passwordSet ? 'Hasło jest ustawione.' : 'Brak hasła w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="sms-token">Token API</label>
-        <input id="sms-token" type="text" x-model="apiToken" placeholder="Pozostaw puste, aby nie zmieniać">
+        <input id="sms-token" type="text" x-model="apiToken" placeholder="Token jest zarządzany w .env" :disabled="!editable" :class="{ 'input-disabled': !editable }">
         <p class="input-help" x-text="apiToken ? 'Token zostanie zaktualizowany.' : (tokenSet ? 'Token jest zapisany.' : 'Brak tokenu w konfiguracji.')"></p>
       </div>
       <div class="form-field">
         <label for="sms-demo">Tryb demo</label>
         <div class="toggle">
-          <input id="sms-demo" type="checkbox" x-model="testMode">
+          <input id="sms-demo" type="checkbox" x-model="testMode" :disabled="!editable">
           <span>Jeśli włączony – wysyłki mają status symulowany.</span>
         </div>
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" :disabled="saving">
-        <span x-text="saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'">Zapisz konfigurację</span>
+      <button type="submit" :disabled="saving || !editable">
+        <span x-text="editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'">Zapisz konfigurację</span>
       </button>
     </div>
 

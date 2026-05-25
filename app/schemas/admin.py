@@ -9,7 +9,16 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-PanelSection = Literal["admin", "operator", "generator"]
+PanelSection = Literal["admin", "operator", "generator", "delivery"]
+PanelRole = Literal["admin", "operator", "serwisant"]
+
+
+class EnvBackedConfigMetadata(BaseModel):
+    """Metadane sekcji, których źródłem prawdy jest plik `.env`."""
+
+    source: Literal["env"] = "env"
+    editable: bool = False
+    lock_reason: str | None = None
 
 
 class AdminLoginRequest(BaseModel):
@@ -41,7 +50,7 @@ class AdminUserInfo(BaseModel):
     sections: list[PanelSection] = Field(default_factory=list)
 
 
-class DatabaseConfigResponse(BaseModel):
+class DatabaseConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji połączenia z PostgreSQL."""
 
     host: str
@@ -63,7 +72,7 @@ class DatabaseConfigUpdate(BaseModel):
     password: str | None = None
 
 
-class FirebirdConfigResponse(BaseModel):
+class FirebirdConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji połączenia z bazą Firebird."""
 
     mode: Literal["network", "local"] = "network"
@@ -115,14 +124,13 @@ class FirebirdTestResponse(BaseModel):
     engine_version: str | None = None
 
 
-class GoogleSheetsConfigResponse(BaseModel):
+class GoogleSheetsConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji Google Sheets dla synchronizacji FLOW."""
 
     enabled: bool
     credentials_path: str
     spreadsheet_id: str
     workflow_devices_worksheet: str
-    source: Literal["admin", "env"]
 
 
 class GoogleSheetsConfigUpdate(BaseModel):
@@ -180,7 +188,7 @@ class GoogleSheetsBootstrapResponse(BaseModel):
     existing_headers: list[str] = Field(default_factory=list)
 
 
-class FirebirdVMaintenanceConfigResponse(BaseModel):
+class FirebirdVMaintenanceConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji połączenia z bazą Firebird v-maintenance."""
 
     host: str
@@ -222,6 +230,12 @@ class KpRepairSourceConfigResponse(BaseModel):
     csv_directory: str
     csv_pattern: str
     email_lookback_months: int
+    csv_directory_source: Literal["env"] = "env"
+    csv_pattern_source: Literal["env"] = "env"
+    csv_editable: bool = False
+    email_lookback_source: Literal["admin", "env"] = "env"
+    email_lookback_editable: bool = True
+    lock_reason: str | None = None
 
 
 class KpRepairSourceConfigUpdate(BaseModel):
@@ -277,7 +291,7 @@ class KpRepairActionResponse(BaseModel):
     rollback_file: str | None = None
 
 
-class CtipConfigResponse(BaseModel):
+class CtipConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji centrali CTIP."""
 
     host: str
@@ -293,7 +307,7 @@ class CtipConfigUpdate(BaseModel):
     pin: str | None = None
 
 
-class SmsConfigResponse(BaseModel):
+class SmsConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji SerwerSMS."""
 
     default_sender: str
@@ -317,7 +331,7 @@ class SmsConfigUpdate(BaseModel):
     test_mode: bool
 
 
-class EmailConfigResponse(BaseModel):
+class EmailConfigResponse(EnvBackedConfigMetadata):
     """Widok konfiguracji serwera SMTP."""
 
     host: str | None
@@ -478,7 +492,7 @@ class AdminUserSummary(BaseModel):
     first_name: str | None
     last_name: str | None
     internal_ext: str | None
-    role: Literal["admin", "operator"]
+    role: PanelRole
     is_salesperson: bool = False
     firebird_app_user_id: int | None = None
     firebird_app_user_login: str | None = None
@@ -525,7 +539,7 @@ class AdminUserCreate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     internal_ext: str | None = None
-    role: Literal["admin", "operator"] = "operator"
+    role: PanelRole = "operator"
     is_salesperson: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
@@ -550,7 +564,7 @@ class AdminUserUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     internal_ext: str | None = None
-    role: Literal["admin", "operator"] = "operator"
+    role: PanelRole = "operator"
     is_salesperson: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None

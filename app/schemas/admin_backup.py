@@ -63,6 +63,10 @@ class BackupConfigResponse(BaseModel):
     optima_db_ksero_partner: str | None = None
     optima_db_config: str | None = None
     execution_enabled: bool = False
+    integration_source: str = "env"
+    integration_editable: bool = False
+    operational_editable: bool = True
+    lock_reason: str | None = None
 
 
 class BackupConfigUpdate(BaseModel):

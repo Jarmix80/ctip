@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from app.services import workflow_sheet_sync
 
@@ -55,11 +55,7 @@ def test_default_release_status_value_keeps_fallback_for_generic_status_column()
 def test_load_workflow_sheet_runtime_config_uses_env_fallback():
     fake_session = object()
     with (
-        patch.object(
-            workflow_sheet_sync._settings_store,
-            "get_namespace",
-            AsyncMock(return_value={}),
-        ),
+        patch.object(workflow_sheet_sync.settings, "google_sheets_enabled", True),
         patch.object(
             workflow_sheet_sync.settings,
             "google_application_credentials",
@@ -85,41 +81,24 @@ def test_load_workflow_sheet_runtime_config_uses_env_fallback():
     assert config.workflow_devices_worksheet == "Urzadzenia_magazyn"
 
 
-def test_load_workflow_sheet_runtime_config_uses_admin_namespace():
+def test_load_workflow_sheet_runtime_config_normalizes_url_and_blank_worksheet_from_env():
     fake_session = object()
-    with patch.object(
-        workflow_sheet_sync._settings_store,
-        "get_namespace",
-        AsyncMock(
-            return_value={
-                "enabled": "false",
-                "credentials_path": "/srv/google/admin.json",
-                "spreadsheet_id": "sheet-admin",
-                "workflow_devices_worksheet": "Urzadzenia_magazyn",
-            }
+    with (
+        patch.object(workflow_sheet_sync.settings, "google_sheets_enabled", True),
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_application_credentials",
+            "/srv/google/env.json",
         ),
-    ):
-        config = asyncio.run(workflow_sheet_sync.load_workflow_sheet_runtime_config(fake_session))
-
-    assert config.source == "admin"
-    assert config.enabled is False
-    assert config.credentials_path == "/srv/google/admin.json"
-    assert config.spreadsheet_id == "sheet-admin"
-    assert config.workflow_devices_worksheet == "Urzadzenia_magazyn"
-
-
-def test_load_workflow_sheet_runtime_config_normalizes_url_and_blank_worksheet():
-    fake_session = object()
-    with patch.object(
-        workflow_sheet_sync._settings_store,
-        "get_namespace",
-        AsyncMock(
-            return_value={
-                "enabled": "true",
-                "credentials_path": "/srv/google/admin.json",
-                "spreadsheet_id": "https://docs.google.com/spreadsheets/d/sheet-admin/edit#gid=0",
-                "workflow_devices_worksheet": "   ",
-            }
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_sheets_spreadsheet_id",
+            "https://docs.google.com/spreadsheets/d/sheet-admin/edit#gid=0",
+        ),
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_sheets_workflow_devices_sheet",
+            "   ",
         ),
     ):
         config = asyncio.run(workflow_sheet_sync.load_workflow_sheet_runtime_config(fake_session))
@@ -128,19 +107,19 @@ def test_load_workflow_sheet_runtime_config_normalizes_url_and_blank_worksheet()
     assert config.workflow_devices_worksheet == "Urzadzenia_magazyn"
 
 
-def test_workflow_sheet_sync_configured_returns_disabled_reason_for_admin_switch():
+def test_workflow_sheet_sync_configured_returns_disabled_reason_for_env_switch():
     config = workflow_sheet_sync.WorkflowSheetRuntimeConfig(
         enabled=False,
         credentials_path="/srv/google/admin.json",
         spreadsheet_id="sheet-admin",
         workflow_devices_worksheet="Urzadzenia_magazyn",
-        source="admin",
+        source="env",
     )
 
     enabled, reason = workflow_sheet_sync.workflow_sheet_sync_configured(config)
 
     assert enabled is False
-    assert reason == "Synchronizacja arkusza jest wyłączona w panelu administratora."
+    assert reason == "Synchronizacja arkusza jest wyłączona w konfiguracji środowiskowej."
 
 
 def test_test_workflow_sheet_connection_reports_missing_headers():
