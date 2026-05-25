@@ -8,9 +8,10 @@ Po zmianach z 25 maja 2026 repozytorium ma wspierać dwa równoległe tory:
 Kluczowa zasada: produkcja nie może już żyć w postaci ręcznie nadpisanych plików poza historią Git.
 
 ## Stan wyjściowy
-- produkcja Windows Server została ręcznie uporządkowana i zapisana commitem `92e46d242a7c0aa25e040227f084348df9c8f35e` na gałęzi `release/grenke-only`,
-- lokalna gałąź `prod/realign-2026-05-25` zawiera równoważny technicznie zakres porządkujący bootstrap Windows i model `env-only`,
-- lokalna gałąź `integration/prod-realign-2026-05-25` zawiera dalszy rozwój (w tym dostawy) i jest właściwą bazą pracy testowej.
+- produkcja Windows Server została ręcznie uporządkowana i zapisana commitem `92e46d242a7c0aa25e040227f084348df9c8f35e`; repo na serwerze pozostaje na lokalnej gałęzi historycznej, ale zna już zdalne refy `origin/prod/realign-2026-05-25` i tag `prod-2026-05-25-realign`,
+- gałąź `prod/realign-2026-05-25` zawiera równoważny technicznie zakres porządkujący bootstrap Windows i model `env-only`,
+- gałąź `integration/prod-realign-2026-05-25` zawiera dalszy rozwój (w tym dostawy) i jest właściwą bazą pracy testowej,
+- gałąź `main-realign-2026-05-25` porządkuje linię `main` względem `origin/main` bez duplikowania commita GRENKE.
 
 ## Rola gałęzi
 ### `prod/realign-2026-05-25`
@@ -25,19 +26,26 @@ Kluczowa zasada: produkcja nie może już żyć w postaci ręcznie nadpisanych p
 
 ### `release/grenke-only`
 - gałąź historyczna,
-- nie powinna być dalej używana jako docelowa baza nowych wdrożeń,
+- jest zsynchronizowana z `origin/release/grenke-only`, ale nie powinna być dalej używana jako docelowa baza nowych wdrożeń,
 - pozostaje tylko jako punkt odniesienia do wcześniejszych wdrożeń.
 
 ### `main`
-- docelowa gałąź długoterminowa,
-- przed ponownym użyciem jako jedynej linii wdrożeniowej wymaga osobnego uporządkowania względem `origin/main`, lokalnego `main` i obecnych gałęzi `prod/*` oraz `integration/*`.
+- lokalny `main` jest już przestawiony na czystą historię i śledzi `origin/main-realign-2026-05-25`,
+- sama zdalna gałąź `origin/main` nie została jeszcze przepisana i pozostaje stanem historycznym sprzed porządkowania,
+- docelowo dopiero po osobnej decyzji można zastąpić `origin/main` linią `main-realign-2026-05-25`.
+
+### `main-realign-2026-05-25`
+- techniczna gałąź porządkująca historię `main`,
+- bazuje na `origin/main` i zawiera tylko unikalne commity brakujące po stronie zdalnej,
+- ma ten sam stan plików co wcześniejszy lokalny `main`, ale bez rozjazdu `ahead/behind`.
 
 ## Zalecany przepływ pracy
 1. Nowe funkcje rozwijaj na `integration/prod-realign-2026-05-25`.
 2. Krytyczne hotfixy produkcyjne przygotowuj od `prod/realign-2026-05-25`.
 3. Każdy hotfix produkcyjny po wdrożeniu przenoś z powrotem na gałąź integracyjną.
-4. Każde wdrożenie produkcji wykonuj z oznaczonego commita lub taga, nigdy z brudnego worktree.
-5. Po wdrożeniu zapisuj na serwerze:
+4. Dla prac bazowych nad długoterminowym kierunkiem rozwoju używaj `main` lub bezpośrednio `main-realign-2026-05-25`, nie starego `origin/main`.
+5. Każde wdrożenie produkcji wykonuj z oznaczonego commita lub taga, nigdy z brudnego worktree.
+6. Po wdrożeniu zapisuj na serwerze:
    - commit SHA,
    - stan `.env`,
    - wynik `/health`,
@@ -51,7 +59,10 @@ Kluczowa zasada: produkcja nie może już żyć w postaci ręcznie nadpisanych p
    - `pre-commit run --all-files`,
    - testy jednostkowe dla zmienionego obszaru,
    - smoke na `.env.test`.
-4. Wypchnij gałąź produkcyjną do `origin`.
+4. Wypchnij odpowiednią gałąź do `origin`:
+   - `prod/*` dla wdrożeń,
+   - `integration/*` dla dalszego rozwoju,
+   - `main-realign-*` dla porządkowania bazowej linii.
 5. Na Windows Server wykonaj backup i wdrożenie z konkretnego commita.
 6. Po wdrożeniu zapisz ewentualne różnice środowiskowe poza Git (`.env`, usługi NSSM, `collector_service_config.json`).
 
@@ -64,6 +75,6 @@ Kluczowa zasada: produkcja nie może już żyć w postaci ręcznie nadpisanych p
 
 ## Następny etap
 Docelowo należy jeszcze:
-- ustalić jeden oficjalny branch publikowany do `origin` dla produkcji,
-- uporządkować relację `main` <-> `origin/main` <-> `integration/prod-realign-2026-05-25`,
-- wprowadzić tagowanie wdrożeń produkcyjnych.
+- zdecydować, czy `origin/main` ma zostać zastąpiony linią `main-realign-2026-05-25`,
+- utrzymać zasadę: produkcja z `prod/*`, test i rozwój z `integration/*`,
+- kontynuować tagowanie wdrożeń produkcyjnych.
