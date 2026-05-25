@@ -25,6 +25,8 @@ htmlcov/
 # Ustawienia Codex i artefakty lokalne
 .codex/*
 !.codex/session.json
+collector_service_config.json
+scripts/windows/collector_service_config.json
 
 # VS Code
 .vscode/

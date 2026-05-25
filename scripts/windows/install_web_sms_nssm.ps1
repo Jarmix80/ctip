@@ -4,7 +4,7 @@ param(
     [string]$NssmPath = "",
     [string]$UvicornHost = "0.0.0.0",
     [int]$UvicornPort = 8000,
-    [int]$UvicornWorkers = 4,
+    [int]$UvicornWorkers = 1,
     [switch]$InstallPublicForms,
     [string]$PublicFormsHost = "127.0.0.1",
     [int]$PublicFormsPort = 8100,
@@ -114,6 +114,15 @@ if ($LASTEXITCODE -ne 0) {
     throw "Brak modulu uvicorn w .venv. Uruchom pip install -e ."
 }
 
+$webScript = Join-Path $InstallDir "scripts\windows\run_ctip_web.py"
+if (-not (Test-Path $webScript)) {
+    throw "Nie znaleziono bootstrapu CTIP-Web: $webScript"
+}
+
+if ($UvicornHost -ne "0.0.0.0" -or $UvicornPort -ne 8000 -or $UvicornWorkers -ne 1) {
+    Write-Warning "CTIP-Web na Windows startuje przez run_ctip_web.py i wymaga host=0.0.0.0, port=8000, workers=1. Przekazane parametry zostana zignorowane."
+}
+
 $logsWeb = Join-Path $InstallDir "logs\web"
 $logsSms = Join-Path $InstallDir "logs\sms"
 $logsForms = Join-Path $InstallDir "logs\forms_public"
@@ -126,10 +135,7 @@ $smsService = "$ServicePrefix-SMS"
 $formsService = "$ServicePrefix-FormsPublic"
 
 $webArgs = @(
-    "-m", "uvicorn", "app.main:app",
-    "--host", $UvicornHost,
-    "--port", $UvicornPort.ToString(),
-    "--workers", $UvicornWorkers.ToString()
+    "-u", $webScript
 )
 $smsArgs = @(
     "-u", (Join-Path $InstallDir "sms_sender.py")
