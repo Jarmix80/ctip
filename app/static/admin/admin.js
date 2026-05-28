@@ -903,21 +903,6 @@ document.addEventListener("alpine:init", () => {
       this.success = null;
     },
 
-    buildCredentialsMessage(action, data) {
-      const base =
-        action === "reset"
-          ? "Hasło użytkownika zostało zresetowane."
-          : "Użytkownik został dodany.";
-      if (data?.sms_queued) {
-        const recipient = String(data.sms_recipient || "").trim();
-        if (recipient) {
-          return `${base} SMS z danymi logowania dodano do kolejki dla ${recipient}.`;
-        }
-        return `${base} SMS z danymi logowania dodano do kolejki.`;
-      }
-      return `${base} SMS z danymi logowania nie został dodany do kolejki. Sprawdź numer telefonu użytkownika.`;
-    },
-
     resetForm() {
       this.form.number = "";
       this.form.ext = "";
@@ -1693,6 +1678,21 @@ document.addEventListener("alpine:init", () => {
     resetMessages() {
       this.error = null;
       this.success = null;
+    },
+
+    buildCredentialsMessage(action, data) {
+      const base =
+        action === "reset"
+          ? "Hasło użytkownika zostało zresetowane."
+          : "Użytkownik został dodany.";
+      if (data?.sms_queued) {
+        const recipient = String(data.sms_recipient || "").trim();
+        if (recipient) {
+          return `${base} SMS z danymi logowania dodano do kolejki dla ${recipient}.`;
+        }
+        return `${base} SMS z danymi logowania dodano do kolejki.`;
+      }
+      return `${base} SMS z danymi logowania nie został dodany do kolejki. Sprawdź numer telefonu użytkownika.`;
     },
 
     resetForm() {

@@ -802,6 +802,14 @@ def test_admin_users_js_loads_firebird_ms_user_options():
     assert "formatMsUser" in content
 
 
+def test_admin_users_js_keeps_credentials_message_helper_inside_users_component():
+    content = Path("app/static/admin/admin.js").read_text(encoding="utf-8")
+    admin_users_start = content.index("const adminUsers = () => ({")
+    helper_index = content.index("buildCredentialsMessage(action, data)")
+    reset_index = content.index("async resetPassword(user)")
+    assert admin_users_start < helper_index < reset_index
+
+
 def test_public_form_template_has_date_mask_and_auto_expiry_logic():
     template = Path("app/templates/public/form_fill.html").read_text(encoding="utf-8")
     assert 'id="rep_document_issue_date" type="text" inputmode="numeric" maxlength="10"' in template
