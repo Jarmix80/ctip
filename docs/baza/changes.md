@@ -45,3 +45,8 @@
 
 ## 2026-05-20
 - Rozszerzono ograniczenie `assistant_tool_call_log_tool_name_check` o narzędzia `workflow_devices_audit` oraz `email_send_report`, aby log narzędzi asystenta akceptował deterministyczny audyt urządzeń i raporty e-mail.
+
+## 2026-06-10
+- Rozszerzono workflow formularzy o status `RENTAL_WITHOUT_GRENKE` (`Wynajem bez GRENKE`) i nowy bucket archiwum `ksero_partner`.
+- `ctip.form_request` otrzymał rozszerzone ograniczenie `form_request_archive_bucket_check` (`accepted|rejected|unfilled|ksero_partner`), a `ctip.form_workflow_case` ograniczenie `form_workflow_case_business_status_check` uwzględnia nowy status.
+- `admin_contracts` i interfejs `genform` obsługują teraz scope archiwum `ksero_partner` pod etykietą „Umowy Ksero-Partner”.

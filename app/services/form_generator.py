@@ -38,6 +38,10 @@ from app.services.form_handling_config import FormHandlingConfig, load_form_hand
 from app.services.form_handling_config import render_template as render_form_template
 
 ACTIVE_STATUSES = {"GENERATED", "DISPATCHED"}
+CLIENT_COMMUNICATIONS_BLOCKED_MESSAGE = (
+    "Wysyłka powiadomień do klientów jest tymczasowo zablokowana "
+    "(BLOCK_CLIENT_COMMUNICATIONS=true)."
+)
 
 
 @dataclass(slots=True)
@@ -92,6 +96,10 @@ def _normalize_phone(value: str | None) -> str:
     if not normalized:
         raise ValueError("Nieprawidłowy numer telefonu klienta.")
     return normalized
+
+
+def _are_client_notifications_blocked() -> bool:
+    return bool(settings.block_client_communications)
 
 
 def resolve_public_base_url(
@@ -412,53 +420,58 @@ async def _dispatch_notifications(
         "sender_name": "CTIP Administrator",
     }
 
-    sms_text = render_form_template(
-        config.invite_sms_template,
-        invite_context,
-    )
-    sms = SmsOut(
-        dest=form.customer_phone,
-        text=sms_text[:600],
-        source="form-generator",
-        origin="form_link_generated",
-        status="NEW",
-        created_by=form.created_by,
-        meta={"type": "form_link_generated", "form_request_id": form.id},
-        created_at=now,
-    )
-    session.add(sms)
-    form.sms_status = "QUEUED"
-    result.sms_queued = True
-
-    email_delivery = await admin_users.resolve_email_delivery_settings(session)
-    if email_delivery is None:
+    if _are_client_notifications_blocked():
+        form.sms_status = "SKIPPED"
         form.email_status = "SKIPPED"
-        result.warnings.append(
-            "Brak konfiguracji SMTP. Link został zapisany, ale e-mail nie został wysłany."
-        )
+        result.warnings.append(CLIENT_COMMUNICATIONS_BLOCKED_MESSAGE)
     else:
-        message = EmailMessage()
-        sender_title = email_delivery.sender_name or "CTIP Administrator"
-        invite_context["sender_name"] = sender_title
-        message["From"] = formataddr((sender_title, email_delivery.sender_address))
-        message["To"] = form.customer_email
-        message["Subject"] = render_form_template(config.invite_email_subject, invite_context)
-        message.set_content(render_form_template(config.invite_email_body, invite_context))
-        send_result = await send_smtp_message(
-            host=email_delivery.host,
-            port=email_delivery.port,
-            username=email_delivery.username,
-            password=email_delivery.password,
-            use_tls=email_delivery.use_tls,
-            use_ssl=email_delivery.use_ssl,
-            message=message,
+        sms_text = render_form_template(
+            config.invite_sms_template,
+            invite_context,
         )
-        if send_result.success:
-            form.email_status = "SENT"
-            result.email_sent = True
+        sms = SmsOut(
+            dest=form.customer_phone,
+            text=sms_text[:600],
+            source="form-generator",
+            origin="form_link_generated",
+            status="NEW",
+            created_by=form.created_by,
+            meta={"type": "form_link_generated", "form_request_id": form.id},
+            created_at=now,
+        )
+        session.add(sms)
+        form.sms_status = "QUEUED"
+        result.sms_queued = True
+
+        email_delivery = await admin_users.resolve_email_delivery_settings(session)
+        if email_delivery is None:
+            form.email_status = "SKIPPED"
+            result.warnings.append(
+                "Brak konfiguracji SMTP. Link został zapisany, ale e-mail nie został wysłany."
+            )
         else:
-            form.email_status = "ERROR"
-            result.warnings.append(send_result.message)
+            message = EmailMessage()
+            sender_title = email_delivery.sender_name or "CTIP Administrator"
+            invite_context["sender_name"] = sender_title
+            message["From"] = formataddr((sender_title, email_delivery.sender_address))
+            message["To"] = form.customer_email
+            message["Subject"] = render_form_template(config.invite_email_subject, invite_context)
+            message.set_content(render_form_template(config.invite_email_body, invite_context))
+            send_result = await send_smtp_message(
+                host=email_delivery.host,
+                port=email_delivery.port,
+                username=email_delivery.username,
+                password=email_delivery.password,
+                use_tls=email_delivery.use_tls,
+                use_ssl=email_delivery.use_ssl,
+                message=message,
+            )
+            if send_result.success:
+                form.email_status = "SENT"
+                result.email_sent = True
+            else:
+                form.email_status = "ERROR"
+                result.warnings.append(send_result.message)
 
     if result.sms_queued or result.email_sent:
         form.status = "DISPATCHED"
@@ -495,44 +508,49 @@ async def _dispatch_submission_notifications(
     company_email = str(payload.get("company_email") or "").strip().lower()
     target_email = company_email or form.customer_email
 
-    email_delivery = await admin_users.resolve_email_delivery_settings(session)
-    if email_delivery is None:
-        result.warnings.append("Brak konfiguracji SMTP. Klient nie otrzymał potwierdzenia e-mail.")
-    elif target_email:
-        message = EmailMessage()
-        sender_title = email_delivery.sender_name or "CTIP Administrator"
-        submission_context = {
-            "company_name": company_name,
-            "customer_name": form.customer_name,
-            "sender_name": sender_title,
-        }
-        message["From"] = formataddr((sender_title, email_delivery.sender_address))
-        message["To"] = target_email
-        message["Subject"] = render_form_template(
-            config.submission_email_subject,
-            submission_context,
-        )
-        message.set_content(
-            render_form_template(
-                config.submission_email_body,
+    if _are_client_notifications_blocked():
+        result.warnings.append(CLIENT_COMMUNICATIONS_BLOCKED_MESSAGE)
+    else:
+        email_delivery = await admin_users.resolve_email_delivery_settings(session)
+        if email_delivery is None:
+            result.warnings.append(
+                "Brak konfiguracji SMTP. Klient nie otrzymał potwierdzenia e-mail."
+            )
+        elif target_email:
+            message = EmailMessage()
+            sender_title = email_delivery.sender_name or "CTIP Administrator"
+            submission_context = {
+                "company_name": company_name,
+                "customer_name": form.customer_name,
+                "sender_name": sender_title,
+            }
+            message["From"] = formataddr((sender_title, email_delivery.sender_address))
+            message["To"] = target_email
+            message["Subject"] = render_form_template(
+                config.submission_email_subject,
                 submission_context,
             )
-        )
-        send_result = await send_smtp_message(
-            host=email_delivery.host,
-            port=email_delivery.port,
-            username=email_delivery.username,
-            password=email_delivery.password,
-            use_tls=email_delivery.use_tls,
-            use_ssl=email_delivery.use_ssl,
-            message=message,
-        )
-        if send_result.success:
-            result.client_email_sent = True
+            message.set_content(
+                render_form_template(
+                    config.submission_email_body,
+                    submission_context,
+                )
+            )
+            send_result = await send_smtp_message(
+                host=email_delivery.host,
+                port=email_delivery.port,
+                username=email_delivery.username,
+                password=email_delivery.password,
+                use_tls=email_delivery.use_tls,
+                use_ssl=email_delivery.use_ssl,
+                message=message,
+            )
+            if send_result.success:
+                result.client_email_sent = True
+            else:
+                result.warnings.append(send_result.message)
         else:
-            result.warnings.append(send_result.message)
-    else:
-        result.warnings.append("Brak adresu e-mail klienta do wysłania potwierdzenia.")
+            result.warnings.append("Brak adresu e-mail klienta do wysłania potwierdzenia.")
 
     salespeople = await admin_users.list_active_salespeople(session)
     sales_recipients: list[tuple[int, str]] = []

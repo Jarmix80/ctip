@@ -137,9 +137,23 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self._previous_workflow_sheet_status_cache_scheduler_enabled = (
             settings.workflow_sheet_status_cache_scheduler_enabled
         )
+        self._previous_contracts_workflow_maintenance_scheduler_enabled = (
+            settings.contracts_workflow_maintenance_scheduler_enabled
+        )
+        self._previous_contracts_mailbox_scheduler_enabled = (
+            settings.contracts_mailbox_scheduler_enabled
+        )
+        self._previous_delivery_notifications_scheduler_enabled = (
+            settings.delivery_notifications_scheduler_enabled
+        )
+        self._previous_block_client_communications = settings.block_client_communications
         settings.admin_secret_key = Fernet.generate_key().decode("ascii")
         settings.backup_scheduler_enabled = False
         settings.workflow_sheet_status_cache_scheduler_enabled = False
+        settings.contracts_workflow_maintenance_scheduler_enabled = False
+        settings.contracts_mailbox_scheduler_enabled = False
+        settings.delivery_notifications_scheduler_enabled = False
+        settings.block_client_communications = False
 
         async with self.session_factory() as session:
             now = datetime.now(UTC)
@@ -181,6 +195,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         settings.workflow_sheet_status_cache_scheduler_enabled = (
             self._previous_workflow_sheet_status_cache_scheduler_enabled
         )
+        settings.contracts_workflow_maintenance_scheduler_enabled = (
+            self._previous_contracts_workflow_maintenance_scheduler_enabled
+        )
+        settings.contracts_mailbox_scheduler_enabled = (
+            self._previous_contracts_mailbox_scheduler_enabled
+        )
+        settings.delivery_notifications_scheduler_enabled = (
+            self._previous_delivery_notifications_scheduler_enabled
+        )
+        settings.block_client_communications = self._previous_block_client_communications
         await self.engine.dispose()
 
     async def _login_as(self, email: str, password: str) -> tuple[str, dict]:
@@ -2697,6 +2721,133 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 and entry.payload.get("form_request_id") == form.id
             ]
             self.assertEqual(len(matching), 1)
+
+    async def test_create_form_blocks_client_notifications_when_flag_is_enabled(self):
+        token, _ = await self._login_operator()
+        settings.block_client_communications = True
+
+        email_settings = EmailDeliverySettings(
+            host="smtp.test.local",
+            port=587,
+            username="smtp-user",
+            password="smtp-pass",
+            sender_name="CTIP Test",
+            sender_address="noreply@test.local",
+            use_tls=True,
+            use_ssl=False,
+        )
+        with (
+            patch(
+                "app.services.form_generator.admin_users.resolve_email_delivery_settings",
+                AsyncMock(return_value=email_settings),
+            ),
+            patch(
+                "app.services.form_generator.send_smtp_message",
+                AsyncMock(return_value=EmailSendResult(True, "Wysłano")),
+            ) as send_mock,
+        ):
+            response = await self.client.post(
+                "/admin/forms",
+                headers={"X-Admin-Session": token},
+                json={
+                    "customer_name": "Klient Blokada",
+                    "customer_email": "blokada@example.com",
+                    "customer_phone": "+48600700700",
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["sms_queued"], False)
+        self.assertEqual(body["email_sent"], False)
+        self.assertEqual(body["item"]["status"], "GENERATED")
+        self.assertTrue(any("zablokowana" in message for message in body["warnings"]))
+        send_mock.assert_not_awaited()
+
+    async def test_submit_form_skips_client_email_when_communications_blocked(self):
+        settings.block_client_communications = True
+        token, _ = await self._login_operator()
+
+        create_response = await self.client.post(
+            "/admin/forms",
+            headers={"X-Admin-Session": token},
+            json={
+                "customer_name": "Klient Formularz",
+                "customer_email": "formularz@blokada.pl",
+                "customer_phone": "+48600700800",
+            },
+        )
+        self.assertEqual(create_response.status_code, 201)
+        form_id = create_response.json()["item"]["id"]
+        form_url = create_response.json()["form_url"]
+        link_token = form_url.rsplit("/formularz/", maxsplit=1)[-1]
+
+        with patch(
+            "app.services.form_generator.send_smtp_message",
+            AsyncMock(return_value=EmailSendResult(True, "Wysłano")),
+        ) as send_mock:
+            submit_response = await self.client.post(
+                f"/formularz/{link_token}",
+                data=self._valid_public_form_post_data(),
+            )
+
+        self.assertEqual(submit_response.status_code, 200)
+        self.assertIn("formularz został zapisany", submit_response.text.lower())
+        send_mock.assert_not_awaited()
+
+        async with self.session_factory() as session:
+            sms_rows = (
+                (
+                    await session.execute(
+                        select(SmsOut).where(SmsOut.origin == "form_submission_completed")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            self.assertFalse(
+                any(
+                    isinstance(row.meta, dict) and row.meta.get("form_request_id") == form_id
+                    for row in sms_rows
+                )
+            )
+
+    async def test_notify_data_entered_endpoint_is_blocked(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request(
+            customer_name="Firma Blokada",
+            customer_email="blokada2@example.com",
+            payload={
+                "company_name": "Firma Blokada Sp. z o.o.",
+                "company_nip": "7778889999",
+                "company_phone": "+48600900100",
+                "company_email": "biuro@firma-blokada.pl",
+                "billing_email": "faktury@firma-blokada.pl",
+                "registered_street": "Wyporza",
+                "registered_building_no": "1",
+                "registered_apartment_no": "1",
+                "registered_postal_code": "60-001",
+                "registered_city": "Poznań",
+                "correspondence_same_as_registered": True,
+                "correspondence_street": "Wyporza",
+                "correspondence_building_no": "1",
+                "correspondence_apartment_no": "1",
+                "correspondence_postal_code": "60-001",
+                "correspondence_city": "Poznań",
+                "representatives": [],
+                "consent": True,
+            },
+            created_by=2,
+        )
+        settings.block_client_communications = True
+
+        response = await self.client.post(
+            f"/admin/forms/{form.id}/notify-data-entered",
+            headers={"X-Admin-Session": token},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("zablokowana", response.json().get("detail", ""))
 
     async def test_notify_data_entered_requires_submitted_form(self):
         token, _ = await self._login_operator()
@@ -5482,6 +5633,106 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .one()
             )
             self.assertEqual(workflow_case.business_status, "ZEROWKA")
+
+    async def test_contracts_form_workflow_status_rental_without_grenke_sets_archive_due(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="WAITING_SIGNATURE",
+                client_mode="basic_proforma",
+            )
+            session.add(case)
+            await session.commit()
+
+        before = datetime.now(UTC)
+        response = await self.client.post(
+            f"/admin/contracts/forms/{form.id}/workflow/status",
+            headers={"X-Admin-Session": token},
+            json={"business_status": "RENTAL_WITHOUT_GRENKE"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["workflow"]["business_status"], "RENTAL_WITHOUT_GRENKE")
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form.id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            form_row = await session.get(FormRequest, form.id)
+            self.assertEqual(workflow_case.business_status, "RENTAL_WITHOUT_GRENKE")
+            self.assertIsNone(workflow_case.resources_release_due_at)
+            assert form_row is not None
+            self.assertIsNotNone(form_row.archive_due_at)
+            archive_due_at = (
+                form_row.archive_due_at
+                if form_row.archive_due_at.tzinfo is not None
+                else form_row.archive_due_at.replace(tzinfo=UTC)
+            )
+            self.assertGreaterEqual(
+                archive_due_at, before + timedelta(days=14) - timedelta(minutes=1)
+            )
+            self.assertLessEqual(archive_due_at, datetime.now(UTC) + timedelta(days=14, minutes=1))
+
+    async def test_contracts_dashboard_scope_includes_ksero_partner_bucket(self):
+        token, _ = await self._login_operator()
+        submitted = await self._create_submitted_form_request(
+            customer_name="Klient Wynajem bez GRENKE",
+            customer_email="wynajem@example.local",
+            customer_phone="+48600600600",
+        )
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=submitted.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="RENTAL_WITHOUT_GRENKE",
+                client_mode="basic_proforma",
+            )
+            session.add(case)
+            submitted_form = await session.get(FormRequest, submitted.id)
+            assert submitted_form is not None
+            submitted_form.archive_due_at = datetime.now(UTC) + timedelta(days=14)
+            submitted_form.archive_bucket = "ksero_partner"
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.find_client_in_firebird",
+                return_value=FirebirdClientMatch(found=False),
+            ),
+        ):
+            response = await self.client.get(
+                "/admin/contracts/dashboard?forms_scope=all&include_devices=0&archive_scope=ksero_partner",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["forms_scope"], "all")
+        self.assertEqual(body["archive_scope"], "ksero_partner")
+        self.assertEqual(body["archive_totals"].get("ksero_partner"), 1)
+        form_ids = {item["id"] for item in body["forms"]}
+        self.assertIn(submitted.id, form_ids)
 
     async def test_contracts_form_workflow_status_approved_order_runs_binding_automation(self):
         token, _ = await self._login_operator()

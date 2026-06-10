@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
+from app.core.config import settings
 from app.models import AdminAuditLog, AdminUser, FormRequest
 from app.schemas.form_generator import (
     FormRequestCreate,
@@ -338,6 +339,11 @@ async def notify_data_entered(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Powiadomienie można wysłać dopiero po wypełnieniu formularza przez klienta.",
+        )
+    if settings.block_client_communications:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=form_generator.CLIENT_COMMUNICATIONS_BLOCKED_MESSAGE,
         )
 
     try:

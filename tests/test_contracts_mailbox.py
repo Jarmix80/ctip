@@ -6,6 +6,7 @@ from app.services.contracts_mailbox import (
     MAILBOX_EVENT_APPROVAL,
     MAILBOX_EVENT_DECISION,
     build_pdf_password_candidates,
+    classify_mail_payload,
     classify_mail_subject,
     detect_rejection_decision,
     extract_application_number,
@@ -29,6 +30,36 @@ def test_classify_mail_subject_for_approval() -> None:
     assert classify_mail_subject(subject) == MAILBOX_EVENT_APPROVAL
 
 
+def test_classify_mail_payload_from_body_when_subject_not_matching() -> None:
+    assert (
+        classify_mail_payload(
+            subject="Potwierdzenie dostarczenia dokumentu",
+            body="Drodzy Państwo, decyzja do wniosku 173-025167 została wydana.",
+        )
+        == MAILBOX_EVENT_DECISION
+    )
+
+
+def test_classify_mail_payload_approval_from_body() -> None:
+    assert (
+        classify_mail_payload(
+            subject="Fwd: ważne informacje",
+            body=("Przesyłamy dokumenty. Zgoda na realizacje zamówienia do wniosku nr: 173-25084."),
+        )
+        == MAILBOX_EVENT_APPROVAL
+    )
+
+
+def test_classify_mail_payload_approval_body_overrides_decision_subject() -> None:
+    assert (
+        classify_mail_payload(
+            subject="Decyzja do wniosku 173-025299",
+            body="Dzień dobry, zgoda na realizację zamówienia do wniosku nr: 173-025299.",
+        )
+        == MAILBOX_EVENT_APPROVAL
+    )
+
+
 def test_extract_application_number_and_normalization() -> None:
     parsed = extract_application_number("Decyzja do wniosku 173-025167")
     assert parsed is not None
@@ -45,6 +76,15 @@ def test_extract_proforma_number_and_normalization() -> None:
     assert parsed.raw == "10/proforma/2026"
     assert parsed.normalized == "10/proforma/2026"
     assert normalize_proforma_number(" 10 / PRO FORMA / 2026 ") == "10/proforma/2026"
+
+
+def test_extract_proforma_number_with_spaced_word() -> None:
+    parsed = extract_proforma_number(
+        "Zgoda na realizacje zamówienia do wniosku nr: 173-025203  Faktura Pro Forma nr: 1 0 / p r o f o r m a / 2 0 2 6"
+    )
+    assert parsed is not None
+    assert parsed.raw == "10/proforma/2026"
+    assert parsed.normalized == "10/proforma/2026"
 
 
 def test_build_pdf_password_candidates_uses_pesel_and_initials() -> None:

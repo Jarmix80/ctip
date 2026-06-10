@@ -43,6 +43,7 @@ from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
     WORKFLOW_BUSINESS_STATUS_DRAFT,
     WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+    WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
     WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
     WORKFLOW_CLIENT_MODE_BASIC_PROFORMA,
     WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
@@ -161,7 +162,7 @@ class WorkflowStatusRequest(BaseModel):
     business_status: str = Field(
         pattern=(
             "^(DRAFT|PENDING_APPROVAL|APPROVED|ZEROWKA|REJECTED|"
-            "WAITING_SIGNATURE|APPROVED_ORDER|REJECTED_GRENKE)$"
+            "WAITING_SIGNATURE|APPROVED_ORDER|REJECTED_GRENKE|RENTAL_WITHOUT_GRENKE)$"
         ),
     )
     signature_deadline_at: datetime | None = None
@@ -199,7 +200,7 @@ class WorkflowDeliveryMoveRequest(BaseModel):
 class WorkflowArchiveRequest(BaseModel):
     """Żądanie ręcznego przeniesienia formularza do archiwum."""
 
-    bucket: Literal["accepted", "rejected", "unfilled"] | None = None
+    bucket: Literal["accepted", "rejected", "unfilled", "ksero_partner"] | None = None
 
 
 class WorkflowMailboxSyncRequest(BaseModel):
@@ -220,6 +221,7 @@ WORKFLOW_BANK_CLIENT_NAME = "GRENKELEASING Sp. z o.o."
 ARCHIVE_BUCKET_ACCEPTED = "accepted"
 ARCHIVE_BUCKET_REJECTED = "rejected"
 ARCHIVE_BUCKET_UNFILLED = "unfilled"
+ARCHIVE_BUCKET_KSERO_PARTNER = "ksero_partner"
 ARCHIVE_SCOPE_ACTIVE = "active"
 ARCHIVE_DAYS_AFTER_DECISION = 14
 RESOURCE_RELEASE_DAYS_AFTER_REJECTION = 7
@@ -315,6 +317,8 @@ def _archive_bucket_for_form(
         return ARCHIVE_BUCKET_ACCEPTED
     if status_value == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
         return ARCHIVE_BUCKET_REJECTED
+    if status_value == WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE:
+        return ARCHIVE_BUCKET_KSERO_PARTNER
     return None
 
 
@@ -340,6 +344,11 @@ def _flow_status_for_form(form: FormRequest, workflow_summary: dict[str, Any] | 
             "value": WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
             "label": workflow_business_status_label(status_value),
         }
+    if status_value == WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE:
+        return {
+            "value": WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
+            "label": workflow_business_status_label(status_value),
+        }
     return {"value": "FORM_SUBMITTED", "label": "Wypełniony formularz klienta"}
 
 
@@ -353,6 +362,8 @@ def _row_tone_for_form(form: FormRequest, workflow_summary: dict[str, Any] | Non
         return "accepted"
     if status_value == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
         return "muted" if (workflow_summary or {}).get("resources_released_at") else "rejected"
+    if status_value == WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE:
+        return "ksero_partner"
     if form.status == "EXPIRED":
         return "muted"
     return "active"
@@ -362,7 +373,11 @@ def _apply_archive_due(form: FormRequest, workflow_summary: dict[str, Any] | Non
     if form.archive_due_at is not None or form.archive_bucket is not None:
         return
     bucket = _archive_bucket_for_form(form, workflow_summary)
-    if bucket in {ARCHIVE_BUCKET_ACCEPTED, ARCHIVE_BUCKET_REJECTED}:
+    if bucket in {
+        ARCHIVE_BUCKET_ACCEPTED,
+        ARCHIVE_BUCKET_REJECTED,
+        ARCHIVE_BUCKET_KSERO_PARTNER,
+    }:
         form.archive_due_at = datetime.now(UTC) + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
     elif bucket == ARCHIVE_BUCKET_UNFILLED:
         expires_at = form.token_expires_at
@@ -1017,7 +1032,7 @@ async def contracts_dashboard_data(
     include_devices: bool = Query(default=True),
     archive_scope: str = Query(
         default=ARCHIVE_SCOPE_ACTIVE,
-        pattern="^(active|accepted|rejected|unfilled)$",
+        pattern="^(active|accepted|rejected|unfilled|ksero_partner)$",
     ),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
@@ -1073,6 +1088,7 @@ async def contracts_dashboard_data(
             ARCHIVE_BUCKET_ACCEPTED: 0,
             ARCHIVE_BUCKET_REJECTED: 0,
             ARCHIVE_BUCKET_UNFILLED: 0,
+            ARCHIVE_BUCKET_KSERO_PARTNER: 0,
         }
         scoped_forms: list[FormRequest] = []
         for item in forms:
@@ -2421,6 +2437,7 @@ async def contracts_form_workflow_status(
     if normalized_status in {
         WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
         WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+        WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
     }:
         item.archive_due_at = datetime.now(UTC) + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
     if normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:

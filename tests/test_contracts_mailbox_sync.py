@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import sys
 from datetime import UTC, datetime
+from email.message import EmailMessage
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -276,6 +277,62 @@ def test_persist_encrypted_contract_pdf_saves_file_and_description(tmp_path: Pat
     assert saved["description"] == "Umowa GRENKE (zaszyfrowany PDF z e-maila)."
     assert path.parent.parent.name == "ALFA_TEST_COMPANY"
     assert path.parent.name == "654"
+
+
+def test_build_mail_context_uses_body_for_event_classification() -> None:
+    module = _load_sync_module()
+    msg = EmailMessage()
+    msg["Subject"] = "Potwierdzenie"
+    msg["Message-Id"] = "<body-classify@test>"
+    msg["From"] = "noreply@grenke.pl"
+    msg["Date"] = "Tue, 3 Jun 2026 12:00:00 +0000"
+    msg.set_content("Decyzja do wniosku 173-025167: pozytywna odpowiedź systemu.")
+
+    mail_ctx = module.build_mail_context("88", msg)
+    assert mail_ctx is not None
+    assert mail_ctx.event_type == module.MAILBOX_EVENT_DECISION
+    assert mail_ctx.application_no_raw == "173-025167"
+
+
+def test_build_mail_context_prefers_approval_body_over_decision_subject() -> None:
+    module = _load_sync_module()
+    msg = EmailMessage()
+    msg["Subject"] = "Decyzja do wniosku 173-025299"
+    msg["Message-Id"] = "<approval-body@test>"
+    msg["From"] = "noreply@grenke.pl"
+    msg["Date"] = "Tue, 3 Jun 2026 12:00:00 +0000"
+    msg.set_content("Zgoda na realizację zamówienia do wniosku nr: 173-025299.")
+
+    mail_ctx = module.build_mail_context("89", msg)
+    assert mail_ctx is not None
+    assert mail_ctx.event_type == module.MAILBOX_EVENT_APPROVAL
+    assert mail_ctx.application_no_raw == "173-025299"
+
+
+def test_resolve_mailbox_business_status_does_not_downgrade_final_status() -> None:
+    module = _load_sync_module()
+    mail_ctx = module.MailContext(
+        imap_id="90",
+        message_id="<old-decision@test>",
+        subject="Decyzja do wniosku 173-025299",
+        sender="noreply@grenke.pl",
+        body_text="Decyzja do wniosku 173-025299 została wydana.",
+        email_date_utc=datetime(2026, 6, 3, 12, 0, 0, tzinfo=UTC),
+        event_type=module.MAILBOX_EVENT_DECISION,
+        application_no_raw="173-025299",
+        application_no_normalized="173025299",
+        attachments=[],
+    )
+
+    status, is_rejection, skipped = module.resolve_mailbox_business_status(
+        mail_ctx=mail_ctx,
+        current_business_status=module.WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+        decision_text="Decyzja do wniosku 173-025299 została wydana.",
+    )
+
+    assert status == module.WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
+    assert is_rejection is False
+    assert skipped is True
 
 
 def test_parse_args_fail_on_warnings_defaults_to_false(monkeypatch) -> None:
