@@ -19,6 +19,7 @@ from app.services.contracts_proforma import delete_proforma_from_firebird
 from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
     WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
+    WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
     build_workflow_device_key,
     list_form_workflow_devices,
     mark_workflow_resources_released,
@@ -34,6 +35,7 @@ from app.services.workflow_sheet_sync import (
 ARCHIVE_BUCKET_ACCEPTED = "accepted"
 ARCHIVE_BUCKET_REJECTED = "rejected"
 ARCHIVE_BUCKET_UNFILLED = "unfilled"
+ARCHIVE_BUCKET_KSERO_PARTNER = "ksero_partner"
 _scheduler_task: asyncio.Task | None = None
 _stop_event: asyncio.Event | None = None
 
@@ -143,6 +145,11 @@ async def contracts_workflow_maintenance_tick() -> dict[str, int]:
                     due_set += 1
             elif status_value == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
                 bucket = ARCHIVE_BUCKET_REJECTED
+                if form.archive_due_at is None:
+                    form.archive_due_at = now + timedelta(days=14)
+                    due_set += 1
+            elif status_value == WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE:
+                bucket = ARCHIVE_BUCKET_KSERO_PARTNER
                 if form.archive_due_at is None:
                     form.archive_due_at = now + timedelta(days=14)
                     due_set += 1

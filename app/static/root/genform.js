@@ -87,6 +87,7 @@ function workflowBusinessStatusLabel(status) {
     ZEROWKA: "Zerówka",
     REJECTED: "Odmowa GRENKE",
     REJECTED_GRENKE: "Odmowa GRENKE",
+    RENTAL_WITHOUT_GRENKE: "Wynajem bez GRENKE",
   };
   return mapped[status] || status || "Brak";
 }
@@ -2423,6 +2424,7 @@ function initializeGenForm() {
       accepted: document.getElementById("genform-count-accepted"),
       rejected: document.getElementById("genform-count-rejected"),
       unfilled: document.getElementById("genform-count-unfilled"),
+      ksero_partner: document.getElementById("genform-count-ksero-partner"),
     };
     Object.entries(mapping).forEach(([scope, element]) => {
       if (element) {

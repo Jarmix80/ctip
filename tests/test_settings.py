@@ -23,6 +23,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(cfg.fb_v_host, "127.0.0.1")
         self.assertTrue(cfg.sms_test_mode)
         self.assertEqual(cfg.sms_api_url, "")
+        self.assertFalse(cfg.block_client_communications)
 
     def test_database_url_uses_psycopg_async_driver(self) -> None:
         cfg = Settings(_env_file=None)
@@ -105,6 +106,10 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(cfg_custom.mailbox_email_address, "umowy-tets@ksero-partner.com.pl")
         self.assertEqual(cfg_custom.mailbox_imap_host, "ksero-partner.com.pl")
         self.assertEqual(cfg_custom.mailbox_smtp_host, "ksero-partner.com.pl")
+
+    def test_client_communications_blocking_from_env(self) -> None:
+        cfg = Settings(BLOCK_CLIENT_COMMUNICATIONS=True)
+        self.assertTrue(cfg.block_client_communications)
 
 
 if __name__ == "__main__":

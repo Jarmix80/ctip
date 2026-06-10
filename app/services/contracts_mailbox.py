@@ -21,11 +21,20 @@ _REJECTION_PATTERNS = (
     "nie wyrazamy zgody",
     "nie mozemy wyrazic zgody",
 )
+_DECISION_HINT_PATTERNS = (
+    "decyzja do wniosku",
+    "decyzja w sprawie wniosku",
+)
+_APPROVAL_HINT_PATTERNS = (
+    "zgoda na realizacje zamowienia do wniosku",
+    "zgoda na realizacje zamowienia",
+    "zgoda na realizacje",
+)
 
 _APP_NO_PATTERN = re.compile(r"\b(\d{3})\s*[-_/]\s*(\d{4,7})\b")
 _PROFORMA_NO_PATTERN = re.compile(
-    r"(?is)\b(?:faktura\s*)?pro\s*forma(?:\s*(?:nr|numer|no|#)\s*[:.]?)?\s*"
-    r"(\d[\d\s]*/\s*pro\s*forma\s*/\s*\d[\d\s]*)"
+    r"(?is)\b(?:faktura\s*)?proforma(?:\s*(?:nr|numer|no|#)\s*[:.]?)?\s*"
+    r"(\d[\d\s]*/\s*proforma\s*/\s*\d[\d\s]*)"
 )
 _NIP_PATTERN = re.compile(r"\b(?:PL)?\d{10}\b", re.IGNORECASE)
 _PESEL_PATTERN = re.compile(r"\b\d{11}\b")
@@ -50,12 +59,56 @@ class ParsedProformaNumber:
 
 def classify_mail_subject(subject: str) -> str | None:
     """Klasyfikuje temat wiadomości pod kątem workflow umów."""
-    normalized = _normalize_for_match(subject)
-    if "decyzja do wniosku" in normalized:
+    return classify_mail_payload(subject=subject, body=None)
+
+
+def classify_mail_payload(*, subject: str | None, body: str | None) -> str | None:
+    """Klasyfikuje temat i/lub treść wiadomości pod kątem workflow umów."""
+    normalized_subject = _normalize_for_match(subject)
+    normalized_body = _normalize_for_match(body)
+    normalized_payload = " ".join(
+        part for part in (normalized_subject, normalized_body) if part
+    ).strip()
+
+    if _contains_approval_hint(normalized_payload) and not _contains_rejection_hint(
+        normalized_payload
+    ):
+        return MAILBOX_EVENT_APPROVAL
+
+    event_from_subject = _classify_mail_payload_text(normalized_subject)
+    if event_from_subject is not None:
+        return event_from_subject
+
+    return _classify_mail_payload_text(normalized_body)
+
+
+def _classify_mail_payload_text(normalized_text: str | None) -> str | None:
+    """Klasyfikuje typ zdarzenia na podstawie już znormalizowanego tekstu."""
+    text = (normalized_text or "").strip()
+    if not text:
+        return None
+    if any(pattern in text for pattern in _DECISION_HINT_PATTERNS):
         return MAILBOX_EVENT_DECISION
-    if "zgoda na realizacje zamowienia do wniosku" in normalized:
+    if any(pattern in text for pattern in _APPROVAL_HINT_PATTERNS):
+        return MAILBOX_EVENT_APPROVAL
+    if "decyzja" in text and "wniosek" in text:
+        return MAILBOX_EVENT_DECISION
+    if "zgoda" in text and "realizacji" in text and "wniosek" in text:
         return MAILBOX_EVENT_APPROVAL
     return None
+
+
+def _contains_approval_hint(normalized_text: str | None) -> bool:
+    text = (normalized_text or "").strip()
+    return bool(text) and (
+        any(pattern in text for pattern in _APPROVAL_HINT_PATTERNS)
+        or ("zgoda" in text and "realizacji" in text and "wniosek" in text)
+    )
+
+
+def _contains_rejection_hint(normalized_text: str | None) -> bool:
+    text = (normalized_text or "").strip()
+    return bool(text) and any(pattern in text for pattern in _REJECTION_PATTERNS)
 
 
 def detect_rejection_decision(text: str) -> bool:
@@ -63,7 +116,7 @@ def detect_rejection_decision(text: str) -> bool:
     normalized = _normalize_for_match(text)
     if not normalized:
         return False
-    return any(pattern in normalized for pattern in _REJECTION_PATTERNS)
+    return _contains_rejection_hint(normalized)
 
 
 def extract_application_number(text: str) -> ParsedApplicationNumber | None:
@@ -99,7 +152,7 @@ def normalize_proforma_number(value: str | None) -> str | None:
 
 def extract_proforma_number(text: str) -> ParsedProformaNumber | None:
     """Wyciąga numer proformy z tekstu i zwraca formę surową oraz znormalizowaną."""
-    match = _PROFORMA_NO_PATTERN.search(text or "")
+    match = _PROFORMA_NO_PATTERN.search(_prepare_proforma_text(text))
     if match is None:
         return None
     raw = re.sub(r"\s+", "", match.group(1))
@@ -116,6 +169,22 @@ def _normalize_for_match(value: str | None) -> str:
         char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
     )
     text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _prepare_proforma_text(value: str | None) -> str:
+    """Przygotowuje tekst do rozpoznania numeru proformy z rozdzielonymi spacjami.
+
+    GRENKE w niektórych wiadomościach wysyła `pro forma` rozbite spacjami
+    jako `p r o f o r m a`. Normalizacja upraszcza obie formy do `proforma`.
+    """
+    text = str(value or "").strip().lower()
+    text = "".join(
+        char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
+    )
+    text = re.sub(r"[^a-z0-9/\s]+", " ", text)
+    text = re.sub(r"\bp\s*r\s*o\s*f\s*o\s*r\s*m\s*a\b", "proforma", text)
+    text = re.sub(r"\bpro\s*forma\b", "proforma", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -283,6 +352,7 @@ __all__ = [
     "ParsedProformaNumber",
     "build_pdf_password_candidates",
     "classify_mail_subject",
+    "classify_mail_payload",
     "extract_proforma_number",
     "extract_application_number",
     "extract_data_from_contract_text",

@@ -5,7 +5,7 @@ Skrypt:
 1. Loguje sie przez /admin/auth/login.
 2. Weryfikuje sesje przez /admin/auth/me.
 3. Odczytuje dashboard GENFORM/FLOW dla scope:
-   active, accepted, rejected, unfilled.
+   active, accepted, rejected, unfilled, ksero_partner.
 4. Waliduje kluczowe reguly przyciskow:
    - summary tylko dla APPROVED_ORDER,
    - release_resources tylko dla REJECTED_GRENKE (bez zwolnienia zasobow i bez archiwizacji).
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
-SCOPES = ("active", "accepted", "rejected", "unfilled")
+SCOPES = ("active", "accepted", "rejected", "unfilled", "ksero_partner")
 
 
 @dataclass(slots=True)

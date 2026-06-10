@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     email_sender_address: str | None = Field(default=None, alias="EMAIL_SENDER_ADDRESS")
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
     email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
+    block_client_communications: bool = Field(
+        default=False,
+        alias="BLOCK_CLIENT_COMMUNICATIONS",
+    )
 
     google_application_credentials: str | None = Field(
         default=None,

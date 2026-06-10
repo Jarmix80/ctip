@@ -888,6 +888,10 @@ body {
   background: rgba(198, 40, 40, 0.08);
 }
 
+.genform-row-tone-ksero_partner {
+  background: rgba(23, 80, 120, 0.08);
+}
+
 .genform-row-tone-muted {
   opacity: 0.62;
   background: #eef2f6;
