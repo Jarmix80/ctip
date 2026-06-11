@@ -41,6 +41,7 @@ from app.services.contracts_proforma import (
 )
 from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+    WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED,
     WORKFLOW_BUSINESS_STATUS_DRAFT,
     WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
     WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
@@ -163,7 +164,8 @@ class WorkflowStatusRequest(BaseModel):
     business_status: str = Field(
         pattern=(
             "^(DRAFT|PENDING_APPROVAL|APPROVED|ZEROWKA|REJECTED|"
-            "WAITING_SIGNATURE|APPROVED_ORDER|REJECTED_GRENKE|RENTAL_WITHOUT_GRENKE)$"
+            "WAITING_SIGNATURE|APPROVED_ORDER|REJECTED_GRENKE|"
+            "RENTAL_WITHOUT_GRENKE|CLOSED_NOT_REALIZED)$"
         ),
     )
     signature_deadline_at: datetime | None = None
@@ -201,7 +203,9 @@ class WorkflowDeliveryMoveRequest(BaseModel):
 class WorkflowArchiveRequest(BaseModel):
     """Żądanie ręcznego przeniesienia formularza do archiwum."""
 
-    bucket: Literal["accepted", "rejected", "unfilled", "ksero_partner"] | None = None
+    bucket: Literal["accepted", "rejected", "unfilled", "ksero_partner", "closed_other"] | None = (
+        None
+    )
 
 
 class WorkflowMailboxSyncRequest(BaseModel):
@@ -223,6 +227,7 @@ ARCHIVE_BUCKET_ACCEPTED = "accepted"
 ARCHIVE_BUCKET_REJECTED = "rejected"
 ARCHIVE_BUCKET_UNFILLED = "unfilled"
 ARCHIVE_BUCKET_KSERO_PARTNER = "ksero_partner"
+ARCHIVE_BUCKET_CLOSED_OTHER = "closed_other"
 ARCHIVE_SCOPE_ACTIVE = "active"
 ARCHIVE_DAYS_AFTER_DECISION = 14
 RESOURCE_RELEASE_DAYS_AFTER_REJECTION = 7
@@ -320,6 +325,8 @@ def _archive_bucket_for_form(
         return ARCHIVE_BUCKET_REJECTED
     if status_value == WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE:
         return ARCHIVE_BUCKET_KSERO_PARTNER
+    if status_value == WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED:
+        return ARCHIVE_BUCKET_CLOSED_OTHER
     return None
 
 
@@ -350,6 +357,11 @@ def _flow_status_for_form(form: FormRequest, workflow_summary: dict[str, Any] | 
             "value": WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
             "label": workflow_business_status_label(status_value),
         }
+    if status_value == WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED:
+        return {
+            "value": WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED,
+            "label": workflow_business_status_label(status_value),
+        }
     return {"value": "FORM_SUBMITTED", "label": "Wypełniony formularz klienta"}
 
 
@@ -365,6 +377,8 @@ def _row_tone_for_form(form: FormRequest, workflow_summary: dict[str, Any] | Non
         return "muted" if (workflow_summary or {}).get("resources_released_at") else "rejected"
     if status_value == WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE:
         return "ksero_partner"
+    if status_value == WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED:
+        return "closed_other"
     if form.status == "EXPIRED":
         return "muted"
     return "active"
@@ -378,6 +392,7 @@ def _apply_archive_due(form: FormRequest, workflow_summary: dict[str, Any] | Non
         ARCHIVE_BUCKET_ACCEPTED,
         ARCHIVE_BUCKET_REJECTED,
         ARCHIVE_BUCKET_KSERO_PARTNER,
+        ARCHIVE_BUCKET_CLOSED_OTHER,
     }:
         form.archive_due_at = datetime.now(UTC) + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
     elif bucket == ARCHIVE_BUCKET_UNFILLED:
@@ -1033,7 +1048,7 @@ async def contracts_dashboard_data(
     include_devices: bool = Query(default=True),
     archive_scope: str = Query(
         default=ARCHIVE_SCOPE_ACTIVE,
-        pattern="^(active|accepted|rejected|unfilled|ksero_partner)$",
+        pattern="^(active|accepted|rejected|unfilled|ksero_partner|closed_other)$",
     ),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
@@ -1090,6 +1105,7 @@ async def contracts_dashboard_data(
             ARCHIVE_BUCKET_REJECTED: 0,
             ARCHIVE_BUCKET_UNFILLED: 0,
             ARCHIVE_BUCKET_KSERO_PARTNER: 0,
+            ARCHIVE_BUCKET_CLOSED_OTHER: 0,
         }
         scoped_forms: list[FormRequest] = []
         for item in forms:
@@ -2456,6 +2472,7 @@ async def contracts_form_workflow_status(
         WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
         WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
         WORKFLOW_BUSINESS_STATUS_RENTAL_WITHOUT_GRENKE,
+        WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED,
     }:
         item.archive_due_at = datetime.now(UTC) + timedelta(days=ARCHIVE_DAYS_AFTER_DECISION)
     if normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
@@ -2472,6 +2489,7 @@ async def contracts_form_workflow_status(
     sheet_sync_warning: str | None = None
     sheet_sync_reason: str | None = None
     delivery_case_payload: dict[str, Any] | None = None
+    resources_release_result: dict[str, Any] | None = None
 
     if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
         issuer_name = (
@@ -2585,6 +2603,20 @@ async def contracts_form_workflow_status(
         }
         response_message_parts.append("Przekazano sprawę do modułu obsługi dostaw.")
 
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED:
+        resources_release_result = await _release_workflow_resources_for_case(
+            session,
+            workflow_case=workflow_case,
+            workflow_devices=workflow_devices,
+            updated_by=admin_user.id,
+            status_source="manual_close",
+            note="Zwolniono zasoby po zamknięciu sprawy bez realizacji.",
+        )
+        workflow_case = resources_release_result["workflow_case"]
+        response_message_parts.append(
+            "Zwolniono rezerwacje i usunięto aktywną proformę. Historia formularza została zachowana."
+        )
+
     response_workflow = serialize_workflow_case(workflow_case, workflow_devices)
     if normalized_status == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE:
         days = _days_until(workflow_case.resources_release_due_at)
@@ -2614,6 +2646,18 @@ async def contracts_form_workflow_status(
             "sheet_sync_reason": sheet_sync_reason,
             "sheet_sync_warning": sheet_sync_warning,
             "delivery": delivery_case_payload,
+            "resources_release": (
+                {
+                    "previous_proforma": resources_release_result["previous_proforma"],
+                    "sheet_release": resources_release_result["sheet_release"],
+                    "sheet_release_warning": resources_release_result["sheet_release_warning"],
+                    "firebird_delete": resources_release_result["firebird_delete"],
+                    "sheet_clear": resources_release_result["sheet_clear"],
+                    "sheet_clear_warning": resources_release_result["sheet_clear_warning"],
+                }
+                if resources_release_result
+                else None
+            ),
         },
     )
     await session.commit()
@@ -2628,6 +2672,17 @@ async def contracts_form_workflow_status(
         "sheet_sync": sheet_sync_result,
         "sheet_sync_warning": sheet_sync_warning,
         "delivery": delivery_case_payload,
+        "resources_release": (
+            {
+                "sheet_release": resources_release_result["sheet_release"],
+                "sheet_release_warning": resources_release_result["sheet_release_warning"],
+                "firebird_delete": resources_release_result["firebird_delete"],
+                "sheet_clear": resources_release_result["sheet_clear"],
+                "sheet_clear_warning": resources_release_result["sheet_clear_warning"],
+            }
+            if resources_release_result
+            else None
+        ),
         "archive_state": {
             "archive_due_at": _to_iso(item.archive_due_at),
             "days_to_archive": _days_until(item.archive_due_at),
@@ -3339,47 +3394,16 @@ async def contracts_form_workflow_sheet_release(
     }
 
 
-@router.post(
-    "/forms/{form_id}/workflow/release-resources",
-    summary="Zwolnij zasoby po odmowie GRENKE",
-)
-async def contracts_form_workflow_release_resources(
-    form_id: int,
-    admin_context=Depends(get_admin_session_context),  # noqa: B008
-    session: AsyncSession = Depends(get_db_session),  # noqa: B008
-) -> dict:
-    """Zwalnia rezerwacje i usuwa proformę, ale zostawia pełną historię sprawy."""
-    admin_session, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi umow.",
-        )
-
-    from app.services import form_generator
-
-    item = await form_generator.get_form_request_by_id(session, form_id)
-    if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
-    if item.status != "SUBMITTED":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Zasoby workflow są dostępne tylko dla formularzy SUBMITTED.",
-        )
-
-    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
-    if workflow_case is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Brak zapisanej sprawy workflow dla formularza.",
-        )
-
-    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+async def _release_workflow_resources_for_case(
+    session: AsyncSession,
+    *,
+    workflow_case: FormWorkflowCase,
+    workflow_devices: list[FormWorkflowDevice],
+    updated_by: int | None,
+    status_source: str,
+    note: str,
+) -> dict[str, Any]:
+    """Zwalnia rezerwacje, usuwa proformę i zostawia historię workflow."""
     sheet_release_result: dict[str, Any] | None = None
     sheet_release_warning: str | None = None
     firebird_delete_result: dict[str, Any] | None = None
@@ -3449,16 +3473,77 @@ async def contracts_form_workflow_release_resources(
         workflow_case = await clear_form_workflow_proforma(
             session,
             workflow_case=workflow_case,
-            updated_by=admin_user.id,
+            updated_by=updated_by,
         )
 
     workflow_case = await mark_workflow_resources_released(
         session,
         workflow_case=workflow_case,
+        updated_by=updated_by,
+        status_source=status_source,
+        note=note,
+    )
+    return {
+        "workflow_case": workflow_case,
+        "previous_proforma": previous_proforma,
+        "sheet_release": sheet_release_result,
+        "sheet_release_warning": sheet_release_warning,
+        "firebird_delete": firebird_delete_result,
+        "sheet_clear": sheet_clear_result,
+        "sheet_clear_warning": sheet_clear_warning,
+    }
+
+
+@router.post(
+    "/forms/{form_id}/workflow/release-resources",
+    summary="Zwolnij zasoby po odmowie GRENKE",
+)
+async def contracts_form_workflow_release_resources(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwalnia rezerwacje i usuwa proformę, ale zostawia pełną historię sprawy."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi umow.",
+        )
+
+    from app.services import form_generator
+
+    item = await form_generator.get_form_request_by_id(session, form_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formularz nie istnieje.")
+    if item.status != "SUBMITTED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Zasoby workflow są dostępne tylko dla formularzy SUBMITTED.",
+        )
+
+    workflow_case = await get_form_workflow_case(session, form_request_id=item.id)
+    if workflow_case is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Brak zapisanej sprawy workflow dla formularza.",
+        )
+
+    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
+    release_result = await _release_workflow_resources_for_case(
+        session,
+        workflow_case=workflow_case,
+        workflow_devices=workflow_devices,
         updated_by=admin_user.id,
         status_source="manual_release",
         note="Ręcznie zwolniono zasoby po odmowie GRENKE.",
     )
+    workflow_case = release_result["workflow_case"]
     await record_audit(
         session,
         user_id=admin_user.id,
@@ -3467,12 +3552,12 @@ async def contracts_form_workflow_release_resources(
         payload={
             "form_request_id": item.id,
             "workflow_case_id": workflow_case.id,
-            "previous_proforma": previous_proforma,
-            "sheet_release": sheet_release_result,
-            "sheet_release_warning": sheet_release_warning,
-            "firebird_delete": firebird_delete_result,
-            "sheet_clear": sheet_clear_result,
-            "sheet_clear_warning": sheet_clear_warning,
+            "previous_proforma": release_result["previous_proforma"],
+            "sheet_release": release_result["sheet_release"],
+            "sheet_release_warning": release_result["sheet_release_warning"],
+            "firebird_delete": release_result["firebird_delete"],
+            "sheet_clear": release_result["sheet_clear"],
+            "sheet_clear_warning": release_result["sheet_clear_warning"],
         },
     )
     await session.commit()
@@ -3480,11 +3565,11 @@ async def contracts_form_workflow_release_resources(
     return {
         "ok": True,
         "message": "Zwolniono rezerwacje i usunięto aktywną proformę. Historia formularza została zachowana.",
-        "sheet_release": sheet_release_result,
-        "sheet_release_warning": sheet_release_warning,
-        "firebird_delete": firebird_delete_result,
-        "sheet_clear": sheet_clear_result,
-        "sheet_clear_warning": sheet_clear_warning,
+        "sheet_release": release_result["sheet_release"],
+        "sheet_release_warning": release_result["sheet_release_warning"],
+        "firebird_delete": release_result["firebird_delete"],
+        "sheet_clear": release_result["sheet_clear"],
+        "sheet_clear_warning": release_result["sheet_clear_warning"],
         "workflow": serialize_workflow_case(workflow_case, workflow_devices),
     }
 

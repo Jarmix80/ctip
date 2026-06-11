@@ -88,6 +88,7 @@ function workflowBusinessStatusLabel(status) {
     REJECTED: "Odmowa GRENKE",
     REJECTED_GRENKE: "Odmowa GRENKE",
     RENTAL_WITHOUT_GRENKE: "Wynajem bez GRENKE",
+    CLOSED_NOT_REALIZED: "Zamknięta bez realizacji",
   };
   return mapped[status] || status || "Brak";
 }
@@ -2425,6 +2426,7 @@ function initializeGenForm() {
       rejected: document.getElementById("genform-count-rejected"),
       unfilled: document.getElementById("genform-count-unfilled"),
       ksero_partner: document.getElementById("genform-count-ksero-partner"),
+      closed_other: document.getElementById("genform-count-closed-other"),
     };
     Object.entries(mapping).forEach(([scope, element]) => {
       if (element) {

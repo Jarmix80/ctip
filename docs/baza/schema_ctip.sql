@@ -646,7 +646,7 @@ CREATE TABLE ctip.form_request (
         ON UPDATE NO ACTION
         ON DELETE SET NULL,
     CONSTRAINT form_request_status_check CHECK (status = ANY (ARRAY['GENERATED'::text, 'DISPATCHED'::text, 'SUBMITTED'::text, 'EXPIRED'::text])),
-    CONSTRAINT form_request_archive_bucket_check CHECK ((archive_bucket IS NULL) OR (archive_bucket = ANY (ARRAY['accepted'::text, 'rejected'::text, 'unfilled'::text, 'ksero_partner'::text]))),
+    CONSTRAINT form_request_archive_bucket_check CHECK ((archive_bucket IS NULL) OR (archive_bucket = ANY (ARRAY['accepted'::text, 'rejected'::text, 'unfilled'::text, 'ksero_partner'::text, 'closed_other'::text]))),
     CONSTRAINT uq_form_request_token_hash UNIQUE (token_hash)
 );
 
@@ -709,7 +709,7 @@ CREATE TABLE ctip.form_workflow_case (
         ON UPDATE NO ACTION
         ON DELETE SET NULL,
     CONSTRAINT form_workflow_case_stage_check CHECK (stage = ANY (ARRAY['FORM_SUBMITTED'::text, 'CLIENT_READY'::text, 'DEVICES_SELECTED'::text, 'PROFORMA_CREATED'::text])),
-    CONSTRAINT form_workflow_case_business_status_check CHECK (business_status = ANY (ARRAY['DRAFT'::text, 'PENDING_APPROVAL'::text, 'APPROVED'::text, 'ZEROWKA'::text, 'REJECTED'::text, 'WAITING_SIGNATURE'::text, 'APPROVED_ORDER'::text, 'REJECTED_GRENKE'::text, 'RENTAL_WITHOUT_GRENKE'::text]))
+    CONSTRAINT form_workflow_case_business_status_check CHECK (business_status = ANY (ARRAY['DRAFT'::text, 'PENDING_APPROVAL'::text, 'APPROVED'::text, 'ZEROWKA'::text, 'REJECTED'::text, 'WAITING_SIGNATURE'::text, 'APPROVED_ORDER'::text, 'REJECTED_GRENKE'::text, 'RENTAL_WITHOUT_GRENKE'::text, 'CLOSED_NOT_REALIZED'::text]))
 );
 
 ALTER TABLE ctip.form_workflow_case OWNER TO postgres;

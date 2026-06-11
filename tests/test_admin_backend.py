@@ -5706,12 +5706,15 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(workflow_case.resources_release_due_at)
             assert form_row is not None
             self.assertIsNotNone(form_row.archive_due_at)
+            archive_due_at = (
+                form_row.archive_due_at
+                if form_row.archive_due_at.tzinfo is not None
+                else form_row.archive_due_at.replace(tzinfo=UTC)
+            )
             self.assertGreaterEqual(
-                form_row.archive_due_at, before + timedelta(days=14) - timedelta(minutes=1)
+                archive_due_at, before + timedelta(days=14) - timedelta(minutes=1)
             )
-            self.assertLessEqual(
-                form_row.archive_due_at, datetime.now(UTC) + timedelta(days=14, minutes=1)
-            )
+            self.assertLessEqual(archive_due_at, datetime.now(UTC) + timedelta(days=14, minutes=1))
 
     async def test_contracts_dashboard_scope_includes_ksero_partner_bucket(self):
         token, _ = await self._login_operator()

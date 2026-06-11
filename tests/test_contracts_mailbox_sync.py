@@ -335,6 +335,32 @@ def test_resolve_mailbox_business_status_does_not_downgrade_final_status() -> No
     assert skipped is True
 
 
+def test_resolve_mailbox_business_status_does_not_downgrade_closed_not_realized() -> None:
+    module = _load_sync_module()
+    mail_ctx = module.MailContext(
+        imap_id="91",
+        message_id="<old-decision-closed@test>",
+        subject="Decyzja do wniosku 173-025300",
+        sender="noreply@grenke.pl",
+        body_text="Decyzja do wniosku 173-025300 została wydana.",
+        email_date_utc=datetime(2026, 6, 3, 12, 0, 0, tzinfo=UTC),
+        event_type=module.MAILBOX_EVENT_DECISION,
+        application_no_raw="173-025300",
+        application_no_normalized="173025300",
+        attachments=[],
+    )
+
+    status, is_rejection, skipped = module.resolve_mailbox_business_status(
+        mail_ctx=mail_ctx,
+        current_business_status=module.WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED,
+        decision_text="Decyzja do wniosku 173-025300 została wydana.",
+    )
+
+    assert status == module.WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED
+    assert is_rejection is False
+    assert skipped is True
+
+
 def test_parse_args_fail_on_warnings_defaults_to_false(monkeypatch) -> None:
     module = _load_sync_module()
     monkeypatch.setattr(sys, "argv", ["contracts_mailbox_sync.py", "--limit", "10"])
