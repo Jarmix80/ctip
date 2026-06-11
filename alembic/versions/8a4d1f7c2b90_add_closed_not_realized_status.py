@@ -39,6 +39,7 @@ def upgrade() -> None:
     )
     op.create_check_constraint(
         "form_workflow_case_business_status_check",
+        "form_workflow_case",
         "business_status in ("
         "'DRAFT','PENDING_APPROVAL','APPROVED','ZEROWKA','REJECTED',"
         "'WAITING_SIGNATURE','APPROVED_ORDER','REJECTED_GRENKE',"
@@ -72,6 +73,7 @@ def downgrade() -> None:
     )
     op.create_check_constraint(
         "form_workflow_case_business_status_check",
+        "form_workflow_case",
         "business_status in ("
         "'DRAFT','PENDING_APPROVAL','APPROVED','ZEROWKA','REJECTED',"
         "'WAITING_SIGNATURE','APPROVED_ORDER','REJECTED_GRENKE','RENTAL_WITHOUT_GRENKE'"
