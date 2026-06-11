@@ -123,7 +123,8 @@ class FormRequest(Base):
             name="form_request_status_check",
         ),
         CheckConstraint(
-            "archive_bucket is null or archive_bucket in ('accepted','rejected','unfilled','ksero_partner')",
+            "archive_bucket is null or archive_bucket in "
+            "('accepted','rejected','unfilled','ksero_partner','closed_other')",
             name="form_request_archive_bucket_check",
         ),
     )
@@ -170,7 +171,8 @@ class FormWorkflowCase(Base):
         CheckConstraint(
             "business_status in ("
             "'DRAFT','PENDING_APPROVAL','APPROVED','ZEROWKA','REJECTED',"
-            "'WAITING_SIGNATURE','APPROVED_ORDER','REJECTED_GRENKE','RENTAL_WITHOUT_GRENKE'"
+            "'WAITING_SIGNATURE','APPROVED_ORDER','REJECTED_GRENKE',"
+            "'RENTAL_WITHOUT_GRENKE','CLOSED_NOT_REALIZED'"
             ")",
             name="form_workflow_case_business_status_check",
         ),

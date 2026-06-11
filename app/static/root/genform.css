@@ -892,6 +892,10 @@ body {
   background: rgba(23, 80, 120, 0.08);
 }
 
+.genform-row-tone-closed_other {
+  background: rgba(96, 64, 112, 0.08);
+}
+
 .genform-row-tone-muted {
   opacity: 0.62;
   background: #eef2f6;
