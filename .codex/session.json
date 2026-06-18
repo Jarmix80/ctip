@@ -1,35 +1,32 @@
 {
-  "timestamp": "2026-05-05T12:15:00+02:00",
+  "timestamp": "2026-06-18T16:13:20+02:00",
   "summary": [
-    "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
-    "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
-    "Restart uslug nie wystarczyl: CTIP-FormsPublic nadal zwracal 500, dopoki AppEnvironmentExtra nie zawieral pelnego zestawu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE.",
-    "Na serwerze Windows ustawiono dla CTIP-FormsPublic komplet PG* z D:\\CTIP\\.env z wymuszonym PGHOST=127.0.0.1; po restarcie lokalny i publiczny fałszywy token zwracaja 404.",
-    "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
-    "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
-    "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
-    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
-  ],
-  "follow_up": [
-    "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
-    "Przy kolejnym wdrozeniu sprawdzic: http://127.0.0.1:8100/health, http://127.0.0.1:8100/formularz/abc oraz https://form.ksero-partner.com.pl/formularz/abc.",
-    "Nie usuwac AppEnvironmentExtra PG* z CTIP-FormsPublic, dopoki na serwerze istnieja zmienne procesu/systemu nadpisujace .env."
+    "Aktywna linia lokalna to integration/prod-realign-2026-05-25, HEAD 41b9703c165c0ad83d5c4b61b5c8f08e4e73d2b3.",
+    "Produkcja Windows 192.168.0.8 byla ostatnio wyrownana po hotfixach statusow FLOW; nie laczyc sie z produkcja bez jawnej prosby uzytkownika.",
+    "Komunikacja klientow na produkcji zostala przywrocona: BLOCK_CLIENT_COMMUNICATIONS=false.",
+    "Formularz 47 zostal odzyskany po blokadzie komunikacji: nowy token, e-mail wyslany, SMS wyslany, status DISPATCHED.",
+    "Plan dalszych prac dla /device zostal zapisany jako notatka na pozniej w docs/session_state.md i utrwalony snapshotem sesji 2026-06-18.",
+    "Modul /device jest zaimplementowany jako v1, ale przed pelnym dopuszczeniem produkcyjnym wymaga testu end-to-end Firebird oraz dopracowania punktow z planu."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "codex/fix-public-form-checkbox-422",
-    "venv": ".venv",
-    "focus": "production-public-forms-500-fixed",
-    "verification": [
-      "pre-commit run --all-files: passed",
-      "pytest -q: 371 passed, 1 xfailed, 26 warnings",
-      "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
-      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
-    ],
-    "services": [
-      "CTIP-FormsPublic",
-      "IIS reverse proxy",
-      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
-    ]
+    "branch_local": "integration/prod-realign-2026-05-25",
+    "head_local": "41b9703c165c0ad83d5c4b61b5c8f08e4e73d2b3",
+    "environment": "Domyslnie lokalne testowe .env.test i baza ctip_test; zasoby 192.168.0.8 oraz 192.168.0.11 sa produkcyjne.",
+    "focus": "zachowany plan dalszych prac /device do pozniejszego wdrozenia",
+    "device_plan": {
+      "status": "v1_implemented_needs_operational_validation",
+      "summary": "/device ma dashboard PZ, audyt MAGAZYN/SERIAL/MASZYNA/MODEL, synchronizacje AUTO/XXXX i tworzenie PZ batch z SERIAL oraz MASZYNA.",
+      "next_steps": [
+        "Wykonac test end-to-end na kontrolowanej kopii Firebird: PZ -> ZAKPOZYCJA -> SERIAL -> MASZYNA.",
+        "Dopisac test integracyjny pelnego zapisu batch.",
+        "Ujednolicic stale magazynu 28/656 z FB_WAREHOUSE_ID i FB_WAREHOUSE_CLIENT_ID.",
+        "Przejrzec ryzyko pola force omijajacego blokade duplikatu serial/ewidencja.",
+        "Potwierdzic kompletnosc tworzonych pol MASZYNA z Menadzerem Serwisu.",
+        "Dodac /device do middleware Cache-Control: no-store.",
+        "Wykonac reczny test UI z realnym scenariuszem dostawcy, modelu i 2-3 pozycji."
+      ],
+      "assumption": "Do wykonania powyzszych punktow /device nie jest traktowany jako w pelni zatwierdzony proces produkcyjny."
+    }
   }
 }
