@@ -314,7 +314,7 @@ function renderContracts(items) {
     return `<article class="delivery-contract">
       <span class="delivery-pill">${escapeHtml(item.status)}</span>
       <strong>${escapeHtml(item.customer_name || "Klient bez nazwy")}</strong>
-      <p>Prefill: ${escapeHtml(formatDate(item.prefilled_end_date))} | Potwierdzona: ${escapeHtml(formatDate(item.confirmed_end_date))}</p>
+      <p>Poczatek GRENKE: ${escapeHtml(formatDate(item.grenke_contract_start_date))} | Prefill końca: ${escapeHtml(formatDate(item.prefilled_end_date))} | Potwierdzona: ${escapeHtml(formatDate(item.confirmed_end_date))}</p>
       <small>${escapeHtml(item.contract_number || item.source_note || "")}</small>
       ${schedule ? `<small>${escapeHtml(schedule)}</small>` : ""}
       ${pending ? `<form data-contract-id="${item.id}" class="delivery-contract-confirm">
@@ -645,7 +645,7 @@ async function init() {
   document.getElementById("run-grenke-reminders")?.addEventListener("click", async () => {
     try {
       const data = await fetchJson("/admin/delivery/grenke-contracts/reminders/run", { method: "POST", headers: headers(true), body: "{}" });
-      setInfo(`Przypomnienia: SMS ${data.result.sms_queued}, e-mail ${data.result.emails_sent}.`);
+      setInfo(`Przypomnienia: sprawdzone ${data.result.checked}, SMS ${data.result.sms_queued}, e-mail ${data.result.emails_sent}, bez odbiorcow ${data.result.skipped_no_recipients || 0}.`);
       await loadContracts();
     } catch (err) {
       setInfo(err.message, true);

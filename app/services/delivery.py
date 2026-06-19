@@ -35,6 +35,7 @@ from app.services.contract_pdf_parser import extract_contract_data_from_text, ex
 from app.services.contracts_workflow import (
     build_workflow_device_key,
     normalize_workflow_device_source_type,
+    resolve_workflow_grenke_contract_start_date,
 )
 from app.services.email_client import send_smtp_message
 
@@ -217,10 +218,11 @@ def infer_grenke_contract_end(
             duration_months = _parse_int(value)
             if duration_months:
                 break
-    if duration_months and workflow_case.delivery_date:
+    grenke_contract_start_date = resolve_workflow_grenke_contract_start_date(workflow_case)
+    if duration_months and grenke_contract_start_date:
         return (
-            _add_months(workflow_case.delivery_date, duration_months),
-            f"prefill: data zgody + {duration_months} mies.",
+            _add_months(grenke_contract_start_date, duration_months),
+            f"prefill: początek umowy GRENKE + {duration_months} mies.",
             None,
         )
 
@@ -437,6 +439,7 @@ def serialize_grenke_contract_end(item: GrenkeContractEnd) -> dict[str, Any]:
         "form_request_id": item.form_request_id,
         "workflow_case_id": item.workflow_case_id,
         "status": item.status,
+        "grenke_contract_start_date": _to_iso(item.grenke_contract_start_date),
         "prefilled_end_date": _to_iso(item.prefilled_end_date),
         "confirmed_end_date": _to_iso(item.confirmed_end_date),
         "confirmed_at": _to_iso(item.confirmed_at),
@@ -526,8 +529,13 @@ async def ensure_delivery_case_for_workflow(
     delivery_case.status = (
         DELIVERY_STATUS_PLANNED if workflow_case.delivery_date else delivery_case.status
     )
+    grenke_contract_start_date = resolve_workflow_grenke_contract_start_date(workflow_case)
+    if workflow_case.grenke_contract_start_date is None and grenke_contract_start_date is not None:
+        workflow_case.grenke_contract_start_date = grenke_contract_start_date
     delivery_case.snapshot = {
         "workflow_business_status": workflow_case.business_status,
+        "grenke_contract_start_date": _to_iso(grenke_contract_start_date),
+        "kp_contract_start_date": _to_iso(workflow_case.kp_contract_start_date),
         "proforma_number": workflow_case.proforma_number,
         "form_request_id": getattr(form_request, "id", None),
     }
@@ -565,6 +573,7 @@ async def ensure_delivery_case_for_workflow(
             form_request_id=getattr(form_request, "id", None),
             workflow_case_id=workflow_case.id,
             status=CONTRACT_END_PENDING,
+            grenke_contract_start_date=grenke_contract_start_date,
             prefilled_end_date=prefilled_date,
             customer_name=customer_name,
             contract_number=contract_number,
@@ -577,6 +586,9 @@ async def ensure_delivery_case_for_workflow(
         contract_end.delivery_case_id = delivery_case.id
         contract_end.form_request_id = getattr(form_request, "id", None)
         contract_end.customer_name = customer_name
+        contract_end.grenke_contract_start_date = (
+            contract_end.grenke_contract_start_date or grenke_contract_start_date
+        )
         contract_end.updated_at = now
         if contract_end.status == CONTRACT_END_PENDING:
             contract_end.prefilled_end_date = contract_end.prefilled_end_date or prefilled_date
@@ -598,6 +610,12 @@ async def confirm_grenke_contract_end(
     now = _utc_now()
     item.status = CONTRACT_END_CONFIRMED
     item.confirmed_end_date = confirmed_end_date
+    if item.grenke_contract_start_date is None and item.workflow_case_id is not None:
+        workflow_case = await session.get(FormWorkflowCase, item.workflow_case_id)
+        if workflow_case is not None:
+            item.grenke_contract_start_date = resolve_workflow_grenke_contract_start_date(
+                workflow_case
+            )
     item.confirmed_at = now
     item.confirmed_by = confirmed_by
     item.updated_at = now
@@ -928,11 +946,11 @@ def render_docx_template(template_path: Path, context: dict[str, str]) -> bytes:
 
 
 async def load_notification_recipients(session: AsyncSession) -> list[AdminUser]:
-    """Zwraca aktywnych handlowców oraz operatorów/adminów do powiadomień."""
+    """Zwraca aktywnych handlowców do powiadomień."""
     result = await session.execute(
         select(AdminUser)
         .where(AdminUser.is_active.is_(True))
-        .where(or_(AdminUser.is_salesperson.is_(True), AdminUser.role.in_(["admin", "operator"])))
+        .where(AdminUser.is_salesperson.is_(True))
         .order_by(AdminUser.id.asc())
     )
     users = list(result.scalars())
@@ -953,17 +971,42 @@ async def send_grenke_contract_end_reminders(session: AsyncSession) -> dict[str,
     recipients = await load_notification_recipients(session)
     email_delivery = await admin_users.resolve_email_delivery_settings(session)
     checked = 0
+    eligible = 0
     sms_queued = 0
     emails_sent = 0
+    skipped_no_recipients = 0
     for item in items:
         if not item.confirmed_end_date:
             continue
         days_left = (item.confirmed_end_date - today).days
-        if days_left not in CONTRACT_REMINDER_THRESHOLDS:
-            continue
-        checked += 1
         history = list(item.notification_history or [])
-        key = f"{days_left}:{item.confirmed_end_date.isoformat()}"
+        end_date_key = item.confirmed_end_date.isoformat()
+        sent_thresholds: set[int] = set()
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            key_value = str(entry.get("key") or "")
+            if not key_value.endswith(f":{end_date_key}"):
+                continue
+            threshold_value = entry.get("threshold_days")
+            if threshold_value is None:
+                threshold_value = key_value.split(":", 1)[0]
+            try:
+                sent_thresholds.add(int(threshold_value))
+            except (TypeError, ValueError):
+                continue
+        due_thresholds = [
+            days
+            for days in CONTRACT_REMINDER_THRESHOLDS
+            if 0 <= days_left <= days
+            and not any(sent_days <= days for sent_days in sent_thresholds)
+        ]
+        if not due_thresholds:
+            continue
+        threshold_days = min(due_thresholds, key=lambda days: days - days_left)
+        checked += 1
+        eligible += 1
+        key = f"{threshold_days}:{item.confirmed_end_date.isoformat()}"
         if any(entry.get("key") == key for entry in history if isinstance(entry, dict)):
             continue
         subject = f"CTIP: koniec umowy GRENKE za {days_left} dni"
@@ -986,6 +1029,12 @@ async def send_grenke_contract_end_reminders(session: AsyncSession) -> dict[str,
                             "type": "grenke_contract_end_reminder",
                             "grenke_contract_end_id": item.id,
                             "days_left": days_left,
+                            "threshold_days": threshold_days,
+                            "grenke_contract_start_date": (
+                                item.grenke_contract_start_date.isoformat()
+                                if item.grenke_contract_start_date
+                                else None
+                            ),
                         },
                         created_at=_utc_now().replace(tzinfo=None),
                     )
@@ -1013,10 +1062,19 @@ async def send_grenke_contract_end_reminders(session: AsyncSession) -> dict[str,
                     if result.success:
                         emails_sent += 1
                         run_emails_sent += 1
+        if run_sms_queued == 0 and run_emails_sent == 0:
+            skipped_no_recipients += 1
+            continue
         history.append(
             {
                 "key": key,
                 "days_left": days_left,
+                "threshold_days": threshold_days,
+                "grenke_contract_start_date": (
+                    item.grenke_contract_start_date.isoformat()
+                    if item.grenke_contract_start_date
+                    else None
+                ),
                 "sent_at": _utc_now().isoformat(),
                 "sms_queued": run_sms_queued,
                 "emails_sent": run_emails_sent,
@@ -1025,7 +1083,13 @@ async def send_grenke_contract_end_reminders(session: AsyncSession) -> dict[str,
         item.notification_history = history
         item.updated_at = _utc_now()
     await session.flush()
-    return {"checked": checked, "sms_queued": sms_queued, "emails_sent": emails_sent}
+    return {
+        "checked": checked,
+        "eligible": eligible,
+        "sms_queued": sms_queued,
+        "emails_sent": emails_sent,
+        "skipped_no_recipients": skipped_no_recipients,
+    }
 
 
 __all__ = [

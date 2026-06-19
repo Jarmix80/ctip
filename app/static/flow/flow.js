@@ -370,6 +370,8 @@ async function initializeFlowPage() {
   const workflowDevicesCount = document.getElementById("flow-workflow-devices-count");
   const workflowBusinessStatus = document.getElementById("flow-workflow-business-status");
   const workflowDeliverySummary = document.getElementById("flow-workflow-delivery-summary");
+  const workflowGrenkeStart = document.getElementById("flow-workflow-grenke-start");
+  const workflowKpStart = document.getElementById("flow-workflow-kp-start");
   const workflowClientPreview = document.getElementById("flow-workflow-client-preview");
   const workflowClientActionLabel = document.getElementById("flow-workflow-client-action-label");
   const workflowClientSaveBtn = document.getElementById("flow-workflow-client-save");
@@ -1171,6 +1173,8 @@ async function initializeFlowPage() {
     workflowDevicesCount.textContent = String(workflow.devices_selected_count || 0);
     workflowBusinessStatus.textContent = workflowBusinessStatusLabel(workflow.business_status);
     workflowDeliverySummary.textContent = workflow.delivery_label || "Brak";
+    workflowGrenkeStart.textContent = workflow.grenke_contract_start_date || "Brak";
+    workflowKpStart.textContent = workflow.kp_contract_start_date || "Brak";
     workflowDeliveryDate.value = workflow.delivery_date || "";
     workflowDeliveryTimeWindow.value = workflow.delivery_time_window || "";
     workflowDeliveryContactName.value = workflow.delivery_contact_name || "";
@@ -2062,6 +2066,7 @@ async function initializeFlowPage() {
                     <div class="flow-schedule-meta">
                       <span class="flow-subtle">Formularz: ${escapeHtml(entry.form_request_id || "—")}</span>
                       <span class="flow-subtle">Dowoz: ${escapeHtml(entry.delivery_label || day)}</span>
+                      <span class="flow-subtle">Poczatek KP: ${escapeHtml(entry.kp_contract_start_date || "—")}</span>
                       <span class="flow-subtle">Kontakt: ${escapeHtml(entry.delivery_contact_name || "—")} / ${escapeHtml(entry.delivery_contact_phone || "—")}</span>
                       <span class="flow-subtle">Notatka: ${escapeHtml(entry.delivery_notes || "—")}</span>
                     </div>

@@ -2045,6 +2045,11 @@ async def contracts_delivery_schedule(
                 "delivery_date": (
                     workflow_case.delivery_date.isoformat() if workflow_case.delivery_date else None
                 ),
+                "kp_contract_start_date": (
+                    workflow_case.kp_contract_start_date.isoformat()
+                    if workflow_case.kp_contract_start_date
+                    else None
+                ),
                 "delivery_time_window": workflow_case.delivery_time_window,
                 "delivery_contact_name": workflow_case.delivery_contact_name,
                 "delivery_contact_phone": workflow_case.delivery_contact_phone,
@@ -2117,6 +2122,7 @@ async def contracts_delivery_move(
         )
 
     workflow_case.delivery_date = payload.delivery_date
+    workflow_case.kp_contract_start_date = payload.delivery_date
     workflow_case.updated_by = admin_user.id
     workflow_case.updated_at = datetime.now(UTC)
     await record_audit(
@@ -2128,6 +2134,7 @@ async def contracts_delivery_move(
             "workflow_case_id": workflow_case.id,
             "form_request_id": workflow_case.form_request_id,
             "delivery_date": payload.delivery_date.isoformat(),
+            "kp_contract_start_date": payload.delivery_date.isoformat(),
         },
     )
     await session.commit()
@@ -2136,6 +2143,7 @@ async def contracts_delivery_move(
         "message": "Przeniesiono wpis harmonogramu.",
         "workflow_case_id": workflow_case.id,
         "delivery_date": payload.delivery_date.isoformat(),
+        "kp_contract_start_date": payload.delivery_date.isoformat(),
     }
 
 

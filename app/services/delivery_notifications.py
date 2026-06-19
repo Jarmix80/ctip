@@ -7,6 +7,7 @@ import logging
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
+from app.services.audit import record_audit
 from app.services.delivery import send_grenke_contract_end_reminders
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,13 @@ async def delivery_notifications_tick() -> dict[str, int]:
     """Wykonuje pojedynczy przebieg przypomnień o końcach umów."""
     async with AsyncSessionLocal() as session:
         result = await send_grenke_contract_end_reminders(session)
+        await record_audit(
+            session,
+            user_id=None,
+            action="grenke_contract_end_reminders_scheduler",
+            client_ip="scheduler",
+            payload=result,
+        )
         await session.commit()
         return result
 

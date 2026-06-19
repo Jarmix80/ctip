@@ -44,6 +44,10 @@ WORKFLOW_LEGACY_STATUS_MAP = {
     WORKFLOW_BUSINESS_STATUS_APPROVED: WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
     WORKFLOW_BUSINESS_STATUS_REJECTED: WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
 }
+WORKFLOW_GRENKE_APPROVED_STATUSES = (
+    WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+    WORKFLOW_BUSINESS_STATUS_APPROVED,
+)
 
 WORKFLOW_BUSINESS_STATUS_LABELS = {
     WORKFLOW_BUSINESS_STATUS_DRAFT: "Wypełniony formularz klienta",
@@ -161,6 +165,44 @@ def append_workflow_status_history(
     if metadata:
         event["metadata"] = metadata
     workflow_case.status_history = [*history, event]
+
+
+def _parse_history_date(value: Any) -> date | None:
+    """Parsuje datę z wpisu historii statusu workflow."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
+
+
+def resolve_workflow_grenke_contract_start_date(workflow_case: FormWorkflowCase) -> date | None:
+    """Zwraca najwcześniejszą datę akceptacji GRENKE dla sprawy workflow."""
+    if workflow_case.grenke_contract_start_date:
+        return workflow_case.grenke_contract_start_date
+    history = workflow_case.status_history if isinstance(workflow_case.status_history, list) else []
+    approved_dates: list[date] = []
+    for event in history:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("status") or "") not in WORKFLOW_GRENKE_APPROVED_STATUSES:
+            continue
+        changed_at = _parse_history_date(event.get("changed_at"))
+        if changed_at:
+            approved_dates.append(changed_at)
+    if approved_dates:
+        return min(approved_dates)
+    if (
+        normalize_workflow_business_status(workflow_case.business_status)
+        == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
+    ):
+        return workflow_case.status_changed_at.date() if workflow_case.status_changed_at else None
+    return None
 
 
 def build_client_preview(payload: dict[str, Any]) -> list[dict[str, str]]:
@@ -313,6 +355,8 @@ def serialize_workflow_case(
             "signature_deadline_at": None,
             "resources_release_due_at": None,
             "resources_released_at": None,
+            "grenke_contract_start_date": None,
+            "kp_contract_start_date": None,
             "status_changed_at": None,
             "status_source": None,
             "status_history": [],
@@ -370,6 +414,16 @@ def serialize_workflow_case(
         "resources_released_at": (
             workflow_case.resources_released_at.isoformat()
             if workflow_case.resources_released_at
+            else None
+        ),
+        "grenke_contract_start_date": (
+            workflow_case.grenke_contract_start_date.isoformat()
+            if workflow_case.grenke_contract_start_date
+            else None
+        ),
+        "kp_contract_start_date": (
+            workflow_case.kp_contract_start_date.isoformat()
+            if workflow_case.kp_contract_start_date
             else None
         ),
         "status_changed_at": (
@@ -644,15 +698,27 @@ async def set_form_workflow_business_status(
     business_status: str,
     updated_by: int | None,
     signature_deadline_at: datetime | None = None,
+    changed_at: datetime | None = None,
     status_source: str = "manual",
     note: str | None = None,
 ) -> FormWorkflowCase:
     """Zapisuje status biznesowy sprawy workflow."""
-    now = datetime.now(UTC)
+    now = changed_at or datetime.now(UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    else:
+        now = now.astimezone(UTC)
     normalized_status = normalize_workflow_business_status(business_status)
     workflow_case.business_status = normalized_status
     workflow_case.status_changed_at = now
     workflow_case.status_source = status_source
+    if (
+        normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
+        and workflow_case.grenke_contract_start_date is None
+    ):
+        workflow_case.grenke_contract_start_date = (
+            resolve_workflow_grenke_contract_start_date(workflow_case) or now.date()
+        )
     if normalized_status == WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE:
         workflow_case.signature_deadline_at = signature_deadline_at or (now + timedelta(days=7))
     if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
@@ -716,6 +782,7 @@ async def set_form_workflow_delivery(
 ) -> FormWorkflowCase:
     """Zapisuje ustalenia logistyczne dowozu po stronie CTIP."""
     workflow_case.delivery_date = delivery_date
+    workflow_case.kp_contract_start_date = delivery_date
     workflow_case.delivery_time_window = _normalize_delivery_text(
         delivery_time_window, max_length=64
     )
@@ -740,6 +807,7 @@ async def clear_form_workflow_delivery(
 ) -> FormWorkflowCase:
     """Usuwa ustalenia logistyczne dowozu po stronie CTIP."""
     workflow_case.delivery_date = None
+    workflow_case.kp_contract_start_date = None
     workflow_case.delivery_time_window = None
     workflow_case.delivery_contact_name = None
     workflow_case.delivery_contact_phone = None
@@ -821,6 +889,16 @@ async def map_form_workflow_summaries(
             "resources_released_at": (
                 workflow_case.resources_released_at.isoformat()
                 if workflow_case.resources_released_at
+                else None
+            ),
+            "grenke_contract_start_date": (
+                workflow_case.grenke_contract_start_date.isoformat()
+                if workflow_case.grenke_contract_start_date
+                else None
+            ),
+            "kp_contract_start_date": (
+                workflow_case.kp_contract_start_date.isoformat()
+                if workflow_case.kp_contract_start_date
                 else None
             ),
             "status_changed_at": (
@@ -1015,6 +1093,7 @@ __all__ = [
     "normalize_workflow_business_status",
     "normalize_workflow_device_source_type",
     "replace_form_workflow_devices",
+    "resolve_workflow_grenke_contract_start_date",
     "serialize_workflow_case",
     "set_form_workflow_delivery",
     "set_form_workflow_business_status",
