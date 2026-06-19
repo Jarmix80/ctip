@@ -216,6 +216,8 @@ class FormWorkflowCase(Base):
     resources_released_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    grenke_contract_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    kp_contract_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -535,6 +537,7 @@ class GrenkeContractEnd(Base):
         ForeignKey("ctip.form_workflow_case.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending_confirmation")
+    grenke_contract_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     prefilled_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     confirmed_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

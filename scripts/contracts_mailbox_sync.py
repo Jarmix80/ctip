@@ -903,6 +903,7 @@ async def apply_mail_to_workflow(
                 signature_deadline_at=(
                     mail_ctx.email_date_utc + timedelta(days=7) if not is_rejection else None
                 ),
+                changed_at=mail_ctx.email_date_utc,
                 status_source="mailbox",
             )
         if is_rejection:
@@ -917,6 +918,7 @@ async def apply_mail_to_workflow(
             workflow_case=workflow_case,
             business_status=WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
             updated_by=None,
+            changed_at=mail_ctx.email_date_utc,
             status_source="mailbox",
         )
         signature_date: date = mail_ctx.email_date_utc.date()

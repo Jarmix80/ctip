@@ -68,3 +68,8 @@
 - Rozszerzono workflow formularzy o status `CLOSED_NOT_REALIZED` (`Zamknięta bez realizacji`) i bucket archiwum `closed_other`.
 - `ctip.form_request` otrzymał rozszerzone ograniczenie `form_request_archive_bucket_check` (`accepted|rejected|unfilled|ksero_partner|closed_other`), a `ctip.form_workflow_case` ograniczenie `form_workflow_case_business_status_check` uwzględnia nowy status.
 - Status `CLOSED_NOT_REALIZED` kończy sprawę bez realizacji, uruchamia pełne zwolnienie zasobów i trafia po archiwizacji do menu „Odrzucone inne”.
+
+## 2026-06-19
+- Rozszerzono `ctip.form_workflow_case` o kolumny `grenke_contract_start_date` i `kp_contract_start_date`, aby rozdzielić początek umowy GRENKE od początku umowy Ksero-Partner.
+- Rozszerzono `ctip.grenke_contract_end` o kolumnę `grenke_contract_start_date`, kopiowaną z workflow do kalendarza końców umów GRENKE.
+- Migracja uzupełnia `grenke_contract_start_date` z pierwszego wpisu statusu `APPROVED_ORDER`/`APPROVED` w `status_history`, a `kp_contract_start_date` z istniejącego `delivery_date`.

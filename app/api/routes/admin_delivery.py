@@ -1305,9 +1305,18 @@ async def run_contract_end_reminders(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict[str, Any]:
     """Ręcznie uruchamia przebieg przypomnień dla potwierdzonych końców umów."""
-    _, user = admin_context
+    admin_session, user = admin_context
     await _ensure_delivery_access(session, user)
     result = await send_grenke_contract_end_reminders(session)
+    session.add(
+        AdminAuditLog(
+            user_id=user.id,
+            action="grenke_contract_end_reminders_manual",
+            client_ip=admin_session.client_ip,
+            payload=result,
+            created_at=datetime.now(UTC),
+        )
+    )
     await session.commit()
     return {"ok": True, "result": result}
 

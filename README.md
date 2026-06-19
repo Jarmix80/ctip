@@ -25,7 +25,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_forms.py` + `app/services/form_generator.py` – generator jednorazowych formularzy klienta (token haszowany, zapis danych zaszyfrowanych, automatyczna weryfikacja klienta po NIP w Menadżerze Serwisu po statusie `SUBMITTED`, z użyciem efektywnej konfiguracji Firebird odczytywanej z `.env` i prezentowanej w panelu administratora w trybie tylko do odczytu).
 - `app/web/genform_ui.py` + `app/templates/genform/` – osobny flow handlowca pod adresem `/genform` (logowanie, generowanie linku, tabela formularzy z kolumnami operacyjnymi FLOW, osobny modal wyboru urządzeń i osobny modal proformy oraz dezaktywacja formularza z przywracaniem rezerwacji arkusza).
 - `app/web/flow_ui.py` + `app/templates/flow/` + `app/static/flow/` – widok `/flow` z bocznym menu dla sekcji „Obsługa umów”, „Obsługa urządzeń” i „Harmonogram dowozów”, nagłówkiem użytkownika, podglądem danych formularza z kopiowaniem pojedynczych pól, osobnym modalem workflow do prowadzenia sprawy klienta i wyboru urządzeń po stronie CTIP oraz stronami wizualizacji proformy `/flow/proforma-wizualizacja` i `/flow/proforma-wizualizacja1`.
-- `app/web/delivery_ui.py` + `app/templates/delivery/` + `app/static/delivery/` + `app/api/routes/admin_delivery.py` + `app/services/delivery.py` – moduł `/delivery` („Obsługa dostaw”): lista dostaw z FLOW GRENKE po statusie `APPROVED_ORDER`, ręczne zakładanie dostaw spoza GRENKE, powiązanie z klientem Firebird oraz kalendarz końców umów GRENKE wymagający potwierdzenia operatora.
+- `app/web/delivery_ui.py` + `app/templates/delivery/` + `app/static/delivery/` + `app/api/routes/admin_delivery.py` + `app/services/delivery.py` – moduł `/delivery` („Obsługa dostaw”): lista dostaw z FLOW GRENKE po statusie `APPROVED_ORDER`, ręczne zakładanie dostaw spoza GRENKE, powiązanie z klientem Firebird oraz kalendarz końców umów GRENKE wymagający potwierdzenia operatora i wysyłający przypomnienia aktywnym handlowcom.
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + `app/services/device_dashboard.py` + `app/services/device_intake.py` – wydzielony widok `/device` dla procesu urzadzen: audyt przyjec `PZ` na magazyn `28`, kontrola powiazan `MAGAZYN` / `SERIAL` / `MASZYNA`, lista problemow danych, audyt tabeli `MODEL` oraz automatyzacja kartoteki `AUTO/XXXX` i przyjecia `PZ` (single + batch) z automatycznym utworzeniem wpisu `MASZYNA`.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
@@ -99,7 +99,11 @@ Kolumna `REZERWACJA GRENKE` jest zapisywana jako dwie linie:
 - linia 2: nazwa klienta z formularza.
 
 ### Obsługa dostaw i kalendarz końców umów GRENKE
-Status `APPROVED_ORDER` przekazuje formularz z FLOW do modułu `/delivery`. W tym momencie CTIP tworzy albo odświeża sprawę `delivery_case`, kopiuje listę urządzeń do `delivery_case_device` i zakłada wpis `grenke_contract_end` jako kandydat do kalendarza końca umowy. Data końca umowy jest traktowana jako roboczy prefill: operator musi ją potwierdzić, zanim system zacznie wysyłać przypomnienia.
+Status `APPROVED_ORDER` przekazuje formularz z FLOW do modułu `/delivery`. W tym momencie CTIP tworzy albo odświeża sprawę `delivery_case`, kopiuje listę urządzeń do `delivery_case_device`, zapisuje `grenke_contract_start_date` jako datę pierwszej akceptacji GRENKE i zakłada wpis `grenke_contract_end` jako kandydat do kalendarza końca umowy. Data końca umowy jest traktowana jako roboczy prefill: operator musi ją potwierdzić, zanim system zacznie wysyłać przypomnienia.
+
+Workflow rozróżnia dwie daty startu:
+- `grenke_contract_start_date` – początek umowy GRENKE, wyprowadzany z pierwszego statusu `APPROVED_ORDER` albo historycznego `APPROVED`; automat mailboxa zapisuje tu datę wiadomości o akceptacji, a nie godzinę przetworzenia backlogu;
+- `kp_contract_start_date` – początek umowy Ksero-Partner, ustawiany z daty dowozu `delivery_date` i aktualizowany przy przeniesieniu terminu.
 
 Moduł `/delivery` obejmuje:
 - listę dostaw GRENKE, dostaw ręcznych oraz odbiorów urządzeń od klientów,
@@ -107,7 +111,7 @@ Moduł `/delivery` obejmuje:
 - zaplanowanie odbioru urządzeń: operator wyszukuje klienta MS, wybiera jego aktywne urządzenia i tworzy sprawę bez modyfikowania bazy Firebird na etapie planowania,
 - planowanie terminu, okna czasowego, danych kontaktowych, zadań przygotowania, dowozu, odbioru, zerówki i kontaktu z klientem,
 - dodawanie plików sprawy oraz generowanie dokumentów DOCX z szablonów trzymanych poza repo,
-- kalendarz końców umów GRENKE z ręcznym potwierdzeniem daty oraz przypomnieniami SMS/e-mail.
+- kalendarz końców umów GRENKE z ręcznym potwierdzeniem daty oraz przypomnieniami SMS/e-mail dla aktywnych handlowców.
 
 Widok użytkownika `/delivery` jest pulpitem roboczym: górny pasek zawiera główne akcje, lewa kolumna pokazuje karty spraw, a prawa kolumna otwiera szczegóły wybranej dostawy albo odbioru. Szczegóły są podzielone na zakładki `Ustalenia`, `Urządzenia`, `Zadania` i `Dokumenty`, aby operator nie musiał przechodzić między osobnymi ekranami przy codziennej obsłudze.
 
@@ -115,6 +119,8 @@ Konfiguracja modułu dostaw:
 - katalog plików spraw określa `DELIVERY_FILES_ROOT` (domyślnie `inbox/delivery/files`),
 - katalog szablonów dokumentów określa `DELIVERY_DOCUMENT_TEMPLATES_ROOT` (domyślnie `inbox/doku`),
 - scheduler przypomnień końców umów kontrolują `DELIVERY_NOTIFICATIONS_SCHEDULER_ENABLED` i `DELIVERY_NOTIFICATIONS_INTERVAL_SECONDS`.
+
+Scheduler przypomnień działa na progach 60/30/7 dni przed potwierdzoną datą końca umowy, zapisuje przebiegi w `admin_audit_log` oraz używa `notification_history` w `ctip.grenke_contract_end`, aby nie dublować tego samego progu. Jeżeli serwer był wyłączony w dniu progu, kolejny przebieg wykonuje najbliższe zaległe przypomnienie przed datą końca umowy.
 
 Uprawnienia:
 - sekcja `delivery` jest wymagana do API `/admin/delivery/*` i widoku `/delivery`,
@@ -788,7 +794,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /admin/delivery/cases/{case_id}/tasks`, `POST /admin/delivery/cases/{case_id}/tasks`, `PATCH /admin/delivery/cases/{case_id}/tasks/{task_id}` – obsługa zadań operacyjnych sprawy.
 - `GET /admin/delivery/cases/{case_id}/files`, `POST /admin/delivery/cases/{case_id}/files`, `GET /admin/delivery/files/{file_id}/download` – obsługa plików sprawy.
 - `GET /admin/delivery/document-templates` i `POST /admin/delivery/cases/{case_id}/documents/generate` – lista szablonów i generowanie dokumentów DOCX.
-- `GET /admin/delivery/grenke-contracts` – lista wpisów kalendarza końców umów GRENKE z filtrami `status_filter`, `date_from`, `date_to` i `q`.
+- `GET /admin/delivery/grenke-contracts` – lista wpisów kalendarza końców umów GRENKE z filtrami `status_filter`, `date_from`, `date_to` i `q`; odpowiedź zawiera m.in. `grenke_contract_start_date`, daty końca i harmonogram przypomnień.
 - `POST /admin/delivery/grenke-contracts/{item_id}/confirm` – potwierdza datę końca umowy i aktywuje przypomnienia.
 - `POST /admin/delivery/grenke-contracts/{item_id}/cancel` – anuluje wpis kalendarza końca umowy.
 - `POST /admin/delivery/grenke-contracts/reminders/run` – ręczne uruchomienie przypomnień końców umów.
