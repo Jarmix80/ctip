@@ -1162,6 +1162,9 @@ function initializeGenForm() {
         const grenkeLabel = workflow.business_status
           ? workflowBusinessStatusLabel(workflow.business_status)
           : "Brak";
+        const grenkeStatusDate = workflow.status_changed_at
+          ? formatDate(workflow.status_changed_at)
+          : "—";
         const archiveLabel = archiveInfoLabel(item);
         const resourceReleaseLabel =
           item.days_to_resource_release !== null && item.days_to_resource_release !== undefined
@@ -1194,7 +1197,10 @@ function initializeGenForm() {
             <div>${escapeHtml(msLabel)}</div>
             <div><span class="genform-status ${bindingClass}">${escapeHtml(bindingText)}</span></div>
           </td>
-          <td>${escapeHtml(grenkeLabel)}</td>
+          <td>
+            <div>${escapeHtml(grenkeLabel)}</div>
+            <div class="genform-subtle">Ostatni status: ${escapeHtml(grenkeStatusDate)}</div>
+          </td>
           <td>
             <div class="genform-row-actions">
               <button type="button" class="genform-row-action" data-action="view" data-form-id="${rowId}">Wyświetl</button>
