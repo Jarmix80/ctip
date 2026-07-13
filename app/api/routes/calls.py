@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session
-from app.models import Call, CallEvent, Contact, SmsOut
+from app.api.deps import get_db_session, get_operator_user
+from app.models import AdminUser, Call, CallEvent, Contact, SmsOut
 from app.schemas.call import CallDetail, CallEventSchema, CallFilters, CallListItem
 from app.schemas.contact import ContactSchema
 from app.schemas.sms import SmsHistoryItem
@@ -80,6 +80,7 @@ async def list_calls(
     limit: int = Query(default=50, ge=1, le=500),  # noqa: B008
     offset: int = Query(default=0, ge=0),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    _: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> list[CallListItem]:
     """Zwraca listę połączeń wraz z informacją o ostatnim SMS i kontakcie."""
     filters = CallFilters(
@@ -169,6 +170,7 @@ async def list_calls(
 async def get_call_detail(
     call_id: int,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    _: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> CallDetail:
     """Zwraca szczegóły połączenia wraz z osią czasu i historią SMS."""
     call_result = await session.execute(select(Call).where(Call.id == call_id))

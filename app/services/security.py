@@ -56,6 +56,11 @@ def generate_session_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def hash_session_token(token: str) -> str:
+    """Zwraca skrót SHA-256 tokenu sesji przechowywany w bazie."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def validate_password_policy(password: str) -> None:
     """Waliduje politykę złożoności hasła."""
     if len(password) < PASSWORD_MIN_LENGTH:

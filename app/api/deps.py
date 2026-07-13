@@ -12,6 +12,8 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.db.session import get_session
 from app.models import AdminSession, AdminUser
+from app.services import section_permissions
+from app.services.security import hash_session_token
 
 
 async def get_db_session(
@@ -21,24 +23,12 @@ async def get_db_session(
     return session
 
 
-async def get_current_user_id(
-    x_user_id: int | None = Header(default=None, alias="X-User-Id")
-) -> int:
-    """Prosta kontrola tożsamości użytkownika na bazie nagłówka X-User-Id."""
-    if x_user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Brak nagłówka X-User-Id",
-        )
-    return x_user_id
-
-
 async def get_admin_session_context(
     token_header: str | None = Header(default=None, alias="X-Admin-Session"),
     token_cookie: str | None = Cookie(default=None, alias=settings.auth_cookie_name),
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> tuple[AdminSession, AdminUser]:
-    """Weryfikuje sesje administratora z naglowka lub ciasteczka."""
+    """Weryfikuje sesję użytkownika z nagłówka lub ciasteczka."""
     token = token_header or token_cookie
     if not token:
         raise HTTPException(
@@ -49,7 +39,7 @@ async def get_admin_session_context(
     stmt = (
         select(AdminSession)
         .options(selectinload(AdminSession.user))
-        .where(AdminSession.token == token)
+        .where(AdminSession.token == hash_session_token(token))
     )
     result = await session.execute(stmt)
     admin_session = result.scalar_one_or_none()
@@ -77,3 +67,24 @@ async def get_admin_session_context(
         )
 
     return admin_session, admin_user
+
+
+async def get_operator_user(
+    admin_context: tuple[AdminSession, AdminUser] = Depends(
+        get_admin_session_context
+    ),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> AdminUser:
+    """Wymaga aktywnej sesji użytkownika z dostępem do sekcji operatora."""
+    _, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Brak uprawnień operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "operator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnień do sekcji operatora.",
+        )
+    return admin_user

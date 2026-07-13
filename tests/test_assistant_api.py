@@ -36,7 +36,7 @@ from app.models import (
 from app.models.base import Base
 from app.services.assistant_runtime import AssistantGenerationResult
 from app.services.assistant_tools import AssistantToolResult
-from app.services.security import hash_password
+from app.services.security import hash_password, hash_session_token
 
 
 class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
@@ -112,13 +112,13 @@ class AssistantApiTests(unittest.IsolatedAsyncioTestCase):
 
             admin_session = AdminSession(
                 user_id=1,
-                token="admin-token",
+                token=hash_session_token("admin-token"),
                 created_at=now,
                 expires_at=now + timedelta(hours=2),
             )
             operator_session = AdminSession(
                 user_id=2,
-                token="operator-token",
+                token=hash_session_token("operator-token"),
                 created_at=now,
                 expires_at=now + timedelta(hours=2),
             )

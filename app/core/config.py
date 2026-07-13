@@ -2,6 +2,7 @@
 
 import socket
 from functools import lru_cache
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -69,6 +70,12 @@ class Settings(BaseSettings):
     admin_secret_key: str | None = Field(default=None, alias="ADMIN_SECRET_KEY")
     admin_session_ttl_minutes: int = Field(default=60, alias="ADMIN_SESSION_TTL_MINUTES")
     admin_session_remember_hours: int = Field(default=72, alias="ADMIN_SESSION_REMEMBER_HOURS")
+    login_failure_limit: int = Field(default=5, alias="LOGIN_FAILURE_LIMIT")
+    login_failure_window_minutes: int = Field(default=15, alias="LOGIN_FAILURE_WINDOW_MINUTES")
+    panel_allowed_networks_raw: str = Field(
+        default="127.0.0.0/8,::1/128,192.168.0.0/24",
+        alias="PANEL_ALLOWED_NETWORKS",
+    )
     admin_panel_url: str | None = Field(
         default="http://localhost:8000/admin", alias="ADMIN_PANEL_URL"
     )
@@ -225,6 +232,12 @@ class Settings(BaseSettings):
     backup_default_local_dir: str = Field(
         default="D:\\Backup_CTIP_MS_optima", alias="BACKUP_DEFAULT_LOCAL_DIR"
     )
+    pg_dump_path: str | None = Field(default=None, alias="PG_DUMP_PATH")
+    pg_restore_path: str | None = Field(default=None, alias="PG_RESTORE_PATH")
+    backup_pg_dump_timeout_seconds: int = Field(
+        default=900,
+        alias="BACKUP_PG_DUMP_TIMEOUT_SECONDS",
+    )
 
     optima_sql_server_instance: str | None = Field(default=None, alias="OPTIMA_SQL_SERVER_INSTANCE")
     optima_sql_host: str | None = Field(default=None, alias="OPTIMA_SQL_HOST")
@@ -345,6 +358,26 @@ class Settings(BaseSettings):
         if public_host and public_host not in hosts:
             hosts.append(public_host)
         return hosts
+
+    def is_panel_client_allowed(self, client_host: str | None) -> bool:
+        """Sprawdza, czy adres klienta należy do dozwolonej sieci panelu."""
+        normalized = str(client_host or "").strip()
+        if normalized in {"localhost", "testclient"}:
+            return True
+        try:
+            address = ip_address(normalized)
+        except ValueError:
+            return False
+        if getattr(address, "ipv4_mapped", None) is not None:
+            address = address.ipv4_mapped
+        for raw_network in self.panel_allowed_networks_raw.split(","):
+            try:
+                network = ip_network(raw_network.strip(), strict=False)
+            except ValueError:
+                continue
+            if address.version == network.version and address in network:
+                return True
+        return False
 
     @property
     def auth_cookie_samesite(self) -> str:

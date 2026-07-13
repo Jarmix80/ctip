@@ -14,7 +14,13 @@ from app.models import AdminSession, AdminUser
 from app.schemas.admin import AdminLoginRequest, AdminLoginResponse, AdminUserInfo
 from app.services import section_permissions
 from app.services.audit import record_audit
-from app.services.security import generate_session_token, verify_password
+from app.services.login_security import (
+    login_is_rate_limited,
+    record_login_failure,
+    record_login_rate_limit,
+    request_client_ip,
+)
+from app.services.security import generate_session_token, hash_session_token, verify_password
 from app.services.session_cookie import clear_admin_session_cookie, set_admin_session_cookie
 
 router = APIRouter(prefix="/admin/auth", tags=["admin"])
@@ -28,6 +34,21 @@ async def admin_login(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> AdminLoginResponse:
     """Weryfikuje dane logowania, zwraca token i ustawia ciasteczko sesji."""
+    client_ip = request_client_ip(request)
+    if await login_is_rate_limited(session, email=payload.email, client_ip=client_ip):
+        await record_login_rate_limit(
+            session,
+            email=payload.email,
+            client_ip=client_ip,
+            channel="admin",
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Przekroczono limit prób logowania. Spróbuj ponownie później.",
+            headers={"Retry-After": str(settings.login_failure_window_minutes * 60)},
+        )
+
     stmt = select(AdminUser).where(AdminUser.email == payload.email)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
@@ -36,15 +57,41 @@ async def admin_login(
         or not user.is_active
         or not verify_password(payload.password, user.password_hash)
     ):
+        await record_login_failure(
+            session,
+            email=payload.email,
+            client_ip=client_ip,
+            channel="admin",
+            reason="invalid_credentials",
+        )
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Nieprawidłowe dane logowania"
         )
 
     if user.role != "admin":
+        await record_login_failure(
+            session,
+            email=payload.email,
+            client_ip=client_ip,
+            channel="admin",
+            reason="role_denied",
+            user_id=user.id,
+        )
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień do panelu administratora."
         )
     if not await section_permissions.user_has_section(session, user, "admin"):
+        await record_login_failure(
+            session,
+            email=payload.email,
+            client_ip=client_ip,
+            channel="admin",
+            reason="section_denied",
+            user_id=user.id,
+        )
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Konto nie ma uprawnień do sekcji administratora.",
@@ -59,10 +106,10 @@ async def admin_login(
     token = generate_session_token()
     admin_session = AdminSession(
         user_id=user.id,
-        token=token,
+        token=hash_session_token(token),
         created_at=now,
         expires_at=expires_at,
-        client_ip=request.client.host if request.client else None,
+        client_ip=client_ip,
         user_agent=request.headers.get("User-Agent"),
     )
     session.add(admin_session)

@@ -5,9 +5,13 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
+import shutil
+import subprocess
 import tarfile
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +42,9 @@ class BackupRunResult:
     checksum_path: Path
     size_bytes: int
     notes: list[str]
+    included_components: list[str] = field(default_factory=list)
+    omitted_components: list[str] = field(default_factory=list)
+    postgres_dump_included: bool = False
 
 
 class BackupRunError(RuntimeError):
@@ -117,11 +124,147 @@ def _sha256_file(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def _add_if_exists(archive: tarfile.TarFile, src: Path, arcname: str, notes: list[str]) -> None:
+def _add_if_exists(
+    archive: tarfile.TarFile,
+    src: Path,
+    arcname: str,
+    notes: list[str],
+) -> bool:
     if not src.exists():
         notes.append(f"Pominięto brakujący zasób: {src}")
-        return
+        return False
     archive.add(src, arcname=arcname, recursive=True)
+    return True
+
+
+def _resolve_postgres_tool(tool_name: str, configured_path: str | None) -> str:
+    """Wyszukuje narzędzie PostgreSQL w konfiguracji, PATH i typowych katalogach Windows."""
+    configured = (configured_path or "").strip().strip('"')
+    if configured:
+        configured_file = Path(configured)
+        if configured_file.is_file():
+            return str(configured_file)
+        raise BackupRunError(f"Skonfigurowane narzędzie {tool_name} nie istnieje: {configured}")
+
+    executable_names = [tool_name]
+    if os.name == "nt" and not tool_name.lower().endswith(".exe"):
+        executable_names.insert(0, f"{tool_name}.exe")
+    for executable_name in executable_names:
+        resolved = shutil.which(executable_name)
+        if resolved:
+            return resolved
+
+    if os.name == "nt":
+        candidates: list[Path] = []
+        for env_name in ("ProgramFiles", "ProgramFiles(x86)"):
+            program_files = os.environ.get(env_name)
+            if program_files:
+                candidates.extend(Path(program_files).glob(f"PostgreSQL/*/bin/{tool_name}.exe"))
+        if candidates:
+
+            def version_key(candidate: Path) -> tuple[int, ...]:
+                raw_version = candidate.parent.parent.name
+                return tuple(int(part) for part in raw_version.split(".") if part.isdigit())
+
+            return str(max(candidates, key=version_key))
+
+    raise BackupRunError(
+        f"Nie znaleziono narzędzia {tool_name}. Ustaw odpowiednią ścieżkę w pliku .env."
+    )
+
+
+def _process_error(result: subprocess.CompletedProcess[str]) -> str:
+    """Zwraca skrócony komunikat procesu bez ujawniania danych połączeniowych."""
+    message = (result.stderr or result.stdout or "brak szczegółów").strip()
+    return message[-1000:]
+
+
+def _create_postgres_dump(target_path: Path) -> None:
+    """Tworzy logiczną kopię PostgreSQL i weryfikuje ją przez pg_restore --list."""
+    pg_dump = _resolve_postgres_tool("pg_dump", settings.pg_dump_path)
+    pg_restore_config = settings.pg_restore_path
+    if not pg_restore_config:
+        sibling_name = "pg_restore.exe" if Path(pg_dump).suffix.lower() == ".exe" else "pg_restore"
+        sibling_path = Path(pg_dump).with_name(sibling_name)
+        if sibling_path.is_file():
+            pg_restore_config = str(sibling_path)
+    pg_restore = _resolve_postgres_tool("pg_restore", pg_restore_config)
+
+    process_env = os.environ.copy()
+    process_env["PGPASSWORD"] = settings.pg_password
+    process_env["PGSSLMODE"] = settings.pg_sslmode
+    command = [
+        pg_dump,
+        "--format=custom",
+        "--no-owner",
+        "--no-privileges",
+        "--host",
+        settings.pg_host,
+        "--port",
+        str(settings.pg_port),
+        "--username",
+        settings.pg_user,
+        "--dbname",
+        settings.pg_database,
+        "--file",
+        str(target_path),
+    ]
+    try:
+        dump_result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=process_env,
+            timeout=settings.backup_pg_dump_timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BackupRunError(f"Nie udało się uruchomić pg_dump: {exc}") from exc
+    if dump_result.returncode != 0:
+        raise BackupRunError(f"pg_dump zakończył się błędem: {_process_error(dump_result)}")
+    if not target_path.is_file() or target_path.stat().st_size == 0:
+        raise BackupRunError("pg_dump nie utworzył poprawnego pliku kopii PostgreSQL.")
+
+    try:
+        verify_result = subprocess.run(
+            [pg_restore, "--list", str(target_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=process_env,
+            timeout=settings.backup_pg_dump_timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BackupRunError(f"Nie udało się zweryfikować kopii PostgreSQL: {exc}") from exc
+    if verify_result.returncode != 0 or not verify_result.stdout.strip():
+        raise BackupRunError(
+            f"Walidacja pg_restore --list nie powiodła się: {_process_error(verify_result)}"
+        )
+
+
+def prune_local_backups(retention_count: int) -> int:
+    """Usuwa lokalne archiwa przekraczające skonfigurowaną retencję."""
+    if retention_count < 1 or not BACKUP_DIR.exists():
+        return 0
+    archives = [
+        path
+        for path in BACKUP_DIR.iterdir()
+        if path.is_file()
+        and path.name.startswith("backup_")
+        and (path.name.endswith(".tar") or path.name.endswith(".tar.gz"))
+    ]
+    archives.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    deleted = 0
+    for archive_path in archives[retention_count:]:
+        checksum_path = archive_path.with_name(f"{archive_path.name}.sha256")
+        archive_path.unlink(missing_ok=True)
+        checksum_path.unlink(missing_ok=True)
+        deleted += 1
+    return deleted
 
 
 def create_local_backup(
@@ -131,7 +274,7 @@ def create_local_backup(
     config: dict[str, Any],
     project_root: Path | None = None,
 ) -> BackupRunResult:
-    """Tworzy lokalne archiwum backupu i sumę kontrolną."""
+    """Tworzy lokalne archiwum, logiczny dump PostgreSQL i sumę kontrolną."""
     root = (project_root or Path.cwd()).resolve()
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -141,6 +284,9 @@ def create_local_backup(
     backup_path = BACKUP_DIR / backup_name
     mode = "w:gz" if compress else "w"
     notes: list[str] = []
+    included_components: list[str] = []
+    omitted_components: list[str] = []
+    postgres_dump_included = False
 
     manifest = {
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -153,44 +299,85 @@ def create_local_backup(
             "archive_firebird_test": bool(config.get("archive_firebird_test", True)),
             "archive_optima": bool(config.get("archive_optima", True)),
         },
+        "included_components": included_components,
+        "omitted_components": omitted_components,
         "notes": notes,
     }
 
+    staging_parent = BACKUP_DIR.resolve()
     try:
-        with tarfile.open(backup_path, mode) as archive:
-            if bool(config.get("archive_ctip_files", True)):
-                _add_if_exists(archive, root / "app", "ctip/app", notes)
-                _add_if_exists(archive, root / "scripts", "ctip/scripts", notes)
-                _add_if_exists(archive, root / "README.md", "ctip/README.md", notes)
-
-            if bool(config.get("archive_firebird_prod", True)):
-                fb_prod = Path(settings.fb_database)
-                _add_if_exists(archive, fb_prod, "firebird/prod/BAZAMS.FDB", notes)
-
-            if bool(config.get("archive_firebird_test", True)):
-                fb_test = Path(settings.fb_local_copy_path)
-                _add_if_exists(archive, fb_test, "firebird/test/menadzer_serwisu.fdb", notes)
-
+        with tempfile.TemporaryDirectory(prefix=".ctip_backup_", dir=staging_parent) as temp_dir:
+            postgres_dump_path: Path | None = None
             if bool(config.get("archive_ctip_db", True)):
-                notes.append("Archiwizacja PostgreSQL wymaga pg_dump - pominięto w tym przebiegu.")
-            if bool(config.get("archive_optima", True)):
-                notes.append(
-                    "Archiwizacja SQL Optimy wymaga dumpa SQL Server - pominięto w tym przebiegu."
-                )
+                postgres_dump_path = Path(temp_dir) / "ctip.dump"
+                _create_postgres_dump(postgres_dump_path)
+                postgres_dump_included = True
+                included_components.append("postgresql_ctip")
 
-            manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
-            info = tarfile.TarInfo(name="manifest.json")
-            info.size = len(manifest_bytes)
-            info.mtime = int(datetime.now(UTC).timestamp())
-            archive.addfile(info, io.BytesIO(manifest_bytes))
-    except OSError as exc:
+            with tarfile.open(backup_path, mode) as archive:
+                if bool(config.get("archive_ctip_files", True)):
+                    ctip_files_added = all(
+                        (
+                            _add_if_exists(archive, root / "app", "ctip/app", notes),
+                            _add_if_exists(archive, root / "scripts", "ctip/scripts", notes),
+                            _add_if_exists(archive, root / "README.md", "ctip/README.md", notes),
+                        )
+                    )
+                    if ctip_files_added:
+                        included_components.append("ctip_files")
+                    else:
+                        omitted_components.append("ctip_files")
+
+                if postgres_dump_path is not None:
+                    archive.add(postgres_dump_path, arcname="postgresql/ctip.dump")
+
+                if bool(config.get("archive_firebird_prod", True)):
+                    fb_prod = Path(settings.fb_database)
+                    if _add_if_exists(archive, fb_prod, "firebird/prod/BAZAMS.FDB", notes):
+                        included_components.append("firebird_prod")
+                    else:
+                        omitted_components.append("firebird_prod")
+
+                if bool(config.get("archive_firebird_test", True)):
+                    fb_test = Path(settings.fb_local_copy_path)
+                    if _add_if_exists(
+                        archive,
+                        fb_test,
+                        "firebird/test/menadzer_serwisu.fdb",
+                        notes,
+                    ):
+                        included_components.append("firebird_test")
+                    else:
+                        omitted_components.append("firebird_test")
+
+                if bool(config.get("archive_optima", True)):
+                    omitted_components.append("optima_sql")
+                    notes.append(
+                        "Archiwizacja SQL Optimy wymaga dumpa SQL Server - pominięto w tym przebiegu."
+                    )
+
+                manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+                info = tarfile.TarInfo(name="manifest.json")
+                info.size = len(manifest_bytes)
+                info.mtime = int(datetime.now(UTC).timestamp())
+                archive.addfile(info, io.BytesIO(manifest_bytes))
+    except BackupRunError:
+        backup_path.unlink(missing_ok=True)
+        raise
+    except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
+        backup_path.unlink(missing_ok=True)
         raise BackupRunError(f"Nie udało się utworzyć archiwum backupu: {exc}") from exc
 
-    checksum = _sha256_file(backup_path)
     checksum_path = backup_path.with_name(f"{backup_path.name}.sha256")
-    checksum_path.write_text(f"{checksum}  {backup_path.name}\n", encoding="utf-8")
+    try:
+        checksum = _sha256_file(backup_path)
+        checksum_path.write_text(f"{checksum}  {backup_path.name}\n", encoding="utf-8")
+        size_bytes = backup_path.stat().st_size
+    except OSError as exc:
+        backup_path.unlink(missing_ok=True)
+        checksum_path.unlink(missing_ok=True)
+        raise BackupRunError(f"Nie udało się potwierdzić archiwum backupu: {exc}") from exc
 
-    size_bytes = backup_path.stat().st_size
     return BackupRunResult(
         backup_name=backup_name,
         backup_path=backup_path,
@@ -198,6 +385,9 @@ def create_local_backup(
         checksum_path=checksum_path,
         size_bytes=size_bytes,
         notes=notes,
+        included_components=included_components,
+        omitted_components=omitted_components,
+        postgres_dump_included=postgres_dump_included,
     )
 
 
@@ -209,4 +399,5 @@ __all__ = [
     "create_local_backup",
     "format_backup_size",
     "list_backup_files",
+    "prune_local_backups",
 ]

@@ -21,7 +21,13 @@ from app.schemas.admin import (
 )
 from app.services import operator_settings, section_permissions
 from app.services.audit import record_audit
-from app.services.security import generate_session_token, verify_password
+from app.services.login_security import (
+    login_is_rate_limited,
+    record_login_failure,
+    record_login_rate_limit,
+    request_client_ip,
+)
+from app.services.security import generate_session_token, hash_session_token, verify_password
 from app.services.session_cookie import clear_admin_session_cookie, set_admin_session_cookie
 
 router = APIRouter(prefix="/auth", tags=["portal-auth"])
@@ -35,6 +41,21 @@ async def portal_login(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> PortalLoginResponse:
     """Logowanie centralne, zwrot sekcji i ustawienie ciasteczka sesji."""
+    client_ip = request_client_ip(request)
+    if await login_is_rate_limited(session, email=payload.email, client_ip=client_ip):
+        await record_login_rate_limit(
+            session,
+            email=payload.email,
+            client_ip=client_ip,
+            channel="portal",
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Przekroczono limit prób logowania. Spróbuj ponownie później.",
+            headers={"Retry-After": str(settings.login_failure_window_minutes * 60)},
+        )
+
     stmt = select(AdminUser).where(AdminUser.email == payload.email)
     user = (await session.execute(stmt)).scalar_one_or_none()
     if (
@@ -42,6 +63,14 @@ async def portal_login(
         or not user.is_active
         or not verify_password(payload.password, user.password_hash)
     ):
+        await record_login_failure(
+            session,
+            email=payload.email,
+            client_ip=client_ip,
+            channel="portal",
+            reason="invalid_credentials",
+        )
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Nieprawidłowe dane logowania."
         )
@@ -55,10 +84,10 @@ async def portal_login(
     token = generate_session_token()
     admin_session = AdminSession(
         user_id=user.id,
-        token=token,
+        token=hash_session_token(token),
         created_at=now,
         expires_at=expires_at,
-        client_ip=request.client.host if request.client else None,
+        client_ip=client_ip,
         user_agent=request.headers.get("User-Agent"),
     )
     session.add(admin_session)

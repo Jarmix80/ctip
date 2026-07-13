@@ -76,8 +76,12 @@ from app.services.firebird_client import FirebirdTestResult
 from app.services.firebird_ms_users import FirebirdMsUserOption
 from app.services.form_handling_config import default_public_base_url
 from app.services.grenke_launch import GrenkeLaunchResult
-from app.services.office365_backup import Office365ConnectionResult, Office365UploadResult
-from app.services.security import hash_password
+from app.services.office365_backup import (
+    Office365ConnectionResult,
+    Office365PruneResult,
+    Office365UploadResult,
+)
+from app.services.security import hash_password, hash_session_token
 from app.services.settings_store import StoredValue
 from app.services.workflow_machine_binding import WorkflowDeviceBindingItem
 from app.services.workflow_sheet_sync import WorkflowSheetRuntimeConfig
@@ -360,6 +364,11 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         token, payload = await self._login()
         self.assertIn("expires_at", payload)
 
+        async with self.session_factory() as session:
+            stored_token = (await session.execute(select(AdminSession.token))).scalar_one()
+        self.assertNotEqual(stored_token, token)
+        self.assertEqual(stored_token, hash_session_token(token))
+
         response = await self.client.get(
             "/admin/auth/me",
             headers={"X-Admin-Session": token},
@@ -371,6 +380,59 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["role"], "admin")
         self.assertFalse(data["is_salesperson"])
         self.assertIn("mobile_phone", data)
+
+    async def test_login_is_blocked_after_failure_limit(self):
+        with (
+            patch.object(settings, "login_failure_limit", 2),
+            patch.object(settings, "login_failure_window_minutes", 15),
+        ):
+            for _ in range(2):
+                response = await self.client.post(
+                    "/admin/auth/login",
+                    json={"email": "admin@example.com", "password": "BledneHaslo!"},
+                )
+                self.assertEqual(response.status_code, 401)
+
+            blocked = await self.client.post(
+                "/admin/auth/login",
+                json={"email": "admin@example.com", "password": "Sekret123!"},
+            )
+
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(blocked.headers["retry-after"], "900")
+        async with self.session_factory() as session:
+            failures = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(AdminAuditLog.action == "security_login_failed")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        self.assertEqual(len(failures), 2)
+        self.assertNotIn("admin@example.com", json.dumps(failures[0].payload))
+
+    async def test_direct_access_outside_lan_is_blocked(self):
+        outside_client = AsyncClient(
+            transport=ASGITransport(app=self.app, client=("10.10.10.10", 43120)),
+            base_url="http://testserver",
+        )
+        try:
+            with patch.object(
+                settings,
+                "panel_allowed_networks_raw",
+                "127.0.0.0/8,::1/128,192.168.0.0/24",
+            ):
+                response = await outside_client.get("/health")
+        finally:
+            await outside_client.aclose()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"],
+            "Dostęp do panelu jest dozwolony wyłącznie z sieci LAN.",
+        )
 
     async def test_admin_login_sets_cookie_and_accepts_cookie_session(self):
         response = await self.client.post(
@@ -596,15 +658,15 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(new_password.status_code, 200)
 
-    async def test_sms_api_requires_x_user_id_header(self):
-        response = await self.client.get("/sms/templates")
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["detail"], "Brak nagłówka X-User-Id")
+    async def test_legacy_operator_apis_are_not_published(self):
+        for path in ("/calls", "/contacts?search=a", "/sms/templates"):
+            with self.subTest(path=path):
+                response = await self.client.get(path)
+                self.assertEqual(response.status_code, 404)
 
-    @unittest.expectedFailure
-    async def test_sms_api_should_not_allow_spoofed_x_user_id_header(self):
+    async def test_legacy_sms_api_rejects_spoofed_x_user_id_header(self):
         response = await self.client.get("/sms/templates", headers={"X-User-Id": "1"})
-        self.assertIn(response.status_code, {401, 403})
+        self.assertEqual(response.status_code, 404)
 
     async def test_public_form_double_submit_returns_already_submitted_without_mutation(self):
         token, _ = await self._login()
@@ -1514,11 +1576,19 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             checksum_path=Path("backups/backup_20260304_170000.tar.gz.sha256"),
             size_bytes=2048,
             notes=[],
+            included_components=["postgresql_ctip"],
+            postgres_dump_included=True,
         )
         try:
-            with patch(
-                "app.api.routes.admin_backup.create_local_backup",
-                return_value=fake_run,
+            with (
+                patch(
+                    "app.api.routes.admin_backup.create_local_backup",
+                    return_value=fake_run,
+                ),
+                patch(
+                    "app.api.routes.admin_backup.prune_local_backups",
+                    return_value=0,
+                ),
             ):
                 response = await self.client.post(
                     "/admin/backup/run",
@@ -1533,8 +1603,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(data["accepted"])
         self.assertFalse(data["dry_run"])
         self.assertEqual(data["backup_name"], "backup_20260304_170000.tar.gz")
+        self.assertTrue(data["postgres_dump_included"])
 
-    async def test_backup_run_uploads_to_all_enabled_cloud_folders(self):
+    async def test_backup_run_uploads_complete_archive_once(self):
         token, _ = await self._login()
         prev = settings.backup_execution_enabled
         settings.backup_execution_enabled = True
@@ -1545,6 +1616,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             checksum_path=Path("backups/backup_20260305_080000.tar.gz.sha256"),
             size_bytes=4096,
             notes=[],
+            included_components=["ctip_files", "postgresql_ctip"],
+            postgres_dump_included=True,
         )
 
         async def fake_upload(**kwargs):
@@ -1568,6 +1641,19 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     "app.api.routes.admin_backup.upload_file_to_sharepoint",
                     new=AsyncMock(side_effect=fake_upload),
                 ) as upload_mock,
+                patch(
+                    "app.api.routes.admin_backup.prune_sharepoint_backups",
+                    new=AsyncMock(
+                        return_value=Office365PruneResult(
+                            deleted_archives=0,
+                            deleted_files=0,
+                        )
+                    ),
+                ),
+                patch(
+                    "app.api.routes.admin_backup.prune_local_backups",
+                    return_value=0,
+                ),
             ):
                 response = await self.client.post(
                     "/admin/backup/run",
@@ -1580,20 +1666,14 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data["accepted"])
-        self.assertIn("Wysłano do SharePoint", data["message"])
+        self.assertEqual(data["status"], "SUCCESS")
+        self.assertTrue(data["postgres_dump_included"])
+        self.assertTrue(data["uploaded_to_cloud"])
+        self.assertIn("do SharePoint", data["message"])
 
         called_folders = [call.kwargs.get("folder_path") for call in upload_mock.await_args_list]
-        unique_folders = set(called_folders)
-        self.assertEqual(
-            unique_folders,
-            {
-                "BackupKP/CTIP",
-                "BackupKP/Menadzer_Serwisu/prod",
-                "BackupKP/Menadzer_Serwisu/test",
-                "BackupKP/Optima",
-            },
-        )
-        self.assertEqual(len(called_folders), 8)
+        self.assertEqual(set(called_folders), {"BackupKP/CTIP"})
+        self.assertEqual(len(called_folders), 2)
 
     async def test_backup_restore_dry_creates_audit_entry(self):
         token, _ = await self._login()

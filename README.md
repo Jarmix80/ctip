@@ -7,6 +7,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 ## Dokumenty wdrożeniowe
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook wyrownania konfiguracji Windows TEST/PROD do modelu `.env` (backup `D:\backup_temp`, bramki potwierdzen, wdrozenie i rollback): `docs/instal/windows_test_prod_env_runbook_2026-05-22.md`.
+- Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Pomocniczy skrypt operatorski (Windows, bez `Read-Host`) do wykonania kroku Google Sheets + mailbox dry-run po wdrozeniu: `inbox/krok9_10_google_sheets_mailbox_noninteractive.ps1`.
 
 ## Dokumentacja operacyjna (poza zakresem CTIP)
@@ -492,10 +493,15 @@ Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` 
 | `AUTH_COOKIE_SAMESITE` | `lax` | Polityka `SameSite` ciasteczka sesji (`lax`, `strict`, `none`). |
 | `AUTH_COOKIE_DOMAIN` | *(puste)* | Opcjonalna domena ciasteczka sesji. |
 | `AUTH_COOKIE_PATH` | `/` | Ścieżka ciasteczka sesji. |
+| `LOGIN_FAILURE_LIMIT` | `5` | Maksymalna liczba nieudanych prób logowania dla pary adres IP i konto w aktywnym oknie. |
+| `LOGIN_FAILURE_WINDOW_MINUTES` | `15` | Długość okna blokady logowania po przekroczeniu limitu. |
+| `PANEL_ALLOWED_NETWORKS` | `127.0.0.0/8,::1/128,192.168.0.0/24` | Sieci dopuszczone do bezpośredniego dostępu do aplikacji, w tym portu `8000`. |
 
 Logowanie do `/auth/login` i `/admin/auth/login` ustawia obecnie dwa transporty tej samej sesji:
 - bezpieczniejsze ciasteczko `HttpOnly` dla przeglądarki,
 - dotychczasowy token JSON zachowany dla zgodności z istniejącym frontendem i testami (`X-Admin-Session`).
+
+W bazie jest przechowywany wyłącznie skrót SHA-256 tokenu. Nieudane logowania podlegają limitowi, a historyczne trasy `/calls`, `/contacts` i `/sms/*` nie są publikowane; ich zabezpieczone odpowiedniki działają pod `/operator/api/*`.
 
 Warstwa HTTP dodaje teraz również podstawowe nagłówki bezpieczeństwa (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`) oraz `Cache-Control: no-store` dla paneli i endpointów logowania.
 
@@ -643,11 +649,12 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Sekcja `Naprawa KP/xxxx` (`/admin/partials/kp-repair`) udostępnia raport ilości `/V /E /R`, czyszczenie markerów (`/admin/kp-repair/clear`) i retagowanie wg źródeł (`/admin/kp-repair/rebuild`); raporty i rollbacki są zapisywane do `inbox/ewidencja`.
 - Operacje `kp-repair` wykonują zapytania Firebird w wątku roboczym (`asyncio.to_thread`), aby nie blokować event-loop FastAPI i nie zamrażać panelu podczas generowania raportu.
 - UI `Naprawa KP/xxxx` pokazuje pasek postępu (orientacyjny) i licznik czasu operacji; klient ma limit czasu żądania 10 minut, a backend limit wykonania 900 s (HTTP 504 po przekroczeniu).
-- Sekcja Kopie zapasowe (`/admin/partials/backups`) udostępnia konfigurację harmonogramu (`06:00`, `20:00`), retencji, zakresu archiwizacji (CTIP/Firebird/Optima), wyboru miejsca zapisu (lokalne/sieciowe), dane Office 365/SharePoint (Tenant ID, Client ID, Site ID, Drive ID) oraz osobne foldery docelowe: `BackupKP/CTIP`, `BackupKP/Menadzer_Serwisu/prod`, `BackupKP/Menadzer_Serwisu/test`, `BackupKP/Optima`. Widok historii pokazuje status i potwierdzenie (suma kontrolna `.sha256`).
+- Sekcja Kopie zapasowe (`/admin/partials/backups`) udostępnia konfigurację harmonogramu (`06:00`, `20:00`), retencji i zakresu archiwizacji. Każde żądanie backupu PostgreSQL uruchamia `pg_dump` w formacie niestandardowym, waliduje wynik przez `pg_restore --list` i zapisuje go w archiwum jako `postgresql/ctip.dump`. Widok historii pokazuje status i potwierdzenie (suma kontrolna `.sha256`).
 - Konfiguracja backupu jest rozdzielona: parametry integracyjne i sekrety (`BACKUP_DEFAULT_LOCAL_DIR`, Office 365, SQL Optima) pochodzą z `.env`, a panel zapisuje tylko harmonogram, retencję i pozostałe ustawienia operacyjne przez `/admin/backup/config`. Pelne wykonanie (`dry_run=false`) jest aktywne automatycznie na hostcie zgodnym z `BACKUP_PRODUCTION_HOST`, a w innych srodowiskach mozna je jawnie wlaczyc lub wylaczyc przez `BACKUP_EXECUTION_ENABLED` (`true`/`false`).
 - Harmonogram zapisany w panelu (`schedule_morning`, `schedule_evening`) jest realizowany automatycznie przez scheduler backendu; dla kazdego slotu wykonywane jest maksymalnie jedno zadanie na dobe.
 - Scheduler backupu mozna globalnie wlaczyc/wylaczyc przez `BACKUP_SCHEDULER_ENABLED` (domyslnie `true`).
-- Wysylka do SharePoint dystrybuuje artefakty backupu do folderow odpowiadajacych wlaczonemu zakresowi (`CTIP`, `Firebird PROD`, `Firebird TEST`, `Optima`), zgodnie z konfiguracja folderow w panelu.
+- Wysyłka do SharePoint zapisuje kompletne archiwum i jego sumę kontrolną jeden raz w `BackupKP/CTIP`; duże pliki są przesyłane fragmentowo przez sesję Microsoft Graph. Po poprawnym uploadzie stosowana jest retencja chmurowa, a status `PARTIAL` jawnie sygnalizuje pominięty składnik lub błąd chmury/retencji.
+- Narzędzia backupu można wskazać przez `PG_DUMP_PATH` i `PG_RESTORE_PATH`; limit wykonania ustala `BACKUP_PG_DUMP_TIMEOUT_SECONDS`. Szczegóły próby odtworzenia opisuje `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Dla Windows dostępny jest skrypt tworzący lokalną strukturę katalogów backupu: `scripts/windows/create_backup_structure.ps1` (domyślny root: `D:\Backup_CTIP_MS_optima`).
 - Dla SharePoint dostępny jest skrypt konfigurujący czytelny widok biblioteki backupów: `scripts/windows/setup_sharepoint_backup_view.ps1` (grupowanie po folderach i sortowanie malejąco po dacie modyfikacji).
 - Dla SharePoint dostępny jest też skrypt tworzący osobną stronę dashboardu backupów (`SitePages/BackupKP-Dashboard.aspx`) z tabelą linków do widoków: `scripts/windows/create_sharepoint_backup_dashboard.ps1` (układ strony `Article`; ponowne uruchomienie dla istniejącej strony wymaga przełącznika `-OverwritePage`; skrypt automatycznie wykrywa wariant struktury folderów `BackupKP/...` lub bez tego prefiksu i generuje linki z parametrami `id=<folder>` oraz `viewid=<GUID>`, aby otwierać widok od razu w docelowym katalogu).
@@ -675,6 +682,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Tabela generatora zawiera kolumny `Utworzone przez` oraz `Status MS`, dzięki czemu od razu widać operatora/administratora, który wygenerował formularz, oraz wynik automatycznej synchronizacji klienta z Menadżerem Serwisu.
 - W wariancie produkcyjnym poza LAN rekomendowane jest wystawienie samych formularzy przez `app.public_forms_app:app`; `/genform` i cały panel pozostają wtedy na adresie wewnętrznym, a klient otrzymuje wyłącznie link `https://form.twoja-domena.pl/formularz/<token>`.
 - Zweryfikowany wariant produkcyjny dla `form.ksero-partner.com.pl` bazuje na usłudze `CTIP-FormsPublic` na `127.0.0.1:8100`, witrynie IIS z bindingiem `https *:443:form.ksero-partner.com.pl`, lokalnych regułach `web.config` oraz braku globalnej reguły `rewrite/globalRules` dla tego hosta w `applicationHost.config`.
+- Ważność publicznego certyfikatu kontroluje `scripts/windows/check_public_tls.ps1`; skrypt wykonuje pełny handshake i zapisuje ostrzeżenia do dziennika zdarzeń Windows `Application`.
 - Moduł publicznego formularza (`app/web/form_ui.py`) ładuje szablony po ścieżce absolutnej względem repozytorium (`app/templates`), dzięki czemu usługa `CTIP-FormsPublic` nie zależy od bieżącego katalogu roboczego procesu podczas startu pod NSSM/IIS.
 - Backend SQLAlchemy korzysta ze sterownika `postgresql+psycopg`; na Windows aplikacje ASGI ustawiają zgodną pętlę `WindowsSelectorEventLoopPolicy` przed importem tras bazodanowych. Decyzja wynika z produkcyjnego przypadku, w którym `asyncpg` kończył `/formularz/*` błędem `ConnectionDoesNotExistError`, mimo poprawnego połączenia `psql`/`psycopg`.
 - Dashboard `/contracts` (Obsługa umów) pozostaje technicznym widokiem integracji: pobiera formularze `SUBMITTED`, weryfikuje klienta po NIP w lokalnej kopii Firebird (`KLIENT`) oraz pokazuje dostępne pozycje magazynowe Firebird dla magazynu `28`, z podziałem na pozycje bez rezerwacji i częściowo zarezerwowane.

@@ -22,13 +22,10 @@ from app.api.routes import (
     admin_status,
     admin_users,
     assistant,
-    calls,
-    contacts,
     health,
     operator_auth,
     operator_portal,
     portal_auth,
-    sms,
 )
 
 api_router = APIRouter()
@@ -52,9 +49,6 @@ api_router.include_router(admin_status.router)
 api_router.include_router(admin_sms.router)
 api_router.include_router(admin_users.router)
 api_router.include_router(health.router)
-api_router.include_router(calls.router)
-api_router.include_router(contacts.router)
 api_router.include_router(operator_auth.router)
 api_router.include_router(portal_auth.router)
 api_router.include_router(operator_portal.router)
-api_router.include_router(sms.router)
