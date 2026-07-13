@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -134,8 +135,11 @@ class BackupRunResponse(BaseModel):
 
     accepted: bool
     dry_run: bool
+    status: Literal["DRY_RUN", "SUCCESS", "PARTIAL"]
     message: str
     backup_name: str | None = None
+    postgres_dump_included: bool = False
+    uploaded_to_cloud: bool = False
 
 
 class BackupRestoreRequest(BaseModel):

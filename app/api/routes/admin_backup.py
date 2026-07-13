@@ -30,9 +30,11 @@ from app.services.backup_runner import (
     BackupRunResult,
     create_local_backup,
     list_backup_files,
+    prune_local_backups,
 )
 from app.services.office365_backup import (
     Office365BackupError,
+    prune_sharepoint_backups,
     test_office365_connection,
     upload_file_to_sharepoint,
 )
@@ -74,25 +76,10 @@ def _to_bool(value: str | bool | None, default: bool) -> bool:
 
 
 def _resolve_cloud_targets(cfg: BackupConfigResponse) -> list[str]:
-    """Wyznacza docelowe foldery chmurowe na podstawie zakresu backupu."""
-    targets: list[str] = []
-    if cfg.archive_ctip_files or cfg.archive_ctip_db:
-        targets.append(cfg.office_folder_ctip)
-    if cfg.archive_firebird_prod:
-        targets.append(cfg.office_folder_firebird_prod)
-    if cfg.archive_firebird_test:
-        targets.append(cfg.office_folder_firebird_test)
-    if cfg.archive_optima:
-        targets.append(cfg.office_folder_optima)
-    if not targets and cfg.office_folder_path:
-        targets.append(cfg.office_folder_path)
-
-    deduped: list[str] = []
-    for target in targets:
-        normalized = (target or "").strip().strip("/")
-        if normalized and normalized not in deduped:
-            deduped.append(normalized)
-    return deduped
+    """Wyznacza pojedynczy folder kompletnego archiwum CTIP w chmurze."""
+    target = cfg.office_folder_ctip or cfg.office_folder_path or ""
+    normalized = target.strip().strip("/")
+    return [normalized] if normalized else []
 
 
 async def _execute_backup_job(
@@ -102,8 +89,9 @@ async def _execute_backup_job(
     compress: bool,
     cloud_upload_enabled: bool,
 ) -> dict[str, object]:
-    """Wykonuje lokalny backup i opcjonalny upload do SharePoint."""
-    run_result: BackupRunResult = create_local_backup(
+    """Wykonuje backup, retencję i opcjonalny upload kompletnego archiwum."""
+    run_result: BackupRunResult = await asyncio.to_thread(
+        create_local_backup,
         label=label,
         compress=compress,
         config=cfg.model_dump(),
@@ -112,6 +100,16 @@ async def _execute_backup_job(
     uploaded_folders: list[str] = []
     upload_errors: list[str] = []
     upload_urls: list[str] = []
+    local_deleted = 0
+    cloud_deleted = 0
+
+    try:
+        local_deleted = await asyncio.to_thread(
+            prune_local_backups,
+            cfg.retention_local_copies,
+        )
+    except OSError as exc:
+        upload_errors.append(f"retencja lokalna: {exc}")
 
     if cloud_upload_enabled and cfg.cloud_provider == "office365":
         tenant_id = cfg.office_tenant_id or ""
@@ -120,7 +118,10 @@ async def _execute_backup_job(
         site_id = cfg.office_site_id
         drive_id = cfg.office_drive_id
 
-        for folder_path in _resolve_cloud_targets(cfg):
+        cloud_targets = _resolve_cloud_targets(cfg)
+        if not cloud_targets:
+            upload_errors.append("Brak folderu docelowego Office 365.")
+        for folder_path in cloud_targets:
             try:
                 up_archive = await upload_file_to_sharepoint(
                     tenant_id=tenant_id,
@@ -145,12 +146,34 @@ async def _execute_backup_job(
                     upload_urls.append(up_archive.web_url)
             except Office365BackupError as exc:
                 upload_errors.append(f"{folder_path}: {exc}")
+                continue
+
+            try:
+                prune_result = await prune_sharepoint_backups(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    site_id=site_id,
+                    drive_id=up_archive.drive_id,
+                    folder_path=folder_path,
+                    retention_count=cfg.retention_cloud_copies,
+                )
+                cloud_deleted += prune_result.deleted_archives
+            except Office365BackupError as exc:
+                upload_errors.append(f"{folder_path}, retencja: {exc}")
+
+    run_status = "SUCCESS"
+    if run_result.omitted_components or upload_errors:
+        run_status = "PARTIAL"
 
     return {
         "run_result": run_result,
+        "status": run_status,
         "uploaded_folders": uploaded_folders,
         "upload_errors": upload_errors,
         "upload_urls": upload_urls,
+        "local_deleted": local_deleted,
+        "cloud_deleted": cloud_deleted,
     }
 
 
@@ -242,21 +265,31 @@ async def backup_scheduler_tick() -> None:
             uploaded_folders = outcome["uploaded_folders"]
             upload_errors = outcome["upload_errors"]
             upload_urls = outcome["upload_urls"]
+            run_status = str(outcome["status"])
+            audit_action = (
+                "backup_run_auto_success" if run_status == "SUCCESS" else "backup_run_auto_partial"
+            )
             await record_audit(
                 session,
                 user_id=None,
-                action="backup_run_auto_success",
+                action=audit_action,
                 client_ip="scheduler",
                 payload={
                     "slot": slot,
                     "label": label,
+                    "status": run_status,
                     "backup_name": run_result.backup_name,
                     "checksum": run_result.checksum,
                     "size_bytes": run_result.size_bytes,
+                    "postgres_dump_included": run_result.postgres_dump_included,
+                    "included_components": run_result.included_components,
+                    "omitted_components": run_result.omitted_components,
                     "cloud_upload_enabled": cloud_upload_enabled,
                     "uploaded_folders": uploaded_folders,
                     "upload_errors": upload_errors,
                     "upload_urls": upload_urls,
+                    "local_deleted": outcome["local_deleted"],
+                    "cloud_deleted": outcome["cloud_deleted"],
                     "notes": run_result.notes,
                 },
             )
@@ -571,8 +604,11 @@ async def backup_run(
         return BackupRunResponse(
             accepted=True,
             dry_run=True,
+            status="DRY_RUN",
             message="Symulacja kopii zapasowej zakończona.",
             backup_name=None,
+            postgres_dump_included=False,
+            uploaded_to_cloud=False,
         )
 
     if not settings.backup_execution_active:
@@ -602,6 +638,7 @@ async def backup_run(
         uploaded_folders = outcome["uploaded_folders"]
         upload_errors = outcome["upload_errors"]
         upload_urls = outcome["upload_urls"]
+        run_status = str(outcome["status"])
     except BackupRunError as exc:
         await record_audit(
             session,
@@ -622,18 +659,24 @@ async def backup_run(
     await record_audit(
         session,
         user_id=admin_user.id,
-        action="backup_run_success",
+        action="backup_run_success" if run_status == "SUCCESS" else "backup_run_partial",
         client_ip=admin_session.client_ip,
         payload={
             "label": payload.label,
             "compress": payload.compress,
+            "status": run_status,
             "backup_name": run_result.backup_name,
             "checksum": run_result.checksum,
             "size_bytes": run_result.size_bytes,
+            "postgres_dump_included": run_result.postgres_dump_included,
+            "included_components": run_result.included_components,
+            "omitted_components": run_result.omitted_components,
             "uploaded_to_cloud": uploaded,
             "uploaded_folders": uploaded_folders,
             "upload_urls": upload_urls,
             "upload_error": upload_error,
+            "local_deleted": outcome["local_deleted"],
+            "cloud_deleted": outcome["cloud_deleted"],
             "notes": run_result.notes,
         },
     )
@@ -641,7 +684,7 @@ async def backup_run(
 
     message = "Kopia zapasowa została utworzona."
     if uploaded_folders:
-        message += f" Wysłano do SharePoint ({len(uploaded_folders)} foldery)."
+        message += " Wysłano kompletne archiwum do SharePoint."
     elif upload_errors:
         message += f" Upload SharePoint częściowo/całkowicie nieudany: {upload_error}"
     elif upload_error:
@@ -649,8 +692,11 @@ async def backup_run(
     return BackupRunResponse(
         accepted=True,
         dry_run=False,
+        status=run_status,
         message=message,
         backup_name=run_result.backup_name,
+        postgres_dump_included=run_result.postgres_dump_included,
+        uploaded_to_cloud=uploaded,
     )
 
 

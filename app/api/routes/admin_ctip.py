@@ -482,7 +482,11 @@ async def ctip_events_ws(websocket: WebSocket) -> None:
 
     async with AsyncSessionLocal() as session:
         try:
-            await get_admin_session_context(token, session)
+            await get_admin_session_context(
+                token_header=token,
+                token_cookie=None,
+                session=session,
+            )
         except Exception:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return

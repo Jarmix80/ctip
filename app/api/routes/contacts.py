@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session
-from app.models import Contact, ContactDevice
+from app.api.deps import get_db_session, get_operator_user
+from app.models import AdminUser, Contact, ContactDevice
 from app.schemas.contact import ContactDeviceSchema, ContactSchema
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/contacts", tags=["contacts"])
 async def get_contact(
     number: str,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    _: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> ContactSchema:
     """Zwraca dane kontaktowe powiązane z numerem MSISDN."""
     stmt = select(Contact).where(Contact.number == number)
@@ -62,6 +63,7 @@ async def get_contact(
 async def search_contacts(
     search: str = Query(..., min_length=1),
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
+    _: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> list[ContactSchema]:
     """Prosta wyszukiwarka kontaktów po numerze, nazwie firmy lub osobie."""
     needle = f"%{search.lower()}%"

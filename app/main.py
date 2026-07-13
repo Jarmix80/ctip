@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
@@ -82,6 +83,17 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
         """Dodaje podstawowe naglowki ograniczajace powierzchnie ataku."""
+        client_host = request.client.host if request.client else None
+        if not settings.is_panel_client_allowed(client_host):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Dostęp do panelu jest dozwolony wyłącznie z sieci LAN."},
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Frame-Options": "DENY",
+                },
+            )
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")

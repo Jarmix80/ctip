@@ -440,6 +440,7 @@ def test_backups_partial_renders_listing():
     assert response.status_code == 200
     assert "Kopie zapasowe" in response.text
     assert "backup_2025-10-11.dump" in response.text
+    assert 'data.status === "PARTIAL"' in response.text
 
 
 def test_users_partial_renders_listing():

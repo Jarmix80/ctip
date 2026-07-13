@@ -387,7 +387,8 @@
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.detail || "Nie udało się uruchomić backupu.");
-        setStatus(data.message || "Zadanie backupu uruchomione.", "success");
+        const variant = data.status === "PARTIAL" ? "error" : "success";
+        setStatus(data.message || "Zadanie backupu uruchomione.", variant);
         await loadHistory();
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Błąd uruchomienia backupu.", "error");

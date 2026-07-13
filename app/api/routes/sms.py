@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user_id, get_db_session
+from app.api.deps import get_db_session, get_operator_user
 from app.core.config import settings
-from app.models import Call, SmsOut, SmsTemplate
+from app.models import AdminUser, Call, SmsOut, SmsTemplate
 from app.schemas.sms import (
     SmsAccountSummary,
     SmsHistoryItem,
@@ -48,9 +48,10 @@ async def _resolve_template(session: AsyncSession, template_id: int, user_id: in
 async def list_templates(
     include_inactive: bool = Query(False),
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-    user_id: int = Depends(get_current_user_id),
+    operator_user: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> list[SmsTemplateRead]:
     """Lista szablonów dostępnych dla użytkownika (globalne + własne)."""
+    user_id = operator_user.id
     stmt = (
         select(SmsTemplate)
         .where(
@@ -72,13 +73,14 @@ async def list_templates(
 async def create_template(
     payload: SmsTemplateCreate,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-    user_id: int = Depends(get_current_user_id),
+    operator_user: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> SmsTemplateRead:
     """Tworzy nowy szablon (globalny tylko dla administratora)."""
+    user_id = operator_user.id
     scope = payload.scope or "user"
     owner_id: int | None = None
 
-    if scope == "global" and user_id != 1:
+    if scope == "global" and operator_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Brak uprawnień")
     if scope != "global":
         owner_id = user_id
@@ -102,9 +104,10 @@ async def create_template(
 async def enqueue_sms(
     payload: SmsSendRequest,
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-    user_id: int = Depends(get_current_user_id),
+    operator_user: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> SmsHistoryItem:
     """Dodaje wiadomość SMS do kolejki `ctip.sms_out`."""
+    user_id = operator_user.id
     if payload.call_id is not None:
         call = await session.get(Call, payload.call_id)
         if call is None:
@@ -138,7 +141,7 @@ async def enqueue_sms(
 @router.get("/account", response_model=SmsAccountSummary)
 async def get_account_summary(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-    _: int = Depends(get_current_user_id),
+    _: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> SmsAccountSummary:
     """Zwraca podstawowe statystyki dotyczące konta SMS."""
     sent_q = await session.execute(select(func.count(SmsOut.id)).where(SmsOut.status == "SENT"))
@@ -162,7 +165,7 @@ async def sms_history(
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=500),
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
-    _: int = Depends(get_current_user_id),
+    _: AdminUser = Depends(get_operator_user),  # noqa: B008
 ) -> list[SmsHistoryItem]:
     """Zwraca historię SMS z opcjonalnym filtrowaniem po numerze, ID połączenia i statusie."""
     stmt = select(SmsOut).order_by(SmsOut.created_at.desc()).limit(limit)
