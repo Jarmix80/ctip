@@ -238,6 +238,15 @@ class Settings(BaseSettings):
         default=900,
         alias="BACKUP_PG_DUMP_TIMEOUT_SECONDS",
     )
+    backup_firebird_timeout_seconds: int = Field(
+        default=7200,
+        alias="BACKUP_FIREBIRD_TIMEOUT_SECONDS",
+    )
+    backup_optima_timeout_seconds: int = Field(
+        default=7200,
+        alias="BACKUP_OPTIMA_TIMEOUT_SECONDS",
+    )
+    firebird_gbak_path: str | None = Field(default=None, alias="FIREBIRD_GBAK_PATH")
 
     optima_sql_server_instance: str | None = Field(default=None, alias="OPTIMA_SQL_SERVER_INSTANCE")
     optima_sql_host: str | None = Field(default=None, alias="OPTIMA_SQL_HOST")
@@ -246,6 +255,7 @@ class Settings(BaseSettings):
     optima_sql_auth_mode: str | None = Field(default=None, alias="OPTIMA_SQL_AUTH_MODE")
     optima_sql_login: str | None = Field(default=None, alias="OPTIMA_SQL_LOGIN")
     optima_sql_password: str | None = Field(default=None, alias="OPTIMA_SQL_PASSWORD")
+    optima_sqlcmd_path: str | None = Field(default=None, alias="OPTIMA_SQLCMD_PATH")
     optima_db_it_partner: str | None = Field(default=None, alias="OPTIMA_DB_IT_PARTNER")
     optima_db_ksero_partner: str | None = Field(default=None, alias="OPTIMA_DB_KSERO_PARTNER")
     optima_db_config: str | None = Field(default=None, alias="OPTIMA_DB_CONFIG")

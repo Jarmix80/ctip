@@ -34,6 +34,8 @@ class BackupConfigResponse(BaseModel):
     schedule_evening: str
     retention_local_copies: int
     retention_cloud_copies: int
+    retention_local_days: int
+    retention_cloud_days: int
     archive_ctip_files: bool
     archive_ctip_db: bool
     archive_firebird_prod: bool
@@ -44,6 +46,7 @@ class BackupConfigResponse(BaseModel):
     network_directory: str | None = None
     cloud_provider: str
     cloud_only_evening: bool
+    optima_only_evening: bool
     office_tenant_id: str | None = None
     office_client_id: str | None = None
     office_site_id: str | None = None
@@ -77,16 +80,19 @@ class BackupConfigUpdate(BaseModel):
     schedule_evening: str = "20:00"
     retention_local_copies: int = Field(default=14, ge=1, le=365)
     retention_cloud_copies: int = Field(default=7, ge=1, le=365)
+    retention_local_days: int = Field(default=21, ge=1, le=3650)
+    retention_cloud_days: int = Field(default=14, ge=1, le=3650)
     archive_ctip_files: bool = True
     archive_ctip_db: bool = True
     archive_firebird_prod: bool = True
-    archive_firebird_test: bool = True
+    archive_firebird_test: bool = False
     archive_optima: bool = True
     storage_mode: str = Field(default="local", pattern="^(local|network)$")
     local_directory: str
     network_directory: str | None = None
     cloud_provider: str = Field(default="office365", pattern="^(none|office365)$")
     cloud_only_evening: bool = True
+    optima_only_evening: bool = True
     office_tenant_id: str | None = None
     office_client_id: str | None = None
     office_site_id: str | None = None
@@ -140,6 +146,50 @@ class BackupRunResponse(BaseModel):
     backup_name: str | None = None
     postgres_dump_included: bool = False
     uploaded_to_cloud: bool = False
+    firebird_backup_included: bool = False
+    firebird_uploaded_to_cloud: bool = False
+    optima_backup_included: bool = False
+    optima_uploaded_to_cloud: bool = False
+    optima_databases: list[str] = Field(default_factory=list)
+
+
+class BackupRetentionRunRequest(BaseModel):
+    """Parametry podglądu albo wykonania czasowej retencji kopii."""
+
+    dry_run: bool = True
+    confirm: str | None = Field(default=None, max_length=80)
+
+
+class BackupRetentionScopeResult(BaseModel):
+    """Wynik retencji pojedynczego katalogu lokalnego albo chmurowego."""
+
+    scope: str
+    location: str
+    retention_days: int
+    dry_run: bool
+    managed_sets: int = 0
+    managed_files: int = 0
+    candidate_sets: int = 0
+    candidate_files: int = 0
+    candidate_bytes: int = 0
+    deleted_sets: int = 0
+    deleted_files: int = 0
+    deleted_bytes: int = 0
+    preserved_newest_key: str | None = None
+    unknown_files: list[str] = Field(default_factory=list)
+    newer_incomplete_sets: list[dict[str, object]] = Field(default_factory=list)
+    deletion_sets: list[dict[str, object]] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class BackupRetentionRunResponse(BaseModel):
+    """Zbiorczy wynik kontrolowanego przebiegu retencji."""
+
+    accepted: bool
+    dry_run: bool
+    message: str
+    generated_at: datetime
+    scopes: list[BackupRetentionScopeResult]
 
 
 class BackupRestoreRequest(BaseModel):

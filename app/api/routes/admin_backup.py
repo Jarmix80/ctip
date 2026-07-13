@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,32 +23,41 @@ from app.schemas.admin_backup import (
     BackupOffice365TestResponse,
     BackupRestoreRequest,
     BackupRestoreResponse,
+    BackupRetentionRunRequest,
+    BackupRetentionRunResponse,
+    BackupRetentionScopeResult,
     BackupRunRequest,
     BackupRunResponse,
 )
 from app.services.audit import record_audit
+from app.services.backup_artifacts import remove_files
+from app.services.backup_retention import RetentionApplyResult, RetentionPlan, run_local_retention
 from app.services.backup_runner import (
+    BACKUP_DIR,
     BackupRunError,
     BackupRunResult,
     create_local_backup,
     list_backup_files,
-    prune_local_backups,
 )
+from app.services.firebird_backup import FirebirdBackupResult, create_firebird_backup
 from app.services.office365_backup import (
     Office365BackupError,
-    prune_sharepoint_backups,
+    run_sharepoint_retention,
     test_office365_connection,
     upload_file_to_sharepoint,
 )
+from app.services.optima_backup import OptimaBackupResult, create_optima_backup
 
 router = APIRouter(prefix="/admin/backup", tags=["admin-backup"])
 logger = logging.getLogger(__name__)
 _scheduler_task: asyncio.Task[None] | None = None
 _scheduler_stop_event: asyncio.Event | None = None
 _scheduler_last_run: dict[str, str] = {}
+_backup_job_lock = asyncio.Lock()
 BACKUP_ENV_LOCK_REASON = (
     "Dane połączeniowe i sekretne modułu backupów są zarządzane wyłącznie z pliku .env."
 )
+RETENTION_CONFIRMATION = "USUŃ STARE KOPIE"
 
 
 def _ensure_admin(role: str) -> None:
@@ -82,85 +93,211 @@ def _resolve_cloud_targets(cfg: BackupConfigResponse) -> list[str]:
     return [normalized] if normalized else []
 
 
-async def _execute_backup_job(
+def _component_directories(cfg: BackupConfigResponse) -> dict[str, Path]:
+    """Wyznacza lokalne katalogi samodzielnych artefaktów Firebird i Optima."""
+    root = Path(cfg.local_directory)
+    return {
+        "firebird_prod": root / "Menadzer_Serwisu" / "prod",
+        "firebird_test": root / "Menadzer_Serwisu" / "test",
+        "optima": root / "Optima",
+    }
+
+
+def _configured_optima_databases(cfg: BackupConfigResponse) -> list[str]:
+    """Zwraca trzy wymagane bazy Optimy albo zgłasza niepełną konfigurację."""
+    configured = [cfg.optima_db_it_partner, cfg.optima_db_ksero_partner, cfg.optima_db_config]
+    if any(not name or not name.strip() for name in configured):
+        raise BackupRunError("Skonfiguruj w .env wszystkie trzy bazy SQL Optimy.")
+    return [str(name).strip() for name in configured]
+
+
+async def _upload_artifact_group(
+    *,
+    cfg: BackupConfigResponse,
+    folder_path: str,
+    files: list[Path],
+) -> tuple[str, list[str]]:
+    """Wysyła kompletną grupę artefaktów i zwraca Drive ID oraz adresy plików."""
+    normalized_folder = folder_path.strip().strip("/")
+    if not normalized_folder:
+        raise Office365BackupError("Brak folderu docelowego Office 365.")
+    drive_id = cfg.office_drive_id
+    urls: list[str] = []
+    for file_path in files:
+        upload = await upload_file_to_sharepoint(
+            tenant_id=cfg.office_tenant_id or "",
+            client_id=cfg.office_client_id or "",
+            client_secret=settings.office365_client_secret or "",
+            site_id=cfg.office_site_id,
+            drive_id=drive_id,
+            folder_path=normalized_folder,
+            file_path=file_path,
+        )
+        drive_id = upload.drive_id
+        if upload.web_url:
+            urls.append(upload.web_url)
+    if not drive_id:
+        raise Office365BackupError("Microsoft Graph nie zwrócił Drive ID po uploadzie.")
+    return drive_id, urls
+
+
+async def _execute_backup_job_impl(
     *,
     cfg: BackupConfigResponse,
     label: str | None,
     compress: bool,
     cloud_upload_enabled: bool,
+    slot: str | None = None,
 ) -> dict[str, object]:
-    """Wykonuje backup, retencję i opcjonalny upload kompletnego archiwum."""
-    run_result: BackupRunResult = await asyncio.to_thread(
-        create_local_backup,
-        label=label,
-        compress=compress,
-        config=cfg.model_dump(),
-    )
+    """Wykonuje zweryfikowane kopie komponentów, upload i retencję czasową."""
+    directories = _component_directories(cfg)
+    generated_at = datetime.now(UTC)
+    firebird_prod_result: FirebirdBackupResult | None = None
+    firebird_test_result: FirebirdBackupResult | None = None
+    optima_result: OptimaBackupResult | None = None
+    created_component_files: list[Path] = []
+    include_optima = cfg.archive_optima and not (cfg.optima_only_evening and slot == "morning")
+
+    try:
+        if cfg.archive_firebird_prod:
+            firebird_prod_result = await asyncio.to_thread(
+                create_firebird_backup,
+                source_path=settings.fb_database,
+                output_directory=directories["firebird_prod"],
+                scope="prod",
+                now=generated_at,
+            )
+            created_component_files.extend(firebird_prod_result.files)
+
+        if cfg.archive_firebird_test:
+            firebird_test_result = await asyncio.to_thread(
+                create_firebird_backup,
+                source_path=settings.fb_local_copy_path,
+                output_directory=directories["firebird_test"],
+                scope="test",
+                now=generated_at,
+            )
+            created_component_files.extend(firebird_test_result.files)
+
+        if include_optima:
+            optima_result = await asyncio.to_thread(
+                create_optima_backup,
+                database_names=_configured_optima_databases(cfg),
+                output_directory=directories["optima"],
+                restore_test_database=cfg.optima_db_it_partner,
+                now=generated_at,
+            )
+            created_component_files.extend(optima_result.files)
+
+        archive_config = cfg.model_dump()
+        archive_config["archive_optima"] = include_optima
+        component_manifests: dict[str, list[Path]] = {}
+        if firebird_prod_result:
+            component_manifests["firebird_prod"] = [firebird_prod_result.manifest_path]
+        if firebird_test_result:
+            component_manifests["firebird_test"] = [firebird_test_result.manifest_path]
+        if optima_result:
+            component_manifests["optima_sql"] = [optima_result.manifest_path]
+        run_result: BackupRunResult = await asyncio.to_thread(
+            create_local_backup,
+            label=label,
+            compress=compress,
+            config=archive_config,
+            component_manifests=component_manifests,
+        )
+    except Exception:
+        await asyncio.to_thread(remove_files, created_component_files)
+        raise
 
     uploaded_folders: list[str] = []
     upload_errors: list[str] = []
     upload_urls: list[str] = []
     local_deleted = 0
     cloud_deleted = 0
+    main_uploaded = False
+    firebird_prod_uploaded = False
+    firebird_test_uploaded = False
+    optima_uploaded = False
 
-    try:
-        local_deleted = await asyncio.to_thread(
-            prune_local_backups,
-            cfg.retention_local_copies,
-        )
-    except OSError as exc:
-        upload_errors.append(f"retencja lokalna: {exc}")
+    local_scopes = {
+        "ctip": BACKUP_DIR,
+        "firebird_prod": directories["firebird_prod"],
+        "firebird_test": directories["firebird_test"],
+        "optima": directories["optima"],
+    }
+    for scope_name, directory in local_scopes.items():
+        try:
+            _, apply_result = await asyncio.to_thread(
+                run_local_retention,
+                directory,
+                retention_days=cfg.retention_local_days,
+                dry_run=False,
+            )
+            local_deleted += apply_result.deleted_files
+            upload_errors.extend(
+                f"retencja lokalna {scope_name}: {error}" for error in apply_result.errors
+            )
+        except (OSError, ValueError) as exc:
+            upload_errors.append(f"retencja lokalna {scope_name}: {exc}")
 
     if cloud_upload_enabled and cfg.cloud_provider == "office365":
-        tenant_id = cfg.office_tenant_id or ""
-        client_id = cfg.office_client_id or ""
-        client_secret = settings.office365_client_secret or ""
-        site_id = cfg.office_site_id
-        drive_id = cfg.office_drive_id
-
+        cloud_groups: list[tuple[str, str, list[Path]]] = []
         cloud_targets = _resolve_cloud_targets(cfg)
-        if not cloud_targets:
-            upload_errors.append("Brak folderu docelowego Office 365.")
-        for folder_path in cloud_targets:
+        if cloud_targets:
+            cloud_groups.append(
+                ("ctip", cloud_targets[0], [run_result.backup_path, run_result.checksum_path])
+            )
+        else:
+            upload_errors.append("CTIP: brak folderu docelowego Office 365.")
+        if firebird_prod_result:
+            cloud_groups.append(
+                ("firebird_prod", cfg.office_folder_firebird_prod, firebird_prod_result.files)
+            )
+        if firebird_test_result:
+            cloud_groups.append(
+                ("firebird_test", cfg.office_folder_firebird_test, firebird_test_result.files)
+            )
+        if optima_result:
+            cloud_groups.append(("optima", cfg.office_folder_optima, optima_result.files))
+
+        for scope_name, folder_path, files in cloud_groups:
             try:
-                up_archive = await upload_file_to_sharepoint(
-                    tenant_id=tenant_id,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    site_id=site_id,
-                    drive_id=drive_id,
+                resolved_drive_id, group_urls = await _upload_artifact_group(
+                    cfg=cfg,
                     folder_path=folder_path,
-                    file_path=run_result.backup_path,
-                )
-                await upload_file_to_sharepoint(
-                    tenant_id=tenant_id,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    site_id=site_id,
-                    drive_id=up_archive.drive_id,
-                    folder_path=folder_path,
-                    file_path=run_result.checksum_path,
+                    files=files,
                 )
                 uploaded_folders.append(folder_path)
-                if up_archive.web_url:
-                    upload_urls.append(up_archive.web_url)
-            except Office365BackupError as exc:
-                upload_errors.append(f"{folder_path}: {exc}")
+                upload_urls.extend(group_urls)
+                if scope_name == "ctip":
+                    main_uploaded = True
+                elif scope_name == "firebird_prod":
+                    firebird_prod_uploaded = True
+                elif scope_name == "firebird_test":
+                    firebird_test_uploaded = True
+                elif scope_name == "optima":
+                    optima_uploaded = True
+            except (Office365BackupError, httpx.HTTPError) as exc:
+                upload_errors.append(f"{scope_name} ({folder_path}): {exc}")
                 continue
 
             try:
-                prune_result = await prune_sharepoint_backups(
-                    tenant_id=tenant_id,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    site_id=site_id,
-                    drive_id=up_archive.drive_id,
+                _, apply_result = await run_sharepoint_retention(
+                    tenant_id=cfg.office_tenant_id or "",
+                    client_id=cfg.office_client_id or "",
+                    client_secret=settings.office365_client_secret or "",
+                    site_id=cfg.office_site_id,
+                    drive_id=resolved_drive_id,
                     folder_path=folder_path,
-                    retention_count=cfg.retention_cloud_copies,
+                    retention_days=cfg.retention_cloud_days,
+                    dry_run=False,
                 )
-                cloud_deleted += prune_result.deleted_archives
-            except Office365BackupError as exc:
-                upload_errors.append(f"{folder_path}, retencja: {exc}")
+                cloud_deleted += apply_result.deleted_files
+                upload_errors.extend(
+                    f"retencja Office 365 {scope_name}: {error}" for error in apply_result.errors
+                )
+            except (Office365BackupError, httpx.HTTPError) as exc:
+                upload_errors.append(f"{scope_name} ({folder_path}), retencja: {exc}")
 
     run_status = "SUCCESS"
     if run_result.omitted_components or upload_errors:
@@ -174,7 +311,83 @@ async def _execute_backup_job(
         "upload_urls": upload_urls,
         "local_deleted": local_deleted,
         "cloud_deleted": cloud_deleted,
+        "main_uploaded": main_uploaded,
+        "firebird_backup_included": firebird_prod_result is not None,
+        "firebird_uploaded_to_cloud": firebird_prod_uploaded,
+        "firebird_test_uploaded_to_cloud": firebird_test_uploaded,
+        "optima_backup_included": optima_result is not None,
+        "optima_uploaded_to_cloud": optima_uploaded,
+        "optima_databases": optima_result.database_names if optima_result else [],
     }
+
+
+async def _execute_backup_job(
+    *,
+    cfg: BackupConfigResponse,
+    label: str | None,
+    compress: bool,
+    cloud_upload_enabled: bool,
+    slot: str | None = None,
+) -> dict[str, object]:
+    """Uruchamia pojedynczy przebieg i blokuje nakładanie ciężkich zadań backupu."""
+    if _backup_job_lock.locked():
+        raise BackupRunError("Inny przebieg kopii zapasowej jest już wykonywany.")
+    async with _backup_job_lock:
+        return await _execute_backup_job_impl(
+            cfg=cfg,
+            label=label,
+            compress=compress,
+            cloud_upload_enabled=cloud_upload_enabled,
+            slot=slot,
+        )
+
+
+def _retention_scope_response(
+    *,
+    scope: str,
+    location: str,
+    plan: RetentionPlan,
+    apply_result: RetentionApplyResult,
+) -> BackupRetentionScopeResult:
+    """Buduje odpowiedź API dla poprawnie przeanalizowanego zakresu retencji."""
+    plan_data = plan.as_dict()
+    return BackupRetentionScopeResult(
+        scope=scope,
+        location=location,
+        retention_days=plan.retention_days,
+        dry_run=apply_result.dry_run,
+        managed_sets=len(plan.sets),
+        managed_files=plan.managed_files,
+        candidate_sets=len(plan.deletion_sets),
+        candidate_files=plan.deletion_files,
+        candidate_bytes=plan.deletion_bytes,
+        deleted_sets=apply_result.deleted_sets,
+        deleted_files=apply_result.deleted_files,
+        deleted_bytes=apply_result.deleted_bytes,
+        preserved_newest_key=plan.preserved_newest_key,
+        unknown_files=list(plan_data["unknown_files"]),
+        newer_incomplete_sets=list(plan_data["newer_incomplete_sets"]),
+        deletion_sets=list(plan_data["deletion_sets"]),
+        errors=apply_result.errors,
+    )
+
+
+def _retention_error_response(
+    *,
+    scope: str,
+    location: str,
+    retention_days: int,
+    dry_run: bool,
+    error: Exception | str,
+) -> BackupRetentionScopeResult:
+    """Buduje odpowiedź zakresu, którego nie udało się przeanalizować."""
+    return BackupRetentionScopeResult(
+        scope=scope,
+        location=location,
+        retention_days=retention_days,
+        dry_run=dry_run,
+        errors=[str(error)],
+    )
 
 
 async def load_backup_config(session: AsyncSession) -> BackupConfigResponse:
@@ -188,16 +401,19 @@ async def load_backup_config(session: AsyncSession) -> BackupConfigResponse:
         schedule_evening=stored.get("schedule_evening") or "20:00",
         retention_local_copies=_to_int(stored.get("retention_local_copies"), 14),
         retention_cloud_copies=_to_int(stored.get("retention_cloud_copies"), 7),
+        retention_local_days=_to_int(stored.get("retention_local_days"), 21),
+        retention_cloud_days=_to_int(stored.get("retention_cloud_days"), 14),
         archive_ctip_files=_to_bool(stored.get("archive_ctip_files"), True),
         archive_ctip_db=_to_bool(stored.get("archive_ctip_db"), True),
         archive_firebird_prod=_to_bool(stored.get("archive_firebird_prod"), True),
-        archive_firebird_test=_to_bool(stored.get("archive_firebird_test"), True),
+        archive_firebird_test=_to_bool(stored.get("archive_firebird_test"), False),
         archive_optima=_to_bool(stored.get("archive_optima"), True),
         storage_mode=stored.get("storage_mode") or "local",
         local_directory=settings.backup_default_local_dir,
         network_directory=stored.get("network_directory"),
         cloud_provider=stored.get("cloud_provider") or "office365",
         cloud_only_evening=_to_bool(stored.get("cloud_only_evening"), True),
+        optima_only_evening=_to_bool(stored.get("optima_only_evening"), True),
         office_tenant_id=settings.office365_tenant_id,
         office_client_id=settings.office365_client_id,
         office_site_id=settings.office365_site_id,
@@ -260,6 +476,7 @@ async def backup_scheduler_tick() -> None:
                 label=label,
                 compress=True,
                 cloud_upload_enabled=cloud_upload_enabled,
+                slot=slot,
             )
             run_result = outcome["run_result"]
             uploaded_folders = outcome["uploaded_folders"]
@@ -282,6 +499,11 @@ async def backup_scheduler_tick() -> None:
                     "checksum": run_result.checksum,
                     "size_bytes": run_result.size_bytes,
                     "postgres_dump_included": run_result.postgres_dump_included,
+                    "firebird_backup_included": outcome["firebird_backup_included"],
+                    "firebird_uploaded_to_cloud": outcome["firebird_uploaded_to_cloud"],
+                    "optima_backup_included": outcome["optima_backup_included"],
+                    "optima_uploaded_to_cloud": outcome["optima_uploaded_to_cloud"],
+                    "optima_databases": outcome["optima_databases"],
                     "included_components": run_result.included_components,
                     "omitted_components": run_result.omitted_components,
                     "cloud_upload_enabled": cloud_upload_enabled,
@@ -444,7 +666,7 @@ async def backup_update_config(
             detail=(
                 f"{BACKUP_ENV_LOCK_REASON} W panelu możesz zmieniać tylko harmonogram, "
                 "retencję, zakres archiwizacji, tryb zapisu, katalog sieciowy i przełącznik "
-                "cloud_only_evening."
+                "wysyłki/Optimy tylko wieczorem."
             ),
         )
 
@@ -453,6 +675,8 @@ async def backup_update_config(
         "schedule_evening": StoredValue(payload.schedule_evening, False),
         "retention_local_copies": StoredValue(str(payload.retention_local_copies), False),
         "retention_cloud_copies": StoredValue(str(payload.retention_cloud_copies), False),
+        "retention_local_days": StoredValue(str(payload.retention_local_days), False),
+        "retention_cloud_days": StoredValue(str(payload.retention_cloud_days), False),
         "archive_ctip_files": StoredValue(str(payload.archive_ctip_files).lower(), False),
         "archive_ctip_db": StoredValue(str(payload.archive_ctip_db).lower(), False),
         "archive_firebird_prod": StoredValue(str(payload.archive_firebird_prod).lower(), False),
@@ -462,6 +686,7 @@ async def backup_update_config(
         "network_directory": StoredValue(payload.network_directory or "", False),
         "cloud_provider": StoredValue(payload.cloud_provider, False),
         "cloud_only_evening": StoredValue(str(payload.cloud_only_evening).lower(), False),
+        "optima_only_evening": StoredValue(str(payload.optima_only_evening).lower(), False),
     }
 
     await settings_store.set_namespace(session, "backup", values, user_id=admin_user.id)
@@ -475,6 +700,8 @@ async def backup_update_config(
             "schedule_evening": payload.schedule_evening,
             "retention_local_copies": payload.retention_local_copies,
             "retention_cloud_copies": payload.retention_cloud_copies,
+            "retention_local_days": payload.retention_local_days,
+            "retention_cloud_days": payload.retention_cloud_days,
             "archive_ctip_files": payload.archive_ctip_files,
             "archive_ctip_db": payload.archive_ctip_db,
             "archive_firebird_prod": payload.archive_firebird_prod,
@@ -484,6 +711,7 @@ async def backup_update_config(
             "network_directory": payload.network_directory,
             "cloud_provider": payload.cloud_provider,
             "cloud_only_evening": payload.cloud_only_evening,
+            "optima_only_evening": payload.optima_only_evening,
             "integration_source": "env",
         },
     )
@@ -521,7 +749,7 @@ async def backup_test_office365(
             drive_id=drive_id,
             folder_path=folder_path,
         )
-    except Office365BackupError as exc:
+    except (Office365BackupError, httpx.HTTPError) as exc:
         await record_audit(
             session,
             user_id=admin_user.id,
@@ -552,6 +780,142 @@ async def backup_test_office365(
         drive_id=result.drive_id,
         folder_path=result.folder_path,
     )
+
+
+@router.post(
+    "/retention/run",
+    response_model=BackupRetentionRunResponse,
+    summary="Podgląd albo wykonanie retencji kopii zapasowych",
+)
+async def backup_run_retention(
+    payload: BackupRetentionRunRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> BackupRetentionRunResponse:
+    """Analizuje wszystkie katalogi, a po potwierdzeniu usuwa wyłącznie zarządzane zestawy."""
+    admin_session, admin_user = admin_context
+    _ensure_admin(admin_user.role)
+    if not payload.dry_run and payload.confirm != RETENTION_CONFIRMATION:
+        await record_audit(
+            session,
+            user_id=admin_user.id,
+            action="backup_retention_blocked_confirmation",
+            client_ip=admin_session.client_ip,
+            payload={"dry_run": payload.dry_run},
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Wymagane potwierdzenie: {RETENTION_CONFIRMATION}",
+        )
+    if not payload.dry_run and not settings.backup_execution_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Wykonanie retencji jest wyłączone poza środowiskiem produkcyjnym.",
+        )
+    if not payload.dry_run and _backup_job_lock.locked():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Nie można wykonać retencji podczas aktywnego zadania backupu.",
+        )
+
+    cfg = await load_backup_config(session)
+    generated_at = datetime.now(UTC)
+    scopes: list[BackupRetentionScopeResult] = []
+    directories = _component_directories(cfg)
+    local_scopes = {
+        "local_ctip": BACKUP_DIR,
+        "local_firebird_prod": directories["firebird_prod"],
+        "local_firebird_test": directories["firebird_test"],
+        "local_optima": directories["optima"],
+    }
+    for scope_name, directory in local_scopes.items():
+        try:
+            plan, apply_result = await asyncio.to_thread(
+                run_local_retention,
+                directory,
+                retention_days=cfg.retention_local_days,
+                dry_run=payload.dry_run,
+                now=generated_at,
+            )
+            scopes.append(
+                _retention_scope_response(
+                    scope=scope_name,
+                    location=str(directory),
+                    plan=plan,
+                    apply_result=apply_result,
+                )
+            )
+        except (OSError, ValueError) as exc:
+            scopes.append(
+                _retention_error_response(
+                    scope=scope_name,
+                    location=str(directory),
+                    retention_days=cfg.retention_local_days,
+                    dry_run=payload.dry_run,
+                    error=exc,
+                )
+            )
+
+    if cfg.cloud_provider == "office365":
+        cloud_scopes = {
+            "office365_ctip": cfg.office_folder_ctip or cfg.office_folder_path or "",
+            "office365_firebird_prod": cfg.office_folder_firebird_prod,
+            "office365_firebird_test": cfg.office_folder_firebird_test,
+            "office365_optima": cfg.office_folder_optima,
+        }
+        for scope_name, folder_path in cloud_scopes.items():
+            try:
+                plan, apply_result = await run_sharepoint_retention(
+                    tenant_id=cfg.office_tenant_id or "",
+                    client_id=cfg.office_client_id or "",
+                    client_secret=settings.office365_client_secret or "",
+                    site_id=cfg.office_site_id,
+                    drive_id=cfg.office_drive_id,
+                    folder_path=folder_path,
+                    retention_days=cfg.retention_cloud_days,
+                    dry_run=payload.dry_run,
+                    now=generated_at,
+                )
+                scopes.append(
+                    _retention_scope_response(
+                        scope=scope_name,
+                        location=folder_path,
+                        plan=plan,
+                        apply_result=apply_result,
+                    )
+                )
+            except (Office365BackupError, ValueError, httpx.HTTPError) as exc:
+                scopes.append(
+                    _retention_error_response(
+                        scope=scope_name,
+                        location=folder_path,
+                        retention_days=cfg.retention_cloud_days,
+                        dry_run=payload.dry_run,
+                        error=exc,
+                    )
+                )
+
+    response = BackupRetentionRunResponse(
+        accepted=True,
+        dry_run=payload.dry_run,
+        message=(
+            "Podgląd retencji został przygotowany bez usuwania plików."
+            if payload.dry_run
+            else "Retencja została wykonana; szczegóły zapisano w audycie."
+        ),
+        generated_at=generated_at,
+        scopes=scopes,
+    )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="backup_retention_dry_run" if payload.dry_run else "backup_retention_apply",
+        client_ip=admin_session.client_ip,
+        payload=response.model_dump(mode="json"),
+    )
+    await session.commit()
+    return response
 
 
 @router.get("/history", response_model=BackupHistoryResponse, summary="Historia kopii zapasowych")
@@ -653,7 +1017,7 @@ async def backup_run(
             detail=f"Backup nie został utworzony: {exc}",
         ) from exc
 
-    uploaded = bool(uploaded_folders)
+    uploaded = bool(outcome["main_uploaded"])
     upload_error = "; ".join(upload_errors) if upload_errors else None
 
     await record_audit(
@@ -669,6 +1033,11 @@ async def backup_run(
             "checksum": run_result.checksum,
             "size_bytes": run_result.size_bytes,
             "postgres_dump_included": run_result.postgres_dump_included,
+            "firebird_backup_included": outcome["firebird_backup_included"],
+            "firebird_uploaded_to_cloud": outcome["firebird_uploaded_to_cloud"],
+            "optima_backup_included": outcome["optima_backup_included"],
+            "optima_uploaded_to_cloud": outcome["optima_uploaded_to_cloud"],
+            "optima_databases": outcome["optima_databases"],
             "included_components": run_result.included_components,
             "omitted_components": run_result.omitted_components,
             "uploaded_to_cloud": uploaded,
@@ -683,12 +1052,14 @@ async def backup_run(
     await session.commit()
 
     message = "Kopia zapasowa została utworzona."
-    if uploaded_folders:
-        message += " Wysłano kompletne archiwum do SharePoint."
-    elif upload_errors:
-        message += f" Upload SharePoint częściowo/całkowicie nieudany: {upload_error}"
-    elif upload_error:
-        message += f" Upload SharePoint nieudany: {upload_error}"
+    if uploaded:
+        message += " Wysłano archiwum CTIP do SharePoint."
+    if outcome["firebird_uploaded_to_cloud"]:
+        message += " Wysłano kopię Firebird."
+    if outcome["optima_uploaded_to_cloud"]:
+        message += " Wysłano kopie Optimy."
+    if upload_errors:
+        message += f" Wystąpiły błędy uploadu lub retencji: {upload_error}"
     return BackupRunResponse(
         accepted=True,
         dry_run=False,
@@ -697,6 +1068,11 @@ async def backup_run(
         backup_name=run_result.backup_name,
         postgres_dump_included=run_result.postgres_dump_included,
         uploaded_to_cloud=uploaded,
+        firebird_backup_included=bool(outcome["firebird_backup_included"]),
+        firebird_uploaded_to_cloud=bool(outcome["firebird_uploaded_to_cloud"]),
+        optima_backup_included=bool(outcome["optima_backup_included"]),
+        optima_uploaded_to_cloud=bool(outcome["optima_uploaded_to_cloud"]),
+        optima_databases=list(outcome["optima_databases"]),
     )
 
 

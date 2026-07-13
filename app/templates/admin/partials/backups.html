@@ -36,12 +36,12 @@
           <input type="time" name="schedule_evening" value="20:00" required>
         </label>
         <label>
-          Retencja lokalna
-          <input type="number" name="retention_local_copies" min="1" max="365" value="14" required>
+          Retencja lokalna (dni)
+          <input type="number" name="retention_local_days" min="1" max="3650" value="21" required>
         </label>
         <label>
-          Retencja chmura
-          <input type="number" name="retention_cloud_copies" min="1" max="365" value="7" required>
+          Retencja chmura (dni)
+          <input type="number" name="retention_cloud_days" min="1" max="3650" value="14" required>
         </label>
       </div>
     </section>
@@ -52,9 +52,10 @@
         <label><input type="checkbox" name="archive_ctip_files" checked> Archiwizuj pliki CTIP</label>
         <label><input type="checkbox" name="archive_ctip_db" checked> Archiwizuj bazę CTIP</label>
         <label><input type="checkbox" name="archive_firebird_prod" checked> Archiwizuj Firebird produkcyjną</label>
-        <label><input type="checkbox" name="archive_firebird_test" checked> Archiwizuj Firebird testową</label>
+        <label><input type="checkbox" name="archive_firebird_test"> Archiwizuj Firebird testową</label>
         <label><input type="checkbox" name="archive_optima" checked> Archiwizuj bazy Optimy</label>
         <label><input type="checkbox" name="cloud_only_evening" checked> Chmura tylko dla kopii 20:00</label>
+        <label><input type="checkbox" name="optima_only_evening" checked> Optima tylko dla kopii 20:00</label>
       </div>
     </section>
 
@@ -188,6 +189,8 @@
     <div class="status-actions backup-actions" style="justify-content:flex-start;">
       <button type="submit" class="btn-secondary" id="backup-save-btn">Zapisz konfigurację</button>
       <button type="button" class="btn-secondary" id="backup-office-test-btn">Test Office 365</button>
+      <button type="button" class="btn-secondary" id="backup-retention-preview-btn">Podgląd retencji</button>
+      <button type="button" class="btn-secondary" id="backup-retention-apply-btn">Wykonaj retencję</button>
       <span class="muted" id="backup-config-status"></span>
     </div>
   </form>
@@ -235,6 +238,8 @@
   const runBtn = document.getElementById("backup-run-btn");
   const refreshBtn = document.getElementById("backup-refresh-btn");
   const officeTestBtn = document.getElementById("backup-office-test-btn");
+  const retentionPreviewBtn = document.getElementById("backup-retention-preview-btn");
+  const retentionApplyBtn = document.getElementById("backup-retention-apply-btn");
   const bodyEl = document.getElementById("backup-history-body");
   const noteEl = document.getElementById("backup-note");
 
@@ -248,8 +253,8 @@
     if (!form || !cfg) return;
     form.schedule_morning.value = cfg.schedule_morning || "06:00";
     form.schedule_evening.value = cfg.schedule_evening || "20:00";
-    form.retention_local_copies.value = cfg.retention_local_copies ?? 14;
-    form.retention_cloud_copies.value = cfg.retention_cloud_copies ?? 7;
+    form.retention_local_days.value = cfg.retention_local_days ?? 21;
+    form.retention_cloud_days.value = cfg.retention_cloud_days ?? 14;
     form.storage_mode.value = cfg.storage_mode || "local";
     form.local_directory.value = cfg.local_directory || "D:\\\\Backup_CTIP_MS_optima";
     form.network_directory.value = cfg.network_directory || "";
@@ -279,6 +284,7 @@
     form.archive_firebird_test.checked = Boolean(cfg.archive_firebird_test);
     form.archive_optima.checked = Boolean(cfg.archive_optima);
     form.cloud_only_evening.checked = Boolean(cfg.cloud_only_evening);
+    form.optima_only_evening.checked = Boolean(cfg.optima_only_evening);
     if (noteEl) {
       const executionState = cfg.execution_enabled
         ? "Tryb produkcyjny: wykonywanie backupu aktywne."
@@ -328,8 +334,8 @@
       const payload = {
         schedule_morning: form.schedule_morning.value,
         schedule_evening: form.schedule_evening.value,
-        retention_local_copies: Number(form.retention_local_copies.value || 14),
-        retention_cloud_copies: Number(form.retention_cloud_copies.value || 7),
+        retention_local_days: Number(form.retention_local_days.value || 21),
+        retention_cloud_days: Number(form.retention_cloud_days.value || 14),
         archive_ctip_files: form.archive_ctip_files.checked,
         archive_ctip_db: form.archive_ctip_db.checked,
         archive_firebird_prod: form.archive_firebird_prod.checked,
@@ -340,6 +346,7 @@
         network_directory: form.network_directory.value || null,
         cloud_provider: form.cloud_provider.value,
         cloud_only_evening: form.cloud_only_evening.checked,
+        optima_only_evening: form.optima_only_evening.checked,
         office_tenant_id: form.office_tenant_id.value || null,
         office_client_id: form.office_client_id.value || null,
         office_site_id: form.office_site_id.value || null,
@@ -424,6 +431,54 @@
         setStatus(data.message || "Połączenie Office 365 działa.", "success");
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Błąd testu Office 365.", "error");
+      }
+    });
+  }
+
+  const runRetention = async (dryRun, confirm = null) => {
+    setStatus(dryRun ? "Analizowanie retencji..." : "Wykonywanie retencji...");
+    const resp = await fetch("/admin/backup/retention/run", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: dryRun, confirm }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || "Nie udało się uruchomić retencji.");
+    const scopes = Array.isArray(data.scopes) ? data.scopes : [];
+    const candidates = scopes.reduce((sum, scope) => sum + (scope.candidate_files || 0), 0);
+    const deleted = scopes.reduce((sum, scope) => sum + (scope.deleted_files || 0), 0);
+    const errors = scopes.flatMap((scope) => scope.errors || []);
+    if (errors.length) {
+      setStatus(`Retencja zakończona z błędami: ${errors.join("; ")}`, "error");
+    } else if (dryRun) {
+      setStatus(`Podgląd retencji: ${candidates} plików kwalifikuje się do usunięcia.`);
+    } else {
+      setStatus(`Retencja zakończona: usunięto ${deleted} plików.`, "success");
+      await loadHistory();
+    }
+  };
+
+  if (retentionPreviewBtn) {
+    retentionPreviewBtn.addEventListener("click", async () => {
+      try {
+        await runRetention(true);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Błąd podglądu retencji.", "error");
+      }
+    });
+  }
+
+  if (retentionApplyBtn) {
+    retentionApplyBtn.addEventListener("click", async () => {
+      const confirmation = window.prompt("Aby usunąć stare kopie, wpisz: USUŃ STARE KOPIE");
+      if (confirmation !== "USUŃ STARE KOPIE") {
+        setStatus("Retencja anulowana: nie podano poprawnego potwierdzenia.");
+        return;
+      }
+      try {
+        await runRetention(false, confirmation);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Błąd wykonania retencji.", "error");
       }
     });
   }
