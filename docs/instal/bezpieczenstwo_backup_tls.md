@@ -39,9 +39,9 @@ OFFICE365_FOLDER_CTIP=BackupKP/CTIP
 
 Hasło PostgreSQL nie jest dodawane do argumentów procesu. Aplikacja przekazuje je do procesu potomnego przez `PGPASSWORD`. Backup bazy ma format niestandardowy PostgreSQL i trafia do archiwum jako `postgresql/ctip.dump`. Brak `pg_dump`, błąd procesu, pusty plik lub nieudane `pg_restore --list` przerywa tworzenie kopii i daje status błędu.
 
-Kompletne archiwum oraz plik `.sha256` są wysyłane tylko raz do `BackupKP/CTIP`. Duże pliki korzystają z fragmentowych sesji Microsoft Graph. Po udanym uploadzie stosowana jest retencja chmurowa; retencja lokalna jest stosowana po utworzeniu poprawnego archiwum.
+Archiwum CTIP oraz plik `.sha256` są wysyłane do `BackupKP/CTIP`. Duże pliki korzystają z fragmentowych sesji Microsoft Graph. Po udanym uploadzie stosowana jest retencja chmurowa; retencja lokalna jest stosowana po utworzeniu poprawnego archiwum. Samodzielne artefakty Firebird i SQL Optima, ich walidację oraz retencję czasową opisuje `docs/instal/backup_firebird_optima_retencja.md`.
 
-Status `SUCCESS` oznacza brak pominiętych, żądanych składników i brak błędów retencji lub chmury. Status `PARTIAL` oznacza, że lokalne archiwum istnieje, ale pominięto składnik albo nie zakończono operacji dodatkowej. Niezaimplementowany dump SQL Server Optimy jest jawnie raportowany jako pominięty składnik.
+Status `SUCCESS` oznacza brak pominiętych, żądanych składników i brak błędów retencji lub chmury. Status `PARTIAL` oznacza, że lokalne archiwum istnieje, ale pominięto składnik albo nie zakończono operacji dodatkowej. Błąd uploadu nie usuwa zweryfikowanych artefaktów lokalnych.
 
 ## Próba odtworzenia
 

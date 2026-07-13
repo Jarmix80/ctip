@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
 import httpx
+
+from app.services.backup_retention import (
+    RetentionApplyResult,
+    RetentionItem,
+    RetentionPlan,
+    build_retention_plan,
+)
 
 SIMPLE_UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024
 UPLOAD_CHUNK_SIZE_BYTES = 10 * 1024 * 1024
@@ -452,12 +460,153 @@ async def prune_sharepoint_backups(
     )
 
 
+def _parse_graph_datetime(value: object) -> datetime:
+    """Konwertuje datę Microsoft Graph na świadomy czas UTC."""
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return datetime.fromtimestamp(0, tz=UTC)
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.fromtimestamp(0, tz=UTC)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+async def run_sharepoint_retention(
+    *,
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    site_id: str | None,
+    drive_id: str | None,
+    folder_path: str | None,
+    retention_days: int,
+    dry_run: bool,
+    preserve_newest_complete: bool = True,
+    now: datetime | None = None,
+) -> tuple[RetentionPlan, RetentionApplyResult]:
+    """Planuje i opcjonalnie wykonuje czasową retencję w folderze SharePoint."""
+    site_id_clean = (site_id or "").strip() or None
+    drive_id_clean = (drive_id or "").strip() or None
+    folder_clean = _sanitize_folder_path(folder_path)
+    if (
+        not _sanitize_credential(tenant_id)
+        or not _sanitize_credential(client_id)
+        or not _sanitize_credential(client_secret)
+    ):
+        raise Office365BackupError("Brakuje wymaganych danych Office 365 (tenant/client/secret).")
+    if not site_id_clean and not drive_id_clean:
+        raise Office365BackupError("Podaj Office Site ID lub Office Drive ID.")
+
+    timeout = httpx.Timeout(60.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        token = await _fetch_token(
+            client,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+        resolved_drive_id = drive_id_clean
+        if not resolved_drive_id and site_id_clean:
+            resolved_drive_id = await _resolve_drive_id(
+                client,
+                access_token=token,
+                site_id=site_id_clean,
+            )
+        if not resolved_drive_id:
+            raise Office365BackupError("Nie udało się ustalić Drive ID.")
+
+        headers = {"Authorization": f"Bearer {token}"}
+        if folder_clean:
+            encoded_folder = _drive_item_path(folder_clean)
+            next_url: str | None = (
+                f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}"
+                f"/root:/{encoded_folder}:/children"
+                "?$select=id,name,size,lastModifiedDateTime,file,folder&$top=200"
+            )
+        else:
+            next_url = (
+                f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}"
+                "/root/children?$select=id,name,size,lastModifiedDateTime,file,folder&$top=200"
+            )
+
+        graph_items: list[dict[str, object]] = []
+        while next_url:
+            response = await client.get(next_url, headers=headers)
+            if response.status_code >= 400:
+                raise Office365BackupError(
+                    "Nie udało się odczytać retencji SharePoint "
+                    f"({response.status_code}): {response.text[:240]}"
+                )
+            payload = response.json()
+            graph_items.extend(
+                item
+                for item in payload.get("value", [])
+                if isinstance(item, dict) and not item.get("folder")
+            )
+            next_url = str(payload.get("@odata.nextLink") or "") or None
+
+        retention_items = [
+            RetentionItem(
+                name=str(item.get("name") or ""),
+                modified_at=_parse_graph_datetime(item.get("lastModifiedDateTime")),
+                size_bytes=int(item.get("size") or 0),
+                identifier=str(item.get("id") or "") or None,
+            )
+            for item in graph_items
+            if item.get("name")
+        ]
+        plan = build_retention_plan(
+            retention_items,
+            retention_days=retention_days,
+            now=now,
+            preserve_newest_complete=preserve_newest_complete,
+        )
+        result = RetentionApplyResult(dry_run=dry_run)
+        if dry_run:
+            return plan, result
+
+        for item_set in plan.deletion_sets:
+            set_failed = False
+            set_deleted_files = 0
+            set_deleted_bytes = 0
+            for managed in item_set.items:
+                item_id = managed.item.identifier
+                if not item_id:
+                    result.errors.append(f"Brak identyfikatora pliku: {managed.item.name}")
+                    set_failed = True
+                    continue
+                delete_response = await client.delete(
+                    f"https://graph.microsoft.com/v1.0/drives/{resolved_drive_id}"
+                    f"/items/{quote(item_id, safe='')}",
+                    headers=headers,
+                )
+                if delete_response.status_code not in {204, 404}:
+                    result.errors.append(
+                        f"{managed.item.name}: HTTP {delete_response.status_code} "
+                        f"{delete_response.text[:160]}"
+                    )
+                    set_failed = True
+                    continue
+                if delete_response.status_code == 204:
+                    set_deleted_files += 1
+                    set_deleted_bytes += max(managed.item.size_bytes, 0)
+            result.deleted_files += set_deleted_files
+            result.deleted_bytes += set_deleted_bytes
+            if not set_failed:
+                result.deleted_sets += 1
+        return plan, result
+
+
 __all__ = [
     "Office365BackupError",
     "Office365ConnectionResult",
     "Office365PruneResult",
     "Office365UploadResult",
     "prune_sharepoint_backups",
+    "run_sharepoint_retention",
     "test_office365_connection",
     "upload_file_to_sharepoint",
 ]
