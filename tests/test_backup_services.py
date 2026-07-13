@@ -168,6 +168,20 @@ class BackupRunnerTests(unittest.TestCase):
             self.assertTrue(archives[1].exists())
             self.assertTrue(archives[2].exists())
 
+    def test_windows_predeploy_script_does_not_use_automatic_args_or_password_argument(self):
+        script_path = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "windows"
+            / "backup_prod_databases.ps1"
+        )
+        script = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("[string[]]$ArgumentList", script)
+        self.assertNotIn("[string[]]$Args", script)
+        self.assertIn("$env:ISC_PASSWORD = $env:FB_PASSWORD", script)
+        self.assertNotIn('"-password", $env:FB_PASSWORD', script)
+
 
 class _FakeResponse:
     def __init__(self, status_code: int, payload: dict | None = None, text: str = ""):

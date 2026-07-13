@@ -85,7 +85,7 @@ function Resolve-Executable {
 function Invoke-Native {
     param(
         [string]$Executable,
-        [string[]]$Args,
+        [string[]]$ArgumentList,
         [string]$Label,
         [string]$StdoutPath,
         [string]$StderrPath,
@@ -93,8 +93,8 @@ function Invoke-Native {
     )
 
     $normalizedArgs = @()
-    for ($i = 0; $i -lt $Args.Count; $i++) {
-        $item = $Args[$i]
+    for ($i = 0; $i -lt $ArgumentList.Count; $i++) {
+        $item = $ArgumentList[$i]
         if ($null -eq $item -or [string]::IsNullOrWhiteSpace([string]$item)) {
             Fail "${Label}: pusty argument na pozycji $i."
         }
@@ -299,7 +299,7 @@ $pgDumpArgs = @(
 )
 Invoke-Native `
     -Executable $pgDumpExe `
-    -Args $pgDumpArgs `
+    -ArgumentList $pgDumpArgs `
     -Label "Backup PostgreSQL (pg_dump)" `
     -StdoutPath (Join-Path $toolLogDir "pg_dump_stdout.log") `
     -StderrPath (Join-Path $toolLogDir "pg_dump_stderr.log")
@@ -317,7 +317,7 @@ if (-not $SkipPgGlobals) {
 
     $globalsExit = Invoke-Native `
         -Executable $pgDumpAllExe `
-        -Args $pgDumpAllArgs `
+        -ArgumentList $pgDumpAllArgs `
         -Label "Backup globalnych obiektow PostgreSQL (pg_dumpall --globals-only --no-role-passwords)" `
         -StdoutPath (Join-Path $toolLogDir "pg_dumpall_stdout.log") `
         -StderrPath (Join-Path $toolLogDir "pg_dumpall_stderr.log") `
@@ -333,16 +333,17 @@ if (-not $SkipPgGlobals) {
     }
 }
 
+$env:ISC_USER = $env:FB_USER
+$env:ISC_PASSWORD = $env:FB_PASSWORD
 $gbakArgs = @(
     "-b",
-    "-user", $env:FB_USER,
-    "-password", $env:FB_PASSWORD,
+    "-g",
     $fbDsn,
     $fbBackupFile
 )
 Invoke-Native `
     -Executable $gbakExe `
-    -Args $gbakArgs `
+    -ArgumentList $gbakArgs `
     -Label "Backup Firebird (gbak)" `
     -StdoutPath (Join-Path $toolLogDir "gbak_stdout.log") `
     -StderrPath (Join-Path $toolLogDir "gbak_stderr.log")
