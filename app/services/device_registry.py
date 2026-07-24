@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import (
+    DeviceCounterReading,
     DeviceIntakeOperation,
     DeviceInventoryEvent,
     DeviceInventoryUnit,
@@ -138,6 +139,10 @@ def intake_operation_payload(operation: DeviceIntakeOperation) -> dict[str, Any]
         "created_at": operation.created_at.isoformat() if operation.created_at else None,
         "updated_at": operation.updated_at.isoformat() if operation.updated_at else None,
         "completed_at": (operation.completed_at.isoformat() if operation.completed_at else None),
+        "withdrawn_by": operation.withdrawn_by,
+        "withdrawal_reason": operation.withdrawal_reason,
+        "withdrawal_preview": operation.withdrawal_preview,
+        "withdrawn_at": operation.withdrawn_at.isoformat() if operation.withdrawn_at else None,
     }
 
 
@@ -257,6 +262,9 @@ async def complete_intake_operation(
             "reservation_until": "",
             "notes": AUTOMATED_PZ_NOTE,
             "notes_red": True,
+            "counter_bw": item.get("counter_bw"),
+            "counter_color": item.get("counter_color"),
+            "counter_scan": item.get("counter_scan"),
             "ms_id_maszyna": unit.firebird_machine_id,
             "ctip_env": settings.ctip_runtime_profile.upper(),
         }
@@ -279,6 +287,22 @@ async def complete_intake_operation(
                 },
             )
         )
+        if any(
+            item.get(field) is not None for field in ("counter_bw", "counter_color", "counter_scan")
+        ):
+            session.add(
+                DeviceCounterReading(
+                    unit_id=unit.id,
+                    source="intake",
+                    reading_at=datetime.now(UTC),
+                    counter_bw=item.get("counter_bw"),
+                    counter_color=item.get("counter_color"),
+                    counter_scan=item.get("counter_scan"),
+                    applied_to_current=True,
+                    created_by=operation.created_by,
+                    source_snapshot={"operation_id": operation.id},
+                )
+            )
         created_units.append(unit)
 
     await session.flush()

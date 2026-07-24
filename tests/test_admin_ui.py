@@ -579,8 +579,8 @@ def test_device_page_renders_devices_layout():
     client = TestClient(app)
     response = client.get("/device")
     assert response.status_code == 200
-    assert f"/static/device/device.css?v={app.version}-device-audit-2" in response.text
-    assert f"/static/device/device.js?v={app.version}-device-audit-2" in response.text
+    assert f"/static/device/device.css?v={app.version}-device-v0.3.1" in response.text
+    assert f"/static/device/device.js?v={app.version}-device-v0.3.1" in response.text
     assert "Obsługa urządzeń" in response.text
     assert "device-user-chip" in response.text
     assert "device-refresh" in response.text
@@ -590,7 +590,13 @@ def test_device_page_renders_devices_layout():
     assert "device-warehouse-body" in response.text
     assert "device-history-body" in response.text
     assert "device-sheet-issues" in response.text
-    assert "Przyjęcie dokumentem PZ" in response.text
+    assert 'id="device-sync-history"' in response.text
+    assert 'id="device-event-history"' in response.text
+    assert 'href="/device/audit"' in response.text
+    assert "Nowy dokument PZ" in response.text
+    assert "+ Dodaj urządzenie" in response.text
+    assert "Szukaj na liście: model, serial lub numer KP" in response.text
+    assert 'id="device-intake-summary-gross"' in response.text
     assert "Magazyn urządzeń" in response.text
     assert "Licznik B/W / kolor" in response.text
     assert "Cena zakupu" in response.text
@@ -599,6 +605,21 @@ def test_device_page_renders_devices_layout():
     assert "Legenda tabeli" in response.text
     assert "Arkusz/Magazyn/Urządzenie/CTIP" in response.text
     assert "Audyt rozbieżności urządzeń" in response.text
+    assert "Dodaj nowy model urządzenia" in response.text
+    assert response.text.index("Dodaj nowy model urządzenia") > response.text.index(
+        "device-warehouse-legend"
+    )
+    assert 'class="device-workspace"' in response.text
+    assert 'class="device-sidebar"' in response.text
+    assert "<strong>Strona główna</strong>" in response.text
+    assert 'id="device-theme-select"' in response.text
+    assert '<option value="blue">Niebieska</option>' in response.text
+    assert '<option value="graphite">Grafitowa</option>' in response.text
+    assert '<option value="mint">Miętowa</option>' in response.text
+    assert "/device v0.3.1" in response.text
+    assert "device-warehouse-table" in response.text
+    assert "device-warehouse-card" in response.text
+    assert "Urządzenie / CTIP" in response.text
     assert "Nie naprawia, nie migruje i nie zapisuje danych źródłowych" in response.text
     assert 'id="device-audit-source"' in response.text
     assert '<option value="operational" selected>Widok operacyjny</option>' in response.text
@@ -608,6 +629,9 @@ def test_device_page_renders_devices_layout():
     assert "Rezerwacja FLOW" in response.text
     assert "Stan Firebird" in response.text
     assert "Historia przyjęć PZ" in response.text
+    assert 'id="device-withdraw-dialog"' in response.text
+    assert "Wycofaj dokument PZ" in response.text
+    assert 'id="device-counter-form"' in response.text
     assert "Zezwól na brak dokumentu zewnętrznego lub cenę 0" in response.text
 
 
@@ -619,14 +643,39 @@ def test_device_script_preserves_selected_datalist_model():
     assert "showIntakeValidation(" in content
     assert "device-field-invalid" in content
     assert '[data-item-field="serial"]' in content
+    assert "function updateIntakeSummary()" in content
+    assert "function filterIntakeItems()" in content
+    assert '"device-intake-summary-gross"' in content
     assert "renderWarehouseCounter(item)" in content
     assert "renderPurchasePrice(item.purchase_price_net)" in content
     assert "renderWarehouseNote(item.note)" in content
-    assert 'colspan="11"' in content
+    assert 'colspan="10"' in content
     assert "sourcePresenceBadges(item.source_presence)" in content
     assert 'fetchDeviceJson("/admin/device/audits"' in content
     assert 'document.getElementById("device-audit-source")' in content
     assert '|| "operational"' in content
+    assert 'const DEVICE_THEME_KEY = "ctip-device-theme"' in content
+    assert "function applyDeviceTheme(" in content
+    assert 'fetchDeviceJson("/auth/preferences/device-theme"' in content
+    assert 'applyDeviceTheme(me.device_theme || "blue"' in content
+    assert 'data-device-detail-row="' in content
+    assert 'warehouseBody?.addEventListener("dblclick"' in content
+    assert 'warehouseBody?.addEventListener("keydown"' in content
+
+
+def test_device_styles_hide_inactive_screens_and_define_responsive_sidebar():
+    content = Path("app/static/device/device.css").read_text(encoding="utf-8")
+    assert ".device-view[hidden]" in content
+    assert ".device-workspace" in content
+    assert "grid-template-columns: 244px minmax(0, 1fr)" in content
+    assert 'body[data-device-theme="blue"]' in content
+    assert 'body[data-device-theme="graphite"]' in content
+    assert 'body[data-device-theme="mint"]' in content
+    assert ".device-table tbody tr:nth-child(even) td" in content
+    assert ".device-warehouse-row" in content
+    assert "@media (max-width: 760px)" in content
+    assert ".device-nav {" in content
+    assert "overflow-x: auto" in content
 
 
 def test_device_subpages_select_requested_view():
@@ -636,12 +685,106 @@ def test_device_subpages_select_requested_view():
     for path, view in (
         ("/device/intake", "intake"),
         ("/device/warehouse", "warehouse"),
+        ("/device/audit", "audit"),
         ("/device/history", "history"),
         ("/device/issues", "issues"),
     ):
         response = client.get(path)
         assert response.status_code == 200
         assert f'data-device-view="{view}"' in response.text
+
+
+def test_device_intake_prototypes_are_visual_and_test_only():
+    previous_profile = settings.ctip_runtime_profile
+    try:
+        settings.ctip_runtime_profile = "test"
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/device/intake/prototypes")
+        assert response.status_code == 200
+        assert "Trzy warianty przyjęcia urządzeń" in response.text
+        assert "Kreator 3 kroków" in response.text
+        assert "Jeden uporządkowany formularz" in response.text
+        assert "Widok dzielony" in response.text
+        assert "Makieta – brak zapisu" in response.text
+        assert "/static/device/device.js" not in response.text
+        assert "<script" not in response.text
+
+        settings.ctip_runtime_profile = "production"
+        production_response = client.get("/device/intake/prototypes")
+        assert production_response.status_code == 404
+    finally:
+        settings.ctip_runtime_profile = previous_profile
+
+
+def test_device_style_prototypes_show_four_noninteractive_variants():
+    previous_profile = settings.ctip_runtime_profile
+    try:
+        settings.ctip_runtime_profile = "test"
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/device/style-prototypes")
+        assert response.status_code == 200
+        assert "Cztery warianty tła" in response.text
+        assert "Błękit operacyjny" in response.text
+        assert "Grafit neutralny" in response.text
+        assert "Mięta techniczna" in response.text
+        assert "Piaskowy spokojny" in response.text
+        assert "Makieta bez zapisu" in response.text
+        assert "/static/device/device.js" not in response.text
+        assert "<script" not in response.text
+
+        settings.ctip_runtime_profile = "production"
+        production_response = client.get("/device/style-prototypes")
+        assert production_response.status_code == 404
+    finally:
+        settings.ctip_runtime_profile = previous_profile
+
+
+def test_device_sidebar_prototypes_show_three_noninteractive_variants():
+    previous_profile = settings.ctip_runtime_profile
+    try:
+        settings.ctip_runtime_profile = "test"
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/device/sidebar-prototypes")
+        assert response.status_code == 200
+        assert "Trzy warianty lewego menu" in response.text
+        assert "Granatowe klasyczne" in response.text
+        assert "Błękitne miękkie" in response.text
+        assert "Dwutonowe techniczne" in response.text
+        assert "Makieta bez zapisu" in response.text
+        assert "/static/device/device.js" not in response.text
+        assert "<script" not in response.text
+
+        settings.ctip_runtime_profile = "production"
+        production_response = client.get("/device/sidebar-prototypes")
+        assert production_response.status_code == 404
+    finally:
+        settings.ctip_runtime_profile = previous_profile
+
+
+def test_device_header_prototypes_show_three_noninteractive_variants():
+    previous_profile = settings.ctip_runtime_profile
+    try:
+        settings.ctip_runtime_profile = "test"
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/device/header-prototypes")
+        assert response.status_code == 200
+        assert "Trzy warianty górnego panelu" in response.text
+        assert "Błękitne szkło" in response.text
+        assert "Granat firmowy" in response.text
+        assert "Gradient dwutonowy" in response.text
+        assert "Makieta bez zapisu" in response.text
+        assert "/static/device/device.js" not in response.text
+        assert "<script" not in response.text
+
+        settings.ctip_runtime_profile = "production"
+        production_response = client.get("/device/header-prototypes")
+        assert production_response.status_code == 404
+    finally:
+        settings.ctip_runtime_profile = previous_profile
 
 
 def test_flow_invoice_preview_page_renders_sample_document():

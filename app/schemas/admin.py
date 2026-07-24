@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 
 PanelSection = Literal["admin", "operator", "generator", "delivery", "device"]
 PanelRole = Literal["admin", "operator", "serwisant"]
+DeviceTheme = Literal["blue", "graphite", "mint"]
 
 
 class EnvBackedConfigMetadata(BaseModel):
@@ -494,6 +495,7 @@ class AdminUserSummary(BaseModel):
     internal_ext: str | None
     role: PanelRole
     is_salesperson: bool = False
+    can_withdraw_device_pz: bool = False
     firebird_app_user_id: int | None = None
     firebird_app_user_login: str | None = None
     sections: list[PanelSection] = Field(default_factory=list)
@@ -541,6 +543,7 @@ class AdminUserCreate(BaseModel):
     internal_ext: str | None = None
     role: PanelRole = "operator"
     is_salesperson: bool = False
+    can_withdraw_device_pz: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
     password: str | None = None
@@ -566,6 +569,7 @@ class AdminUserUpdate(BaseModel):
     internal_ext: str | None = None
     role: PanelRole = "operator"
     is_salesperson: bool = False
+    can_withdraw_device_pz: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
     mobile_phone: str | None = Field(
@@ -607,7 +611,14 @@ class PortalUserInfo(BaseModel):
     last_name: str | None = None
     role: str
     is_salesperson: bool = False
+    device_theme: DeviceTheme = "blue"
     sections: list[PanelSection] = Field(default_factory=list)
+
+
+class PortalDeviceThemePreference(BaseModel):
+    """Preferencja kolorystyki modułu urządzeń."""
+
+    theme: DeviceTheme
 
 
 class PortalProfile(BaseModel):

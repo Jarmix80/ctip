@@ -105,6 +105,14 @@
           <small>Znacznik biznesowy do grupowego routingu powiadomień formularzy.</small>
         </div>
         <div class="form-field">
+          <label class="users-section-option users-flag-option" for="user-can-withdraw-device-pz">
+            <input id="user-can-withdraw-device-pz" type="checkbox"
+                   x-model="form.canWithdrawDevicePz" :disabled="form.role === 'admin'">
+            Wycofywanie dokumentów PZ
+          </label>
+          <small>Administrator ma to prawo zawsze. Pozostali użytkownicy wymagają jawnego nadania.</small>
+        </div>
+        <div class="form-field">
           <label class="users-section-option users-flag-option" for="user-imap-use-ssl">
             <input id="user-imap-use-ssl" type="checkbox" x-model="form.imapUseSsl">
             IMAP SSL
@@ -462,6 +470,16 @@
                     </label>
                   </div>
                   <small>Administrator zawsze otrzymuje dostęp do wszystkich sekcji.</small>
+                </div>
+                <div class="form-field">
+                  <label class="users-section-option users-flag-option"
+                         for="modal-user-can-withdraw-device-pz">
+                    <input id="modal-user-can-withdraw-device-pz" type="checkbox"
+                           x-model="modalEdit.canWithdrawDevicePz"
+                           :disabled="modalEdit.role === 'admin'">
+                    Wycofywanie dokumentów PZ
+                  </label>
+                  <small>Osobne uprawnienie do operacji wycofania przyjęcia urządzeń.</small>
                 </div>
               </div>
               <div class="form-actions">

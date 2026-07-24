@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – Warianty nagłówka urządzeń</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet"
+          href="/static/device/header_prototypes.css?v={{ request.app.version }}-header-prototypes-1">
+  </head>
+  <body>
+    {% macro header_preview(header_class) %}
+      <div class="preview-frame">
+        <header class="device-header {{ header_class }}">
+          <div class="header-copy">
+            <p>CTIP / URZĄDZENIA</p>
+            <h3>Obsługa urządzeń</h3>
+            <span>Przyjęcia PZ, bieżący magazyn, rezerwacje i kontrola synchronizacji.</span>
+          </div>
+          <div class="header-actions">
+            <span class="user-chip">Marcin K.</span>
+            <label><small>Kolorystyka</small><strong>Niebieska⌄</strong></label>
+            <button type="button" disabled>Wybór sekcji</button>
+            <button type="button" disabled>Odśwież</button>
+            <button type="button" disabled>Wyloguj</button>
+          </div>
+        </header>
+        <div class="preview-body">
+          <aside>
+            <small>MODUŁ</small>
+            <strong>Urządzenia</strong>
+            <nav>
+              <span>⌂ Strona główna</span>
+              <span class="active">＋ Przyjęcie PZ</span>
+              <span>▦ Magazyn</span>
+              <span>✓ Audyt i naprawa</span>
+            </nav>
+          </aside>
+          <main>
+            <p>PRZYJĘCIA URZĄDZEŃ</p>
+            <h4>Nowy dokument PZ</h4>
+            <article>
+              <strong>01&nbsp;&nbsp; Dokument i dostawca</strong>
+              <span>Dane wspólne dla wszystkich urządzeń na dokumencie.</span>
+            </article>
+          </main>
+        </div>
+      </div>
+    {% endmacro %}
+
+    <main class="prototype-shell">
+      <header class="prototype-hero">
+        <div>
+          <p>CTIP / URZĄDZENIA / ŚRODOWISKO TESTOWE</p>
+          <h1>Trzy warianty górnego panelu</h1>
+          <span>
+            Makiety korzystają z niebieskiego tła operacyjnego i granatowego lewego menu.
+            Zmienia się wyłącznie panel informujący, w którym module pracuje użytkownik.
+          </span>
+        </div>
+        <a href="/device">Wróć do modułu</a>
+      </header>
+
+      <aside class="prototype-warning">
+        <strong>Makieta bez zapisu</strong>
+        <span>Przyciski są nieaktywne, a strona nie ładuje API modułu.</span>
+      </aside>
+
+      <nav class="prototype-nav" aria-label="Warianty górnego panelu">
+        <a href="#header-1"><span>01</span>Błękitne szkło</a>
+        <a href="#header-2"><span>02</span>Granat firmowy</a>
+        <a href="#header-3"><span>03</span>Gradient dwutonowy</a>
+      </nav>
+
+      <section id="header-1" class="prototype-variant">
+        <header>
+          <div><p>Wariant 01</p><h2>Błękitne szkło</h2><span>Lekka półprzezroczysta karta z błękitną poświatą, zachowująca jasny charakter interfejsu.</span></div>
+          <strong>Rekomendowany</strong>
+        </header>
+        {{ header_preview("header-glass") }}
+      </section>
+
+      <section id="header-2" class="prototype-variant">
+        <header>
+          <div><p>Wariant 02</p><h2>Granat firmowy</h2><span>Mocne powiązanie z lewym menu i najwyższy kontrast tekstu oraz przycisków.</span></div>
+          <strong>Najbardziej wyrazisty</strong>
+        </header>
+        {{ header_preview("header-navy") }}
+      </section>
+
+      <section id="header-3" class="prototype-variant">
+        <header>
+          <div><p>Wariant 03</p><h2>Gradient dwutonowy</h2><span>Granatowa część informacyjna przechodzi w jasny błękit obszaru akcji użytkownika.</span></div>
+          <strong>Najbardziej nowoczesny</strong>
+        </header>
+        {{ header_preview("header-split") }}
+      </section>
+    </main>
+  </body>
+</html>

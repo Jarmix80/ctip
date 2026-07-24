@@ -27,6 +27,7 @@ _HEADER_LABELS = {
     "status": "STATUS",
     "counter_bw": "LICZNIK B/W",
     "counter_color": "LICZNIK KOLOR",
+    "counter_scan": "LICZNIK SKAN",
     "price": "CENA",
     "notes": "UWAGI",
     "reservation_status": "STATUS REZERWACJI",
@@ -46,6 +47,7 @@ _HEADER_ALIASES = {
     "status": {"status", "status urzadzenia"},
     "counter_bw": {"licznik b w", "licznik bw", "licznik mono"},
     "counter_color": {"licznik kolor", "licznik color"},
+    "counter_scan": {"licznik skan", "licznik skanow", "skan total"},
     "price": {"cena", "cena netto", "cena zakupu"},
     "notes": {"uwagi", "uwaga", "informacja"},
     "reservation_status": {"status rezerwacji"},
@@ -92,6 +94,9 @@ _REQUIRED_HEADER_KEYS = (
     "index",
     "serial",
     "status",
+    "counter_bw",
+    "counter_color",
+    "counter_scan",
     "price",
     "notes",
     "reservation_status",
@@ -111,6 +116,7 @@ _WORKFLOW_BOOTSTRAP_HEADER_LAYOUT = [
     "STATUS",
     "LICZNIK B/W",
     "LICZNIK KOLOR",
+    "LICZNIK SKAN",
     "CENA",
     "UWAGI",
     "STATUS REZERWACJI",
@@ -424,6 +430,7 @@ def load_workflow_sheet_devices_lookup(
         status_value = _row_value(local_row, header_index.get("status"))
         counter_bw_value = _row_value(local_row, header_index.get("counter_bw"))
         counter_color_value = _row_value(local_row, header_index.get("counter_color"))
+        counter_scan_value = _row_value(local_row, header_index.get("counter_scan"))
         price_value = _row_value(local_row, header_index.get("price"))
         notes_value = _row_value(local_row, header_index.get("notes"))
         reservation_status_value = _row_value(local_row, header_index.get("reservation_status"))
@@ -443,6 +450,7 @@ def load_workflow_sheet_devices_lookup(
             "status": status_value,
             "counter_bw": counter_bw_value,
             "counter_color": counter_color_value,
+            "counter_scan": counter_scan_value,
             "price": price_value,
             "notes": notes_value,
             "reservation_status": reservation_status_value,
@@ -869,6 +877,8 @@ def sync_device_inventory_to_sheet(
     if operation_type not in {
         "upsert_device",
         "update_note",
+        "update_counters",
+        "delete_device",
         "update_reservation",
         "release_reservation",
     }:
@@ -881,6 +891,30 @@ def sync_device_inventory_to_sheet(
     data_rows = [list(row) for row in values[1:]] if len(values) > 1 else []
     row_number = _find_matching_row_number(data_rows, header_index, payload)
     action = "updated"
+
+    if operation_type == "delete_device":
+        if row_number is None:
+            return {
+                "enabled": True,
+                "reason": None,
+                "spreadsheet_title": str(workbook.title),
+                "worksheet_title": str(worksheet.title),
+                "sheet_row": None,
+                "action": "already_deleted",
+                "added_headers": added_headers,
+            }
+        row_values = _ensure_row_width(data_rows[row_number - 2], len(headers))
+        _validate_inventory_row_identity(row_values, header_index, payload)
+        worksheet.delete_rows(row_number)
+        return {
+            "enabled": True,
+            "reason": None,
+            "spreadsheet_title": str(workbook.title),
+            "worksheet_title": str(worksheet.title),
+            "sheet_row": row_number,
+            "action": "deleted",
+            "added_headers": added_headers,
+        }
 
     if row_number is None:
         action = "appended"
@@ -976,6 +1010,9 @@ def _apply_inventory_sheet_values(
     if operation_type == "upsert_device":
         for key in (
             "status",
+            "counter_bw",
+            "counter_color",
+            "counter_scan",
             "price",
             "notes",
             "reservation_status",
@@ -987,6 +1024,11 @@ def _apply_inventory_sheet_values(
 
     if operation_type == "update_note":
         _set_row_value(row_values, header_index, "notes", payload.get("notes"))
+        return
+    if operation_type == "update_counters":
+        for key in ("counter_bw", "counter_color", "counter_scan"):
+            if key in payload:
+                _set_row_value(row_values, header_index, key, payload.get(key))
         return
 
     for key in ("reservation_status", "reservation_until", "reservation_grenke"):

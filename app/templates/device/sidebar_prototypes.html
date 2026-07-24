@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – Warianty lewego menu urządzeń</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet"
+          href="/static/device/sidebar_prototypes.css?v={{ request.app.version }}-sidebar-prototypes-1">
+  </head>
+  <body>
+    {% macro preview(sidebar_class) %}
+      <div class="menu-preview">
+        <aside class="preview-sidebar {{ sidebar_class }}">
+          <div class="preview-brand">
+            <small>MODUŁ</small>
+            <strong>Urządzenia</strong>
+          </div>
+          <nav>
+            <span><i>⌂</i><b>Strona główna</b><small>Podsumowanie modułu</small></span>
+            <span class="active"><i>＋</i><b>Przyjęcie PZ</b><small>Nowe urządzenia</small></span>
+            <span><i>▦</i><b>Magazyn</b><small>Stan i szczegóły</small></span>
+            <span><i>✓</i><b>Audyt i naprawa</b><small>Kontrola spójności</small></span>
+            <span><i>↶</i><b>Historia PZ</b><small>Dokumenty i wycofania</small></span>
+            <span><i>⇄</i><b>Synchronizacje</b><small>Kolejka i problemy</small></span>
+          </nav>
+          <div class="preview-note">
+            <strong>Bezpieczna praca</strong>
+            <span>Operacje zapisowe pozostawiają historię.</span>
+          </div>
+        </aside>
+        <section class="preview-content">
+          <header>
+            <small>PRZYJĘCIA URZĄDZEŃ</small>
+            <h3>Nowy dokument PZ</h3>
+            <p>Uzupełnij dokument, dodaj urządzenia i sprawdź podsumowanie.</p>
+          </header>
+          <div class="preview-grid">
+            <article>
+              <div class="card-title"><span>01</span><strong>Dokument i dostawca</strong></div>
+              <div class="field-grid">
+                <label><span>Dostawca</span><b>ABC Office sp. z o.o.</b></label>
+                <label><span>Dokument zewnętrzny</span><b>FV 112/07/2026</b></label>
+              </div>
+            </article>
+            <article class="summary-card">
+              <small>PODSUMOWANIE</small>
+              <strong>3 urządzenia</strong>
+              <span>8 850,00 zł netto</span>
+            </article>
+          </div>
+          <article class="table-card">
+            <div class="card-title"><span>02</span><strong>Lista urządzeń</strong></div>
+            <table>
+              <thead><tr><th>Model</th><th>Serial</th><th>Numer KP</th><th>Cena netto</th></tr></thead>
+              <tbody>
+                <tr><td>Ricoh IM C3000</td><td>3121R730184</td><td>KP/2026/0184</td><td>4 900,00 zł</td></tr>
+                <tr><td>Ricoh M C250FWB</td><td>3920PA00481</td><td>KP/2026/0185</td><td>1 250,00 zł</td></tr>
+                <tr><td>Ricoh MP 4055</td><td>3381P100862</td><td>KP/2026/0186</td><td>2 700,00 zł</td></tr>
+              </tbody>
+            </table>
+          </article>
+        </section>
+      </div>
+    {% endmacro %}
+
+    <main class="sidebar-prototype-shell">
+      <header class="sidebar-prototype-hero">
+        <div>
+          <p>CTIP / URZĄDZENIA / ŚRODOWISKO TESTOWE</p>
+          <h1>Trzy warianty lewego menu</h1>
+          <span>
+            Wszystkie makiety korzystają z wybranego błękitnego tła operacyjnego.
+            Zmienia się wyłącznie wygląd nawigacji.
+          </span>
+        </div>
+        <a href="/device/style-prototypes">Wróć do wariantów tła</a>
+      </header>
+
+      <aside class="sidebar-prototype-warning">
+        <strong>Makieta bez zapisu</strong>
+        <span>Strona nie ładuje skryptu modułu i nie wywołuje API.</span>
+      </aside>
+
+      <nav class="sidebar-prototype-nav" aria-label="Warianty lewego menu">
+        <a href="#menu-1"><span>01</span>Granatowe klasyczne</a>
+        <a href="#menu-2"><span>02</span>Błękitne miękkie</a>
+        <a href="#menu-3"><span>03</span>Dwutonowe techniczne</a>
+      </nav>
+
+      <section id="menu-1" class="sidebar-variant">
+        <header>
+          <div><p>Wariant 01</p><h2>Granatowe klasyczne</h2><span>Największy kontrast i bardzo czytelne oddzielenie nawigacji od pracy.</span></div>
+          <strong>Rekomendowany</strong>
+        </header>
+        {{ preview("sidebar-navy") }}
+      </section>
+
+      <section id="menu-2" class="sidebar-variant">
+        <header>
+          <div><p>Wariant 02</p><h2>Błękitne miękkie</h2><span>Spokojne, jasne menu pozostające w tej samej palecie co tło operacyjne.</span></div>
+          <strong>Najłagodniejszy</strong>
+        </header>
+        {{ preview("sidebar-soft") }}
+      </section>
+
+      <section id="menu-3" class="sidebar-variant">
+        <header>
+          <div><p>Wariant 03</p><h2>Dwutonowe techniczne</h2><span>Granatowy pas ikon i jasna część opisowa tworzą nowoczesny układ aplikacyjny.</span></div>
+          <strong>Najbardziej charakterystyczny</strong>
+        </header>
+        {{ preview("sidebar-split") }}
+      </section>
+    </main>
+  </body>
+</html>

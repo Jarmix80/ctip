@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    DeviceCounterReading,
     DeviceInventoryEvent,
     DeviceInventoryUnit,
     DeviceManualReservation,
@@ -223,6 +224,7 @@ async def build_device_warehouse_payload(
     manual_by_unit: dict[int, DeviceManualReservation] = {}
     latest_notes_by_unit: dict[int, str] = {}
     latest_outbox_by_unit: dict[int, DeviceSheetOutbox] = {}
+    latest_counters_by_unit: dict[int, dict[str, int]] = {}
     if unit_ids:
         manual_rows = list(
             (
@@ -281,6 +283,30 @@ async def build_device_warehouse_payload(
         for queue_item in outbox_rows:
             latest_outbox_by_unit.setdefault(queue_item.unit_id, queue_item)
 
+        counter_rows = list(
+            (
+                await session.execute(
+                    select(DeviceCounterReading)
+                    .where(
+                        DeviceCounterReading.unit_id.in_(unit_ids),
+                        DeviceCounterReading.applied_to_current.is_(True),
+                    )
+                    .order_by(
+                        DeviceCounterReading.reading_at.desc(),
+                        DeviceCounterReading.id.desc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for reading in counter_rows:
+            values = latest_counters_by_unit.setdefault(reading.unit_id, {})
+            for field in ("counter_bw", "counter_color", "counter_scan"):
+                value = getattr(reading, field)
+                if value is not None and field not in values:
+                    values[field] = value
+
     now = datetime.now(UTC)
     items: list[dict[str, Any]] = []
     for source in firebird_rows:
@@ -302,8 +328,22 @@ async def build_device_warehouse_payload(
             or (cache.sheet_notes if cache is not None else "")
             or ""
         )
-        counter_bw = (cache.counter_bw if cache is not None else "") or ""
-        counter_color = (cache.counter_color if cache is not None else "") or ""
+        latest_counter = latest_counters_by_unit.get(unit.id, {}) if unit is not None else {}
+        counter_bw = (
+            latest_counter["counter_bw"]
+            if "counter_bw" in latest_counter
+            else (cache.counter_bw if cache is not None else "")
+        )
+        counter_color = (
+            latest_counter["counter_color"]
+            if "counter_color" in latest_counter
+            else (cache.counter_color if cache is not None else "")
+        )
+        counter_scan = (
+            latest_counter["counter_scan"]
+            if "counter_scan" in latest_counter
+            else (cache.counter_scan if cache is not None else "")
+        )
         is_color = _optional_bool(source.get("is_color"))
         if is_color is None:
             is_color = bool(str(counter_color).strip())
@@ -360,6 +400,7 @@ async def build_device_warehouse_payload(
             ),
             "counter_bw": counter_bw,
             "counter_color": counter_color,
+            "counter_scan": counter_scan,
             "is_color": is_color,
             "zeroing_status": cache.sheet_status if cache is not None else "",
             "note": current_note,

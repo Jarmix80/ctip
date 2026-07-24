@@ -67,3 +67,8 @@
 - Dodano tabelę `ctip.device_audit_run` przechowującą status, etap, postęp, podsumowanie i historię ręcznych audytów urządzeń.
 - Dodano tabelę `ctip.device_audit_item` z wynikiem porównania aktywnego arkusza `Urzadzenia_magazyn`, dostępnego magazynu Firebird nr 28, kartotek `MASZYNA` i rejestru CTIP.
 - Audyt jest operacją tylko do odczytu dla źródeł zewnętrznych, zachowuje 20 ostatnich przebiegów i klasyfikuje wyniki według priorytetu: duplikat, rozbieżność, braki, poprawny.
+- Dodano tabelę `ctip.device_counter_reading` przechowującą historię liczników B/W, koloru i skanu wraz z datą odczytu, źródłem oraz informacją, czy odczyt zaktualizował stan bieżący.
+- Rozszerzono `ctip.workflow_sheet_status_cache` o `counter_scan` oraz kolejkę arkusza o operacje `update_counters` i `delete_device`.
+- Rozszerzono `ctip.device_intake_operation` i `ctip.device_inventory_unit` o trwały stan wycofania, datę, operatora, uzasadnienie i zapis podglądu skutków operacji PZ.
+- Rozszerzono `ctip.admin_user` o osobne uprawnienie `can_withdraw_device_pz`; administrator zachowuje prawo niezależnie od wartości pola.
+- Rozszerzono `ctip.admin_user` o kontrolowaną preferencję `device_theme` (`blue`, `graphite`, `mint`), dzięki czemu kolorystyka modułu `/device` jest przypisana do konta użytkownika.

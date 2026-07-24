@@ -576,6 +576,34 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         after_logout_response = await self.client.get("/auth/me")
         self.assertEqual(after_logout_response.status_code, 401)
 
+    async def test_portal_device_theme_is_saved_on_user_account(self):
+        login_response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": True,
+            },
+        )
+        self.assertEqual(login_response.status_code, 200)
+
+        update_response = await self.client.put(
+            "/auth/preferences/device-theme",
+            json={"theme": "mint"},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["theme"], "mint")
+
+        me_response = await self.client.get("/auth/me")
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.json()["device_theme"], "mint")
+
+        invalid_response = await self.client.put(
+            "/auth/preferences/device-theme",
+            json={"theme": "sand"},
+        )
+        self.assertEqual(invalid_response.status_code, 422)
+
     async def test_operator_login_requires_operator_section(self):
         async with self.session_factory() as session:
             user = (await session.execute(select(AdminUser).where(AdminUser.id == 2))).scalar_one()

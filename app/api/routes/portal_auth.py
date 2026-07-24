@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.models import AdminSession, AdminUser
 from app.schemas.admin import (
     AdminLoginRequest,
+    PortalDeviceThemePreference,
     PortalLoginResponse,
     PortalPasswordChangeRequest,
     PortalProfile,
@@ -141,8 +142,33 @@ async def portal_me(
         last_name=admin_user.last_name,
         role=admin_user.role,
         is_salesperson=bool(admin_user.is_salesperson),
+        device_theme=admin_user.device_theme,
         sections=sections,
     )
+
+
+@router.put(
+    "/preferences/device-theme",
+    response_model=PortalDeviceThemePreference,
+    summary="Zapisz kolorystykę modułu urządzeń",
+)
+async def portal_update_device_theme(
+    payload: PortalDeviceThemePreference,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> PortalDeviceThemePreference:
+    """Zapisuje kolorystykę modułu urządzeń na koncie zalogowanego użytkownika."""
+    admin_session, admin_user = admin_context
+    admin_user.device_theme = payload.theme
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="portal_device_theme_update",
+        client_ip=admin_session.client_ip,
+        payload={"theme": payload.theme},
+    )
+    await session.commit()
+    return PortalDeviceThemePreference(theme=admin_user.device_theme)
 
 
 @router.get("/profile", response_model=PortalProfile, summary="Profil użytkownika")

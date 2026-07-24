@@ -526,10 +526,13 @@ CREATE TABLE ctip.admin_user (
     is_salesperson boolean DEFAULT false NOT NULL,
     firebird_app_user_id integer,
     firebird_app_user_login text,
+    can_withdraw_device_pz boolean DEFAULT false NOT NULL,
+    device_theme text DEFAULT 'blue'::text NOT NULL,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT admin_user_pkey PRIMARY KEY (id),
-    CONSTRAINT admin_user_role_check CHECK (role = ANY (ARRAY['admin'::text, 'operator'::text]))
+    CONSTRAINT admin_user_role_check CHECK (role = ANY (ARRAY['admin'::text, 'operator'::text])),
+    CONSTRAINT admin_user_device_theme_check CHECK (device_theme = ANY (ARRAY['blue'::text, 'graphite'::text, 'mint'::text]))
 );
 
 ALTER TABLE ctip.admin_user OWNER TO postgres;
@@ -783,6 +786,7 @@ CREATE TABLE ctip.workflow_sheet_status_cache (
     sheet_notes text,
     counter_bw text,
     counter_color text,
+    counter_scan text,
     reservation_status text,
     reservation_grenke text,
     reservation_until date,
@@ -828,9 +832,15 @@ CREATE TABLE ctip.device_intake_operation (
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     completed_at timestamp with time zone,
+    withdrawn_by integer,
+    withdrawal_reason text,
+    withdrawal_preview json,
+    withdrawn_at timestamp with time zone,
     CONSTRAINT device_intake_operation_pkey PRIMARY KEY (id),
     CONSTRAINT uq_device_intake_operation_idempotency_key UNIQUE (idempotency_key),
     CONSTRAINT device_intake_operation_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL,
+    CONSTRAINT device_intake_operation_withdrawn_by_fkey FOREIGN KEY (withdrawn_by)
         REFERENCES ctip.admin_user (id) ON DELETE SET NULL,
     CONSTRAINT device_intake_operation_status_check CHECK (
         status = ANY (
@@ -838,7 +848,8 @@ CREATE TABLE ctip.device_intake_operation (
                 'processing'::text,
                 'completed'::text,
                 'failed'::text,
-                'reconcile_required'::text
+                'reconcile_required'::text,
+                'withdrawn'::text
             ]
         )
     )
@@ -871,6 +882,8 @@ CREATE TABLE ctip.device_inventory_unit (
     sheet_sync_status text DEFAULT 'pending'::text NOT NULL,
     sheet_sync_error text,
     snapshot json,
+    status text DEFAULT 'active'::text NOT NULL,
+    withdrawn_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT device_inventory_unit_pkey PRIMARY KEY (id),
@@ -883,6 +896,9 @@ CREATE TABLE ctip.device_inventory_unit (
         REFERENCES ctip.device_intake_operation (id) ON DELETE SET NULL,
     CONSTRAINT device_inventory_unit_source_type_check CHECK (
         source_type = 'firebird_magazyn_28'::text
+    ),
+    CONSTRAINT device_inventory_unit_status_check CHECK (
+        status = ANY (ARRAY['active'::text, 'withdrawn'::text])
     )
 );
 ALTER TABLE ctip.device_inventory_unit OWNER TO postgres;
@@ -911,6 +927,47 @@ ALTER SEQUENCE ctip.device_inventory_event_id_seq
     OWNED BY ctip.device_inventory_event.id;
 CREATE INDEX idx_device_inventory_event_unit_created
     ON ctip.device_inventory_event USING btree (unit_id, created_at DESC);
+
+CREATE SEQUENCE ctip.device_counter_reading_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_counter_reading_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_counter_reading (
+    id integer NOT NULL DEFAULT nextval('ctip.device_counter_reading_id_seq'::regclass),
+    unit_id integer NOT NULL,
+    source text NOT NULL,
+    reading_at timestamp with time zone NOT NULL,
+    counter_bw bigint,
+    counter_color bigint,
+    counter_scan bigint,
+    applied_to_current boolean DEFAULT true NOT NULL,
+    override_reason text,
+    note text,
+    created_by integer,
+    source_snapshot json,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT device_counter_reading_pkey PRIMARY KEY (id),
+    CONSTRAINT device_counter_reading_unit_id_fkey FOREIGN KEY (unit_id)
+        REFERENCES ctip.device_inventory_unit (id) ON DELETE CASCADE,
+    CONSTRAINT device_counter_reading_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL,
+    CONSTRAINT device_counter_reading_source_check CHECK (
+        source = ANY (ARRAY['intake'::text, 'manual'::text])
+    ),
+    CONSTRAINT device_counter_reading_value_check CHECK (
+        counter_bw IS NOT NULL OR counter_color IS NOT NULL OR counter_scan IS NOT NULL
+    ),
+    CONSTRAINT device_counter_reading_nonnegative_check CHECK (
+        (counter_bw IS NULL OR counter_bw >= 0)
+        AND (counter_color IS NULL OR counter_color >= 0)
+        AND (counter_scan IS NULL OR counter_scan >= 0)
+    )
+);
+ALTER TABLE ctip.device_counter_reading OWNER TO postgres;
+ALTER SEQUENCE ctip.device_counter_reading_id_seq
+    OWNED BY ctip.device_counter_reading.id;
+CREATE INDEX idx_device_counter_reading_unit_date
+    ON ctip.device_counter_reading USING btree (unit_id, reading_at DESC);
 
 CREATE SEQUENCE ctip.device_manual_reservation_id_seq
     START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
@@ -971,6 +1028,8 @@ CREATE TABLE ctip.device_sheet_outbox (
             ARRAY[
                 'upsert_device'::text,
                 'update_note'::text,
+                'update_counters'::text,
+                'delete_device'::text,
                 'update_reservation'::text,
                 'release_reservation'::text
             ]
@@ -1083,6 +1142,7 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.workflow_sheet_status_cache TO a
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_intake_operation TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_inventory_unit TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_inventory_event TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_counter_reading TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_manual_reservation TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_sheet_outbox TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_audit_run TO appuser;
@@ -1097,6 +1157,7 @@ GRANT ALL ON SEQUENCE ctip.workflow_sheet_status_cache_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_intake_operation_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_inventory_unit_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_inventory_event_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_counter_reading_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_manual_reservation_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_sheet_outbox_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_audit_run_id_seq TO appuser;

@@ -6,14 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
     <link rel="stylesheet" href="/static/flow/flow.css">
-    <link rel="stylesheet" href="/static/device/device.css?v={{ request.app.version }}-device-audit-2">
-    <script defer src="/static/device/device.js?v={{ request.app.version }}-device-audit-2"></script>
+    <link rel="stylesheet" href="/static/device/device.css?v={{ request.app.version }}-device-v{{ device_ui_version }}">
+    <script defer src="/static/device/device.js?v={{ request.app.version }}-device-v{{ device_ui_version }}"></script>
   </head>
-  <body data-device-view="{{ initial_view }}">
+  <body data-device-view="{{ initial_view }}" data-device-theme="blue">
     <main class="flow-shell device-shell">
       <header class="flow-topbar device-topbar">
         <div>
-          <p class="flow-kicker">CTIP / URZĄDZENIA</p>
+          <div class="device-heading-meta">
+            <p class="flow-kicker">CTIP / URZĄDZENIA</p>
+            <span class="device-version-badge">
+              /device v{{ device_ui_version }}
+            </span>
+          </div>
           <h1>Obsługa urządzeń</h1>
           <p class="flow-lead">
             Przyjęcia PZ, bieżący magazyn, rezerwacje i kontrola synchronizacji.
@@ -21,21 +26,60 @@
         </div>
         <div class="flow-topbar-actions">
           <div id="device-user-chip" class="flow-user-chip">Użytkownik</div>
+          <label class="device-theme-picker">
+            <span>Kolorystyka</span>
+            <select id="device-theme-select" aria-label="Kolorystyka modułu urządzeń">
+              <option value="blue">Niebieska</option>
+              <option value="graphite">Grafitowa</option>
+              <option value="mint">Miętowa</option>
+            </select>
+          </label>
           <a href="/choice" class="flow-secondary">Wybór sekcji</a>
           <button id="device-refresh" type="button" class="flow-secondary">Odśwież</button>
           <button id="device-logout" type="button" class="flow-secondary">Wyloguj</button>
         </div>
       </header>
 
-      <nav class="device-nav" aria-label="Nawigacja modułu urządzeń">
-        <a href="/device" data-device-nav="home">Start</a>
-        <a href="/device/intake" data-device-nav="intake">Przyjęcie PZ</a>
-        <a href="/device/warehouse" data-device-nav="warehouse">Magazyn</a>
-        <a href="/device/history" data-device-nav="history">Historia</a>
-        <a href="/device/issues" data-device-nav="issues">Problemy</a>
-      </nav>
+      <div class="device-workspace">
+        <aside class="device-sidebar">
+          <div class="device-sidebar-heading">
+            <span>Moduł</span>
+            <strong>Urządzenia</strong>
+          </div>
+          <nav class="device-nav" aria-label="Nawigacja modułu urządzeń">
+            <a href="/device" data-device-nav="home">
+              <span class="device-nav-symbol" aria-hidden="true">⌂</span>
+              <span><strong>Strona główna</strong><small>Podsumowanie modułu</small></span>
+            </a>
+            <a href="/device/intake" data-device-nav="intake">
+              <span class="device-nav-symbol" aria-hidden="true">＋</span>
+              <span><strong>Przyjęcie PZ</strong><small>Nowe urządzenia</small></span>
+            </a>
+            <a href="/device/warehouse" data-device-nav="warehouse">
+              <span class="device-nav-symbol" aria-hidden="true">▦</span>
+              <span><strong>Magazyn</strong><small>Stan i szczegóły</small></span>
+            </a>
+            <a href="/device/audit" data-device-nav="audit">
+              <span class="device-nav-symbol" aria-hidden="true">✓</span>
+              <span><strong>Audyt i naprawa</strong><small>Kontrola spójności</small></span>
+            </a>
+            <a href="/device/history" data-device-nav="history">
+              <span class="device-nav-symbol" aria-hidden="true">↶</span>
+              <span><strong>Historia PZ</strong><small>Dokumenty i wycofania</small></span>
+            </a>
+            <a href="/device/issues" data-device-nav="issues">
+              <span class="device-nav-symbol" aria-hidden="true">⇄</span>
+              <span><strong>Synchronizacje</strong><small>Kolejka i problemy</small></span>
+            </a>
+          </nav>
+          <div class="device-sidebar-note">
+            <strong>Bezpieczna praca</strong>
+            <span>Operacje zapisowe wymagają potwierdzenia i pozostawiają historię.</span>
+          </div>
+        </aside>
 
-      <section class="flow-content device-content">
+        <div class="device-main">
+          <section class="flow-content device-content">
         <section class="device-view" data-device-screen="home" hidden>
           <div class="flow-panel-head">
             <div>
@@ -75,115 +119,160 @@
         </section>
 
         <section class="device-view" data-device-screen="intake" hidden>
-          <div class="flow-panel-head">
+          <div class="flow-panel-head device-intake-head">
             <div>
-              <p class="flow-panel-kicker">Nowe egzemplarze</p>
-              <h2>Przyjęcie dokumentem PZ</h2>
+              <p class="flow-panel-kicker">Przyjęcia urządzeń</p>
+              <h2>Nowy dokument PZ</h2>
               <p class="flow-panel-lead">
-                Każdy wiersz tworzy osobną kartotekę MAGAZYN i rekord MASZYNA. Wystawiający
-                jest pobierany z powiązania zalogowanego użytkownika z Menadżerem Serwisu.
+                Uzupełnij dokument, dodaj urządzenia i sprawdź podsumowanie przed zapisem.
               </p>
             </div>
+            {% if show_intake_prototypes %}
+            <a href="/device/intake/prototypes" class="flow-secondary">
+              Zobacz 3 nowe makiety
+            </a>
+            {% endif %}
           </div>
 
-          <div class="device-form-columns">
-            <section class="flow-card device-form-card">
-              <h3>Dokument i dostawca</h3>
-              <label>
-                <span>Dostawca *</span>
-                <input id="device-supplier-search" list="device-supplier-list"
-                       placeholder="Wpisz nazwę, NIP lub ID" required>
-                <datalist id="device-supplier-list"></datalist>
-              </label>
-              <label>
-                <span>Numer dokumentu zewnętrznego * (albo zaznacz wyjątek)</span>
-                <input id="device-external-document" maxlength="30" placeholder="np. FV 12/07/2026">
-              </label>
-              <details class="device-details">
-                <summary>Dodaj nowego dostawcę</summary>
-                <div class="device-form-grid">
-                  <label><span>Nazwa *</span><input id="device-supplier-name" maxlength="500"></label>
-                  <label><span>NIP</span><input id="device-supplier-nip" maxlength="30"></label>
-                  <label><span>Adres</span><input id="device-supplier-address" maxlength="250"></label>
-                  <label><span>Kod</span><input id="device-supplier-postal" maxlength="6"></label>
-                  <label><span>Miasto</span><input id="device-supplier-city" maxlength="150"></label>
-                  <label><span>Telefon</span><input id="device-supplier-phone" maxlength="100"></label>
-                  <label><span>E-mail</span><input id="device-supplier-email" maxlength="200"></label>
+          <div class="device-intake-layout">
+            <div class="device-intake-main">
+              <section class="flow-card device-intake-section">
+                <div class="device-section-title">
+                  <span>01</span>
+                  <div>
+                    <h3>Dokument i dostawca</h3>
+                    <p>Dane wspólne dla wszystkich urządzeń na dokumencie.</p>
+                  </div>
                 </div>
-                <button id="device-supplier-create" type="button" class="flow-secondary">
-                  Dodaj dostawcę
-                </button>
-              </details>
-            </section>
-
-            <section class="flow-card device-form-card">
-              <h3>Dodawanie pozycji</h3>
-              <label>
-                <span>Model *</span>
-                <input id="device-model-search" list="device-model-list"
-                       placeholder="Wpisz markę, model lub ID">
-                <datalist id="device-model-list"></datalist>
-              </label>
-              <div class="device-form-grid compact">
-                <label><span>Liczba egzemplarzy</span><input id="device-item-quantity" type="number" min="1" max="50" value="1"></label>
-                <label><span>Cena zakupu netto *</span><input id="device-item-price" type="number" min="0" step="0.01"></label>
-              </div>
-              <button id="device-items-add" type="button" class="flow-secondary">Dodaj pozycję</button>
-              <p id="device-items-message" class="flow-message" role="status" aria-live="polite" hidden></p>
-              <details class="device-details">
-                <summary>Dodaj nowy model</summary>
                 <div class="device-form-grid">
-                  <label><span>Marka *</span><select id="device-model-brand"></select></label>
-                  <label><span>Model *</span><input id="device-model-name" maxlength="50"></label>
-                  <label><span>Grupa *</span><select id="device-model-group"></select></label>
-                  <label><span>Rodzaj *</span><select id="device-model-kind"></select></label>
-                  <label class="device-check"><input id="device-model-color" type="checkbox"><span>Urządzenie kolorowe</span></label>
-                  <label><span>Plik/URL obrazu</span><input id="device-model-image" maxlength="250"></label>
+                  <label>
+                    <span>Dostawca *</span>
+                    <input id="device-supplier-search" list="device-supplier-list"
+                           placeholder="Wpisz nazwę, NIP lub ID" required>
+                    <datalist id="device-supplier-list"></datalist>
+                  </label>
+                  <label>
+                    <span>Numer dokumentu zewnętrznego *</span>
+                    <input id="device-external-document" maxlength="30"
+                           placeholder="np. FV 12/07/2026">
+                  </label>
                 </div>
-                <button id="device-model-create" type="button" class="flow-secondary">
-                  Dodaj model
-                </button>
-              </details>
-            </section>
-          </div>
+                <details class="device-details">
+                  <summary>Nie ma dostawcy na liście? Dodaj nowego</summary>
+                  <div class="device-form-grid">
+                    <label><span>Nazwa *</span><input id="device-supplier-name" maxlength="500"></label>
+                    <label><span>NIP</span><input id="device-supplier-nip" maxlength="30"></label>
+                    <label><span>Adres</span><input id="device-supplier-address" maxlength="250"></label>
+                    <label><span>Kod</span><input id="device-supplier-postal" maxlength="6"></label>
+                    <label><span>Miasto</span><input id="device-supplier-city" maxlength="150"></label>
+                    <label><span>Telefon</span><input id="device-supplier-phone" maxlength="100"></label>
+                    <label><span>E-mail</span><input id="device-supplier-email" maxlength="200"></label>
+                  </div>
+                  <button id="device-supplier-create" type="button" class="flow-secondary">
+                    Dodaj dostawcę
+                  </button>
+                </details>
+              </section>
 
-          <section class="flow-card">
-            <div class="device-card-heading">
-              <div>
-                <h3>Egzemplarze na dokumencie</h3>
-                <p id="device-kp-suggestion" class="flow-note">Numeracja KP zostanie pobrana z Firebird.</p>
+              <section class="flow-card device-intake-section">
+                <div class="device-section-title">
+                  <span>02</span>
+                  <div>
+                    <h3>Urządzenia</h3>
+                    <p>Wybierz model i dodaj jeden lub wiele egzemplarzy.</p>
+                  </div>
+                </div>
+                <div class="device-intake-addbar">
+                  <label class="device-intake-model">
+                    <span>Model *</span>
+                    <input id="device-model-search" list="device-model-list"
+                           placeholder="Wpisz markę, model lub ID">
+                    <datalist id="device-model-list"></datalist>
+                  </label>
+                  <label>
+                    <span>Liczba</span>
+                    <input id="device-item-quantity" type="number" min="1" max="50" value="1">
+                  </label>
+                  <label>
+                    <span>Cena netto *</span>
+                    <input id="device-item-price" type="number" min="0" step="0.01"
+                           placeholder="0,00">
+                  </label>
+                  <button id="device-items-add" type="button" class="flow-action-btn">
+                    + Dodaj urządzenie
+                  </button>
+                </div>
+                <p id="device-items-message" class="flow-message" role="status"
+                   aria-live="polite" hidden></p>
+              </section>
+
+              <section class="flow-card device-intake-section">
+                <div class="device-card-heading">
+                  <div class="device-section-title">
+                    <span>03</span>
+                    <div>
+                      <h3>Lista urządzeń</h3>
+                      <p id="device-kp-suggestion">Numeracja KP zostanie pobrana z Firebird.</p>
+                    </div>
+                  </div>
+                  <button id="device-items-clear" type="button" class="flow-secondary">
+                    Wyczyść listę
+                  </button>
+                </div>
+                <label class="device-intake-search">
+                  <span class="sr-only">Szukaj na liście urządzeń</span>
+                  <input id="device-intake-list-search" type="search"
+                         placeholder="Szukaj na liście: model, serial lub numer KP">
+                </label>
+                <div class="device-table-wrap">
+                  <table class="flow-table device-table device-intake-table">
+                    <thead>
+                      <tr>
+                        <th>Lp.</th><th>Model</th><th>Serial *</th><th>Numer KP</th>
+                        <th>Cena netto *</th><th>Licznik B/W</th><th>Kolor</th><th>Skan</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="device-intake-items"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="flow-card device-exception-card">
+                <label class="device-check">
+                  <input id="device-exception-enabled" type="checkbox">
+                  <span>Zezwól na brak dokumentu zewnętrznego lub cenę 0</span>
+                </label>
+                <label id="device-exception-reason-wrap" hidden>
+                  <span>Uzasadnienie wyjątku (minimum 10 znaków) *</span>
+                  <textarea id="device-exception-reason" rows="3" maxlength="1000"></textarea>
+                </label>
+              </section>
+            </div>
+
+            <aside class="flow-card device-intake-summary" aria-label="Podsumowanie dokumentu">
+              <p class="flow-panel-kicker">Podsumowanie</p>
+              <h3>Dokument PZ</h3>
+              <dl>
+                <div><dt>Urządzenia</dt><dd id="device-intake-summary-count">0</dd></div>
+                <div><dt>Uzupełnione</dt><dd id="device-intake-summary-complete">0 / 0</dd></div>
+                <div><dt>Wartość netto</dt><dd id="device-intake-summary-net">0,00 zł</dd></div>
+                <div><dt>VAT 23%</dt><dd id="device-intake-summary-vat">0,00 zł</dd></div>
+                <div class="device-intake-summary-total">
+                  <dt>Wartość brutto</dt><dd id="device-intake-summary-gross">0,00 zł</dd>
+                </div>
+              </dl>
+              <div id="device-intake-summary-status" class="device-intake-status">
+                Dodaj pierwsze urządzenie.
               </div>
-              <button id="device-items-clear" type="button" class="flow-secondary">Wyczyść</button>
-            </div>
-            <div class="device-table-wrap">
-              <table class="flow-table device-table">
-                <thead>
-                  <tr><th>Lp.</th><th>Model</th><th>Serial *</th><th>Numer KP</th><th>Cena netto *</th><th></th></tr>
-                </thead>
-                <tbody id="device-intake-items"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="flow-card device-exception-card">
-            <label class="device-check">
-              <input id="device-exception-enabled" type="checkbox">
-              <span>Zezwól na brak dokumentu zewnętrznego lub cenę 0</span>
-            </label>
-            <label id="device-exception-reason-wrap" hidden>
-              <span>Uzasadnienie wyjątku (minimum 10 znaków) *</span>
-              <textarea id="device-exception-reason" rows="3" maxlength="1000"></textarea>
-            </label>
-            <div class="device-submit-row">
               <button id="device-intake-submit" type="button" class="flow-action-btn"
                       aria-describedby="device-intake-validation">
                 Utwórz dokument PZ
               </button>
               <span id="device-intake-key" class="flow-note"></span>
-            </div>
-            <div id="device-intake-validation" class="flow-message device-validation-summary"
-                 role="alert" aria-live="assertive" hidden></div>
-          </section>
+              <div id="device-intake-validation" class="flow-message device-validation-summary"
+                   role="alert" aria-live="assertive" hidden></div>
+            </aside>
+          </div>
         </section>
 
         <section class="device-view" data-device-screen="warehouse" hidden>
@@ -196,7 +285,7 @@
               </p>
             </div>
           </div>
-          <section class="flow-card">
+          <section class="flow-card device-warehouse-card">
             <div class="device-filters">
               <input id="device-warehouse-query" type="search" placeholder="Szukaj: model, serial, KP, klient, uwaga">
               <select id="device-warehouse-reservation">
@@ -217,13 +306,13 @@
             </div>
             <section id="device-warehouse-summary" class="flow-stats device-stats compact"></section>
             <div class="device-table-wrap">
-              <table class="flow-table device-table">
+              <table class="flow-table device-table device-warehouse-table">
                 <thead>
                   <tr>
                     <th>Urządzenie</th><th>Serial / KP</th><th>Stan</th>
                     <th>Licznik B/W / kolor</th><th>Cena zakupu</th><th>Uwagi</th>
                     <th>Zerówka</th><th>Rezerwacja</th><th>Arkusz</th>
-                    <th>Arkusz/Magazyn/Urządzenie/CTIP</th><th></th>
+                    <th>Arkusz / Magazyn /<br>Urządzenie / CTIP</th>
                   </tr>
                 </thead>
                 <tbody id="device-warehouse-body"></tbody>
@@ -375,6 +464,29 @@
               </div>
             </aside>
             <section class="device-audit-panel" aria-labelledby="device-audit-title">
+              <section class="flow-card device-audit-model-card">
+                <div>
+                  <p class="flow-panel-kicker">Kartoteki modeli</p>
+                  <h3>Dodaj nowy model urządzenia</h3>
+                  <p class="flow-note">
+                    Użyj tej opcji, gdy modelu nie ma na liście podczas tworzenia przyjęcia PZ.
+                  </p>
+                </div>
+                <details class="device-details">
+                  <summary>Otwórz formularz nowego modelu</summary>
+                  <div class="device-form-grid">
+                    <label><span>Marka *</span><select id="device-model-brand"></select></label>
+                    <label><span>Model *</span><input id="device-model-name" maxlength="50"></label>
+                    <label><span>Grupa *</span><select id="device-model-group"></select></label>
+                    <label><span>Rodzaj *</span><select id="device-model-kind"></select></label>
+                    <label class="device-check"><input id="device-model-color" type="checkbox"><span>Urządzenie kolorowe</span></label>
+                    <label><span>Plik/URL obrazu</span><input id="device-model-image" maxlength="250"></label>
+                  </div>
+                  <button id="device-model-create" type="button" class="flow-secondary">
+                    Dodaj model
+                  </button>
+                </details>
+              </section>
               <div class="device-card-heading">
                 <div>
                   <p class="flow-panel-kicker">Kontrola tylko do odczytu</p>
@@ -457,12 +569,44 @@
                   <button id="device-reservation-release" type="button" class="flow-secondary">Zwolnij</button>
                 </div>
               </form>
+              <form id="device-counter-form" class="flow-card device-form-card">
+                <h4>Dodaj odczyt liczników</h4>
+                <label><span>Data odczytu *</span><input id="device-counter-date" type="datetime-local" required></label>
+                <div class="device-form-grid compact">
+                  <label><span>B/W</span><input id="device-counter-bw" type="number" min="0" step="1"></label>
+                  <label><span>Kolor</span><input id="device-counter-color" type="number" min="0" step="1"></label>
+                  <label><span>Skan</span><input id="device-counter-scan" type="number" min="0" step="1"></label>
+                </div>
+                <label><span>Notatka</span><textarea id="device-counter-note" rows="2" maxlength="2000"></textarea></label>
+                <label class="device-check">
+                  <input id="device-counter-allow-lower" type="checkbox">
+                  <span>Zezwól na niższy odczyt</span>
+                </label>
+                <label id="device-counter-reason-wrap" hidden>
+                  <span>Uzasadnienie (minimum 10 znaków) *</span>
+                  <textarea id="device-counter-reason" rows="2" maxlength="1000"></textarea>
+                </label>
+                <button type="submit" class="flow-secondary">Zapisz liczniki</button>
+              </form>
             </section>
             <section class="flow-card">
               <h4>Historia operacyjna</h4>
               <ol id="device-event-list" class="device-event-list"></ol>
             </section>
           </dialog>
+        </section>
+
+        <section class="device-view" data-device-screen="audit" hidden>
+          <div class="flow-panel-head">
+            <div>
+              <p class="flow-panel-kicker">Spójność danych</p>
+              <h2>Audyt i naprawa urządzeń</h2>
+              <p class="flow-panel-lead">
+                Porównuj źródła, twórz brakujące modele i przygotowuj kontrolowane naprawy.
+              </p>
+            </div>
+          </div>
+          <div id="device-audit-host"></div>
         </section>
 
         <section class="device-view" data-device-screen="history" hidden>
@@ -478,18 +622,50 @@
           <section class="flow-card">
             <div class="device-table-wrap">
               <table class="flow-table device-table">
-                <thead><tr><th>Data</th><th>PZ</th><th>Status</th><th>Dostawca</th><th>Pozycje</th><th>Błąd</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Data</th><th>PZ</th><th>Status</th><th>Dostawca</th>
+                    <th>Pozycje</th><th>Błąd</th><th>Szczegóły</th><th>Usuń</th>
+                  </tr>
+                </thead>
                 <tbody id="device-history-body"></tbody>
               </table>
             </div>
           </section>
+          <dialog id="device-withdraw-dialog" class="device-dialog device-withdraw-dialog">
+            <form method="dialog" class="device-dialog-head">
+              <div>
+                <p class="flow-kicker">Operacja nieodwracalna</p>
+                <h3 id="device-withdraw-title">Wycofanie PZ</h3>
+              </div>
+              <button value="cancel" class="flow-secondary">Zamknij</button>
+            </form>
+            <div id="device-withdraw-preview" class="device-withdraw-preview"></div>
+            <form id="device-withdraw-form" class="device-form-card">
+              <label>
+                <span>Wpisz pełny numer dokumentu PZ *</span>
+                <input id="device-withdraw-confirmation" autocomplete="off" required>
+              </label>
+              <label>
+                <span>Uzasadnienie (minimum 10 znaków) *</span>
+                <textarea id="device-withdraw-reason" rows="3" maxlength="2000" required></textarea>
+              </label>
+              <label id="device-withdraw-force-wrap" class="device-check" hidden>
+                <input id="device-withdraw-force" type="checkbox">
+                <span>Administrator: odłącz późniejsze powiązania i wymuś wycofanie</span>
+              </label>
+              <button id="device-withdraw-submit" type="submit" class="flow-action-btn">
+                Wycofaj dokument PZ
+              </button>
+            </form>
+          </dialog>
         </section>
 
         <section class="device-view" data-device-screen="issues" hidden>
           <div class="flow-panel-head">
             <div>
               <p class="flow-panel-kicker">Kontrola</p>
-              <h2>Problemy wymagające działania</h2>
+              <h2>Synchronizacje i problemy wymagające działania</h2>
               <p class="flow-panel-lead">
                 Operacji oznaczonej „wymaga uzgodnienia” nie wolno ponawiać z nowym UUID.
               </p>
@@ -503,11 +679,35 @@
             <h3>Synchronizacja Google Sheets</h3>
             <div id="device-sheet-issues" class="device-issue-list"></div>
           </section>
+          <section class="flow-card">
+            <h3>Historia synchronizacji</h3>
+            <div class="device-table-wrap">
+              <table class="flow-table device-table">
+                <thead>
+                  <tr><th>Data</th><th>Urządzenie CTIP</th><th>Operacja</th><th>Status</th><th>Próby</th><th>Błąd</th></tr>
+                </thead>
+                <tbody id="device-sync-history"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="flow-card">
+            <h3>Historia zmian powiązań i napraw</h3>
+            <div class="device-table-wrap">
+              <table class="flow-table device-table">
+                <thead>
+                  <tr><th>Data</th><th>Urządzenie CTIP</th><th>Zdarzenie</th><th>Szczegóły</th></tr>
+                </thead>
+                <tbody id="device-event-history"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
-      </section>
+          </section>
 
-      <p id="device-error" class="flow-message flow-message-error" hidden></p>
-      <p id="device-info" class="flow-message flow-message-info" hidden></p>
+          <p id="device-error" class="flow-message flow-message-error" hidden></p>
+          <p id="device-info" class="flow-message flow-message-info" hidden></p>
+        </div>
+      </div>
     </main>
   </body>
 </html>

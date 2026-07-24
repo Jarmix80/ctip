@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – Warianty tła modułu urządzeń</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet"
+          href="/static/device/style_prototypes.css?v={{ request.app.version }}-style-prototypes-1">
+  </head>
+  <body>
+    <main class="style-prototype-shell">
+      <header class="style-prototype-hero">
+        <div>
+          <p>CTIP / URZĄDZENIA / ŚRODOWISKO TESTOWE</p>
+          <h1>Cztery warianty tła</h1>
+          <span>
+            Każdy wariant pokazuje identyczny formularz i tabelę. Różnią się wyłącznie
+            tłem obszaru roboczego, poświatą kart oraz kolorami wierszy.
+          </span>
+        </div>
+        <a href="/device/intake">Wróć do modułu</a>
+      </header>
+
+      <aside class="style-prototype-warning">
+        <strong>Makieta bez zapisu</strong>
+        <span>Przyciski są nieaktywne, a strona nie wywołuje API ani baz danych.</span>
+      </aside>
+
+      <nav class="style-prototype-nav" aria-label="Warianty tła">
+        <a href="#wariant-1"><span>01</span>Błękit operacyjny</a>
+        <a href="#wariant-2"><span>02</span>Grafit neutralny</a>
+        <a href="#wariant-3"><span>03</span>Mięta techniczna</a>
+        <a href="#wariant-4"><span>04</span>Piaskowy spokojny</a>
+      </nav>
+
+      {% set variants = [
+        ("1", "Błękit operacyjny", "Chłodne tło, niebieska poświata i wyraźne oddzielenie białych kart.", "variant-blue", "Rekomendowany"),
+        ("2", "Grafit neutralny", "Najbardziej techniczny i stonowany. Dobrze eksponuje dane oraz statusy.", "variant-graphite", "Najbardziej neutralny"),
+        ("3", "Mięta techniczna", "Delikatnie zielonkawy odcień ogranicza zmęczenie wzroku przy długiej pracy.", "variant-mint", "Najłagodniejszy"),
+        ("4", "Piaskowy spokojny", "Ciepłe tło odcina moduł od typowego niebiesko-szarego panelu administracyjnego.", "variant-sand", "Najcieplejszy")
+      ] %}
+
+      {% for number, name, description, variant_class, tag in variants %}
+      <section id="wariant-{{ number }}" class="style-variant">
+        <header>
+          <div>
+            <p>Wariant {{ number }}</p>
+            <h2>{{ name }}</h2>
+            <span>{{ description }}</span>
+          </div>
+          <strong>{{ tag }}</strong>
+        </header>
+
+        <div class="style-preview {{ variant_class }}">
+          <aside class="preview-sidebar">
+            <div class="preview-brand"><small>MODUŁ</small><strong>Urządzenia</strong></div>
+            <span>⌂ <b>Strona główna</b></span>
+            <span class="active">＋ <b>Przyjęcie PZ</b></span>
+            <span>▦ <b>Magazyn</b></span>
+            <span>✓ <b>Audyt i naprawa</b></span>
+            <span>↶ <b>Historia PZ</b></span>
+          </aside>
+
+          <div class="preview-workspace">
+            <section class="preview-heading">
+              <small>PRZYJĘCIA URZĄDZEŃ</small>
+              <h3>Nowy dokument PZ</h3>
+              <p>Uzupełnij dokument, dodaj urządzenia i sprawdź podsumowanie.</p>
+            </section>
+
+            <div class="preview-cards">
+              <article class="preview-card">
+                <div class="preview-card-title">
+                  <span>01</span>
+                  <div><strong>Dokument i dostawca</strong><small>Dane wspólne dla dokumentu.</small></div>
+                </div>
+                <div class="preview-fields">
+                  <label><span>Dostawca</span><b>ABC Office sp. z o.o.</b></label>
+                  <label><span>Dokument zewnętrzny</span><b>FV 112/07/2026</b></label>
+                </div>
+              </article>
+
+              <article class="preview-card preview-summary">
+                <small>PODSUMOWANIE</small>
+                <strong>3 urządzenia</strong>
+                <span>Wartość netto: 8 850,00 zł</span>
+                <button type="button" disabled>Utwórz dokument PZ</button>
+              </article>
+            </div>
+
+            <article class="preview-card preview-table-card">
+              <div class="preview-card-title">
+                <span>02</span>
+                <div><strong>Magazyn urządzeń</strong><small>Przykład szerokiej tabeli z wierszami naprzemiennymi.</small></div>
+              </div>
+              <div class="preview-table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Urządzenie</th><th>Serial / KP</th><th>Stan</th><th>Licznik</th><th>Uwagi</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Ricoh IM C3000</td><td>3121R730184</td><td>Dostępne: 1</td><td>24 810 / 8 421</td><td>Gotowe do wydania</td></tr>
+                    <tr><td>Ricoh M C250FWB</td><td>3920PA00481</td><td>Dostępne: 1</td><td>7 721 / 15 189</td><td>Oczekuje na zerówkę</td></tr>
+                    <tr><td>Ricoh MP 4055</td><td>3381P100862</td><td>Dostępne: 2</td><td>58 920</td><td>Brak uwag</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+      {% endfor %}
+    </main>
+  </body>
+</html>

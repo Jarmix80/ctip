@@ -175,6 +175,7 @@ def _device_row() -> list[str]:
         "01. Przed zerówką",
         "1234",
         "5678",
+        "",
         "1500,00",
         "Ważna uwaga techniczna",
         "brak rezerwacji",
@@ -354,11 +355,12 @@ def test_release_workflow_preserves_zeroing_status_and_note() -> None:
 
 def test_release_workflow_finds_row_when_saved_sheet_row_is_stale() -> None:
     unrelated = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
     unrelated[3] = "KP/9999"
-    unrelated[18] = "99999"
+    unrelated[header_index["ms_id_magazyn_table"]] = "99999"
     target = _device_row()
-    target[9] = "04. Rezerwacja GRENKE"
-    target[11] = "Marcin"
+    target[header_index["reservation_status"]] = "04. Rezerwacja GRENKE"
+    target[header_index["reservation_grenke"]] = "Marcin"
     worksheet = FakeWorksheet([_headers(), unrelated, target])
     workbook = FakeWorkbook(worksheet)
     patches = _sheet_patches(workbook, worksheet)
@@ -381,9 +383,9 @@ def test_release_workflow_finds_row_when_saved_sheet_row_is_stale() -> None:
         )
 
     assert result["rows"][0]["sheet_row"] == 3
-    assert worksheet.values[1][9] == "brak rezerwacji"
-    assert worksheet.values[2][9] == "brak rezerwacji"
-    assert worksheet.values[2][11] == ""
+    assert worksheet.values[1][header_index["reservation_status"]] == "brak rezerwacji"
+    assert worksheet.values[2][header_index["reservation_status"]] == "brak rezerwacji"
+    assert worksheet.values[2][header_index["reservation_grenke"]] == ""
 
 
 def test_clear_workflow_proforma_clears_only_proforma_column() -> None:
@@ -461,7 +463,7 @@ def test_inventory_upsert_appends_complete_test_row() -> None:
     assert row[header_index["ms_id_maszyna"]] == "7701"
     assert row[header_index["ctip_env"]] == "TEST"
     assert worksheet.append_calls == 0
-    assert "A2:U2" in worksheet.updated_ranges
+    assert "A2:V2" in worksheet.updated_ranges
     note_format_request = next(
         request["repeatCell"]
         for body in workbook.requests
@@ -480,6 +482,33 @@ def test_inventory_upsert_appends_complete_test_row() -> None:
         "startColumnIndex": header_index["notes"],
         "endColumnIndex": header_index["notes"] + 1,
     }
+
+
+def test_inventory_delete_removes_only_matching_device_row() -> None:
+    unrelated = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
+    unrelated[header_index["ms_id_magazyn_table"]] = "99999"
+    worksheet = FakeWorksheet([_headers(), unrelated, _device_row()])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        result = workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="delete_device",
+            payload={
+                "source_row": 12922,
+                "serial": "T605H900327",
+                "ewidencja": "KP/4066",
+                "ctip_env": "TEST",
+            },
+        )
+
+    assert result["action"] == "deleted"
+    assert result["sheet_row"] == 3
+    assert len(worksheet.values) == 2
+    assert worksheet.values[1][header_index["ms_id_magazyn_table"]] == "99999"
 
 
 def test_inventory_manual_note_restores_black_text() -> None:
@@ -626,6 +655,7 @@ def test_lookup_returns_separate_status_note_price_and_machine_fields() -> None:
     assert entry["status"] == "01. Przed zerówką"
     assert entry["counter_bw"] == "1234"
     assert entry["counter_color"] == "5678"
+    assert entry["counter_scan"] == ""
     assert entry["notes"] == "Ważna uwaga techniczna"
     assert entry["reservation_status"] == "brak rezerwacji"
     assert entry["price"] == "1500,00"

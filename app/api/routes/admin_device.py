@@ -22,7 +22,10 @@ from app.models import (
     AdminSetting,
     DeviceAuditItem,
     DeviceAuditRun,
+    DeviceCounterReading,
     DeviceIntakeOperation,
+    DeviceInventoryEvent,
+    DeviceInventoryUnit,
     DeviceSheetOutbox,
 )
 from app.services import firebird_ms_users, section_permissions
@@ -39,6 +42,7 @@ from app.services.device_intake import (
     load_device_model_taxonomy,
     search_device_models,
     search_device_suppliers,
+    update_device_machine_counters,
 )
 from app.services.device_registry import (
     DeviceIdempotencyConflict,
@@ -47,6 +51,7 @@ from app.services.device_registry import (
     begin_intake_operation,
     canonical_request_hash,
     complete_intake_operation,
+    enqueue_sheet_operation,
     ensure_inventory_unit_for_legacy,
     find_intake_operation,
     find_unit_by_source_or_identity,
@@ -60,6 +65,10 @@ from app.services.device_sheet_worker import retry_device_sheet_outbox
 from app.services.device_warehouse import (
     build_device_warehouse_payload,
     serialize_device_events,
+)
+from app.services.device_withdrawal import (
+    preview_device_pz_withdrawal,
+    withdraw_device_pz,
 )
 from app.services.firebird_runtime import (
     firebird_writes_enabled,
@@ -103,6 +112,9 @@ class DeviceIntakeBatchItemRequest(StrictRequest):
     serial: str = Field(min_length=1, max_length=100)
     ewidencja: str | None = Field(default=None, max_length=100)
     purchase_price_netto: Decimal = Field(ge=0, decimal_places=4)
+    counter_bw: int | None = Field(default=None, ge=0)
+    counter_color: int | None = Field(default=None, ge=0)
+    counter_scan: int | None = Field(default=None, ge=0)
 
 
 class DeviceIntakeBatchRequest(StrictRequest):
@@ -175,6 +187,26 @@ class DeviceReservationReleaseRequest(StrictRequest):
     reason: str = Field(min_length=10, max_length=2000)
 
 
+class DeviceCounterReadingRequest(StrictRequest):
+    """Ręczny, datowany odczyt liczników urządzenia."""
+
+    reading_at: datetime
+    counter_bw: int | None = Field(default=None, ge=0)
+    counter_color: int | None = Field(default=None, ge=0)
+    counter_scan: int | None = Field(default=None, ge=0)
+    allow_lower: bool = False
+    override_reason: str | None = Field(default=None, max_length=1000)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class DevicePzWithdrawalRequest(StrictRequest):
+    """Potwierdzenie kontrolowanego wycofania dokumentu PZ."""
+
+    confirmation: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=10, max_length=2000)
+    force: bool = False
+
+
 async def _get_or_seed_device_brands(session: AsyncSession) -> list[str]:
     stmt = select(AdminSetting).where(AdminSetting.key == DEVICE_BRANDS_SETTING_KEY)
     setting_row = (await session.execute(stmt)).scalars().first()
@@ -226,6 +258,15 @@ async def _ensure_device_writer(session: AsyncSession, admin_user):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+
+async def _ensure_pz_withdrawal_permission(session: AsyncSession, admin_user) -> None:
+    await _ensure_device_access(session, admin_user)
+    if admin_user.role != "admin" and not admin_user.can_withdraw_device_pz:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma prawa do wycofywania dokumentów PZ.",
+        )
 
 
 async def _run_firebird_read(session: AsyncSession, function, /, **kwargs):
@@ -326,6 +367,9 @@ def _batch_result_payload(result: DeviceIntakeBatchResult) -> dict[str, Any]:
                 "machine_id": item.machine_id,
                 "machine_table_id": item.machine_table_id,
                 "purchase_price_netto": str(item.purchase_price_netto or Decimal("0")),
+                "counter_bw": item.counter_bw,
+                "counter_color": item.counter_color,
+                "counter_scan": item.counter_scan,
             }
             for item in result.items
         ],
@@ -400,6 +444,9 @@ async def _execute_intake_batch(
                         serial=item.serial,
                         ewidencja=item.ewidencja,
                         purchase_price_netto=item.purchase_price_netto,
+                        counter_bw=item.counter_bw,
+                        counter_color=item.counter_color,
+                        counter_scan=item.counter_scan,
                     )
                     for item in payload.items
                 ],
@@ -1011,6 +1058,149 @@ async def device_warehouse_detail(
     return {"ok": True, "item": item, "events": events}
 
 
+@router.post("/warehouse/{source_row}/counters", summary="Zapisz liczniki urządzenia")
+async def device_warehouse_counters_save(
+    source_row: int,
+    payload: DeviceCounterReadingRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zapisuje odczyt historyczny albo aktualizuje bieżące liczniki urządzenia."""
+    admin_session, admin_user = admin_context
+    await _ensure_device_writer(session, admin_user)
+    values = (payload.counter_bw, payload.counter_color, payload.counter_scan)
+    if not any(value is not None for value in values):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Podaj co najmniej jeden licznik.",
+        )
+    unit, _ = await _ensure_registered_warehouse_unit(session, source_row=source_row)
+    reading_at = payload.reading_at
+    if reading_at.tzinfo is None:
+        reading_at = reading_at.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+    latest = (
+        (
+            await session.execute(
+                select(DeviceCounterReading)
+                .where(DeviceCounterReading.unit_id == unit.id)
+                .order_by(DeviceCounterReading.reading_at.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    historical = latest is not None and reading_at < latest.reading_at
+    lower_fields = []
+    if latest is not None and not historical:
+        for label, new_value, old_value in (
+            ("B/W", payload.counter_bw, latest.counter_bw),
+            ("kolor", payload.counter_color, latest.counter_color),
+            ("skan", payload.counter_scan, latest.counter_scan),
+        ):
+            if new_value is not None and old_value is not None and new_value < old_value:
+                lower_fields.append(label)
+    reason = str(payload.override_reason or "").strip()
+    if lower_fields and (not payload.allow_lower or len(reason) < 10):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Niższy odczyt ({', '.join(lower_fields)}) wymaga potwierdzenia "
+                "i uzasadnienia mającego co najmniej 10 znaków."
+            ),
+        )
+
+    applied = not historical
+    saved_state: dict[str, Any] | None = None
+    if applied:
+        if unit.firebird_machine_table_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Urządzenie nie ma powiązania z kartoteką MASZYNA.",
+            )
+        runtime = await _ensure_firebird_write_enabled(session)
+        try:
+            with use_firebird_runtime_config(runtime):
+                saved_state = await asyncio.to_thread(
+                    update_device_machine_counters,
+                    machine_table_id=unit.firebird_machine_table_id,
+                    counter_bw=payload.counter_bw,
+                    counter_color=payload.counter_color,
+                    counter_scan=payload.counter_scan,
+                )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    reading = DeviceCounterReading(
+        unit_id=unit.id,
+        source="manual",
+        reading_at=reading_at,
+        counter_bw=payload.counter_bw,
+        counter_color=payload.counter_color,
+        counter_scan=payload.counter_scan,
+        applied_to_current=applied,
+        override_reason=reason or None,
+        note=str(payload.note or "").strip() or None,
+        created_by=admin_user.id,
+        source_snapshot=saved_state,
+    )
+    session.add(reading)
+    await session.flush()
+    session.add(
+        DeviceInventoryEvent(
+            unit_id=unit.id,
+            event_type="counter_reading_saved",
+            created_by=admin_user.id,
+            payload={
+                "reading_id": reading.id,
+                "reading_at": reading_at.isoformat(),
+                "applied_to_current": applied,
+                "counter_bw": payload.counter_bw,
+                "counter_color": payload.counter_color,
+                "counter_scan": payload.counter_scan,
+            },
+        )
+    )
+    if applied:
+        await enqueue_sheet_operation(
+            session,
+            unit=unit,
+            operation_type="update_counters",
+            payload={
+                "source_row": unit.source_row,
+                "serial": unit.serial,
+                "ewidencja": unit.ewidencja,
+                "counter_bw": payload.counter_bw,
+                "counter_color": payload.counter_color,
+                "counter_scan": payload.counter_scan,
+                "ctip_env": settings.ctip_runtime_profile.upper(),
+            },
+            idempotency_key=f"counter:{reading.id}:{unit.id}",
+        )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_counter_reading_save",
+        client_ip=admin_session.client_ip,
+        payload={
+            "unit_id": unit.id,
+            "reading_id": reading.id,
+            "applied_to_current": applied,
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "reading_id": reading.id,
+        "applied_to_current": applied,
+        "message": (
+            "Zapisano bieżące liczniki urządzenia."
+            if applied
+            else "Zapisano odczyt historyczny bez zmiany bieżących liczników."
+        ),
+    }
+
+
 @router.post("/warehouse/{source_row}/notes", summary="Zapisz uwagę urządzenia")
 async def device_warehouse_note_save(
     source_row: int,
@@ -1180,7 +1370,152 @@ async def device_intake_history(
     )
     return {
         "ok": True,
+        "can_withdraw": admin_user.role == "admin" or bool(admin_user.can_withdraw_device_pz),
         "items": [intake_operation_payload(row) for row in rows],
+    }
+
+
+async def _load_withdrawable_operation(
+    session: AsyncSession, operation_id: int
+) -> DeviceIntakeOperation:
+    operation = await session.get(DeviceIntakeOperation, operation_id)
+    if operation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono PZ.")
+    if operation.firebird_pz_id is None or not operation.result_snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Operacja nie ma pełnego zapisu PZ wymaganego do wycofania.",
+        )
+    return operation
+
+
+@router.get("/history/{operation_id}/withdrawal-preview", summary="Podgląd wycofania PZ")
+async def device_pz_withdrawal_preview(
+    operation_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Sprawdza PZ, utworzone elementy i późniejsze zależności bez zapisu."""
+    _, admin_user = admin_context
+    await _ensure_pz_withdrawal_permission(session, admin_user)
+    operation = await _load_withdrawable_operation(session, operation_id)
+    if operation.status == "withdrawn":
+        return {
+            "ok": True,
+            "already_withdrawn": True,
+            "preview": operation.withdrawal_preview or {},
+        }
+    runtime = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(runtime):
+        preview = await asyncio.to_thread(
+            preview_device_pz_withdrawal,
+            pz_id=operation.firebird_pz_id,
+            expected=operation.result_snapshot,
+        )
+    return {
+        "ok": True,
+        "already_withdrawn": False,
+        "can_force": admin_user.role == "admin",
+        "preview": preview,
+    }
+
+
+@router.delete("/history/{operation_id}", summary="Wycofaj dokument PZ")
+async def device_pz_withdraw(
+    operation_id: int,
+    payload: DevicePzWithdrawalRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Wycofuje PZ po ponownej kontroli Firebird i zachowuje historię CTIP."""
+    admin_session, admin_user = admin_context
+    await _ensure_pz_withdrawal_permission(session, admin_user)
+    operation = await _load_withdrawable_operation(session, operation_id)
+    if operation.status == "withdrawn":
+        return {"ok": True, "replayed": True, "message": "Dokument PZ jest już wycofany."}
+    if payload.force and admin_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tylko administrator może wymusić wycofanie zmienionego PZ.",
+        )
+    if payload.confirmation.strip() != str(operation.firebird_pz_number or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Wpisany numer PZ nie zgadza się z wycofywanym dokumentem.",
+        )
+    runtime = await _ensure_firebird_write_enabled(session)
+    try:
+        with use_firebird_runtime_config(runtime):
+            preview = await asyncio.to_thread(
+                withdraw_device_pz,
+                pz_id=operation.firebird_pz_id,
+                expected=operation.result_snapshot,
+                force=payload.force,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    now = datetime.now(UTC)
+    units = list(
+        (
+            await session.execute(
+                select(DeviceInventoryUnit).where(DeviceInventoryUnit.operation_id == operation.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for unit in units:
+        await enqueue_sheet_operation(
+            session,
+            unit=unit,
+            operation_type="delete_device",
+            payload={
+                "source_row": unit.source_row,
+                "serial": unit.serial,
+                "ewidencja": unit.ewidencja,
+                "ctip_env": settings.ctip_runtime_profile.upper(),
+            },
+            idempotency_key=f"withdraw:{operation.id}:{unit.id}:sheet",
+        )
+        unit.status = "withdrawn"
+        unit.withdrawn_at = now
+        session.add(
+            DeviceInventoryEvent(
+                unit_id=unit.id,
+                event_type="intake_withdrawn",
+                created_by=admin_user.id,
+                payload={"operation_id": operation.id, "reason": payload.reason},
+            )
+        )
+    operation.status = "withdrawn"
+    operation.withdrawn_by = admin_user.id
+    operation.withdrawal_reason = payload.reason.strip()
+    operation.withdrawal_preview = preview
+    operation.withdrawn_at = now
+    operation.updated_at = now
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_pz_withdraw",
+        client_ip=admin_session.client_ip,
+        payload={
+            "operation_id": operation.id,
+            "pz_id": operation.firebird_pz_id,
+            "pz_number": operation.firebird_pz_number,
+            "force": payload.force,
+            "reason": payload.reason,
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "replayed": False,
+        "message": (
+            f"Wycofano {operation.firebird_pz_number}. "
+            "Usunięcie wierszy arkusza dodano do kolejki."
+        ),
+        "preview": preview,
     }
 
 
@@ -1216,20 +1551,55 @@ async def device_issues(
         .scalars()
         .all()
     )
+    recent_outbox = list(
+        (
+            await session.execute(
+                select(DeviceSheetOutbox).order_by(DeviceSheetOutbox.created_at.desc()).limit(300)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    recent_events = list(
+        (
+            await session.execute(
+                select(DeviceInventoryEvent)
+                .order_by(DeviceInventoryEvent.created_at.desc())
+                .limit(300)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    def serialize_outbox(row) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "unit_id": row.unit_id,
+            "operation_type": row.operation_type,
+            "status": row.status,
+            "attempt_count": row.attempt_count,
+            "max_attempts": row.max_attempts,
+            "last_error": row.last_error,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        }
+
     return {
         "ok": True,
         "operations": [intake_operation_payload(row) for row in operations],
-        "sheet_outbox": [
+        "sheet_outbox": [serialize_outbox(row) for row in outbox],
+        "recent_outbox": [serialize_outbox(row) for row in recent_outbox],
+        "recent_events": [
             {
                 "id": row.id,
                 "unit_id": row.unit_id,
-                "operation_type": row.operation_type,
-                "attempt_count": row.attempt_count,
-                "max_attempts": row.max_attempts,
-                "last_error": row.last_error,
-                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                "event_type": row.event_type,
+                "payload": row.payload,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
             }
-            for row in outbox
+            for row in recent_events
         ],
     }
 

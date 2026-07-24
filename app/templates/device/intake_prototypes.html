@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – Makiety przyjęcia PZ</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/flow/flow.css">
+    <link rel="stylesheet"
+          href="/static/device/intake_prototypes.css?v={{ request.app.version }}-intake-prototypes-1">
+  </head>
+  <body id="top">
+    <main class="prototype-shell">
+      <header class="prototype-hero">
+        <div>
+          <p class="prototype-kicker">CTIP / URZĄDZENIA / ŚRODOWISKO TESTOWE</p>
+          <h1>Trzy warianty przyjęcia urządzeń</h1>
+          <p>
+            Te widoki służą wyłącznie do porównania wyglądu i ergonomii.
+            Przyciski są nieaktywne, a formularze nie wysyłają żadnych danych.
+          </p>
+        </div>
+        <a href="/device/intake" class="prototype-back">Wróć do działającego PZ</a>
+      </header>
+
+      <aside class="prototype-warning" role="note">
+        <strong>Makieta – brak zapisu</strong>
+        <span>Firebird, PostgreSQL i Google Sheets nie są wywoływane z tej strony.</span>
+      </aside>
+
+      <nav class="prototype-jump" aria-label="Wybór wariantu makiety">
+        <a href="#wariant-kreator">
+          <span>01</span>
+          <strong>Kreator 3 kroków</strong>
+          <small>Najwięcej prowadzenia i kontroli</small>
+        </a>
+        <a href="#wariant-formularz">
+          <span>02</span>
+          <strong>Jeden formularz</strong>
+          <small>Wszystko widoczne na jednej stronie</small>
+        </a>
+        <a href="#wariant-dzielony">
+          <span>03</span>
+          <strong>Widok dzielony</strong>
+          <small>Szybka praca na dużym monitorze</small>
+        </a>
+      </nav>
+
+      <section id="wariant-kreator" class="prototype-section">
+        <header class="prototype-section-head">
+          <div>
+            <p>Wariant 01</p>
+            <h2>Kreator 3 kroków</h2>
+            <span>
+              Użytkownik przechodzi kolejno przez dokument, urządzenia i końcową kontrolę.
+            </span>
+          </div>
+          <span class="prototype-tag recommended">Rekomendowany</span>
+        </header>
+
+        <div class="mock-app mock-wizard">
+          <header class="mock-topbar">
+            <div>
+              <small>Nowe przyjęcie</small>
+              <strong>PZ / wersja robocza</strong>
+            </div>
+            <div class="mock-user">MK</div>
+          </header>
+
+          <ol class="wizard-steps">
+            <li class="done">
+              <span>1</span>
+              <div><strong>Dokument</strong><small>Dostawca i faktura</small></div>
+            </li>
+            <li class="active">
+              <span>2</span>
+              <div><strong>Urządzenia</strong><small>3 egzemplarze</small></div>
+            </li>
+            <li>
+              <span>3</span>
+              <div><strong>Podsumowanie</strong><small>Kontrola przed zapisem</small></div>
+            </li>
+          </ol>
+
+          <div class="wizard-layout">
+            <section class="mock-card wizard-main">
+              <div class="mock-card-head">
+                <div>
+                  <small>Krok 2 z 3</small>
+                  <h3>Dodaj urządzenia</h3>
+                  <p>Liczniki są opcjonalne i mogą pozostać puste.</p>
+                </div>
+                <button type="button" class="mock-button secondary" disabled>+ Dodaj egzemplarz</button>
+              </div>
+
+              <article class="device-entry">
+                <div class="entry-number">01</div>
+                <div class="entry-content">
+                  <div class="field-grid three">
+                    <label><span>Model</span><div class="mock-input filled">Ricoh IM C3000</div></label>
+                    <label><span>Numer seryjny</span><div class="mock-input filled">3121R730184</div></label>
+                    <label><span>Numer KP</span><div class="mock-input filled">KP/2026/0184</div></label>
+                  </div>
+                  <div class="counter-strip">
+                    <div><span>B/W</span><strong>24 810</strong></div>
+                    <div class="color"><span>Kolor</span><strong>8 421</strong></div>
+                    <div><span>Skan</span><strong>12 090</strong></div>
+                    <div class="price"><span>Cena netto</span><strong>4 900,00 zł</strong></div>
+                  </div>
+                </div>
+                <button type="button" class="entry-menu" disabled aria-label="Opcje">•••</button>
+              </article>
+
+              <article class="device-entry">
+                <div class="entry-number">02</div>
+                <div class="entry-content">
+                  <div class="field-grid three">
+                    <label><span>Model</span><div class="mock-input filled">Ricoh M C250FWB</div></label>
+                    <label><span>Numer seryjny</span><div class="mock-input filled">3920PA00481</div></label>
+                    <label><span>Numer KP</span><div class="mock-input filled">KP/2026/0185</div></label>
+                  </div>
+                  <div class="counter-strip">
+                    <div><span>B/W</span><strong>7 721</strong></div>
+                    <div class="color"><span>Kolor</span><strong>15 189</strong></div>
+                    <div><span>Skan</span><strong class="muted">Nie podano</strong></div>
+                    <div class="price"><span>Cena netto</span><strong>1 250,00 zł</strong></div>
+                  </div>
+                </div>
+                <button type="button" class="entry-menu" disabled aria-label="Opcje">•••</button>
+              </article>
+
+              <article class="device-entry invalid">
+                <div class="entry-number">03</div>
+                <div class="entry-content">
+                  <div class="field-grid three">
+                    <label><span>Model</span><div class="mock-input filled">Ricoh MP 4055</div></label>
+                    <label class="has-error">
+                      <span>Numer seryjny</span>
+                      <div class="mock-input placeholder">Wpisz numer seryjny</div>
+                      <small>Numer seryjny jest wymagany.</small>
+                    </label>
+                    <label><span>Numer KP</span><div class="mock-input filled">KP/2026/0186</div></label>
+                  </div>
+                  <div class="counter-strip">
+                    <div><span>B/W</span><strong>58 920</strong></div>
+                    <div><span>Kolor</span><strong class="muted">Nie dotyczy</strong></div>
+                    <div><span>Skan</span><strong>31 004</strong></div>
+                    <div class="price"><span>Cena netto</span><strong>2 700,00 zł</strong></div>
+                  </div>
+                </div>
+                <button type="button" class="entry-menu" disabled aria-label="Opcje">•••</button>
+              </article>
+            </section>
+
+            <aside class="mock-card wizard-summary">
+              <small>DOKUMENT</small>
+              <h3>ABC Office sp. z o.o.</h3>
+              <dl>
+                <div><dt>Dokument zewnętrzny</dt><dd>FV 112/07/2026</dd></div>
+                <div><dt>Pozycji</dt><dd>3</dd></div>
+                <div><dt>Wartość netto</dt><dd>8 850,00 zł</dd></div>
+                <div><dt>Magazyn</dt><dd>28 – Urządzenia</dd></div>
+              </dl>
+              <div class="summary-status error">
+                <span>!</span>
+                <p><strong>Brakuje 1 informacji</strong>Uzupełnij numer seryjny w pozycji 3.</p>
+              </div>
+              <div class="wizard-actions">
+                <button type="button" class="mock-button secondary" disabled>Wstecz</button>
+                <button type="button" class="mock-button primary" disabled>Dalej: podsumowanie</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="wariant-formularz" class="prototype-section">
+        <header class="prototype-section-head">
+          <div>
+            <p>Wariant 02</p>
+            <h2>Jeden uporządkowany formularz</h2>
+            <span>
+              Wszystkie dane są dostępne od razu, a podsumowanie pozostaje widoczne podczas przewijania.
+            </span>
+          </div>
+          <span class="prototype-tag">Najmniej przełączania</span>
+        </header>
+
+        <div class="mock-app mock-single">
+          <header class="single-heading">
+            <div>
+              <small>PRZYJĘCIA URZĄDZEŃ</small>
+              <h3>Nowy dokument PZ</h3>
+              <p>Uzupełnij dokument i dodaj wszystkie egzemplarze do jednej listy.</p>
+            </div>
+            <div class="single-progress"><strong>2/3</strong><span>pozycje kompletne</span></div>
+          </header>
+
+          <div class="single-layout">
+            <div class="single-content">
+              <section class="mock-card">
+                <div class="section-title">
+                  <span>01</span>
+                  <div><h4>Dokument i dostawca</h4><p>Dane wspólne dla całego przyjęcia.</p></div>
+                  <span class="complete-mark">Gotowe</span>
+                </div>
+                <div class="field-grid three">
+                  <label><span>Dostawca</span><div class="mock-input filled">ABC Office sp. z o.o.</div></label>
+                  <label><span>Dokument zewnętrzny</span><div class="mock-input filled">FV 112/07/2026</div></label>
+                  <label><span>Magazyn docelowy</span><div class="mock-input locked">28 – Urządzenia</div></label>
+                </div>
+              </section>
+
+              <section class="mock-card">
+                <div class="section-title">
+                  <span>02</span>
+                  <div><h4>Urządzenia</h4><p>Każdy wiersz utworzy osobną kartotekę.</p></div>
+                  <button type="button" class="mock-button secondary" disabled>+ Dodaj pozycję</button>
+                </div>
+                <div class="wide-table-wrap">
+                  <table class="prototype-table">
+                    <thead>
+                      <tr>
+                        <th>Lp.</th><th>Model</th><th>Serial</th><th>Numer KP</th>
+                        <th>B/W</th><th>Kolor</th><th>Skan</th><th>Cena netto</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>1</td><td><strong>Ricoh IM C3000</strong><small>kolorowe MFP</small></td>
+                        <td>3121R730184</td><td>KP/2026/0184</td><td>24 810</td>
+                        <td class="counter-color">8 421</td><td>12 090</td><td>4 900,00 zł</td><td>•••</td>
+                      </tr>
+                      <tr>
+                        <td>2</td><td><strong>Ricoh M C250FWB</strong><small>kolorowe MFP</small></td>
+                        <td>3920PA00481</td><td>KP/2026/0185</td><td>7 721</td>
+                        <td class="counter-color">15 189</td><td class="muted">—</td><td>1 250,00 zł</td><td>•••</td>
+                      </tr>
+                      <tr class="row-error">
+                        <td>3</td><td><strong>Ricoh MP 4055</strong><small>mono MFP</small></td>
+                        <td><span class="inline-error">Wymagany serial</span></td><td>KP/2026/0186</td>
+                        <td>58 920</td><td class="muted">—</td><td>31 004</td><td>2 700,00 zł</td><td>•••</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="mock-card exception-row">
+                <div>
+                  <strong>Wyjątki dokumentu</strong>
+                  <p>Włącz tylko, gdy dokument zewnętrzny lub cena nie mogą zostać podane.</p>
+                </div>
+                <span class="mock-switch" aria-hidden="true"></span>
+              </section>
+            </div>
+
+            <aside class="mock-card sticky-summary">
+              <small>PODSUMOWANIE PZ</small>
+              <h4>ABC Office sp. z o.o.</h4>
+              <div class="summary-metric"><span>Urządzenia</span><strong>3</strong></div>
+              <div class="summary-metric"><span>Wartość netto</span><strong>8 850,00 zł</strong></div>
+              <div class="summary-metric"><span>VAT 23%</span><strong>2 035,50 zł</strong></div>
+              <div class="summary-total"><span>Wartość brutto</span><strong>10 885,50 zł</strong></div>
+              <div class="validation-list">
+                <strong>Do poprawy przed zapisem</strong>
+                <p><span>3</span> Brak numeru seryjnego.</p>
+              </div>
+              <button type="button" class="mock-button primary wide" disabled>Utwórz dokument PZ</button>
+              <small class="safe-note">Zapis będzie wykonany atomowo po poprawnej walidacji.</small>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="wariant-dzielony" class="prototype-section">
+        <header class="prototype-section-head">
+          <div>
+            <p>Wariant 03</p>
+            <h2>Widok dzielony</h2>
+            <span>
+              Stały panel dokumentu po lewej i maksymalnie szeroka przestrzeń robocza dla urządzeń.
+            </span>
+          </div>
+          <span class="prototype-tag">Praca seryjna</span>
+        </header>
+
+        <div class="mock-app mock-split">
+          <header class="split-topbar">
+            <div><small>CTIP / PRZYJĘCIA</small><strong>Nowy dokument PZ</strong></div>
+            <div class="split-actions">
+              <span>Zapis roboczy 10:42</span>
+              <button type="button" class="mock-button secondary" disabled>Zamknij</button>
+            </div>
+          </header>
+
+          <div class="split-workspace">
+            <aside class="split-document">
+              <div class="split-title">
+                <span>01</span>
+                <div><strong>Dokument</strong><small>Dane wspólne</small></div>
+              </div>
+              <label><span>Dostawca</span><div class="mock-input filled">ABC Office sp. z o.o.</div></label>
+              <label><span>Dokument zewnętrzny</span><div class="mock-input filled">FV 112/07/2026</div></label>
+              <label><span>Data przyjęcia</span><div class="mock-input locked">24.07.2026</div></label>
+              <label><span>Magazyn</span><div class="mock-input locked">28 – Urządzenia</div></label>
+              <div class="document-summary">
+                <div><span>Pozycji</span><strong>3</strong></div>
+                <div><span>Netto</span><strong>8 850,00 zł</strong></div>
+              </div>
+              <button type="button" class="mock-link" disabled>+ Dodaj nowego dostawcę</button>
+            </aside>
+
+            <section class="split-devices">
+              <div class="split-devices-head">
+                <div>
+                  <span class="split-number">02</span>
+                  <div><strong>Urządzenia na dokumencie</strong><small>2 kompletne, 1 wymaga uzupełnienia</small></div>
+                </div>
+                <div class="split-device-actions">
+                  <div class="mock-search">Szukaj na liście…</div>
+                  <button type="button" class="mock-button primary" disabled>+ Dodaj urządzenie</button>
+                </div>
+              </div>
+
+              <div class="split-list">
+                <article class="split-row">
+                  <div class="split-row-index">01</div>
+                  <div class="split-model"><strong>Ricoh IM C3000</strong><span>kolorowe MFP</span></div>
+                  <div><small>Serial</small><strong>3121R730184</strong></div>
+                  <div><small>Numer KP</small><strong>KP/2026/0184</strong></div>
+                  <div class="split-counters">
+                    <span><small>B/W</small><strong>24 810</strong></span>
+                    <span class="color"><small>Kolor</small><strong>8 421</strong></span>
+                    <span><small>Skan</small><strong>12 090</strong></span>
+                  </div>
+                  <div class="split-price"><small>Netto</small><strong>4 900,00 zł</strong></div>
+                  <button type="button" disabled>•••</button>
+                </article>
+
+                <article class="split-row">
+                  <div class="split-row-index">02</div>
+                  <div class="split-model"><strong>Ricoh M C250FWB</strong><span>kolorowe MFP</span></div>
+                  <div><small>Serial</small><strong>3920PA00481</strong></div>
+                  <div><small>Numer KP</small><strong>KP/2026/0185</strong></div>
+                  <div class="split-counters">
+                    <span><small>B/W</small><strong>7 721</strong></span>
+                    <span class="color"><small>Kolor</small><strong>15 189</strong></span>
+                    <span><small>Skan</small><strong class="muted">—</strong></span>
+                  </div>
+                  <div class="split-price"><small>Netto</small><strong>1 250,00 zł</strong></div>
+                  <button type="button" disabled>•••</button>
+                </article>
+
+                <article class="split-row invalid">
+                  <div class="split-row-index">03</div>
+                  <div class="split-model"><strong>Ricoh MP 4055</strong><span>mono MFP</span></div>
+                  <div class="split-error-cell"><small>Serial</small><strong>Uzupełnij serial</strong></div>
+                  <div><small>Numer KP</small><strong>KP/2026/0186</strong></div>
+                  <div class="split-counters">
+                    <span><small>B/W</small><strong>58 920</strong></span>
+                    <span><small>Kolor</small><strong class="muted">—</strong></span>
+                    <span><small>Skan</small><strong>31 004</strong></span>
+                  </div>
+                  <div class="split-price"><small>Netto</small><strong>2 700,00 zł</strong></div>
+                  <button type="button" disabled>•••</button>
+                </article>
+              </div>
+
+              <div class="split-add-row">
+                <span>+</span>
+                <div><strong>Dodaj kolejny egzemplarz</strong><small>Wyszukaj model i utwórz nowy wiersz.</small></div>
+              </div>
+            </section>
+          </div>
+
+          <footer class="split-footer">
+            <div class="footer-alert">
+              <span>!</span>
+              <p><strong>1 błąd do poprawy</strong>Pozycja 3 nie ma numeru seryjnego.</p>
+            </div>
+            <div>
+              <span>Łącznie brutto <strong>10 885,50 zł</strong></span>
+              <button type="button" class="mock-button primary" disabled>Sprawdź i utwórz PZ</button>
+            </div>
+          </footer>
+        </div>
+      </section>
+
+      <footer class="prototype-footer">
+        <div>
+          <strong>Który układ wybierasz?</strong>
+          <span>Podaj numer wariantu oraz elementy, które chcesz przenieść z pozostałych makiet.</span>
+        </div>
+        <a href="#top" class="prototype-back">Wróć na górę</a>
+      </footer>
+    </main>
+  </body>
+</html>

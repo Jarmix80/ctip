@@ -2,20 +2,28 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+
+from app.core.config import settings
 
 templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["device-ui"])
+DEVICE_UI_VERSION = "0.3.1"
 
 
 async def _device_template(request: Request, view: str) -> HTMLResponse:
     """Renderuje wspólny szkielet modułu z wybranym ekranem startowym."""
     return templates.TemplateResponse(
         "device/index.html",
-        {"request": request, "initial_view": view},
+        {
+            "request": request,
+            "initial_view": view,
+            "show_intake_prototypes": settings.is_test_runtime,
+            "device_ui_version": DEVICE_UI_VERSION,
+        },
     )
 
 
@@ -31,6 +39,50 @@ async def device_intake_page(request: Request) -> HTMLResponse:
     return await _device_template(request, "intake")
 
 
+@router.get("/device/intake/prototypes", response_class=HTMLResponse)
+async def device_intake_prototypes_page(request: Request) -> HTMLResponse:
+    """Galeria testowych makiet nowego formularza przyjęcia PZ."""
+    if not settings.is_test_runtime:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse(
+        "device/intake_prototypes.html",
+        {"request": request},
+    )
+
+
+@router.get("/device/style-prototypes", response_class=HTMLResponse)
+async def device_style_prototypes_page(request: Request) -> HTMLResponse:
+    """Galeria testowych wariantów tła modułu urządzeń."""
+    if not settings.is_test_runtime:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse(
+        "device/style_prototypes.html",
+        {"request": request},
+    )
+
+
+@router.get("/device/sidebar-prototypes", response_class=HTMLResponse)
+async def device_sidebar_prototypes_page(request: Request) -> HTMLResponse:
+    """Galeria testowych wariantów lewego menu modułu urządzeń."""
+    if not settings.is_test_runtime:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse(
+        "device/sidebar_prototypes.html",
+        {"request": request},
+    )
+
+
+@router.get("/device/header-prototypes", response_class=HTMLResponse)
+async def device_header_prototypes_page(request: Request) -> HTMLResponse:
+    """Galeria testowych wariantów górnego panelu modułu urządzeń."""
+    if not settings.is_test_runtime:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse(
+        "device/header_prototypes.html",
+        {"request": request},
+    )
+
+
 @router.get("/device/warehouse", response_class=HTMLResponse)
 async def device_warehouse_page(request: Request) -> HTMLResponse:
     """Scalony stan magazynu urządzeń."""
@@ -41,6 +93,12 @@ async def device_warehouse_page(request: Request) -> HTMLResponse:
 async def device_history_page(request: Request) -> HTMLResponse:
     """Historia idempotentnych operacji przyjęcia."""
     return await _device_template(request, "history")
+
+
+@router.get("/device/audit", response_class=HTMLResponse)
+async def device_audit_page(request: Request) -> HTMLResponse:
+    """Audyt spójności urządzeń i kartoteki modeli."""
+    return await _device_template(request, "audit")
 
 
 @router.get("/device/issues", response_class=HTMLResponse)

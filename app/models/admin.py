@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -30,6 +31,10 @@ class AdminUser(Base):
     __tablename__ = "admin_user"
     __table_args__ = (
         CheckConstraint("role in ('admin','operator')", name="admin_user_role_check"),
+        CheckConstraint(
+            "device_theme in ('blue','graphite','mint')",
+            name="admin_user_device_theme_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -44,6 +49,13 @@ class AdminUser(Base):
     mobile_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
     firebird_app_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     firebird_app_user_login: Mapped[str | None] = mapped_column(Text, nullable=True)
+    can_withdraw_device_pz: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    device_theme: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="blue",
+        server_default="blue",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
     )
@@ -306,6 +318,7 @@ class WorkflowSheetStatusCache(Base):
     sheet_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     counter_bw: Mapped[str | None] = mapped_column(Text, nullable=True)
     counter_color: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counter_scan: Mapped[str | None] = mapped_column(Text, nullable=True)
     reservation_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     reservation_grenke: Mapped[str | None] = mapped_column(Text, nullable=True)
     reservation_until: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -324,7 +337,7 @@ class DeviceIntakeOperation(Base):
     __tablename__ = "device_intake_operation"
     __table_args__ = (
         CheckConstraint(
-            "status in ('processing','completed','failed','reconcile_required')",
+            "status in ('processing','completed','failed','reconcile_required','withdrawn')",
             name="device_intake_operation_status_check",
         ),
         UniqueConstraint("idempotency_key", name="uq_device_intake_operation_idempotency_key"),
@@ -352,6 +365,12 @@ class DeviceIntakeOperation(Base):
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    withdrawn_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    withdrawal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    withdrawal_preview: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DeviceInventoryUnit(Base):
@@ -362,6 +381,10 @@ class DeviceInventoryUnit(Base):
         CheckConstraint(
             "source_type = 'firebird_magazyn_28'",
             name="device_inventory_unit_source_type_check",
+        ),
+        CheckConstraint(
+            "status in ('active','withdrawn')",
+            name="device_inventory_unit_status_check",
         ),
         UniqueConstraint(
             "source_type",
@@ -407,6 +430,8 @@ class DeviceInventoryUnit(Base):
     sheet_sync_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     sheet_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
     )
@@ -429,6 +454,48 @@ class DeviceInventoryEvent(Base):
         ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
     )
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+
+
+class DeviceCounterReading(Base):
+    """Historyczny odczyt liczników fizycznego egzemplarza urządzenia."""
+
+    __tablename__ = "device_counter_reading"
+    __table_args__ = (
+        CheckConstraint(
+            "source in ('intake','manual')",
+            name="device_counter_reading_source_check",
+        ),
+        CheckConstraint(
+            "counter_bw is not null or counter_color is not null or counter_scan is not null",
+            name="device_counter_reading_value_check",
+        ),
+        CheckConstraint(
+            "(counter_bw is null or counter_bw >= 0) and "
+            "(counter_color is null or counter_color >= 0) and "
+            "(counter_scan is null or counter_scan >= 0)",
+            name="device_counter_reading_nonnegative_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    unit_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.device_inventory_unit.id", ondelete="CASCADE"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    reading_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    counter_bw: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    counter_color: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    counter_scan: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    applied_to_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    source_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
     )
@@ -469,7 +536,8 @@ class DeviceSheetOutbox(Base):
     __table_args__ = (
         CheckConstraint(
             "operation_type in ("
-            "'upsert_device','update_note','update_reservation','release_reservation'"
+            "'upsert_device','update_note','update_counters','delete_device',"
+            "'update_reservation','release_reservation'"
             ")",
             name="device_sheet_outbox_operation_type_check",
         ),
@@ -610,6 +678,11 @@ Index(
     DeviceInventoryEvent.created_at.desc(),
 )
 Index(
+    "idx_device_counter_reading_unit_date",
+    DeviceCounterReading.unit_id,
+    DeviceCounterReading.reading_at.desc(),
+)
+Index(
     "idx_device_audit_run_status_created",
     DeviceAuditRun.status,
     DeviceAuditRun.created_at.desc(),
@@ -633,6 +706,7 @@ __all__ = [
     "DeviceIntakeOperation",
     "DeviceInventoryUnit",
     "DeviceInventoryEvent",
+    "DeviceCounterReading",
     "DeviceManualReservation",
     "DeviceSheetOutbox",
     "DeviceAuditRun",

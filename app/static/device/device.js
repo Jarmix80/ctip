@@ -1,4 +1,6 @@
 const DEVICE_TOKEN_KEY = "admin-session-token";
+const DEVICE_THEME_KEY = "ctip-device-theme";
+const DEVICE_THEMES = new Set(["blue", "graphite", "mint"]);
 
 const deviceState = {
   view: document.body.dataset.deviceView || "home",
@@ -15,7 +17,32 @@ const deviceState = {
   auditPage: 1,
   auditPages: 1,
   auditPollTimer: null,
+  withdrawalOperation: null,
 };
+
+function applyDeviceTheme(theme, { persist = false } = {}) {
+  const selectedTheme = DEVICE_THEMES.has(theme) ? theme : "blue";
+  document.body.dataset.deviceTheme = selectedTheme;
+  const select = document.getElementById("device-theme-select");
+  if (select) {
+    select.value = selectedTheme;
+  }
+  if (persist) {
+    try {
+      window.localStorage?.setItem(DEVICE_THEME_KEY, selectedTheme);
+    } catch (_error) {}
+  }
+}
+
+function initializeDeviceTheme() {
+  let storedTheme = "blue";
+  try {
+    storedTheme = window.localStorage?.getItem(DEVICE_THEME_KEY) || "blue";
+  } catch (_error) {
+    storedTheme = "blue";
+  }
+  applyDeviceTheme(storedTheme);
+}
 
 function debounce(callback, delay = 350) {
   let timeoutId = null;
@@ -265,6 +292,14 @@ function activateView() {
   });
 }
 
+function prepareDeviceLayout() {
+  const auditPanel = document.querySelector(".device-audit-panel");
+  const auditHost = document.getElementById("device-audit-host");
+  if (auditPanel && auditHost) {
+    auditHost.append(auditPanel);
+  }
+}
+
 function modelLabel(model) {
   return `${model.id_model} | ${model.marka || ""} ${model.model || ""}`.trim();
 }
@@ -372,19 +407,71 @@ async function loadKpSuggestion() {
   }
 }
 
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString("pl-PL", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function updateIntakeSummary() {
+  const items = deviceState.intakeItems;
+  const complete = items.filter((item) => {
+    const price = String(item.price ?? "").trim();
+    return String(item.serial ?? "").trim() && String(item.ewidencja ?? "").trim() && price;
+  }).length;
+  const net = items.reduce((sum, item) => {
+    const price = Number(String(item.price ?? "").replace(",", "."));
+    return sum + (Number.isFinite(price) ? price : 0);
+  }, 0);
+  const vat = net * 0.23;
+  const values = {
+    "device-intake-summary-count": String(items.length),
+    "device-intake-summary-complete": `${complete} / ${items.length}`,
+    "device-intake-summary-net": `${formatCurrency(net)} zł`,
+    "device-intake-summary-vat": `${formatCurrency(vat)} zł`,
+    "device-intake-summary-gross": `${formatCurrency(net + vat)} zł`,
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = value;
+    }
+  }
+  const status = document.getElementById("device-intake-summary-status");
+  if (!status) {
+    return;
+  }
+  status.classList.toggle("is-ready", items.length > 0 && complete === items.length);
+  if (!items.length) {
+    status.textContent = "Dodaj pierwsze urządzenie.";
+  } else if (complete === items.length) {
+    status.textContent = "Wszystkie urządzenia są uzupełnione.";
+  } else {
+    status.textContent = `Uzupełnij dane w ${items.length - complete} ${
+      items.length - complete === 1 ? "urządzeniu" : "urządzeniach"
+    }.`;
+  }
+}
+
 function renderIntakeItems() {
   const body = document.getElementById("device-intake-items");
   if (!body) {
     return;
   }
   if (!deviceState.intakeItems.length) {
-    body.innerHTML = '<tr><td colspan="6" class="device-empty">Dodaj co najmniej jeden egzemplarz.</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="device-empty">Dodaj co najmniej jeden egzemplarz.</td></tr>';
+    updateIntakeSummary();
     return;
   }
   body.innerHTML = deviceState.intakeItems
     .map(
       (item, index) => `
-        <tr data-intake-index="${index}">
+        <tr data-intake-index="${index}" data-intake-search="${escapeHtml(
+          `${item.model.marka || ""} ${item.model.model || ""} ${item.serial || ""} ${
+            item.ewidencja || ""
+          }`.toLocaleLowerCase("pl-PL")
+        )}">
           <td>${index + 1}</td>
           <td class="device-model-cell">
             <div class="device-cell-main">${escapeHtml(
@@ -399,11 +486,32 @@ function renderIntakeItems() {
           <td><input data-item-field="price" type="number" min="0" step="0.01" value="${escapeHtml(
             item.price
           )}"></td>
+          <td><input data-item-field="counterBw" type="number" min="0" step="1" value="${escapeHtml(
+            item.counterBw
+          )}" aria-label="Licznik B/W"></td>
+          <td><input data-item-field="counterColor" type="number" min="0" step="1" value="${escapeHtml(
+            item.counterColor
+          )}" aria-label="Licznik kolor"></td>
+          <td><input data-item-field="counterScan" type="number" min="0" step="1" value="${escapeHtml(
+            item.counterScan
+          )}" aria-label="Licznik skan"></td>
           <td><button type="button" class="flow-secondary" data-item-remove="${index}">Usuń</button></td>
         </tr>
       `
     )
     .join("");
+  updateIntakeSummary();
+  filterIntakeItems();
+}
+
+function filterIntakeItems() {
+  const query = document
+    .getElementById("device-intake-list-search")
+    ?.value.trim()
+    .toLocaleLowerCase("pl-PL");
+  for (const row of document.querySelectorAll("[data-intake-index]")) {
+    row.hidden = Boolean(query) && !row.dataset.intakeSearch.includes(query);
+  }
 }
 
 function resetIntake() {
@@ -503,6 +611,9 @@ function addIntakeItems() {
       serial: "",
       ewidencja: kpNumber(offset + index),
       price,
+      counterBw: "",
+      counterColor: "",
+      counterScan: "",
     });
   }
   renderIntakeItems();
@@ -640,6 +751,9 @@ async function submitIntake() {
       serial: item.serial.trim(),
       ewidencja: item.ewidencja.trim(),
       purchase_price_netto: Number(item.price || 0),
+      counter_bw: item.counterBw === "" ? null : Number(item.counterBw),
+      counter_color: item.counterColor === "" ? null : Number(item.counterColor),
+      counter_scan: item.counterScan === "" ? null : Number(item.counterScan),
     })),
   };
 
@@ -749,13 +863,17 @@ function renderWarehouseRows(items) {
     return;
   }
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="11" class="device-empty">Brak pozycji dla wybranych filtrów.</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="device-empty">Brak pozycji dla wybranych filtrów.</td></tr>';
     return;
   }
   body.innerHTML = items
     .map(
       (item) => `
-        <tr>
+        <tr class="device-warehouse-row" data-device-detail-row="${
+          item.source_row
+        }" tabindex="0" role="button" aria-label="Kliknij dwukrotnie, aby otworzyć szczegóły urządzenia ${escapeHtml(
+          `${item.producer || ""} ${item.model || ""} ${item.serial || ""}`.trim()
+        )}">
           <td>
             <div class="device-cell-main">${escapeHtml(
               `${item.producer || ""} ${item.model || ""}`.trim()
@@ -779,9 +897,6 @@ function renderWarehouseRows(items) {
           <td>${reservationBadge(item)}</td>
           <td>${sheetBadge(item)}</td>
           <td>${sourcePresenceBadges(item.source_presence)}</td>
-          <td><button type="button" class="flow-secondary" data-device-detail="${
-            item.source_row
-          }">Szczegóły</button></td>
         </tr>
       `
     )
@@ -905,7 +1020,7 @@ function scheduleAuditPoll(run) {
     return;
   }
   deviceState.auditPollTimer = window.setTimeout(async () => {
-    if (deviceState.view !== "warehouse") {
+    if (deviceState.view !== "audit") {
       return;
     }
     try {
@@ -1006,6 +1121,7 @@ async function startDeviceAudit() {
 }
 
 async function loadWarehouse() {
+  await loadModelOptions();
   const query = document.getElementById("device-warehouse-query")?.value.trim() || "";
   const reservation =
     document.getElementById("device-warehouse-reservation")?.value || "all";
@@ -1038,8 +1154,12 @@ async function loadWarehouse() {
       deviceState.warehousePages === 0 ||
       deviceState.warehousePage >= deviceState.warehousePages;
   }
-  await loadAuditHistory({ preserveSelection: true });
   return response;
+}
+
+async function loadAuditView() {
+  await loadModelOptions();
+  await loadAuditHistory({ preserveSelection: true });
 }
 
 function renderDetail(item, events) {
@@ -1067,6 +1187,14 @@ function renderDetail(item, events) {
     )
     .join("");
   document.getElementById("device-note-text").value = item.note || "";
+  document.getElementById("device-counter-date").value = localDateTimeValue(new Date());
+  document.getElementById("device-counter-bw").value = item.counter_bw || "";
+  document.getElementById("device-counter-color").value = item.counter_color || "";
+  document.getElementById("device-counter-scan").value = item.counter_scan || "";
+  document.getElementById("device-counter-note").value = "";
+  document.getElementById("device-counter-allow-lower").checked = false;
+  document.getElementById("device-counter-reason").value = "";
+  document.getElementById("device-counter-reason-wrap").hidden = true;
   document.getElementById("device-reserved-for").value = item.reservation_for || "";
   document.getElementById("device-reservation-reason").value =
     item.reservation_reason || "";
@@ -1124,6 +1252,42 @@ async function saveDeviceNote() {
     { method: "POST", body: { note } }
   );
   setInfo("Zapisano uwagę i dodano aktualizację arkusza do kolejki.");
+  await openDeviceDetail(deviceState.activeSourceRow);
+}
+
+async function saveDeviceCounters() {
+  if (!deviceState.activeSourceRow) {
+    return;
+  }
+  const valueOrNull = (id) => {
+    const value = document.getElementById(id).value.trim();
+    return value === "" ? null : Number(value);
+  };
+  const readingAt = document.getElementById("device-counter-date").value;
+  const allowLower = document.getElementById("device-counter-allow-lower").checked;
+  const reason = document.getElementById("device-counter-reason").value.trim();
+  const payload = {
+    reading_at: new Date(readingAt).toISOString(),
+    counter_bw: valueOrNull("device-counter-bw"),
+    counter_color: valueOrNull("device-counter-color"),
+    counter_scan: valueOrNull("device-counter-scan"),
+    allow_lower: allowLower,
+    override_reason: allowLower ? reason : null,
+    note: document.getElementById("device-counter-note").value.trim() || null,
+  };
+  if ([payload.counter_bw, payload.counter_color, payload.counter_scan].every(
+    (value) => value === null
+  )) {
+    throw new Error("Podaj co najmniej jeden licznik.");
+  }
+  if (allowLower && reason.length < 10) {
+    throw new Error("Uzasadnienie niższego odczytu musi mieć co najmniej 10 znaków.");
+  }
+  const response = await fetchDeviceJson(
+    `/admin/device/warehouse/${deviceState.activeSourceRow}/counters`,
+    { method: "POST", body: payload }
+  );
+  setInfo(response.message || "Zapisano odczyt liczników.");
   await openDeviceDetail(deviceState.activeSourceRow);
 }
 
@@ -1189,11 +1353,103 @@ async function loadHistory() {
               )}</td>
               <td>${escapeHtml(item.result?.items?.length || 0)}</td>
               <td>${escapeHtml(displayValue(item.error))}</td>
+              <td>
+                <details class="device-audit-details">
+                  <summary>Otwórz</summary>
+                  <pre>${escapeHtml(JSON.stringify(item.result || {}, null, 2))}</pre>
+                </details>
+              </td>
+              <td>${
+                response.can_withdraw && item.status === "completed"
+                  ? `<button type="button" class="flow-secondary" data-withdraw-operation="${
+                      item.id
+                    }">Usuń</button>`
+                  : item.status === "withdrawn"
+                    ? '<span class="device-badge warn">Wycofano</span>'
+                    : "—"
+              }</td>
             </tr>
           `
         )
         .join("")
-    : '<tr><td colspan="6" class="device-empty">Brak operacji przyjęcia.</td></tr>';
+    : '<tr><td colspan="8" class="device-empty">Brak operacji przyjęcia.</td></tr>';
+}
+
+function renderWithdrawalPreview(data) {
+  const preview = data.preview || {};
+  const differences = preview.differences || [];
+  const dependencies = Object.entries(preview.dependencies || {});
+  const lines = [
+    ["Dokument", preview.pz_number || "—"],
+    ["Pozycje PZ", preview.positions ?? 0],
+    ["Urządzenia do usunięcia", preview.expected_positions ?? 0],
+    ["Kartoteki MAGAZYN", preview.expected_positions ?? 0],
+    ["Kartoteki MASZYNA", preview.expected_positions ?? 0],
+    ["Wiersze arkusza", preview.expected_positions ?? 0],
+  ];
+  document.getElementById("device-withdraw-preview").innerHTML = `
+    <p>Wycofanie usunie elementy utworzone przez ten dokument i zachowa historię operacji w CTIP.</p>
+    <dl>${lines
+      .map(
+        ([label, value]) =>
+          `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`
+      )
+      .join("")}</dl>
+    <section class="${differences.length ? "device-withdraw-warning" : ""}">
+      <strong>Różnice:</strong>
+      ${
+        differences.length
+          ? `<ul>${differences.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          : "<p>Nie wykryto zmian względem zapisu początkowego.</p>"
+      }
+    </section>
+    <section class="${dependencies.length ? "device-withdraw-warning" : ""}">
+      <strong>Późniejsze powiązania:</strong>
+      ${
+        dependencies.length
+          ? `<ul>${dependencies
+              .map(([table, count]) => `<li>${escapeHtml(table)}: ${escapeHtml(count)}</li>`)
+              .join("")}</ul>`
+          : "<p>Nie wykryto późniejszych powiązań.</p>"
+      }
+    </section>
+  `;
+  document.getElementById("device-withdraw-force-wrap").hidden = !data.can_force;
+}
+
+async function openWithdrawalDialog(operationId) {
+  const data = await fetchDeviceJson(
+    `/admin/device/history/${operationId}/withdrawal-preview`
+  );
+  deviceState.withdrawalOperation = operationId;
+  renderWithdrawalPreview(data);
+  document.getElementById("device-withdraw-confirmation").value = "";
+  document.getElementById("device-withdraw-reason").value = "";
+  document.getElementById("device-withdraw-force").checked = false;
+  const dialog = document.getElementById("device-withdraw-dialog");
+  dialog.showModal();
+}
+
+async function submitWithdrawal() {
+  const reason = document.getElementById("device-withdraw-reason").value.trim();
+  if (reason.length < 10) {
+    throw new Error("Uzasadnienie musi mieć co najmniej 10 znaków.");
+  }
+  const response = await fetchDeviceJson(
+    `/admin/device/history/${deviceState.withdrawalOperation}`,
+    {
+      method: "DELETE",
+      body: {
+        confirmation: document.getElementById("device-withdraw-confirmation").value.trim(),
+        reason,
+        force: document.getElementById("device-withdraw-force").checked,
+      },
+      timeoutMs: 120000,
+    }
+  );
+  document.getElementById("device-withdraw-dialog").close();
+  setInfo(response.message);
+  await loadHistory();
 }
 
 function renderOperationIssues(items) {
@@ -1245,6 +1501,46 @@ async function loadIssues() {
   const response = await fetchDeviceJson("/admin/device/issues");
   renderOperationIssues(response.operations || []);
   renderSheetIssues(response.sheet_outbox || []);
+  const syncBody = document.getElementById("device-sync-history");
+  const syncItems = response.recent_outbox || [];
+  syncBody.innerHTML = syncItems.length
+    ? syncItems
+        .map(
+          (item) => `
+            <tr>
+              <td>${escapeHtml(formatDate(item.created_at))}</td>
+              <td>#${escapeHtml(item.unit_id)}</td>
+              <td>${escapeHtml(item.operation_type)}</td>
+              <td><span class="device-badge ${
+                item.status === "completed"
+                  ? "ok"
+                  : item.status === "failed"
+                    ? "error"
+                    : "warn"
+              }">${escapeHtml(item.status)}</span></td>
+              <td>${escapeHtml(item.attempt_count)}/${escapeHtml(item.max_attempts)}</td>
+              <td>${escapeHtml(displayValue(item.last_error))}</td>
+            </tr>
+          `
+        )
+        .join("")
+    : '<tr><td colspan="6" class="device-empty">Brak historii synchronizacji.</td></tr>';
+  const eventBody = document.getElementById("device-event-history");
+  const eventItems = response.recent_events || [];
+  eventBody.innerHTML = eventItems.length
+    ? eventItems
+        .map(
+          (item) => `
+            <tr>
+              <td>${escapeHtml(formatDate(item.created_at))}</td>
+              <td>#${escapeHtml(item.unit_id)}</td>
+              <td>${escapeHtml(item.event_type)}</td>
+              <td><code>${escapeHtml(JSON.stringify(item.payload || {}))}</code></td>
+            </tr>
+          `
+        )
+        .join("")
+    : '<tr><td colspan="4" class="device-empty">Brak historii zmian urządzeń.</td></tr>';
 }
 
 async function loadHome() {
@@ -1276,6 +1572,8 @@ async function loadCurrentView() {
       await loadIntake();
     } else if (deviceState.view === "warehouse") {
       await loadWarehouse();
+    } else if (deviceState.view === "audit") {
+      await loadAuditView();
     } else if (deviceState.view === "history") {
       await loadHistory();
     } else if (deviceState.view === "issues") {
@@ -1372,7 +1670,14 @@ function bindIntakeEvents() {
     const field = event.target.dataset.itemField;
     if (deviceState.intakeItems[index] && field) {
       deviceState.intakeItems[index][field] = event.target.value;
+      row.dataset.intakeSearch = `${
+        deviceState.intakeItems[index].model.marka || ""
+      } ${deviceState.intakeItems[index].model.model || ""} ${
+        deviceState.intakeItems[index].serial || ""
+      } ${deviceState.intakeItems[index].ewidencja || ""}`.toLocaleLowerCase("pl-PL");
       clearInvalidField(event.target);
+      updateIntakeSummary();
+      filterIntakeItems();
     }
   });
   document.getElementById("device-intake-items")?.addEventListener("click", (event) => {
@@ -1383,6 +1688,9 @@ function bindIntakeEvents() {
     deviceState.intakeItems.splice(Number(button.dataset.itemRemove), 1);
     renderIntakeItems();
   });
+  document
+    .getElementById("device-intake-list-search")
+    ?.addEventListener("input", filterIntakeItems);
   document.getElementById("device-exception-enabled")?.addEventListener("change", (event) => {
     document.getElementById("device-exception-reason-wrap").hidden = !event.target.checked;
     clearInvalidField(event.target);
@@ -1458,14 +1766,34 @@ function bindWarehouseEvents() {
     );
     await loadAuditDetail(deviceState.auditRunId);
   });
-  document.getElementById("device-warehouse-body")?.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-device-detail]");
-    if (!button) {
+  const warehouseBody = document.getElementById("device-warehouse-body");
+  warehouseBody?.addEventListener("dblclick", async (event) => {
+    const row = event.target.closest("[data-device-detail-row]");
+    if (!row) {
+      return;
+    }
+    if (event.target.closest("button, a, input, select, textarea")) {
       return;
     }
     try {
       setError("");
-      await openDeviceDetail(button.dataset.deviceDetail);
+      await openDeviceDetail(row.dataset.deviceDetailRow);
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  warehouseBody?.addEventListener("keydown", async (event) => {
+    if (!["Enter", " "].includes(event.key)) {
+      return;
+    }
+    const row = event.target.closest("[data-device-detail-row]");
+    if (!row) {
+      return;
+    }
+    event.preventDefault();
+    try {
+      setError("");
+      await openDeviceDetail(row.dataset.deviceDetailRow);
     } catch (error) {
       setError(error.message);
     }
@@ -1478,6 +1806,19 @@ function bindWarehouseEvents() {
       setError(error.message);
     }
   });
+  document.getElementById("device-counter-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await saveDeviceCounters();
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document
+    .getElementById("device-counter-allow-lower")
+    ?.addEventListener("change", (event) => {
+      document.getElementById("device-counter-reason-wrap").hidden = !event.target.checked;
+    });
   document
     .getElementById("device-reservation-form")
     ?.addEventListener("submit", async (event) => {
@@ -1518,12 +1859,36 @@ function bindIssueEvents() {
   });
 }
 
+function bindHistoryEvents() {
+  document.getElementById("device-history-body")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-withdraw-operation]");
+    if (!button) {
+      return;
+    }
+    try {
+      await openWithdrawalDialog(Number(button.dataset.withdrawOperation));
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document.getElementById("device-withdraw-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await submitWithdrawal();
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+}
+
 async function initializeDevicePage() {
+  initializeDeviceTheme();
   const token = readDeviceToken();
   if (!token) {
     window.location.replace("/");
     return;
   }
+  prepareDeviceLayout();
   activateView();
   try {
     const me = await fetchDeviceJson("/auth/me");
@@ -1531,6 +1896,7 @@ async function initializeDevicePage() {
     if (!sections.has("device")) {
       throw new Error("Konto nie ma prawa „Obsługa urządzeń”.");
     }
+    applyDeviceTheme(me.device_theme || "blue", { persist: true });
     const displayName = [me.first_name, me.last_name].filter(Boolean).join(" ").trim();
     document.getElementById("device-user-chip").textContent =
       displayName || me.email || "Użytkownik";
@@ -1543,7 +1909,25 @@ async function initializeDevicePage() {
 
   bindIntakeEvents();
   bindWarehouseEvents();
+  bindHistoryEvents();
   bindIssueEvents();
+  document
+    .getElementById("device-theme-select")
+    ?.addEventListener("change", async (event) => {
+      const previousTheme = document.body.dataset.deviceTheme || "blue";
+      const selectedTheme = event.target.value;
+      applyDeviceTheme(selectedTheme, { persist: true });
+      try {
+        const response = await fetchDeviceJson("/auth/preferences/device-theme", {
+          method: "PUT",
+          body: { theme: selectedTheme },
+        });
+        applyDeviceTheme(response.theme, { persist: true });
+      } catch (error) {
+        applyDeviceTheme(previousTheme, { persist: true });
+        setError(error.message);
+      }
+    });
   document.getElementById("device-refresh").addEventListener("click", loadCurrentView);
   document.getElementById("device-logout").addEventListener("click", async () => {
     try {

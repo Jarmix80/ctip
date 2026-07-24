@@ -25,6 +25,66 @@ Moduł `/device` prowadzi nowy fizyczny egzemplarz jedną kontrolowaną ścieżk
 - Przed zapisem PZ generatory tabel używanych bezpośrednio i przez triggery są porównywane z maksymalnymi identyfikatorami oraz podnoszone wyłącznie w przypadku wykrycia opóźnienia.
 - Historyczna ścieżka `arkusz → MAGAZYN/MASZYNA` bez PZ jest zablokowana.
 
+## Formularz przyjęcia PZ
+
+Interfejs `/device` korzysta na komputerach ze stałego lewego menu. Strona główna,
+przyjęcie PZ, magazyn, audyt, historia PZ i synchronizacje są osobnymi ekranami, dlatego
+zawartość nie jest układana kolejno na jednej stronie. Na urządzeniach mobilnych menu
+zmienia się w poziomy, przewijany pasek nad właściwym ekranem.
+
+Profil testowy udostępnia pod adresem `/device/style-prototypes` cztery nieaktywne warianty
+tła obszaru roboczego: błękitny, grafitowy, miętowy i piaskowy. Galeria nie ładuje skryptu
+modułu, nie korzysta z API i służy wyłącznie do zatwierdzenia wyglądu przed wdrożeniem.
+Analogiczna trasa `/device/sidebar-prototypes` prezentuje na wybranym błękitnym tle trzy
+warianty lewego menu: granatowy, jasnobłękitny i dwutonowy.
+Trasa `/device/header-prototypes` zawiera trzy nieaktywne warianty górnego panelu dla
+motywu niebieskiego: błękitne szkło, pełny granat i gradient dwutonowy.
+
+Docelowym motywem domyślnym jest błękit operacyjny z granatowym menu. Przełącznik
+`Kolorystyka` w prawym górnym rogu udostępnia również kompletny motyw grafitowy i miętowy.
+Każdy motyw zmienia razem tło robocze, lewe menu, aktywną pozycję, nagłówki oraz
+naprzemienne kolory wierszy. Górny panel korzysta z półprzezroczystego wariantu „szkło”
+dopasowanego do każdej palety. Źródłem prawdy wyboru jest pole `admin_user.device_theme`,
+więc preferencja pozostaje związana z kontem również po zalogowaniu na innym komputerze.
+`localStorage` pod kluczem `ctip-device-theme` służy wyłącznie jako cache ograniczający
+mignięcie domyślnego motywu przed zakończeniem odczytu `/auth/me`.
+Górny panel pokazuje osobną wersję modułu w formacie `/device vX.Y.Z`. Ta sama wersja jest
+częścią adresu zasobów CSS i JavaScript, co ułatwia potwierdzenie aktualności widoku po
+wdrożeniu i wymusza pobranie nowych plików przez przeglądarkę.
+
+W profilu testowym pod adresem `/device/intake/prototypes` dostępne są trzy makiety
+planowanej przebudowy formularza PZ:
+
+1. kreator z trzema krokami;
+2. jeden uporządkowany formularz;
+3. widok dzielony do pracy seryjnej.
+
+Makiety korzystają wyłącznie ze statycznych danych prezentacyjnych. Nie zawierają skryptów
+aplikacyjnych, nie wywołują API i nie wykonują zapisów do PostgreSQL, Firebird ani Google
+Sheets. Trasa zwraca `404 Not Found` w profilu produkcyjnym.
+
+Docelowy `/device/intake` korzysta z wariantu drugiego: jednego uporządkowanego formularza
+z numerowanymi sekcjami dokumentu, urządzeń i listy egzemplarzy. Z wariantu trzeciego
+zachowano wyróżnioną akcję `+ Dodaj urządzenie` oraz wyszukiwanie po modelu, serialu i
+numerze KP w bieżącej liście. Przyklejone podsumowanie pokazuje liczbę urządzeń, kompletność
+danych oraz wartości netto, VAT i brutto. Podsumowanie jest obliczane lokalnie i nie zmienia
+zasad walidacji ani formatu żądania do istniejącego endpointu przyjęcia PZ.
+
+Każdy egzemplarz może opcjonalnie otrzymać liczniki B/W, kolor i skan. Wartości są
+nieujemnymi liczbami całkowitymi. Zapis aktualizuje odpowiednio `MASZYNA.LICZNIK`,
+`LICZNIKA3`, `LICZNIK_TOTAL` i `SKAN_MONO`, tworzy historyczny odczyt CTIP oraz przekazuje
+dane do kolejki synchronizacji arkusza. Brak liczników nie blokuje utworzenia PZ.
+
+W szczegółach pozycji magazynowej operator może dodać datowany odczyt liczników. Odczyt
+starszy od najnowszego jest zapisywany wyłącznie w historii CTIP i nie zmienia Firebird ani
+arkusza. Obniżenie bieżącego licznika wymaga jawnego zaznaczenia wyjątku i uzasadnienia
+mającego co najmniej 10 znaków. Każda aktualizacja tworzy zdarzenie audytowe, a publikacja
+do arkusza korzysta z osobnej operacji outbox `update_counters`.
+
+Tworzenie kartoteki nowego modelu nie znajduje się w głównym formularzu PZ. Formularz
+`Dodaj nowy model urządzenia` jest dostępny w obszarze audytu pod tabelą magazynu. Po jego
+zapisaniu model jest dostępny na liście wyboru przy kolejnym przyjęciu.
+
 ## Dane historyczne
 
 Określenie „tylko audytowane” oznacza, że istniejące rekordy są wyświetlane i mogą zostać
@@ -46,6 +106,12 @@ historycznych bez tego identyfikatora widok wykonuje bezpieczny fallback w pami�
 jednoznacznym numerze seryjnym, a następnie po jednoznacznej ewidencji. Duplikaty nie są
 automatycznie łączone i nie powodują dodatkowych odczytów Google Sheets.
 
+Szeroka tabela magazynu przewija się poziomo wyłącznie wewnątrz swojej karty i nie poszerza
+obszaru całego modułu. Wiersze mają naprzemienne odcienie właściwe dla wybranego motywu.
+Dwukrotne kliknięcie dowolnego pustego miejsca wiersza albo użycie klawisza `Enter` lub
+spacji otwiera szczegóły urządzenia. Tabela nie ma osobnej kolumny ani przycisku
+`Szczegóły`, dzięki czemu część źródłowa mieści się w obszarze roboczym.
+
 ## Rezerwacje
 
 - Aktywna rezerwacja FLOW blokuje ręczną zmianę rezerwacji egzemplarza.
@@ -54,6 +120,22 @@ automatycznie łączone i nie powodują dodatkowych odczytów Google Sheets.
 - Po terminie worker zwalnia rezerwację i zapisuje zdarzenie `reservation_expired`.
 - Arkusz zachowuje kolumnę `STATUS` dla procesu zerówki. Rezerwacje są zapisywane osobno w
   `STATUS REZERWACJI`, `REZERWACJA DO` i `REZERWACJA GRENKE`.
+
+## Wycofanie dokumentu PZ
+
+Historia PZ udostępnia osobną kolumnę `Usuń` tylko administratorowi oraz użytkownikom z
+uprawnieniem `can_withdraw_device_pz`. Operacja zawsze rozpoczyna się od podglądu skutków:
+pozycji PZ, kartotek `MAGAZYN`, kartotek `MASZYNA`, wierszy arkusza, różnic względem zapisu
+początkowego i późniejszych powiązań.
+
+Zwykły operator może wycofać wyłącznie niezmieniony i nieużywany dokument. Administrator
+może wymusić odłączenie wykrytych powiązań, ale tylko gdy CTIP ma pełny zapis początkowy.
+Przed wykonaniem użytkownik podaje uzasadnienie mające co najmniej 10 znaków i przepisuje
+pełny numer PZ. Stan jest ponownie sprawdzany w tej samej transakcji Firebird. Przed
+usunięciem `MASZYNA` wszystkie wykryte odwołania, w tym `ZLECENIE.ID_MASZYNA`, są odłączane,
+co zapobiega uruchomieniu kasującego triggera dla zleceń. CTIP zachowuje operację oraz
+urządzenia ze statusem `withdrawn`, a usunięcie wierszy arkusza wykonuje idempotentny outbox
+`delete_device`.
 
 ## Google Sheets
 
@@ -86,6 +168,12 @@ starszy niepełny zapis. Utworzenie modelu, dostawcy i PZ dodatkowo wymaga aktyw
 konta CTIP do użytkownika Menadżera Serwisu.
 
 ## Kontrola spójności magazynu
+
+Audyt ma osobną trasę `/device/audit`. Formularz nowego modelu oraz pełny audyt są
+przenoszone do tej sekcji podczas inicjalizacji widoku i nie obciążają zwykłego ekranu
+magazynu. Sekcja `/device/issues` pełni rolę historii synchronizacji i problemów kolejki.
+Pokazuje błędy wymagające ponowienia, 300 ostatnich zadań outbox wraz ze stanem i liczbą
+prób oraz 300 ostatnich zdarzeń urządzeń, w tym odczyty liczników i wycofania PZ.
 
 Tabela magazynu pokazuje szybką kolumnę `Arkusz/Magazyn/Urządzenie/CTIP`. Każde źródło
 otrzymuje znacznik `OK` albo `BD`:

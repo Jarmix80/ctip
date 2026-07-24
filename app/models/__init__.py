@@ -7,6 +7,7 @@ from .admin import (  # noqa: F401
     AdminUser,
     DeviceAuditItem,
     DeviceAuditRun,
+    DeviceCounterReading,
     DeviceIntakeOperation,
     DeviceInventoryEvent,
     DeviceInventoryUnit,

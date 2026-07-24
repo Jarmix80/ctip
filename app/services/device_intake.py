@@ -67,6 +67,9 @@ class DeviceIntakeResult:
     machine_id: int | None = None
     machine_table_id: int | None = None
     purchase_price_netto: Decimal | None = None
+    counter_bw: int | None = None
+    counter_color: int | None = None
+    counter_scan: int | None = None
 
 
 @dataclass(slots=True)
@@ -75,6 +78,9 @@ class DeviceIntakeItemInput:
     serial: str
     ewidencja: str | None = None
     purchase_price_netto: Decimal | None = None
+    counter_bw: int | None = None
+    counter_color: int | None = None
+    counter_scan: int | None = None
 
 
 @dataclass(slots=True)
@@ -1301,6 +1307,9 @@ def _insert_machine_row(
     issued_by_value: str,
     pz_number: str,
     kto: str,
+    counter_bw: int | None,
+    counter_color: int | None,
+    counter_scan: int | None,
 ) -> tuple[int, int]:
     marka = _text(model_details.get("marka"), 50)
     model_name = _text(model_details.get("model"), 50)
@@ -1331,9 +1340,13 @@ def _insert_machine_row(
             AKTYWNA,
             KOLOROWA,
             SYNWP,
-            V_2010A
+            V_2010A,
+            LICZNIK,
+            LICZNIKA3,
+            LICZNIK_TOTAL,
+            SKAN_MONO
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING ID_MASZYNA, ID_MASZYNA_TABLE
         """,
         (
@@ -1357,6 +1370,14 @@ def _insert_machine_row(
             kolorowa,
             1,
             "TAK",
+            counter_bw,
+            counter_color,
+            (
+                counter_bw + counter_color
+                if counter_bw is not None and counter_color is not None
+                else counter_bw
+            ),
+            counter_scan,
         ),
     )
     row = cursor.fetchone()
@@ -1390,6 +1411,9 @@ def _prepare_batch_items(items: list[DeviceIntakeItemInput]) -> list[dict[str, A
                 "ewidencja": ewidencja_value,
                 "ewidencja_key": ewidencja_key,
                 "purchase_price_netto": price_netto_value,
+                "counter_bw": item.counter_bw,
+                "counter_color": item.counter_color,
+                "counter_scan": item.counter_scan,
             }
         )
     return prepared
@@ -1784,6 +1808,9 @@ def create_device_intake_batch(
                 issued_by_value=issued_by_value,
                 pz_number=pz_number,
                 kto=kto,
+                counter_bw=item["counter_bw"],
+                counter_color=item["counter_color"],
+                counter_scan=item["counter_scan"],
             )
 
             created_items.append(
@@ -1803,6 +1830,9 @@ def create_device_intake_batch(
                     machine_id=machine_id,
                     machine_table_id=machine_table_id,
                     purchase_price_netto=_money(item["purchase_price_netto"]),
+                    counter_bw=item["counter_bw"],
+                    counter_color=item["counter_color"],
+                    counter_scan=item["counter_scan"],
                 )
             )
 
@@ -1883,6 +1913,62 @@ def create_device_intake(
     return batch_result.items[0]
 
 
+def update_device_machine_counters(
+    *,
+    machine_table_id: int,
+    counter_bw: int | None,
+    counter_color: int | None,
+    counter_scan: int | None,
+) -> dict[str, int | None]:
+    """Aktualizuje bieżące liczniki kartoteki MASZYNA i zwraca zapisany stan."""
+    if not any(value is not None for value in (counter_bw, counter_color, counter_scan)):
+        raise ValueError("Podaj co najmniej jeden licznik.")
+    connection = _firebird_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE MASZYNA
+            SET
+                LICZNIK = COALESCE(?, LICZNIK),
+                LICZNIKA3 = COALESCE(?, LICZNIKA3),
+                LICZNIK_TOTAL = CASE
+                    WHEN COALESCE(?, LICZNIK) IS NOT NULL
+                    THEN COALESCE(?, LICZNIK) + COALESCE(?, LICZNIKA3, 0)
+                    ELSE LICZNIK_TOTAL
+                END,
+                SKAN_MONO = COALESCE(?, SKAN_MONO)
+            WHERE ID_MASZYNA_TABLE = ?
+            RETURNING LICZNIK, LICZNIKA3, LICZNIK_TOTAL, SKAN_MONO
+            """,
+            (
+                counter_bw,
+                counter_color,
+                counter_bw,
+                counter_bw,
+                counter_color,
+                counter_scan,
+                int(machine_table_id),
+            ),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("Nie znaleziono kartoteki MASZYNA dla urządzenia.")
+        connection.commit()
+        return {
+            "counter_bw": row[0],
+            "counter_color": row[1],
+            "counter_total": row[2],
+            "counter_scan": row[3],
+        }
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+
 __all__ = [
     "DeviceCatalogSyncResult",
     "DeviceIntakeBatchResult",
@@ -1897,4 +1983,5 @@ __all__ = [
     "search_device_models",
     "search_device_suppliers",
     "sync_device_catalog_from_models",
+    "update_device_machine_counters",
 ]

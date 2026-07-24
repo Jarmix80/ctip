@@ -10,6 +10,7 @@ from app.services.device_intake import (
     _resolve_next_model_id_from_values,
     _supplier_id_from_search_query,
     search_device_suppliers,
+    update_device_machine_counters,
 )
 
 
@@ -177,3 +178,52 @@ def test_search_device_suppliers_rozpoznaje_etykiete_datalist(monkeypatch) -> No
     sql, params = cursor.calls[1]
     assert "WHERE ID_KLIENT = ?" in sql
     assert params == (1571,)
+
+
+def test_update_counters_przelicza_total_z_biezacymi_polami(monkeypatch) -> None:
+    class CounterCursor:
+        def __init__(self) -> None:
+            self.sql = ""
+            self.params = ()
+
+        def execute(self, sql, params) -> None:
+            self.sql = sql
+            self.params = params
+
+        def fetchone(self):
+            return (100, 20, 120, 5)
+
+        def close(self) -> None:
+            return None
+
+    class CounterConnection:
+        def __init__(self) -> None:
+            self.cursor_value = CounterCursor()
+            self.committed = False
+
+        def cursor(self):
+            return self.cursor_value
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    connection = CounterConnection()
+    monkeypatch.setattr("app.services.device_intake._firebird_connection", lambda: connection)
+
+    result = update_device_machine_counters(
+        machine_table_id=401,
+        counter_bw=None,
+        counter_color=20,
+        counter_scan=None,
+    )
+
+    assert "COALESCE(?, LICZNIK) + COALESCE(?, LICZNIKA3, 0)" in connection.cursor_value.sql
+    assert connection.cursor_value.params == (None, 20, None, None, 20, None, 401)
+    assert result["counter_total"] == 120
+    assert connection.committed is True
