@@ -1,59 +1,207 @@
+"""Testy synchronizacji magazynu urządzeń z arkuszem Google."""
+
+from __future__ import annotations
+
 import asyncio
-from types import SimpleNamespace
+import re
+from contextlib import ExitStack, contextmanager
 from unittest.mock import patch
+
+import pytest
 
 from app.services import workflow_sheet_sync
 
 
-def test_build_header_index_prefers_status_rezerwacji_over_generic_status():
-    headers = [
-        "PRODUCENT",
-        "STATUS",
-        "STATUS REZERWACJI",
-        "REZERWACJA GRENKE",
-    ]
+class FakeWorkbook:
+    """Minimalny skoroszyt gspread używany bez połączenia sieciowego."""
 
-    header_index = workflow_sheet_sync._build_header_index(headers)
+    def __init__(self, worksheet, *, title: str = "Zerowki_test") -> None:
+        self.title = title
+        self.worksheet = worksheet
+        self.requests: list[dict] = []
+        worksheet.spreadsheet = self
 
-    assert header_index["status"] == 2
+    def batch_update(self, body: dict) -> None:
+        self.requests.append(body)
+
+    def worksheets(self) -> list:
+        return [self.worksheet]
 
 
-def test_default_release_status_value_returns_brak_rezerwacji_for_reservation_column():
-    headers = [
-        "PRODUCENT",
-        "STATUS",
-        "STATUS REZERWACJI",
-    ]
-    header_index = workflow_sheet_sync._build_header_index(headers)
+class FakeWorksheet:
+    """Przechowuje komórki w pamięci i odwzorowuje potrzebne metody gspread."""
 
-    release_status = workflow_sheet_sync._default_release_status_value(
-        headers,
-        header_index,
-        "DOSTEPNE",
+    def __init__(
+        self,
+        values: list[list[str]] | None = None,
+        *,
+        title: str = "Urzadzenia_magazyn",
+    ) -> None:
+        self.title = title
+        self.id = 12
+        self.values = [list(row) for row in (values or [])]
+        self.spreadsheet = None
+        self.append_calls = 0
+        self.updated_ranges: list[str] = []
+
+    def get_all_values(self) -> list[list[str]]:
+        return [list(row) for row in self.values]
+
+    def append_row(self, row_values: list[str], value_input_option: str | None = None) -> None:
+        del value_input_option
+        self.append_calls += 1
+        self.values.append(list(row_values))
+
+    def insert_row(
+        self,
+        row_values: list[str],
+        *,
+        index: int,
+        value_input_option: str | None = None,
+    ) -> None:
+        del value_input_option
+        self.values.insert(index - 1, list(row_values))
+
+    def delete_rows(self, index: int) -> None:
+        del self.values[index - 1]
+
+    def batch_update(
+        self,
+        updates: list[dict],
+        value_input_option: str | None = None,
+    ) -> None:
+        del value_input_option
+        for update in updates:
+            self.update(
+                range_name=update["range"],
+                values=update["values"],
+                value_input_option="USER_ENTERED",
+            )
+
+    def update(
+        self,
+        *,
+        range_name: str,
+        values: list[list[str]],
+        value_input_option: str | None = None,
+    ) -> None:
+        del value_input_option
+        self.updated_ranges.append(range_name)
+        match = re.fullmatch(r"([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?", range_name)
+        assert match is not None
+        start_column, start_row, end_column, end_row = match.groups()
+        start_row_index = int(start_row) - 1
+        end_row_index = int(end_row or start_row) - 1
+        start_column_index = _column_number(start_column) - 1
+        source_row = list(values[0])
+        end_column_index = (
+            _column_number(end_column) - 1
+            if end_column
+            else start_column_index + max(0, len(source_row) - 1)
+        )
+        assert start_row_index == end_row_index
+        while len(self.values) <= start_row_index:
+            self.values.append([])
+        row = self.values[start_row_index]
+        while len(row) <= end_column_index:
+            row.append("")
+        for offset, column_index in enumerate(range(start_column_index, end_column_index + 1)):
+            row[column_index] = source_row[offset] if offset < len(source_row) else ""
+
+
+def _column_number(value: str) -> int:
+    number = 0
+    for char in value:
+        number = number * 26 + ord(char) - 64
+    return number
+
+
+def _headers() -> list[str]:
+    return list(workflow_sheet_sync._WORKFLOW_BOOTSTRAP_HEADER_LAYOUT)
+
+
+def _configured_runtime() -> workflow_sheet_sync.WorkflowSheetRuntimeConfig:
+    return workflow_sheet_sync.WorkflowSheetRuntimeConfig(
+        enabled=True,
+        credentials_path="/srv/google/test.json",
+        spreadsheet_id="spreadsheet-test",
+        workflow_devices_worksheet="Urzadzenia_magazyn",
+        source="test",
     )
 
-    assert release_status == "brak rezerwacji"
 
-
-def test_default_release_status_value_keeps_fallback_for_generic_status_column():
-    headers = [
-        "PRODUCENT",
-        "STATUS",
-        "REZERWACJA GRENKE",
-    ]
-    header_index = workflow_sheet_sync._build_header_index(headers)
-
-    release_status = workflow_sheet_sync._default_release_status_value(
-        headers,
-        header_index,
-        "DOSTEPNE",
+def _sheet_patches(workbook: FakeWorkbook, worksheet: FakeWorksheet):
+    return (
+        patch.object(
+            workflow_sheet_sync,
+            "_open_workbook",
+            return_value=(workbook, "bot@example.com"),
+        ),
+        patch.object(
+            workflow_sheet_sync,
+            "_resolve_devices_worksheet",
+            return_value=worksheet,
+        ),
+        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_sheets_test_spreadsheet_id",
+            "spreadsheet-test",
+        ),
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_sheets_test_spreadsheet_title",
+            "Zerowki_test",
+        ),
+        patch.object(workflow_sheet_sync.settings, "ctip_runtime_profile", "test"),
     )
 
-    assert release_status == "DOSTEPNE"
+
+@contextmanager
+def _sheet_context(workbook: FakeWorkbook, worksheet: FakeWorksheet):
+    """Aktywuje komplet zabezpieczonych mocków skoroszytu testowego."""
+    with ExitStack() as stack:
+        for patcher in _sheet_patches(workbook, worksheet):
+            stack.enter_context(patcher)
+        yield
 
 
-def test_load_workflow_sheet_runtime_config_uses_env_fallback():
-    fake_session = object()
+def _device_row() -> list[str]:
+    return [
+        "Ricoh",
+        "MP 401",
+        "T605H900327",
+        "KP/4066",
+        "01. Przed zerówką",
+        "1234",
+        "5678",
+        "1500,00",
+        "Ważna uwaga techniczna",
+        "brak rezerwacji",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "12922",
+        "7634",
+        "TEST",
+    ]
+
+
+def test_build_header_index_separates_zeroing_and_reservation_status() -> None:
+    header_index = workflow_sheet_sync._build_header_index(
+        ["PRODUCENT", "STATUS", "STATUS REZERWACJI"]
+    )
+
+    assert header_index["status"] == 1
+    assert header_index["reservation_status"] == 2
+
+
+def test_load_workflow_sheet_runtime_config_uses_env_fallback() -> None:
     with (
         patch.object(workflow_sheet_sync.settings, "google_sheets_enabled", True),
         patch.object(
@@ -64,15 +212,15 @@ def test_load_workflow_sheet_runtime_config_uses_env_fallback():
         patch.object(
             workflow_sheet_sync.settings,
             "google_sheets_spreadsheet_id",
-            "spreadsheet-test",
+            "https://docs.google.com/spreadsheets/d/spreadsheet-test/edit",
         ),
         patch.object(
             workflow_sheet_sync.settings,
             "google_sheets_workflow_devices_sheet",
-            "Urzadzenia_magazyn",
+            "   ",
         ),
     ):
-        config = asyncio.run(workflow_sheet_sync.load_workflow_sheet_runtime_config(fake_session))
+        config = asyncio.run(workflow_sheet_sync.load_workflow_sheet_runtime_config(object()))
 
     assert config.source == "env"
     assert config.enabled is True
@@ -81,363 +229,50 @@ def test_load_workflow_sheet_runtime_config_uses_env_fallback():
     assert config.workflow_devices_worksheet == "Urzadzenia_magazyn"
 
 
-def test_load_workflow_sheet_runtime_config_normalizes_url_and_blank_worksheet_from_env():
-    fake_session = object()
-    with (
-        patch.object(workflow_sheet_sync.settings, "google_sheets_enabled", True),
-        patch.object(
-            workflow_sheet_sync.settings,
-            "google_application_credentials",
-            "/srv/google/env.json",
-        ),
-        patch.object(
-            workflow_sheet_sync.settings,
-            "google_sheets_spreadsheet_id",
-            "https://docs.google.com/spreadsheets/d/sheet-admin/edit#gid=0",
-        ),
-        patch.object(
-            workflow_sheet_sync.settings,
-            "google_sheets_workflow_devices_sheet",
-            "   ",
-        ),
-    ):
-        config = asyncio.run(workflow_sheet_sync.load_workflow_sheet_runtime_config(fake_session))
+def test_workflow_sheet_connection_reports_new_missing_headers() -> None:
+    worksheet = FakeWorksheet([["PRODUCENT", "MODEL", "INDEKS", "SERIAL", "STATUS"]])
+    workbook = FakeWorkbook(worksheet)
+    open_patch, resolve_patch, path_patch, *_ = _sheet_patches(workbook, worksheet)
 
-    assert config.spreadsheet_id == "sheet-admin"
-    assert config.workflow_devices_worksheet == "Urzadzenia_magazyn"
-
-
-def test_workflow_sheet_sync_configured_returns_disabled_reason_for_env_switch():
-    config = workflow_sheet_sync.WorkflowSheetRuntimeConfig(
-        enabled=False,
-        credentials_path="/srv/google/admin.json",
-        spreadsheet_id="sheet-admin",
-        workflow_devices_worksheet="Urzadzenia_magazyn",
-        source="env",
-    )
-
-    enabled, reason = workflow_sheet_sync.workflow_sheet_sync_configured(config)
-
-    assert enabled is False
-    assert reason == "Synchronizacja arkusza jest wyłączona w konfiguracji środowiskowej."
-
-
-def test_test_workflow_sheet_connection_reports_missing_headers():
-    config = workflow_sheet_sync.WorkflowSheetRuntimeConfig(
-        enabled=True,
-        credentials_path="/srv/google/admin.json",
-        spreadsheet_id="sheet-admin",
-        workflow_devices_worksheet="Urzadzenia_magazyn",
-        source="admin",
-    )
-    worksheet = SimpleNamespace(
-        title="Urzadzenia_magazyn",
-        get_all_values=lambda: [["PRODUCENT", "MODEL", "INDEKS"]],
-    )
-    workbook = SimpleNamespace(title="zerowki_testowy")
-
-    with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
-    ):
-        result = workflow_sheet_sync.test_workflow_sheet_connection(config)
+    with open_patch, resolve_patch, path_patch:
+        result = workflow_sheet_sync.test_workflow_sheet_connection(_configured_runtime())
 
     assert result["success"] is False
-    assert result["spreadsheet_title"] == "zerowki_testowy"
-    assert result["worksheet_title"] == "Urzadzenia_magazyn"
-    assert "SERIAL" in result["missing_headers"]
+    assert "CENA" in result["missing_headers"]
+    assert "STATUS REZERWACJI" in result["missing_headers"]
+    assert "REZERWACJA DO" in result["missing_headers"]
+    assert "CTIP_ENV" in result["missing_headers"]
 
 
-def test_normalize_workflow_sheet_spreadsheet_id_accepts_full_url():
-    raw_value = (
-        "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890/edit#gid=0"
-    )
-
-    normalized = workflow_sheet_sync.normalize_workflow_sheet_spreadsheet_id(raw_value)
-
-    assert normalized == "1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890"
-
-
-def test_bootstrap_workflow_sheet_headers_inserts_header_row_and_repairs_mixed_first_row():
-    class FakeWorksheet:
-        title = "Urzadzenia_magazyn"
-
-        def __init__(self):
-            self.values = [
-                [
-                    "Ricoh",
-                    "IM C3500",
-                    "12345",
-                    "KP/5001",
-                    "01. Przed zerowka",
-                    "",
-                    "",
-                    "",
-                    "1900",
-                    "01.Magazyn KP",
-                    "brak rezerwacji",
-                    "",
-                    "",
-                    "PRODUCENT",
-                    "MODEL",
-                    "INDEKS",
-                    "SERIAL",
-                    "STATUS",
-                    "MS_ID_MAGAZYN_TABLE",
-                    "MS_ID_MASZYNA",
-                    "REZERWACJA GRENKE",
-                    "FAKTURA PROFORMA GRENKE",
-                ],
-                ["Ricoh", "IM C3500", "23456", "KP/5002", "01. Przed zerowka"],
-            ]
-
-        def get_all_values(self):
-            return [list(row) for row in self.values]
-
-        def insert_row(self, values, index, value_input_option):
-            assert index == 1
-            assert value_input_option == "USER_ENTERED"
-            self.values.insert(0, list(values))
-
-        def update(self, range_name, values, value_input_option):
-            assert value_input_option == "USER_ENTERED"
-            if range_name == "A1":
-                self.values[0] = list(values[0])
-                return
-            assert range_name == "A2:V2"
-            self.values[1] = list(values[0])
-
+def test_bootstrap_workflow_sheet_headers_creates_canonical_layout() -> None:
     worksheet = FakeWorksheet()
-    workbook = SimpleNamespace(title="zerowki_testowy")
-    config = workflow_sheet_sync.WorkflowSheetRuntimeConfig(
-        enabled=True,
-        credentials_path="/srv/google/admin.json",
-        spreadsheet_id="sheet-admin",
-        workflow_devices_worksheet="Urzadzenia_magazyn",
-        source="admin",
-    )
+    workbook = FakeWorkbook(worksheet)
+    patches = _sheet_patches(workbook, worksheet)
 
     with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
+        patches[0],
+        patches[1],
+        patches[2],
         patch.object(workflow_sheet_sync, "_hide_helper_column", return_value=None),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
     ):
-        result = workflow_sheet_sync.bootstrap_workflow_sheet_headers(config)
+        result = workflow_sheet_sync.bootstrap_workflow_sheet_headers(_configured_runtime())
 
     assert result["success"] is True
-    assert result["spreadsheet_title"] == "zerowki_testowy"
-    assert result["worksheet_title"] == "Urzadzenia_magazyn"
-    assert result["existing_headers"] == []
-    assert "Osoba obsługująca" in result["added_headers"]
-    assert worksheet.values[0][:18] == [
-        "PRODUCENT",
-        "MODEL",
-        "SERIAL",
-        "EWIDENCJA",
-        "STATUS",
-        "LICZNIK B/W",
-        "LICZNIK KOLOR",
-        "CENA",
-        "UWAGI",
-        "REZERWACJA GRENKE",
-        "Osoba obsługująca",
-        "FORMULARZ CTIP",
-        "FAKTURA PROFORMA GRENKE",
-        "CTIP_FORM_ID",
-        "CTIP_WORKFLOW_CASE_ID",
-        "STATUS HANDLOWY (LEGACY)",
-        "MS_ID_MAGAZYN_TABLE",
-        "MS_ID_MASZYNA",
-    ]
-    assert worksheet.values[0][18:] == [""] * 4
-    assert worksheet.values[1][:11] == [
-        "Ricoh",
-        "IM C3500",
-        "12345",
-        "KP/5001",
-        "01. Przed zerowka",
-        "",
-        "",
-        "",
-        "1900",
-        "01.Magazyn KP",
-        "brak rezerwacji",
-    ]
-    assert len(worksheet.values[1]) == 22
-    assert worksheet.values[1][11:] == [""] * 11
+    assert worksheet.values[0] == _headers()
+    assert "STATUS REZERWACJI" in result["added_headers"]
+    assert "CTIP_ENV" in result["added_headers"]
 
 
-def test_bootstrap_workflow_sheet_headers_removes_duplicate_header_row():
-    class FakeWorksheet:
-        title = "Urzadzenia_magazyn"
-
-        def __init__(self):
-            self.values = [
-                [
-                    "PRODUCENT",
-                    "MODEL",
-                    "SERIAL",
-                    "EWIDENCJA",
-                    "STATUS",
-                    "LICZNIK B/W",
-                    "LICZNIK KOLOR",
-                    "CENA",
-                    "UWAGI",
-                    "REZERWACJA GRENKE",
-                    "Osoba obsługująca",
-                    "FORMULARZ CTIP",
-                    "FAKTURA PROFORMA GRENKE",
-                    "CTIP_FORM_ID",
-                    "CTIP_WORKFLOW_CASE_ID",
-                    "STATUS HANDLOWY (LEGACY)",
-                    "MS_ID_MAGAZYN_TABLE",
-                    "MS_ID_MASZYNA",
-                ],
-                [
-                    "PRODUCENT",
-                    "MODEL",
-                    "SERIAL",
-                    "EWIDENCJA",
-                    "STATUS",
-                    "LICZNIK B/W",
-                    "LICZNIK KOLOR",
-                    "CENA",
-                    "UWAGI",
-                    "REZERWACJA GRENKE",
-                    "Osoba obsługująca",
-                ],
-                ["Ricoh", "IM C3500", "23456", "KP/5002", "01. Przed zerowka"],
-            ]
-
-        def get_all_values(self):
-            return [list(row) for row in self.values]
-
-        def delete_rows(self, index):
-            assert index == 2
-            del self.values[index - 1]
-
-    worksheet = FakeWorksheet()
-    workbook = SimpleNamespace(title="zerowki_testowy")
-    config = workflow_sheet_sync.WorkflowSheetRuntimeConfig(
-        enabled=True,
-        credentials_path="/srv/google/admin.json",
-        spreadsheet_id="sheet-admin",
-        workflow_devices_worksheet="Urzadzenia_magazyn",
-        source="admin",
-    )
+def test_sync_workflow_updates_only_reservation_and_flow_columns() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet)
+    patches = _sheet_patches(workbook, worksheet)
 
     with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
-        patch.object(workflow_sheet_sync, "_hide_helper_column", return_value=None),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
-    ):
-        result = workflow_sheet_sync.bootstrap_workflow_sheet_headers(config)
-
-    assert result["success"] is True
-    assert result["added_headers"] == []
-    assert len(worksheet.values) == 2
-    assert worksheet.values[1][:5] == ["Ricoh", "IM C3500", "23456", "KP/5002", "01. Przed zerowka"]
-
-
-def test_sync_workflow_devices_to_sheet_updates_expected_business_columns():
-    workbook_requests = []
-    worksheet = SimpleNamespace(
-        title="Urzadzenia_magazyn",
-        id=12,
-        values=[
-            [
-                "PRODUCENT",
-                "MODEL",
-                "SERIAL",
-                "EWIDENCJA",
-                "STATUS",
-                "LICZNIK B/W",
-                "LICZNIK KOLOR",
-                "CENA",
-                "UWAGI",
-                "REZERWACJA GRENKE",
-                "Osoba obsługująca",
-                "FORMULARZ CTIP",
-                "FAKTURA PROFORMA GRENKE",
-                "CTIP_FORM_ID",
-                "CTIP_WORKFLOW_CASE_ID",
-                "STATUS HANDLOWY (LEGACY)",
-                "MS_ID_MAGAZYN_TABLE",
-                "MS_ID_MASZYNA",
-            ],
-            [
-                "Ricoh",
-                "MP 401",
-                "T605H900327",
-                "KP/4066",
-                "01. Przed zerówką",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "12922",
-                "",
-            ],
-        ],
-    )
-    worksheet.get_all_values = lambda: [list(row) for row in worksheet.values]
-    worksheet.batch_update = lambda updates, value_input_option=None: _apply_batch_update(
-        worksheet, updates
-    )
-    worksheet.append_row = lambda row_values, value_input_option=None: worksheet.values.append(
-        list(row_values)
-    )
-    workbook = SimpleNamespace(
-        title="zerowki_testowy",
-        batch_update=lambda body: workbook_requests.append(body),
-    )
-
-    with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        patches[0],
+        patches[1],
+        patches[2],
     ):
         result = workflow_sheet_sync.sync_workflow_devices_to_sheet(
             devices=[
@@ -446,381 +281,353 @@ def test_sync_workflow_devices_to_sheet_updates_expected_business_columns():
                     "row": 12922,
                     "index": "KP/4066",
                     "ewidencja": "KP/4066",
+                    "serial": "T605H900327",
                     "producer": "Ricoh",
                     "model": "MP 401",
+                    "ms_id_maszyna": 7634,
                 }
             ],
-            assignee_label="Marcin Jarmuszkiewicz (marcin@ksero-partner.com.pl)",
+            assignee_label="Marcin Jarmuszkiewicz (marcin@example.com)",
+            reservation_client_name="Klient Testowy",
             proforma_number="",
             form_request_id=23,
             workflow_case_id=8,
             business_status_label="Robocza",
         )
 
-    assert result["enabled"] is True
-    assert result["rows"][0]["sheet_row"] == 2
-    assert result["rows"][0]["previous_status"] == ""
-    assert worksheet.values[1][4] == "01. Przed zerówką"
-    assert worksheet.values[1][8] == "Rezerwacja zalozona automatycznie przez CTIP."
-    assert worksheet.values[1][9] == "Marcin Jarmuszkiewicz"
-    assert worksheet.values[1][11] == "23"
-    assert worksheet.values[1][12] == ""
-    assert worksheet.values[1][13] == "23"
-    assert worksheet.values[1][14] == "8"
-    assert worksheet.values[1][15] == "Robocza"
-    assert any(
-        request.get("repeatCell", {}).get("range", {}).get("startRowIndex") == 1
-        and request.get("repeatCell", {}).get("range", {}).get("endRowIndex") == 2
-        and request.get("repeatCell", {})
-        .get("cell", {})
-        .get("userEnteredFormat", {})
-        .get("backgroundColor")
-        == workflow_sheet_sync.WORKFLOW_RESERVED_ROW_COLOR
-        for body in workbook_requests
-        for request in body.get("requests", [])
+    header_index = workflow_sheet_sync._build_header_index(worksheet.values[0])
+    row = worksheet.values[1]
+    assert result["rows"][0]["previous_status"] == "brak rezerwacji"
+    assert row[header_index["status"]] == "01. Przed zerówką"
+    assert row[header_index["notes"]] == "Ważna uwaga techniczna"
+    assert (
+        row[header_index["reservation_status"]] == workflow_sheet_sync.WORKFLOW_RESERVATION_STATUS
     )
+    assert row[header_index["reservation_grenke"]] == ("Marcin Jarmuszkiewicz\nKlient Testowy")
+    assert row[header_index["form_ctip"]] == "23"
+    assert row[header_index["ctip_form_id"]] == "23"
+    assert row[header_index["ctip_workflow_case_id"]] == "8"
+    assert row[header_index["ctip_env"]] == "TEST"
 
 
-def test_release_workflow_devices_from_sheet_restores_previous_status_and_clears_helper_columns():
-    workbook_requests = []
-    worksheet = SimpleNamespace(
-        title="Urzadzenia_magazyn",
-        id=12,
-        values=[
-            [
-                "PRODUCENT",
-                "MODEL",
-                "SERIAL",
-                "EWIDENCJA",
-                "STATUS",
-                "LICZNIK B/W",
-                "LICZNIK KOLOR",
-                "CENA",
-                "UWAGI",
-                "REZERWACJA GRENKE",
-                "Osoba obsługująca",
-                "FORMULARZ CTIP",
-                "FAKTURA PROFORMA GRENKE",
-                "CTIP_FORM_ID",
-                "CTIP_WORKFLOW_CASE_ID",
-                "STATUS HANDLOWY (LEGACY)",
-                "MS_ID_MAGAZYN_TABLE",
-                "MS_ID_MASZYNA",
-            ],
-            [
-                "Ricoh",
-                "MP 401",
-                "T605H900327",
-                "KP/4066",
-                "01. Przed zerówką",
-                "",
-                "",
-                "",
-                "Rezerwacja zalozona automatycznie przez CTIP.",
-                "Marcin Jarmuszkiewicz",
-                "",
-                "23",
-                "",
-                "23",
-                "8",
-                "Robocza",
-                "12922",
-                "",
-            ],
-        ],
-    )
-    worksheet.get_all_values = lambda: [list(row) for row in worksheet.values]
-    worksheet.batch_update = lambda updates, value_input_option=None: _apply_batch_update(
-        worksheet, updates
-    )
-    workbook = SimpleNamespace(
-        title="zerowki_testowy",
-        batch_update=lambda body: workbook_requests.append(body),
-    )
+def test_release_workflow_preserves_zeroing_status_and_note() -> None:
+    row = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
+    row[header_index["reservation_status"]] = "04. Rezerwacja GRENKE"
+    row[header_index["reservation_until"]] = "2026-08-15"
+    row[header_index["reservation_grenke"]] = "Marcin\nKlient"
+    row[header_index["form_ctip"]] = "23"
+    row[header_index["proforma_grenke"]] = "21/proforma/2026"
+    row[header_index["ctip_form_id"]] = "23"
+    row[header_index["ctip_workflow_case_id"]] = "8"
+    worksheet = FakeWorksheet([_headers(), row])
+    workbook = FakeWorkbook(worksheet)
+    patches = _sheet_patches(workbook, worksheet)
 
     with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        patches[0],
+        patches[1],
+        patches[2],
     ):
         result = workflow_sheet_sync.release_workflow_devices_from_sheet(
             devices=[
                 {
                     "source_row": 12922,
-                    "row": 12922,
                     "sheet_row": 2,
                     "index": "KP/4066",
-                    "ewidencja": "KP/4066",
-                    "sheet_previous_status": "01. Przed zerówką",
+                    "serial": "T605H900327",
                 }
             ]
         )
 
-    assert result["enabled"] is True
+    released = worksheet.values[1]
     assert result["released_count"] == 1
-    assert worksheet.values[1][4] == "01. Przed zerówką"
-    assert worksheet.values[1][8] == ""
-    assert worksheet.values[1][9] == ""
-    assert worksheet.values[1][11] == ""
-    assert worksheet.values[1][12] == ""
-    assert worksheet.values[1][13] == ""
-    assert worksheet.values[1][14] == ""
-    assert worksheet.values[1][15] == ""
-    assert any(
-        request.get("repeatCell", {}).get("range", {}).get("startRowIndex") == 1
-        and request.get("repeatCell", {}).get("range", {}).get("endRowIndex") == 2
-        and request.get("repeatCell", {})
-        .get("cell", {})
-        .get("userEnteredFormat", {})
-        .get("backgroundColor")
-        == workflow_sheet_sync.WORKFLOW_DEFAULT_ROW_COLOR
-        for body in workbook_requests
-        for request in body.get("requests", [])
-    )
+    assert released[header_index["status"]] == "01. Przed zerówką"
+    assert released[header_index["notes"]] == "Ważna uwaga techniczna"
+    assert released[header_index["reservation_status"]] == "brak rezerwacji"
+    assert released[header_index["reservation_until"]] == ""
+    assert released[header_index["reservation_grenke"]] == ""
+    assert released[header_index["form_ctip"]] == ""
+    assert released[header_index["proforma_grenke"]] == ""
 
 
-def test_release_workflow_devices_from_sheet_falls_back_when_sheet_row_is_stale():
-    workbook_requests = []
-    worksheet = SimpleNamespace(
-        title="Urzadzenia_magazyn",
-        id=12,
-        values=[
-            [
-                "PRODUCENT",
-                "MODEL",
-                "SERIAL",
-                "EWIDENCJA",
-                "STATUS",
-                "LICZNIK B/W",
-                "LICZNIK KOLOR",
-                "CENA",
-                "UWAGI",
-                "REZERWACJA GRENKE",
-                "Osoba obsługująca",
-                "FORMULARZ CTIP",
-                "FAKTURA PROFORMA GRENKE",
-                "CTIP_FORM_ID",
-                "CTIP_WORKFLOW_CASE_ID",
-                "STATUS HANDLOWY (LEGACY)",
-                "MS_ID_MAGAZYN_TABLE",
-                "MS_ID_MASZYNA",
-            ],
-            [
-                "Ricoh",
-                "IM 350",
-                "",
-                "KP/9999",
-                "Dostepne",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "99999",
-                "",
-            ],
-            [
-                "Ricoh",
-                "MP 401",
-                "T605H900327",
-                "KP/4066",
-                "01. Przed zerówką",
-                "",
-                "",
-                "",
-                "Rezerwacja zalozona automatycznie przez CTIP.",
-                "Marcin Jarmuszkiewicz",
-                "",
-                "23",
-                "",
-                "23",
-                "8",
-                "Robocza",
-                "12922",
-                "",
-            ],
-        ],
-    )
-    worksheet.get_all_values = lambda: [list(row) for row in worksheet.values]
-    worksheet.batch_update = lambda updates, value_input_option=None: _apply_batch_update(
-        worksheet, updates
-    )
-    workbook = SimpleNamespace(
-        title="zerowki_testowy",
-        batch_update=lambda body: workbook_requests.append(body),
-    )
+def test_release_workflow_finds_row_when_saved_sheet_row_is_stale() -> None:
+    unrelated = _device_row()
+    unrelated[3] = "KP/9999"
+    unrelated[18] = "99999"
+    target = _device_row()
+    target[9] = "04. Rezerwacja GRENKE"
+    target[11] = "Marcin"
+    worksheet = FakeWorksheet([_headers(), unrelated, target])
+    workbook = FakeWorkbook(worksheet)
+    patches = _sheet_patches(workbook, worksheet)
 
     with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        patches[0],
+        patches[1],
+        patches[2],
     ):
         result = workflow_sheet_sync.release_workflow_devices_from_sheet(
             devices=[
                 {
                     "source_row": 12922,
-                    "row": 12922,
                     "sheet_row": 2,
                     "index": "KP/4066",
-                    "ewidencja": "KP/4066",
-                    "sheet_previous_status": "01. Przed zerówką",
+                    "serial": "T605H900327",
                 }
             ]
         )
 
-    assert result["enabled"] is True
-    assert result["released_count"] == 1
     assert result["rows"][0]["sheet_row"] == 3
-    assert worksheet.values[1][4] == "Dostepne"
-    assert worksheet.values[2][4] == "01. Przed zerówką"
-    assert worksheet.values[2][8] == ""
-    assert worksheet.values[2][9] == ""
+    assert worksheet.values[1][9] == "brak rezerwacji"
+    assert worksheet.values[2][9] == "brak rezerwacji"
     assert worksheet.values[2][11] == ""
-    assert worksheet.values[2][12] == ""
-    assert worksheet.values[2][13] == ""
-    assert worksheet.values[2][14] == ""
-    assert worksheet.values[2][15] == ""
-    assert any(
-        request.get("repeatCell", {}).get("range", {}).get("startRowIndex") == 2
-        and request.get("repeatCell", {}).get("range", {}).get("endRowIndex") == 3
-        and request.get("repeatCell", {})
-        .get("cell", {})
-        .get("userEnteredFormat", {})
-        .get("backgroundColor")
-        == workflow_sheet_sync.WORKFLOW_DEFAULT_ROW_COLOR
-        for body in workbook_requests
-        for request in body.get("requests", [])
-    )
 
 
-def test_clear_workflow_proforma_from_sheet_clears_only_proforma_column():
-    workbook_requests = []
-    worksheet = SimpleNamespace(
-        title="zerowki_testowy",
-        values=[
-            [
-                "PRODUCENT",
-                "MODEL",
-                "SERIAL",
-                "EWIDENCJA",
-                "STATUS",
-                "LICZNIK B/W",
-                "LICZNIK KOLOR",
-                "CENA",
-                "UWAGI",
-                "REZERWACJA GRENKE",
-                "Osoba obsługująca",
-                "FORMULARZ CTIP",
-                "FAKTURA PROFORMA GRENKE",
-                "CTIP_FORM_ID",
-                "CTIP_WORKFLOW_CASE_ID",
-                "STATUS HANDLOWY (LEGACY)",
-                "MS_ID_MAGAZYN_TABLE",
-                "MS_ID_MASZYNA",
-            ],
-            [
-                "Ricoh",
-                "MP 401",
-                "T605H900327",
-                "KP/4066",
-                "04. Rezerwacja GRENKE",
-                "",
-                "",
-                "",
-                "Rezerwacja zalozona automatycznie przez CTIP.",
-                "Marcin Jarmuszkiewicz",
-                "",
-                "23",
-                "21/proforma/2026",
-                "23",
-                "8",
-                "Robocza",
-                "12922",
-                "",
-            ],
-        ],
-    )
-    worksheet.get_all_values = lambda: [list(row) for row in worksheet.values]
-    worksheet.batch_update = lambda updates, value_input_option=None: _apply_batch_update(
-        worksheet, updates
-    )
-    workbook = SimpleNamespace(
-        title="zerowki_testowy",
-        batch_update=lambda body: workbook_requests.append(body),
-    )
+def test_clear_workflow_proforma_clears_only_proforma_column() -> None:
+    row = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
+    row[header_index["reservation_status"]] = "04. Rezerwacja GRENKE"
+    row[header_index["reservation_grenke"]] = "Marcin"
+    row[header_index["proforma_grenke"]] = "21/proforma/2026"
+    worksheet = FakeWorksheet([_headers(), row])
+    workbook = FakeWorkbook(worksheet)
+    patches = _sheet_patches(workbook, worksheet)
 
     with (
-        patch.object(
-            workflow_sheet_sync,
-            "_open_workbook",
-            return_value=(workbook, "bot@example.com"),
-        ),
-        patch.object(
-            workflow_sheet_sync,
-            "_resolve_devices_worksheet",
-            return_value=worksheet,
-        ),
-        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        patches[0],
+        patches[1],
+        patches[2],
     ):
         result = workflow_sheet_sync.clear_workflow_proforma_from_sheet(
             devices=[
                 {
                     "source_row": 12922,
-                    "row": 12922,
                     "sheet_row": 2,
                     "index": "KP/4066",
-                    "ewidencja": "KP/4066",
+                    "serial": "T605H900327",
                 }
             ]
         )
 
-    assert result["enabled"] is True
+    updated = worksheet.values[1]
     assert result["cleared_count"] == 1
-    assert worksheet.values[1][4] == "04. Rezerwacja GRENKE"
-    assert worksheet.values[1][8] == "Rezerwacja zalozona automatycznie przez CTIP."
-    assert worksheet.values[1][9] == "Marcin Jarmuszkiewicz"
-    assert worksheet.values[1][11] == "23"
-    assert worksheet.values[1][12] == ""
-    assert worksheet.values[1][13] == "23"
-    assert workbook_requests == []
+    assert updated[header_index["proforma_grenke"]] == ""
+    assert updated[header_index["reservation_status"]] == "04. Rezerwacja GRENKE"
+    assert updated[header_index["reservation_grenke"]] == "Marcin"
+    assert updated[header_index["status"]] == "01. Przed zerówką"
+    assert updated[header_index["notes"]] == "Ważna uwaga techniczna"
 
 
-def _apply_batch_update(worksheet, updates):
-    for update in updates:
-        range_name = update["range"]
-        value = update["values"][0][0]
-        match = workflow_sheet_sync.re.match(r"^([A-Z]+)(\d+)$", range_name)
-        assert match is not None
-        column_letters, row_number = match.groups()
-        row_idx = int(row_number) - 1
-        col_idx = 0
-        for char in column_letters:
-            col_idx = (col_idx * 26) + (ord(char) - 64)
-        col_idx -= 1
-        while len(worksheet.values) <= row_idx:
-            worksheet.values.append([])
-        while len(worksheet.values[row_idx]) <= col_idx:
-            worksheet.values[row_idx].append("")
-        worksheet.values[row_idx][col_idx] = value
+def test_inventory_upsert_appends_complete_test_row() -> None:
+    worksheet = FakeWorksheet([_headers()])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        result = workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="upsert_device",
+            payload={
+                "source_row": 19001,
+                "producer": "Ricoh",
+                "model": "IM C3000",
+                "serial": "SN-NEW-001",
+                "ewidencja": "KP/6001",
+                "price": "1200.0000",
+                "status": "01. Przed zerówką",
+                "notes": "dodana automatem PZ z CTIP",
+                "notes_red": True,
+                "reservation_status": "brak rezerwacji",
+                "reservation_until": "",
+                "reservation_grenke": "",
+                "ms_id_maszyna": 7701,
+                "ctip_env": "TEST",
+            },
+        )
+
+    header_index = workflow_sheet_sync._build_header_index(worksheet.values[0])
+    row = worksheet.values[1]
+    assert result["sheet_row"] == 2
+    assert result["action"] == "appended"
+    assert row[header_index["status"]] == "01. Przed zerówką"
+    assert row[header_index["notes"]] == "dodana automatem PZ z CTIP"
+    assert row[header_index["reservation_status"]] == "brak rezerwacji"
+    assert row[header_index["ms_id_magazyn_table"]] == "19001"
+    assert row[header_index["ms_id_maszyna"]] == "7701"
+    assert row[header_index["ctip_env"]] == "TEST"
+    assert worksheet.append_calls == 0
+    assert "A2:U2" in worksheet.updated_ranges
+    note_format_request = next(
+        request["repeatCell"]
+        for body in workbook.requests
+        for request in body["requests"]
+        if request.get("repeatCell", {})
+        .get("cell", {})
+        .get("userEnteredFormat", {})
+        .get("textFormat", {})
+        .get("foregroundColor")
+        == {"red": 1.0, "green": 0.0, "blue": 0.0}
+    )
+    assert note_format_request["range"] == {
+        "sheetId": 12,
+        "startRowIndex": 1,
+        "endRowIndex": 2,
+        "startColumnIndex": header_index["notes"],
+        "endColumnIndex": header_index["notes"] + 1,
+    }
+
+
+def test_inventory_manual_note_restores_black_text() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="update_note",
+            payload={
+                "source_row": 12922,
+                "serial": "T605H900327",
+                "notes": "Uwaga wpisana ręcznie",
+                "ctip_env": "TEST",
+            },
+        )
+
+    header_index = workflow_sheet_sync._build_header_index(worksheet.values[0])
+    assert worksheet.values[1][header_index["notes"]] == "Uwaga wpisana ręcznie"
+    note_format_request = next(
+        request["repeatCell"]
+        for body in workbook.requests
+        for request in body["requests"]
+        if request.get("repeatCell", {})
+        .get("cell", {})
+        .get("userEnteredFormat", {})
+        .get("textFormat", {})
+        .get("foregroundColor")
+        == {"red": 0.0, "green": 0.0, "blue": 0.0}
+    )
+    assert note_format_request["range"]["startColumnIndex"] == header_index["notes"]
+
+
+def test_inventory_reservation_update_never_overwrites_note_or_zeroing_status() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet)
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="update_reservation",
+            payload={
+                "source_row": 12922,
+                "serial": "T605H900327",
+                "ewidencja": "KP/4066",
+                "reservation_status": "03. Rezerwacja ręczna",
+                "reservation_until": "2026-08-20",
+                "reservation_grenke": "Klient testowy",
+                "ctip_env": "TEST",
+            },
+        )
+
+    header_index = workflow_sheet_sync._build_header_index(worksheet.values[0])
+    row = worksheet.values[1]
+    assert row[header_index["status"]] == "01. Przed zerówką"
+    assert row[header_index["notes"]] == "Ważna uwaga techniczna"
+    assert row[header_index["reservation_status"]] == "03. Rezerwacja ręczna"
+    assert row[header_index["reservation_until"]] == "2026-08-20"
+
+
+def test_inventory_update_blocks_production_row_in_test_workbook() -> None:
+    row = _device_row()
+    row[-1] = "PRODUCTION"
+    worksheet = FakeWorksheet([_headers(), row])
+    workbook = FakeWorkbook(worksheet)
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+        pytest.raises(RuntimeError, match="spoza TEST"),
+    ):
+        workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="update_note",
+            payload={
+                "source_row": 12922,
+                "serial": "T605H900327",
+                "ewidencja": "KP/4066",
+                "notes": "Nowa uwaga",
+                "ctip_env": "TEST",
+            },
+        )
+
+
+def test_inventory_update_blocks_wrong_test_workbook() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet, title="Zerowki_produkcyjne")
+    config = _configured_runtime()
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(config),
+        patch.object(
+            workflow_sheet_sync,
+            "_open_workbook",
+            return_value=(workbook, "bot@example.com"),
+        ),
+        patch.object(
+            workflow_sheet_sync,
+            "_resolve_devices_worksheet",
+            return_value=worksheet,
+        ),
+        patch.object(workflow_sheet_sync.Path, "exists", return_value=True),
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_sheets_test_spreadsheet_id",
+            "spreadsheet-test",
+        ),
+        patch.object(
+            workflow_sheet_sync.settings,
+            "google_sheets_test_spreadsheet_title",
+            "Zerowki_test",
+        ),
+        patch.object(workflow_sheet_sync.settings, "ctip_runtime_profile", "test"),
+        pytest.raises(RuntimeError, match="Tytuł skoroszytu"),
+    ):
+        workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="update_note",
+            payload={
+                "source_row": 12922,
+                "serial": "T605H900327",
+                "ewidencja": "KP/4066",
+                "notes": "Nowa uwaga",
+                "ctip_env": "TEST",
+            },
+        )
+
+
+def test_lookup_returns_separate_status_note_price_and_machine_fields() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet)
+    patches = _sheet_patches(workbook, worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        patches[0],
+        patches[1],
+        patches[2],
+    ):
+        result = workflow_sheet_sync.load_workflow_sheet_devices_lookup()
+
+    entry = result["by_source_key"]["firebird_magazyn_28:12922"]
+    assert entry["status"] == "01. Przed zerówką"
+    assert entry["counter_bw"] == "1234"
+    assert entry["counter_color"] == "5678"
+    assert entry["notes"] == "Ważna uwaga techniczna"
+    assert entry["reservation_status"] == "brak rezerwacji"
+    assert entry["price"] == "1500,00"
+    assert entry["ms_id_maszyna"] == "7634"
+    assert entry["ctip_env"] == "TEST"

@@ -1,4 +1,4 @@
-"""Obsługa uprawnień sekcji paneli (admin/operator/generator)."""
+"""Obsługa uprawnień sekcji paneli CTIP."""
 
 from __future__ import annotations
 
@@ -10,19 +10,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminSetting, AdminUser
 
-AVAILABLE_SECTIONS = ("admin", "operator", "generator")
+AVAILABLE_SECTIONS = ("admin", "operator", "generator", "delivery", "device")
 _USER_SECTIONS_PREFIX = "user_sections."
 
 
 def default_sections_for_role(role: str | None) -> list[str]:
     """Zwraca domyślny zestaw sekcji dla wskazanej roli."""
     if role == "admin":
-        return ["admin", "operator", "generator"]
+        return list(AVAILABLE_SECTIONS)
+    if role == "serwisant":
+        return ["delivery"]
     return ["operator", "generator"]
 
 
 def normalize_sections(sections: Iterable[str] | None, *, role: str | None) -> list[str]:
-    """Normalizuje listę sekcji do unikalnego i poprawnego formatu."""
+    """Normalizuje listę sekcji, zawsze nadając administratorowi pełny dostęp."""
+    if role == "admin":
+        return default_sections_for_role(role)
     if sections is None:
         return default_sections_for_role(role)
 

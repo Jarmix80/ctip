@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     Text,
     UniqueConstraint,
     func,
@@ -294,16 +296,286 @@ class WorkflowSheetStatusCache(Base):
     source_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str] = mapped_column(Text, nullable=False, default="firebird_magazyn_28")
     source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    producer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    serial: Mapped[str | None] = mapped_column(Text, nullable=True)
     device_index: Mapped[str | None] = mapped_column(Text, nullable=True)
     device_index_normalized: Mapped[str | None] = mapped_column(Text, nullable=True)
     sheet_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sheet_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sheet_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counter_bw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counter_color: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reservation_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     reservation_grenke: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reservation_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    price: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ms_id_maszyna: Mapped[int | None] = mapped_column(Integer, nullable=True)
     form_ctip: Mapped[str | None] = mapped_column(Text, nullable=True)
     ctip_form_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ctip_workflow_case_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     business_status_legacy: Mapped[str | None] = mapped_column(Text, nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class DeviceIntakeOperation(Base):
+    """Idempotentna operacja przyjęcia urządzeń do magazynu Firebird."""
+
+    __tablename__ = "device_intake_operation"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('processing','completed','failed','reconcile_required')",
+            name="device_intake_operation_status_check",
+        ),
+        UniqueConstraint("idempotency_key", name="uq_device_intake_operation_idempotency_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="processing")
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    supplier_firebird_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    external_document: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exception_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_pz_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_pz_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    result_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DeviceInventoryUnit(Base):
+    """Trwałe mapowanie fizycznego egzemplarza między CTIP i Firebird."""
+
+    __tablename__ = "device_inventory_unit"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type = 'firebird_magazyn_28'",
+            name="device_inventory_unit_source_type_check",
+        ),
+        UniqueConstraint(
+            "source_type",
+            "source_row",
+            name="uq_device_inventory_unit_source",
+        ),
+        UniqueConstraint(
+            "firebird_zakpozycja_id",
+            name="uq_device_inventory_unit_zakpozycja",
+        ),
+        UniqueConstraint(
+            "firebird_machine_table_id",
+            name="uq_device_inventory_unit_machine_table",
+        ),
+        UniqueConstraint(
+            "serial_normalized",
+            name="uq_device_inventory_unit_serial_normalized",
+        ),
+        UniqueConstraint(
+            "ewidencja_normalized",
+            name="uq_device_inventory_unit_ewidencja_normalized",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.device_intake_operation.id", ondelete="SET NULL"), nullable=True
+    )
+    source_type: Mapped[str] = mapped_column(Text, nullable=False, default="firebird_magazyn_28")
+    source_row: Mapped[int] = mapped_column(Integer, nullable=False)
+    firebird_pz_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_zakpozycja_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_machine_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_machine_table_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_model_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firebird_supplier_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    serial: Mapped[str] = mapped_column(Text, nullable=False)
+    serial_normalized: Mapped[str] = mapped_column(Text, nullable=False)
+    ewidencja: Mapped[str] = mapped_column(Text, nullable=False)
+    ewidencja_normalized: Mapped[str] = mapped_column(Text, nullable=False)
+    purchase_price_net: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    sheet_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sheet_sync_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    sheet_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+
+
+class DeviceInventoryEvent(Base):
+    """Niemodyfikowalny dziennik uwag, rezerwacji i synchronizacji urządzenia."""
+
+    __tablename__ = "device_inventory_event"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    unit_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.device_inventory_unit.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+
+
+class DeviceManualReservation(Base):
+    """Ręczna, terminowa rezerwacja egzemplarza poza aktywnym FLOW."""
+
+    __tablename__ = "device_manual_reservation"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    unit_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.device_inventory_unit.id", ondelete="CASCADE"), nullable=False
+    )
+    reserved_for: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    released_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    release_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DeviceSheetOutbox(Base):
+    """Kolejka niezawodnej synchronizacji urządzeń do Google Sheets."""
+
+    __tablename__ = "device_sheet_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "operation_type in ("
+            "'upsert_device','update_note','update_reservation','release_reservation'"
+            ")",
+            name="device_sheet_outbox_operation_type_check",
+        ),
+        CheckConstraint(
+            "status in ('pending','processing','completed','failed')",
+            name="device_sheet_outbox_status_check",
+        ),
+        UniqueConstraint("idempotency_key", name="uq_device_sheet_outbox_idempotency_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    unit_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.device_inventory_unit.id", ondelete="CASCADE"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    operation_type: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DeviceAuditRun(Base):
+    """Trwały przebieg ręcznego audytu spójności urządzeń."""
+
+    __tablename__ = "device_audit_run"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending','running','completed','failed')",
+            name="device_audit_run_status_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    requested_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    phase: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DeviceAuditItem(Base):
+    """Wynik audytu jednego urządzenia lub niejednoznacznej grupy rekordów."""
+
+    __tablename__ = "device_audit_item"
+    __table_args__ = (
+        CheckConstraint(
+            "result_status in ('ok','missing','discrepancy','duplicate')",
+            name="device_audit_item_result_status_check",
+        ),
+        UniqueConstraint(
+            "run_id",
+            "canonical_key",
+            name="uq_device_audit_item_run_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("ctip.device_audit_run.id", ondelete="CASCADE"), nullable=False
+    )
+    canonical_key: Mapped[str] = mapped_column(Text, nullable=False)
+    producer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    serial: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ewidencja: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sheet_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    machine_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ctip_unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sheet_present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    warehouse_present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    machine_present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ctip_present: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    result_status: Mapped[str] = mapped_column(Text, nullable=False)
+    issue_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    issue_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
 
 
 Index("idx_form_request_status_created", FormRequest.status, FormRequest.created_at.desc())
@@ -320,6 +592,33 @@ Index(
     "idx_workflow_sheet_status_cache_index_norm",
     WorkflowSheetStatusCache.device_index_normalized,
 )
+Index(
+    "uq_device_manual_reservation_active",
+    DeviceManualReservation.unit_id,
+    unique=True,
+    postgresql_where=DeviceManualReservation.released_at.is_(None),
+    sqlite_where=DeviceManualReservation.released_at.is_(None),
+)
+Index(
+    "idx_device_sheet_outbox_pending",
+    DeviceSheetOutbox.status,
+    DeviceSheetOutbox.next_attempt_at,
+)
+Index(
+    "idx_device_inventory_event_unit_created",
+    DeviceInventoryEvent.unit_id,
+    DeviceInventoryEvent.created_at.desc(),
+)
+Index(
+    "idx_device_audit_run_status_created",
+    DeviceAuditRun.status,
+    DeviceAuditRun.created_at.desc(),
+)
+Index(
+    "idx_device_audit_item_run_result",
+    DeviceAuditItem.run_id,
+    DeviceAuditItem.result_status,
+)
 
 
 __all__ = [
@@ -331,4 +630,11 @@ __all__ = [
     "FormWorkflowCase",
     "FormWorkflowDevice",
     "WorkflowSheetStatusCache",
+    "DeviceIntakeOperation",
+    "DeviceInventoryUnit",
+    "DeviceInventoryEvent",
+    "DeviceManualReservation",
+    "DeviceSheetOutbox",
+    "DeviceAuditRun",
+    "DeviceAuditItem",
 ]

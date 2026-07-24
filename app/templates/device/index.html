@@ -2,421 +2,507 @@
 <html lang="pl">
   <head>
     <meta charset="utf-8">
-    <title>CTIP - DEVICE</title>
+    <title>CTIP – Obsługa urządzeń</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
     <link rel="stylesheet" href="/static/flow/flow.css">
-    <link rel="stylesheet" href="/static/device/device.css">
-    <script defer src="/static/device/device.js"></script>
+    <link rel="stylesheet" href="/static/device/device.css?v={{ request.app.version }}-device-audit-2">
+    <script defer src="/static/device/device.js?v={{ request.app.version }}-device-audit-2"></script>
   </head>
-  <body>
-    <main class="flow-shell">
-      <header class="flow-topbar">
+  <body data-device-view="{{ initial_view }}">
+    <main class="flow-shell device-shell">
+      <header class="flow-topbar device-topbar">
         <div>
-          <p class="flow-kicker">CTIP / DEVICE</p>
-          <h1>Operacyjna obsluga urzadzen</h1>
+          <p class="flow-kicker">CTIP / URZĄDZENIA</p>
+          <h1>Obsługa urządzeń</h1>
           <p class="flow-lead">
-            Panel roboczy dla calego cyklu zycia maszyny: przyjecie PZ, kontrola danych
-            `MAGAZYN/SERIAL/MASZYNA`, jakosc tabeli `MODEL` oraz przygotowanie pod dalsza
-            automatyzacje w `/device`.
+            Przyjęcia PZ, bieżący magazyn, rezerwacje i kontrola synchronizacji.
           </p>
         </div>
         <div class="flow-topbar-actions">
-          <div id="device-user-chip" class="flow-user-chip">Uzytkownik</div>
-          <a href="/choice" class="flow-secondary">Wybor sekcji</a>
-          <button id="device-refresh" type="button" class="flow-secondary">Odswiez dane</button>
+          <div id="device-user-chip" class="flow-user-chip">Użytkownik</div>
+          <a href="/choice" class="flow-secondary">Wybór sekcji</a>
+          <button id="device-refresh" type="button" class="flow-secondary">Odśwież</button>
           <button id="device-logout" type="button" class="flow-secondary">Wyloguj</button>
         </div>
       </header>
 
-      <section class="flow-content">
-        <section class="flow-panel">
+      <nav class="device-nav" aria-label="Nawigacja modułu urządzeń">
+        <a href="/device" data-device-nav="home">Start</a>
+        <a href="/device/intake" data-device-nav="intake">Przyjęcie PZ</a>
+        <a href="/device/warehouse" data-device-nav="warehouse">Magazyn</a>
+        <a href="/device/history" data-device-nav="history">Historia</a>
+        <a href="/device/issues" data-device-nav="issues">Problemy</a>
+      </nav>
+
+      <section class="flow-content device-content">
+        <section class="device-view" data-device-screen="home" hidden>
           <div class="flow-panel-head">
             <div>
-              <p class="flow-panel-kicker">Sekcja urzadzen</p>
-              <h2>Obsluga urzadzen</h2>
+              <p class="flow-panel-kicker">Proces operacyjny</p>
+              <h2>Jedna ścieżka dla każdego egzemplarza</h2>
               <p class="flow-panel-lead">
-                Dashboard pokazuje ostatnie przyjecia PZ na magazyn `28`, powiazania z `SERIAL`
-                i `MASZYNA` oraz problemy danych, ktore trzeba rozwiazac przed pelna automatyzacja.
+                PZ → osobna pozycja MAGAZYN → MASZYNA klienta magazynowego → FLOW →
+                proforma → dowóz.
+              </p>
+            </div>
+          </div>
+          <section class="device-action-grid">
+            <a href="/device/intake" class="device-action-card">
+              <strong>Przyjmij urządzenia</strong>
+              <span>Utwórz jeden dokument PZ dla wielu fizycznych egzemplarzy.</span>
+            </a>
+            <a href="/device/warehouse" class="device-action-card">
+              <strong>Sprawdź magazyn</strong>
+              <span>Zobacz stan Firebird, zerówkę, uwagi oraz rezerwacje.</span>
+            </a>
+            <a href="/device/history" class="device-action-card">
+              <strong>Przejrzyj historię</strong>
+              <span>Zweryfikuj dokumenty PZ i wyniki operacji idempotentnych.</span>
+            </a>
+            <a href="/device/issues" class="device-action-card">
+              <strong>Obsłuż problemy</strong>
+              <span>Ponów synchronizację arkusza lub uzgodnij operację PZ.</span>
+            </a>
+          </section>
+          <section id="device-home-summary" class="flow-stats device-stats">
+            <article><span>Dostępne egzemplarze</span><strong data-summary="available">–</strong></article>
+            <article><span>Rezerwacje FLOW</span><strong data-summary="flow_reserved">–</strong></article>
+            <article><span>Rezerwacje ręczne</span><strong data-summary="manual_reserved">–</strong></article>
+            <article><span>Błędy arkusza</span><strong data-summary="sheet_errors">–</strong></article>
+            <article><span>Dane historyczne</span><strong data-summary="audit_only">–</strong></article>
+          </section>
+        </section>
+
+        <section class="device-view" data-device-screen="intake" hidden>
+          <div class="flow-panel-head">
+            <div>
+              <p class="flow-panel-kicker">Nowe egzemplarze</p>
+              <h2>Przyjęcie dokumentem PZ</h2>
+              <p class="flow-panel-lead">
+                Każdy wiersz tworzy osobną kartotekę MAGAZYN i rekord MASZYNA. Wystawiający
+                jest pobierany z powiązania zalogowanego użytkownika z Menadżerem Serwisu.
               </p>
             </div>
           </div>
 
-          <section class="flow-stats device-stats">
-            <article>
-              <span>Pozycje urzadzen z ostatnich PZ</span>
-              <strong id="device-summary-rows">0</strong>
-            </article>
-            <article>
-              <span>Powiazane rekordy SERIAL</span>
-              <strong id="device-summary-serial">0</strong>
-            </article>
-            <article>
-              <span>Powiazane rekordy MASZYNA</span>
-              <strong id="device-summary-machines">0</strong>
-            </article>
-            <article>
-              <span>Krytyczne luki procesu</span>
-              <strong id="device-summary-critical">0</strong>
-            </article>
-            <article>
-              <span>Gotowe lub prawie gotowe</span>
-              <strong id="device-summary-ready">0</strong>
-            </article>
-          </section>
+          <div class="device-form-columns">
+            <section class="flow-card device-form-card">
+              <h3>Dokument i dostawca</h3>
+              <label>
+                <span>Dostawca *</span>
+                <input id="device-supplier-search" list="device-supplier-list"
+                       placeholder="Wpisz nazwę, NIP lub ID" required>
+                <datalist id="device-supplier-list"></datalist>
+              </label>
+              <label>
+                <span>Numer dokumentu zewnętrznego * (albo zaznacz wyjątek)</span>
+                <input id="device-external-document" maxlength="30" placeholder="np. FV 12/07/2026">
+              </label>
+              <details class="device-details">
+                <summary>Dodaj nowego dostawcę</summary>
+                <div class="device-form-grid">
+                  <label><span>Nazwa *</span><input id="device-supplier-name" maxlength="500"></label>
+                  <label><span>NIP</span><input id="device-supplier-nip" maxlength="30"></label>
+                  <label><span>Adres</span><input id="device-supplier-address" maxlength="250"></label>
+                  <label><span>Kod</span><input id="device-supplier-postal" maxlength="6"></label>
+                  <label><span>Miasto</span><input id="device-supplier-city" maxlength="150"></label>
+                  <label><span>Telefon</span><input id="device-supplier-phone" maxlength="100"></label>
+                  <label><span>E-mail</span><input id="device-supplier-email" maxlength="200"></label>
+                </div>
+                <button id="device-supplier-create" type="button" class="flow-secondary">
+                  Dodaj dostawcę
+                </button>
+              </details>
+            </section>
 
-          <div class="flow-card">
-            <div class="flow-card-head">
-              <div>
-                <h3>Automatyzacja przyjecia PZ</h3>
-                <p class="flow-note">
-                  Modul zapisowy /device utrzymuje oddzielna kartoteke `AUTO/XXXX` na magazynie `28`
-                  (nazwa `MARKA + MODEL`, wymuszony numer seryjny) i pozwala utworzyc pojedyncze
-                  przyjecie PZ z wpisaniem `S/N` oraz `KP` do `SERIAL.EWIDENCJA`.
-                </p>
+            <section class="flow-card device-form-card">
+              <h3>Dodawanie pozycji</h3>
+              <label>
+                <span>Model *</span>
+                <input id="device-model-search" list="device-model-list"
+                       placeholder="Wpisz markę, model lub ID">
+                <datalist id="device-model-list"></datalist>
+              </label>
+              <div class="device-form-grid compact">
+                <label><span>Liczba egzemplarzy</span><input id="device-item-quantity" type="number" min="1" max="50" value="1"></label>
+                <label><span>Cena zakupu netto *</span><input id="device-item-price" type="number" min="0" step="0.01"></label>
               </div>
-            </div>
-            <section class="device-form-grid">
-              <form id="device-catalog-form" class="device-form-card">
-                <h4>1. Synchronizacja kartoteki AUTO</h4>
-                <p class="flow-note">
-                  Domyslnie tworzy tylko brakujace pozycje AUTO. Mozesz wybrac konkretny model z listy
-                  (pokazywana jest tylko marka + model) albo uruchomic pelna synchronizacje dla calej
-                  tabeli `MODEL`.
-                </p>
-                <label>
-                  <span>Model (opcjonalnie)</span>
-                  <select id="device-catalog-model-select">
-                    <option value="">-- wszystkie modele --</option>
-                  </select>
-                </label>
-                <label class="device-checkbox">
-                  <input id="device-catalog-only-missing" type="checkbox" checked>
-                  <span>Tylko brakujace wpisy AUTO (bez aktualizacji istniejacych)</span>
-                </label>
-                <button id="device-catalog-sync-btn" type="submit" class="flow-action-btn">
-                  Synchronizuj kartoteke AUTO
-                </button>
-                <button id="device-catalog-sync-all-btn" type="button" class="flow-secondary">
-                  Pelna synchronizacja wszystkich modeli
-                </button>
-
-                <hr class="device-divider">
-                <h4>Nowy model (MODEL + AUTO)</h4>
-                <p class="flow-note">
-                  Dodaje rekord do `MODEL` i opcjonalnie od razu tworzy kartoteke `AUTO/XXXX` na magazynie `28`.
-                </p>
-                <section class="device-batch-config">
-                  <label>
-                    <span>Marka</span>
-                    <select id="device-model-create-marka"></select>
-                  </label>
-                  <label>
-                    <span>Model</span>
-                    <input id="device-model-create-model" type="text" maxlength="50" placeholder="np. IR 2520">
-                  </label>
-                  <label>
-                    <span>Grupa</span>
-                    <select id="device-model-create-grupa"></select>
-                  </label>
-                  <label>
-                    <span>Rodzaj (opcjonalnie)</span>
-                    <select id="device-model-create-rodzaj"></select>
-                  </label>
-                  <label>
-                    <span>Plik / URL obrazka (opcjonalnie)</span>
-                    <input id="device-model-create-plik" type="text" maxlength="250">
-                  </label>
-                </section>
-                <label class="device-checkbox">
-                  <input id="device-model-create-kolor" type="checkbox">
-                  <span>Model kolorowy (`MODEL.KOLOR='TAK'`)</span>
-                </label>
-                <label class="device-checkbox">
-                  <input id="device-model-create-sync-catalog" type="checkbox" checked>
-                  <span>Od razu utworz/uzupelnij kartoteke AUTO dla nowego modelu</span>
-                </label>
-                <button id="device-model-create-btn" type="button" class="flow-secondary">
+              <button id="device-items-add" type="button" class="flow-secondary">Dodaj pozycję</button>
+              <p id="device-items-message" class="flow-message" role="status" aria-live="polite" hidden></p>
+              <details class="device-details">
+                <summary>Dodaj nowy model</summary>
+                <div class="device-form-grid">
+                  <label><span>Marka *</span><select id="device-model-brand"></select></label>
+                  <label><span>Model *</span><input id="device-model-name" maxlength="50"></label>
+                  <label><span>Grupa *</span><select id="device-model-group"></select></label>
+                  <label><span>Rodzaj *</span><select id="device-model-kind"></select></label>
+                  <label class="device-check"><input id="device-model-color" type="checkbox"><span>Urządzenie kolorowe</span></label>
+                  <label><span>Plik/URL obrazu</span><input id="device-model-image" maxlength="250"></label>
+                </div>
+                <button id="device-model-create" type="button" class="flow-secondary">
                   Dodaj model
                 </button>
-              </form>
-
-              <form id="device-intake-form" class="device-form-card">
-                <h4>2. Utworz przyjecie PZ (wiele egzemplarzy)</h4>
-                <p class="flow-note">
-                  Formularz tworzy jeden dokument `PZ` z wieloma pozycjami. Kazda pozycja zapisuje
-                  `ZAKPOZYCJA + SERIAL` i automatycznie zaklada rekord `MASZYNA`.
-                </p>
-
-                <section class="device-batch-config">
-                  <label>
-                    <span>Baza numeracji ewidencyjnej</span>
-                    <input id="device-intake-ewid-prefix" type="text" maxlength="50" value="KP/" readonly>
-                  </label>
-                  <label>
-                    <span>Kolejny numer systemowy</span>
-                    <input id="device-intake-ewid-next-number" type="number" min="1" value="1">
-                  </label>
-                  <label>
-                    <span>Wyszukaj dostawcy po nip/nazwa/id</span>
-                    <input
-                      id="device-supplier-input"
-                      type="text"
-                      maxlength="200"
-                      placeholder="Wpisz NIP, nazwe lub ID i wybierz z listy"
-                      list="device-supplier-options"
-                      autocomplete="off"
-                    >
-                    <datalist id="device-supplier-options"></datalist>
-                  </label>
-                </section>
-
-                <section class="device-batch-config">
-                  <label>
-                    <span>Nazwa</span>
-                    <input id="device-supplier-create-name" type="text" maxlength="500">
-                  </label>
-                  <label>
-                    <span>NIP</span>
-                    <input id="device-supplier-create-nip" type="text" maxlength="30">
-                  </label>
-                  <label>
-                    <span>Adres</span>
-                    <input id="device-supplier-create-address" type="text" maxlength="250">
-                  </label>
-                  <label>
-                    <span>Kod pocztowy</span>
-                    <input id="device-supplier-create-postal" type="text" maxlength="6">
-                  </label>
-                  <label>
-                    <span>Miasto</span>
-                    <input id="device-supplier-create-city" type="text" maxlength="150">
-                  </label>
-                  <label>
-                    <span>Telefon / e-mail (opcjonalnie)</span>
-                    <input id="device-supplier-create-phone" type="text" maxlength="100" placeholder="telefon">
-                  </label>
-                  <label>
-                    <span>E-mail (opcjonalnie)</span>
-                    <input id="device-supplier-create-email" type="text" maxlength="200">
-                  </label>
-                </section>
-                <section class="device-batch-tools">
-                  <button id="device-supplier-create-btn" type="button" class="flow-secondary">
-                    Dodaj nowego dostawce
-                  </button>
-                </section>
-                <p id="device-supplier-status" class="device-inline-status" hidden></p>
-
-                <section class="device-batch-config">
-                  <label>
-                    <span>Model (ID / marka / model)</span>
-                    <input
-                      id="device-model-input"
-                      type="text"
-                      maxlength="200"
-                      placeholder="Wpisz ID, marke lub model i wybierz z listy"
-                      list="device-model-options"
-                      autocomplete="off"
-                    >
-                    <datalist id="device-model-options"></datalist>
-                  </label>
-                  <label>
-                    <span>Ilosc egzemplarzy</span>
-                    <input id="device-intake-add-quantity" type="number" min="1" value="1">
-                  </label>
-                  <label>
-                    <span>Cena zakupu netto (opcjonalnie)</span>
-                    <input id="device-intake-add-price-netto" type="number" min="0" step="0.01" placeholder="np. 3500.00">
-                  </label>
-                </section>
-                <section class="device-batch-tools">
-                  <button id="device-intake-add-items-btn" type="button" class="flow-secondary">
-                    Dodaj pozycje
-                  </button>
-                </section>
-
-                <section class="device-batch-config">
-                  <label>
-                    <span>Numer zewnetrzny dokumentu (opcjonalnie)</span>
-                    <input id="device-intake-doc-external" type="text" maxlength="30">
-                  </label>
-                  <label>
-                    <span>Wystawil (opcjonalnie)</span>
-                    <input id="device-intake-issued-by" type="text" maxlength="100" value="CTIP">
-                  </label>
-                </section>
-                <section class="device-batch-tools">
-                  <button id="device-intake-clear-btn" type="button" class="flow-secondary">
-                    Wyczysc liste
-                  </button>
-                </section>
-
-                <div class="flow-table-wrap device-intake-editor-wrap">
-                  <table class="flow-table device-intake-editor">
-                    <thead>
-                      <tr>
-                        <th>Lp.</th>
-                        <th>Model</th>
-                        <th>S/N</th>
-                        <th>EWIDENCJA (baza + dopisek)</th>
-                        <th>Cena netto</th>
-                        <th>Akcja</th>
-                      </tr>
-                    </thead>
-                    <tbody id="device-intake-items-body">
-                      <tr>
-                        <td colspan="6">Brak pozycji. Dodaj model i ilosc.</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <label class="device-checkbox">
-                  <input id="device-intake-force" type="checkbox">
-                  <span>Pomin blokade duplikatu serial/ewidencja</span>
-                </label>
-                <button id="device-intake-create-btn" type="submit" class="flow-action-btn">
-                  Utworz przyjecie PZ (batch)
-                </button>
-                <p id="device-intake-submit-status" class="device-inline-status" hidden></p>
-                <section id="device-intake-result" class="device-intake-result" hidden>
-                  <h5>Potwierdzenie zapisu PZ</h5>
-                  <p id="device-intake-result-head"></p>
-                  <ul id="device-intake-result-list" class="device-intake-result-list"></ul>
-                </section>
-              </form>
+              </details>
             </section>
           </div>
 
-          <div class="flow-card">
-            <div class="flow-card-head">
+          <section class="flow-card">
+            <div class="device-card-heading">
               <div>
-                <h3>Ostatnie przyjecia PZ urzadzen</h3>
-                <p class="flow-note">
-                  Widok bazuje na lokalnej Firebird i pokazuje, czy po PZ spójnie zapisaly sie:
-                  pozycja magazynowa, rekord `SERIAL`, rekord `MASZYNA` i powiazanie z `MODEL`.
-                </p>
+                <h3>Egzemplarze na dokumencie</h3>
+                <p id="device-kp-suggestion" class="flow-note">Numeracja KP zostanie pobrana z Firebird.</p>
               </div>
+              <button id="device-items-clear" type="button" class="flow-secondary">Wyczyść</button>
             </div>
-            <div class="flow-table-wrap">
-              <table class="flow-table">
+            <div class="device-table-wrap">
+              <table class="flow-table device-table">
                 <thead>
-                  <tr>
-                    <th>PZ</th>
-                    <th>Dostawca</th>
-                    <th>Pozycja zakupu</th>
-                    <th>MAGAZYN</th>
-                    <th>SERIAL</th>
-                    <th>MASZYNA</th>
-                    <th>MODEL</th>
-                    <th>Status i nastepny krok</th>
-                  </tr>
+                  <tr><th>Lp.</th><th>Model</th><th>Serial *</th><th>Numer KP</th><th>Cena netto *</th><th></th></tr>
                 </thead>
-                <tbody id="device-intakes-body">
-                  <tr>
-                    <td colspan="8">Brak danych przyjec urzadzen.</td>
-                  </tr>
-                </tbody>
+                <tbody id="device-intake-items"></tbody>
               </table>
-            </div>
-          </div>
-
-          <section class="device-card-grid">
-            <div class="flow-card">
-              <div class="flow-card-head">
-                <div>
-                  <h3>Audyt tabeli MODEL</h3>
-                  <p class="flow-note">
-                    Ta sekcja pokazuje, czy baza modeli nadaje sie do stabilnego tworzenia
-                    urzadzen z poziomu `/device`.
-                  </p>
-                </div>
-              </div>
-              <section class="flow-stats device-model-stats">
-                <article>
-                  <span>Duplikaty po normalizacji</span>
-                  <strong id="device-model-duplicates">0</strong>
-                </article>
-                <article>
-                  <span>Brak `RODZAJ`</span>
-                  <strong id="device-model-missing-kind">0</strong>
-                </article>
-                <article>
-                  <span>Brak `KOLOR`</span>
-                  <strong id="device-model-missing-color">0</strong>
-                </article>
-                <article>
-                  <span>Brak `PLIK`</span>
-                  <strong id="device-model-missing-image">0</strong>
-                </article>
-              </section>
-              <div class="flow-table-wrap">
-                <table class="flow-table">
-                  <thead>
-                    <tr>
-                      <th>Marka</th>
-                      <th>Model</th>
-                      <th>Liczba rekordow</th>
-                      <th>ID_MODEL</th>
-                    </tr>
-                  </thead>
-                  <tbody id="device-model-duplicates-body">
-                    <tr>
-                      <td colspan="4">Brak duplikatow modelu.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="device-side-stack">
-              <div class="flow-card">
-                <div class="flow-card-head">
-                  <div>
-                    <h3>Reguly procesu</h3>
-                    <p class="flow-note">
-                      Te zasady pochodza z realnego testu PZ i stanowia docelowy standard dla
-                      dalszej automatyzacji w `/device`.
-                    </p>
-                  </div>
-                </div>
-                <ul id="device-process-rules" class="device-notes-list">
-                  <li>Brak zdefiniowanych regul procesu.</li>
-                </ul>
-              </div>
-
-              <div class="flow-card">
-                <div class="flow-card-head">
-                  <div>
-                    <h3>Wnioski operacyjne</h3>
-                    <p class="flow-note">
-                      Lista obserwacji z realnych testow PZ, ktore trzeba zamienic na walidacje,
-                      automaty i reguly zapisu.
-                    </p>
-                  </div>
-                </div>
-                <ul id="device-operational-notes" class="device-notes-list">
-                  <li>Brak notatek operacyjnych.</li>
-                </ul>
-              </div>
             </div>
           </section>
 
-          <div class="flow-card">
-            <div class="flow-card-head">
-              <h3>Zakres kolejnego etapu</h3>
-              <p class="flow-note">
-                Po potwierdzeniu procesu z PZ ten panel mozna rozszerzyc o polautomatyczne:
-                tworzenie pozycji magazynowej, zakladanie `MASZYNA`, walidacje `MODEL` i statusy
-                obslugi egzemplarza juz bez wychodzenia do `/flow`.
+          <section class="flow-card device-exception-card">
+            <label class="device-check">
+              <input id="device-exception-enabled" type="checkbox">
+              <span>Zezwól na brak dokumentu zewnętrznego lub cenę 0</span>
+            </label>
+            <label id="device-exception-reason-wrap" hidden>
+              <span>Uzasadnienie wyjątku (minimum 10 znaków) *</span>
+              <textarea id="device-exception-reason" rows="3" maxlength="1000"></textarea>
+            </label>
+            <div class="device-submit-row">
+              <button id="device-intake-submit" type="button" class="flow-action-btn"
+                      aria-describedby="device-intake-validation">
+                Utwórz dokument PZ
+              </button>
+              <span id="device-intake-key" class="flow-note"></span>
+            </div>
+            <div id="device-intake-validation" class="flow-message device-validation-summary"
+                 role="alert" aria-live="assertive" hidden></div>
+          </section>
+        </section>
+
+        <section class="device-view" data-device-screen="warehouse" hidden>
+          <div class="flow-panel-head">
+            <div>
+              <p class="flow-panel-kicker">Stan bieżący</p>
+              <h2>Magazyn urządzeń</h2>
+              <p class="flow-panel-lead">
+                Dane Firebird są źródłem stanu, a arkusz dostarcza status zerówki i pola pomocnicze.
               </p>
             </div>
-            <p class="flow-note device-scope-note">
-              Biezaca wersja wspiera zapis do Firebird (kartoteka AUTO i przyjecie PZ batch z
-              utworzeniem `MASZYNA`), ale wymaga dalszych testow operacyjnych przed produkcja.
-            </p>
           </div>
+          <section class="flow-card">
+            <div class="device-filters">
+              <input id="device-warehouse-query" type="search" placeholder="Szukaj: model, serial, KP, klient, uwaga">
+              <select id="device-warehouse-reservation">
+                <option value="all">Wszystkie rezerwacje</option>
+                <option value="none">Bez rezerwacji</option>
+                <option value="flow">Rezerwacja FLOW</option>
+                <option value="manual">Rezerwacja ręczna</option>
+                <option value="sheet">Tylko w arkuszu</option>
+              </select>
+              <select id="device-warehouse-sheet">
+                <option value="all">Każdy stan arkusza</option>
+                <option value="synced">Zsynchronizowane</option>
+                <option value="pending">Oczekujące</option>
+                <option value="failed">Błąd</option>
+                <option value="history_not_registered">Dane historyczne</option>
+              </select>
+              <button id="device-warehouse-search" type="button" class="flow-secondary">Filtruj</button>
+            </div>
+            <section id="device-warehouse-summary" class="flow-stats device-stats compact"></section>
+            <div class="device-table-wrap">
+              <table class="flow-table device-table">
+                <thead>
+                  <tr>
+                    <th>Urządzenie</th><th>Serial / KP</th><th>Stan</th>
+                    <th>Licznik B/W / kolor</th><th>Cena zakupu</th><th>Uwagi</th>
+                    <th>Zerówka</th><th>Rezerwacja</th><th>Arkusz</th>
+                    <th>Arkusz/Magazyn/Urządzenie/CTIP</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="device-warehouse-body"></tbody>
+              </table>
+            </div>
+            <div class="device-pagination">
+              <button id="device-page-prev" type="button" class="flow-secondary">Poprzednia</button>
+              <span id="device-page-label">Strona 1</span>
+              <button id="device-page-next" type="button" class="flow-secondary">Następna</button>
+            </div>
+            <aside id="device-warehouse-legend" class="device-status-legend"
+                   aria-labelledby="device-warehouse-legend-title">
+              <h3 id="device-warehouse-legend-title">Legenda tabeli</h3>
+              <p>
+                Szybkie znaczniki korzystają z bieżącego stanu Firebird, lokalnego cache
+                arkusza i rejestru CTIP. Pełne porównanie danych wykonuje ręczny audyt poniżej.
+              </p>
+              <div class="device-status-legend-grid">
+                <section class="device-status-legend-card">
+                  <h4>Arkusz/Magazyn/Urządzenie/CTIP</h4>
+                  <ul class="device-status-legend-list">
+                    <li>
+                      <span class="device-badge ok">OK</span>
+                      <span>Jednoznaczny wpis istnieje w danym źródle.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge error">BD</span>
+                      <span>Brak wpisu albo dopasowanie nie jest jednoznaczne.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Arkusz</span>
+                      <span>Aktywna zakładka <code>Urzadzenia_magazyn</code> z lokalnego cache.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Magazyn</span>
+                      <span>Magazyn Firebird nr 28 z dodatnim stanem dostępnym.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Urządzenie</span>
+                      <span>Jedna kartoteka <code>MASZYNA</code> w Menadżerze Serwisu.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge">CTIP</span>
+                      <span>Jeden trwały wpis egzemplarza w rejestrze CTIP.</span>
+                    </li>
+                  </ul>
+                </section>
+                <section class="device-status-legend-card">
+                  <h4>Synchronizacja arkusza</h4>
+                  <ul class="device-status-legend-list">
+                    <li>
+                      <span class="device-badge ok">Zsynchronizowano</span>
+                      <span>Ostatnia operacja CTIP została poprawnie zapisana w arkuszu.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge warn">Oczekuje</span>
+                      <span>Zadanie czeka w kolejce synchronizacji.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge warn">W trakcie</span>
+                      <span>Worker aktualnie zapisuje dane w arkuszu.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge error">Błąd</span>
+                      <span>Zapis nie powiódł się i wymaga obsługi w sekcji „Problemy”.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Tylko audyt</span>
+                      <span>
+                        Pozycja historyczna bez wpisu w rejestrze CTIP; nie jest automatycznie
+                        migrowana ani naprawiana.
+                      </span>
+                    </li>
+                  </ul>
+                </section>
+                <section class="device-status-legend-card">
+                  <h4>Rezerwacja</h4>
+                  <ul class="device-status-legend-list">
+                    <li>
+                      <span class="device-badge ok">Brak rezerwacji</span>
+                      <span>Egzemplarz nie ma aktywnej blokady CTIP, FLOW ani arkusza.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge flow">Rezerwacja FLOW</span>
+                      <span>Urządzenie jest przypisane do aktywnej sprawy handlowej.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge warn">Rezerwacja ręczna</span>
+                      <span>Blokada została ustawiona ręcznie i ma określony termin.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge warn">Tylko w arkuszu</span>
+                      <span>
+                        Status pochodzi z arkusza i nie ma aktywnej rezerwacji CTIP lub FLOW.
+                      </span>
+                    </li>
+                    <li>
+                      <span class="device-badge warn">Rezerwacja wygasła</span>
+                      <span>Termin minął, a automat przygotowuje zwolnienie rezerwacji.</span>
+                    </li>
+                  </ul>
+                </section>
+                <section class="device-status-legend-card">
+                  <h4>Stan i zerówka</h4>
+                  <ul class="device-status-legend-list">
+                    <li>
+                      <span class="device-badge ok">Stan Firebird</span>
+                      <span>
+                        Status i liczba dostępnych sztuk pochodzą z Menadżera Serwisu.
+                      </span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Status zerówki</span>
+                      <span>
+                        Wartość w kolumnie „Zerówka” pochodzi z pola <code>STATUS</code> arkusza.
+                      </span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Brak wartości</span>
+                      <span>
+                        Puste pole oznacza brak pasującego wpisu albo statusu w źródle.
+                      </span>
+                    </li>
+                    <li>
+                      <span class="device-badge">MAGAZYN ID</span>
+                      <span>Techniczny identyfikator kartoteki urządzenia w Firebird.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge device-counter-value">
+                        <span>B/W</span><span aria-hidden="true">/</span>
+                        <span class="device-counter-color">KOLOR</span>
+                      </span>
+                      <span>
+                        Pierwsza wartość to licznik B/W, a wyróżniona druga wartość to licznik
+                        kolorowy. <code>bd</code> oznacza brak danych; urządzenie B/W pokazuje
+                        tylko jedną wartość.
+                      </span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Cena zakupu</span>
+                      <span>Kwota netto pochodzi z rejestru przyjęcia PZ lub Firebird.</span>
+                    </li>
+                    <li>
+                      <span class="device-badge">Uwagi</span>
+                      <span>Najnowsza uwaga CTIP, a dla danych historycznych uwaga z arkusza.</span>
+                    </li>
+                  </ul>
+                </section>
+              </div>
+            </aside>
+            <section class="device-audit-panel" aria-labelledby="device-audit-title">
+              <div class="device-card-heading">
+                <div>
+                  <p class="flow-panel-kicker">Kontrola tylko do odczytu</p>
+                  <h3 id="device-audit-title">Audyt rozbieżności urządzeń</h3>
+                  <p class="flow-note">
+                    Porównuje świeży arkusz, magazyn 28, wszystkie kartoteki MASZYNA i rejestr
+                    CTIP. Nie naprawia, nie migruje i nie zapisuje danych źródłowych.
+                  </p>
+                </div>
+                <button id="device-audit-start" type="button" class="flow-primary">
+                  Uruchom audyt
+                </button>
+              </div>
+              <div id="device-audit-progress" class="flow-message" hidden></div>
+              <section id="device-audit-summary" class="flow-stats device-stats compact"></section>
+              <div class="device-filters">
+                <select id="device-audit-run" aria-label="Przebieg audytu">
+                  <option value="">Brak historii audytów</option>
+                </select>
+                <select id="device-audit-source" aria-label="Źródło urządzeń">
+                  <option value="operational" selected>Widok operacyjny</option>
+                  <option value="sheet">Źródło: Arkusz Urzadzenia_magazyn</option>
+                  <option value="warehouse">Źródło: Magazyn 28 (stan min. 1)</option>
+                  <option value="machine">Źródło: Urządzenia MS</option>
+                  <option value="ctip">Źródło: CTIP</option>
+                  <option value="all">Wszystkie źródła audytu</option>
+                </select>
+                <select id="device-audit-result" aria-label="Wynik audytu">
+                  <option value="all">Wszystkie wyniki</option>
+                  <option value="duplicate">Duplikaty</option>
+                  <option value="discrepancy">Rozbieżności</option>
+                  <option value="missing">Braki</option>
+                  <option value="ok">Poprawne</option>
+                </select>
+                <input id="device-audit-query" type="search"
+                       placeholder="Szukaj: model, serial, KP, problem">
+                <button id="device-audit-filter" type="button" class="flow-secondary">Filtruj</button>
+              </div>
+              <div class="device-table-wrap">
+                <table class="flow-table device-table device-audit-table">
+                  <thead>
+                    <tr>
+                      <th>Urządzenie</th><th>Serial / KP</th>
+                      <th>Arkusz/Magazyn/Urządzenie/CTIP</th>
+                      <th>Wynik audytu</th><th>Szczegóły</th>
+                    </tr>
+                  </thead>
+                  <tbody id="device-audit-body">
+                    <tr><td colspan="5" class="device-empty">Nie uruchomiono jeszcze audytu.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="device-pagination">
+                <button id="device-audit-prev" type="button" class="flow-secondary">Poprzednia</button>
+                <span id="device-audit-page-label">Strona 1</span>
+                <button id="device-audit-next" type="button" class="flow-secondary">Następna</button>
+              </div>
+            </section>
+          </section>
+
+          <dialog id="device-detail-dialog" class="device-dialog">
+            <form method="dialog" class="device-dialog-head">
+              <div><p class="flow-kicker">Egzemplarz</p><h3 id="device-detail-title">Szczegóły</h3></div>
+              <button value="cancel" class="flow-secondary">Zamknij</button>
+            </form>
+            <div id="device-detail-meta" class="device-detail-meta"></div>
+            <section class="device-form-columns">
+              <form id="device-note-form" class="flow-card device-form-card">
+                <h4>Bieżąca uwaga</h4>
+                <textarea id="device-note-text" rows="5" maxlength="2000"></textarea>
+                <button type="submit" class="flow-secondary">Zapisz uwagę</button>
+              </form>
+              <form id="device-reservation-form" class="flow-card device-form-card">
+                <h4>Rezerwacja ręczna</h4>
+                <label><span>Klient / cel *</span><input id="device-reserved-for" maxlength="500"></label>
+                <label><span>Ważna do</span><input id="device-reservation-until" type="datetime-local"></label>
+                <label><span>Uzasadnienie (min. 10 znaków) *</span><textarea id="device-reservation-reason" rows="3" maxlength="2000"></textarea></label>
+                <div class="device-submit-row">
+                  <button id="device-reservation-save" type="submit" class="flow-secondary">Zapisz rezerwację</button>
+                  <button id="device-reservation-release" type="button" class="flow-secondary">Zwolnij</button>
+                </div>
+              </form>
+            </section>
+            <section class="flow-card">
+              <h4>Historia operacyjna</h4>
+              <ol id="device-event-list" class="device-event-list"></ol>
+            </section>
+          </dialog>
+        </section>
+
+        <section class="device-view" data-device-screen="history" hidden>
+          <div class="flow-panel-head">
+            <div>
+              <p class="flow-panel-kicker">Audyt</p>
+              <h2>Historia przyjęć PZ</h2>
+              <p class="flow-panel-lead">
+                Starsze dane są tylko audytowane. System nie wykonuje zbiorczych napraw ani migracji.
+              </p>
+            </div>
+          </div>
+          <section class="flow-card">
+            <div class="device-table-wrap">
+              <table class="flow-table device-table">
+                <thead><tr><th>Data</th><th>PZ</th><th>Status</th><th>Dostawca</th><th>Pozycje</th><th>Błąd</th></tr></thead>
+                <tbody id="device-history-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="device-view" data-device-screen="issues" hidden>
+          <div class="flow-panel-head">
+            <div>
+              <p class="flow-panel-kicker">Kontrola</p>
+              <h2>Problemy wymagające działania</h2>
+              <p class="flow-panel-lead">
+                Operacji oznaczonej „wymaga uzgodnienia” nie wolno ponawiać z nowym UUID.
+              </p>
+            </div>
+          </div>
+          <section class="flow-card">
+            <h3>Operacje PZ</h3>
+            <div id="device-operation-issues" class="device-issue-list"></div>
+          </section>
+          <section class="flow-card">
+            <h3>Synchronizacja Google Sheets</h3>
+            <div id="device-sheet-issues" class="device-issue-list"></div>
+          </section>
         </section>
       </section>
 

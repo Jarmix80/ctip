@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-PanelSection = Literal["admin", "operator", "generator", "delivery"]
+PanelSection = Literal["admin", "operator", "generator", "delivery", "device"]
 PanelRole = Literal["admin", "operator", "serwisant"]
 
 
@@ -332,13 +332,13 @@ class SmsConfigUpdate(BaseModel):
 
 
 class EmailConfigResponse(EnvBackedConfigMetadata):
-    """Widok konfiguracji serwera SMTP."""
+    """Widok konfiguracji SMTP, także dla nieroutowalnych domen testowych."""
 
     host: str | None
     port: int
     username: str | None
     sender_name: str | None
-    sender_address: EmailStr | None
+    sender_address: str | None
     use_tls: bool
     use_ssl: bool
     password_set: bool
@@ -441,10 +441,10 @@ class EmailTestResponse(BaseModel):
 
 
 class AdminUserImapConfig(BaseModel):
-    """Widok konfiguracji IMAP przypisanej do użytkownika."""
+    """Widok konfiguracji IMAP, również dla historycznych domen testowych."""
 
     enabled: bool = False
-    email: EmailStr | None = None
+    email: str | None = None
     host: str | None = Field(default=None, max_length=255)
     port: int | None = Field(default=993, ge=1, le=65535)
     username: str | None = Field(default=None, max_length=255)
@@ -452,7 +452,7 @@ class AdminUserImapConfig(BaseModel):
     folder: str | None = Field(default="INBOX", max_length=255)
     password_set: bool = False
 
-    @field_validator("host", "username", "folder", mode="before")
+    @field_validator("email", "host", "username", "folder", mode="before")
     @classmethod
     def _strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -484,10 +484,10 @@ class AdminUserImapUpdate(BaseModel):
 
 
 class AdminUserSummary(BaseModel):
-    """Skrócony widok użytkownika panelu."""
+    """Skrócony widok użytkownika, odporny na historyczne adresy testowe."""
 
     id: int
-    email: EmailStr
+    email: str
     mobile_phone: str | None
     first_name: str | None
     last_name: str | None

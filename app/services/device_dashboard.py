@@ -2,41 +2,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.services.firebird_runtime import firebird_connection
 
-WAREHOUSE_DEVICE_ID = 28
-WAREHOUSE_OWNER_CLIENT_ID = 656
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _resolve_local_firebird_path() -> Path:
-    db_path = Path(settings.fb_local_copy_path)
-    if not db_path.is_absolute():
-        db_path = _repo_root() / db_path
-    return db_path
+WAREHOUSE_DEVICE_ID = settings.fb_warehouse_id
+WAREHOUSE_OWNER_CLIENT_ID = settings.fb_warehouse_client_id
 
 
 def _firebird_connection():
-    import firebirdsql  # type: ignore[import-not-found]
-
-    db_path = _resolve_local_firebird_path()
-    if not db_path.exists():
-        raise FileNotFoundError(f"Brak lokalnej kopii Firebird: {db_path}")
-
-    return firebirdsql.connect(
-        host="127.0.0.1",
-        port=settings.fb_port,
-        database=str(db_path),
-        user=settings.fb_user,
-        password=settings.fb_password,
-        charset=settings.fb_charset,
-    )
+    """Zachowuje punkt rozszerzenia testów, używając konfiguracji runtime."""
+    return firebird_connection()
 
 
 def _text(value: Any) -> str:

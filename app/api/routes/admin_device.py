@@ -1,24 +1,37 @@
-"""API dashboardu obslugi urzadzen."""
+"""API przyjęć, magazynu i audytu urządzeń."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.models import AdminSetting
-from app.services import section_permissions
+from app.core.config import settings
+from app.models import (
+    AdminSetting,
+    DeviceAuditItem,
+    DeviceAuditRun,
+    DeviceIntakeOperation,
+    DeviceSheetOutbox,
+)
+from app.services import firebird_ms_users, section_permissions
 from app.services.audit import record_audit
-from app.services.contracts_dashboard import firebird_writes_enabled
+from app.services.contracts_dashboard import load_available_devices_from_firebird_warehouse
 from app.services.device_dashboard import load_device_dashboard_payload
 from app.services.device_intake import (
+    DeviceIntakeBatchResult,
     DeviceIntakeItemInput,
-    create_device_intake,
     create_device_intake_batch,
     create_device_model,
     create_device_supplier,
@@ -26,10 +39,36 @@ from app.services.device_intake import (
     load_device_model_taxonomy,
     search_device_models,
     search_device_suppliers,
-    sync_device_catalog_from_models,
+)
+from app.services.device_registry import (
+    DeviceIdempotencyConflict,
+    DeviceReservationConflict,
+    add_device_note,
+    begin_intake_operation,
+    canonical_request_hash,
+    complete_intake_operation,
+    ensure_inventory_unit_for_legacy,
+    find_intake_operation,
+    find_unit_by_source_or_identity,
+    get_active_manual_reservation,
+    intake_operation_payload,
+    mark_intake_operation_failed,
+    release_manual_reservation,
+    save_manual_reservation,
+)
+from app.services.device_sheet_worker import retry_device_sheet_outbox
+from app.services.device_warehouse import (
+    build_device_warehouse_payload,
+    serialize_device_events,
+)
+from app.services.firebird_runtime import (
+    firebird_writes_enabled,
+    load_firebird_runtime_config,
+    use_firebird_runtime_config,
 )
 
 router = APIRouter(prefix="/admin/device", tags=["admin-device"])
+_DEVICE_AUDIT_CREATE_LOCK = asyncio.Lock()
 
 DEVICE_BRANDS_SETTING_KEY = "device.model_brands"
 DEFAULT_DEVICE_BRANDS = [
@@ -42,6 +81,98 @@ DEFAULT_DEVICE_BRANDS = [
     "Ricoh",
     "Nashuatec",
 ]
+
+
+class StrictRequest(BaseModel):
+    """Bazowy model odrzucający historyczne i nieznane pola zapisu."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DeviceCatalogSyncRequest(StrictRequest):
+    """Historyczny payload wyłączonej synchronizacji kartotek AUTO."""
+
+    model_ids: list[int] | None = None
+    only_missing: bool = True
+
+
+class DeviceIntakeBatchItemRequest(StrictRequest):
+    """Pojedynczy fizyczny egzemplarz przyjmowany dokumentem PZ."""
+
+    model_id: int = Field(gt=0)
+    serial: str = Field(min_length=1, max_length=100)
+    ewidencja: str | None = Field(default=None, max_length=100)
+    purchase_price_netto: Decimal = Field(ge=0, decimal_places=4)
+
+
+class DeviceIntakeBatchRequest(StrictRequest):
+    """Idempotentne przyjęcie wielu urządzeń jednym dokumentem PZ."""
+
+    idempotency_key: UUID
+    items: list[DeviceIntakeBatchItemRequest] = Field(min_length=1, max_length=200)
+    supplier_id: int = Field(gt=0)
+    external_document: str | None = Field(default=None, max_length=30)
+    allow_exception: bool = False
+    exception_reason: str | None = Field(default=None, max_length=1000)
+    ewidencja_prefix: str | None = Field(default="KP/", max_length=50)
+
+
+class DeviceIntakeRequest(StrictRequest):
+    """Zgodnościowy wariant przyjęcia jednego urządzenia."""
+
+    idempotency_key: UUID
+    model_id: int = Field(gt=0)
+    serial: str = Field(min_length=1, max_length=100)
+    ewidencja: str | None = Field(default=None, max_length=100)
+    purchase_price_netto: Decimal = Field(ge=0, decimal_places=4)
+    supplier_id: int = Field(gt=0)
+    external_document: str | None = Field(default=None, max_length=30)
+    allow_exception: bool = False
+    exception_reason: str | None = Field(default=None, max_length=1000)
+    ewidencja_prefix: str | None = Field(default="KP/", max_length=50)
+
+
+class DeviceSupplierCreateRequest(StrictRequest):
+    """Dane dostawcy tworzonego w tabeli KLIENT."""
+
+    name: str = Field(min_length=1, max_length=500)
+    nip: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=250)
+    postal_code: str | None = Field(default=None, max_length=6)
+    city: str | None = Field(default=None, max_length=150)
+    phone: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=200)
+
+
+class DeviceModelCreateRequest(StrictRequest):
+    """Kompletne dane modelu bez wspólnej kartoteki magazynowej."""
+
+    marka: str = Field(min_length=1, max_length=50)
+    model: str = Field(min_length=1, max_length=50)
+    grupa: str = Field(min_length=1, max_length=50)
+    rodzaj: str = Field(min_length=1, max_length=50)
+    kolor: bool
+    plik: str | None = Field(default=None, max_length=250)
+
+
+class DeviceNoteRequest(StrictRequest):
+    """Treść bieżącej uwagi egzemplarza."""
+
+    note: str = Field(min_length=3, max_length=2000)
+
+
+class DeviceReservationRequest(StrictRequest):
+    """Dane ręcznej rezerwacji egzemplarza."""
+
+    reserved_for: str = Field(min_length=2, max_length=500)
+    reason: str = Field(min_length=10, max_length=2000)
+    expires_at: datetime | None = None
+
+
+class DeviceReservationReleaseRequest(StrictRequest):
+    """Uzasadnienie ręcznego zwolnienia rezerwacji."""
+
+    reason: str = Field(min_length=10, max_length=2000)
 
 
 async def _get_or_seed_device_brands(session: AsyncSession) -> list[str]:
@@ -61,162 +192,367 @@ async def _get_or_seed_device_brands(session: AsyncSession) -> list[str]:
     except json.JSONDecodeError:
         decoded = []
     brands = [str(item).strip() for item in decoded if str(item).strip()]
-    if not brands:
-        brands = list(DEFAULT_DEVICE_BRANDS)
-        setting_row.value = json.dumps(brands, ensure_ascii=False)
+    if brands:
+        return brands
+    setting_row.value = json.dumps(DEFAULT_DEVICE_BRANDS, ensure_ascii=False)
+    await session.commit()
+    return list(DEFAULT_DEVICE_BRANDS)
+
+
+async def _ensure_device_access(session: AsyncSession, admin_user) -> None:
+    if not await section_permissions.user_has_section(session, admin_user, "device"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma prawa „Obsługa urządzeń”.",
+        )
+
+
+async def _ensure_device_writer(session: AsyncSession, admin_user):
+    await _ensure_device_access(session, admin_user)
+    if admin_user.firebird_app_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Konto nie jest powiązane z użytkownikiem Menadżera Serwisu.",
+        )
+    try:
+        return await firebird_ms_users.resolve_firebird_ms_user(
+            session,
+            admin_user.firebird_app_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+
+async def _run_firebird_read(session: AsyncSession, function, /, **kwargs):
+    runtime = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(runtime):
+        return await asyncio.to_thread(function, **kwargs)
+
+
+async def _ensure_firebird_write_enabled(session: AsyncSession):
+    runtime = await load_firebird_runtime_config(session)
+    with use_firebird_runtime_config(runtime):
+        enabled, reason = firebird_writes_enabled()
+    if not enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reason or "Zapis do Firebird jest zablokowany.",
+        )
+    return runtime
+
+
+async def _load_available_warehouse_row(
+    session: AsyncSession,
+    source_row: int,
+) -> dict[str, Any]:
+    try:
+        rows = await _run_firebird_read(
+            session,
+            load_available_devices_from_firebird_warehouse,
+            limit=1,
+            source_row=source_row,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Błąd odczytu egzemplarza z magazynu Firebird: {exc}",
+        ) from exc
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Egzemplarz nie jest dostępny w magazynie urządzeń.",
+        )
+    return dict(rows[0])
+
+
+async def _ensure_registered_warehouse_unit(
+    session: AsyncSession,
+    *,
+    source_row: int,
+) -> tuple[Any, dict[str, Any]]:
+    source = await _load_available_warehouse_row(session, source_row)
+    unit = await find_unit_by_source_or_identity(
+        session,
+        source_row=source_row,
+        serial=source.get("serial"),
+        ewidencja=source.get("ewidencja"),
+    )
+    if unit is None:
+        try:
+            unit = await ensure_inventory_unit_for_legacy(
+                session,
+                source_row=source_row,
+                snapshot=source,
+            )
+            await session.flush()
+        except IntegrityError as exc:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Nie można zarejestrować historycznego egzemplarza, ponieważ serial "
+                    "lub numer KP jest już powiązany z innym wpisem."
+                ),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+    return unit, source
+
+
+def _batch_result_payload(result: DeviceIntakeBatchResult) -> dict[str, Any]:
+    return {
+        "pz_id": result.pz_id,
+        "pz_number": result.pz_number,
+        "supplier_id": result.supplier_id,
+        "items": [
+            {
+                "model_id": item.model_id,
+                "producer": item.producer,
+                "model": item.model,
+                "warehouse_item_id": item.warehouse_item_id,
+                "warehouse_index": item.warehouse_index,
+                "zakpozycja_id": item.zakpozycja_id,
+                "serial_id": None,
+                "serial": item.serial,
+                "ewidencja": item.ewidencja,
+                "machine_id": item.machine_id,
+                "machine_table_id": item.machine_table_id,
+                "purchase_price_netto": str(item.purchase_price_netto or Decimal("0")),
+            }
+            for item in result.items
+        ],
+    }
+
+
+def _validate_exception(payload: DeviceIntakeBatchRequest) -> None:
+    requires_exception = not str(payload.external_document or "").strip() or any(
+        item.purchase_price_netto <= 0 for item in payload.items
+    )
+    if requires_exception and not payload.allow_exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Brak dokumentu zewnętrznego lub cena 0 wymaga zaznaczenia wyjątku "
+                "i podania uzasadnienia."
+            ),
+        )
+    if payload.allow_exception and len(str(payload.exception_reason or "").strip()) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uzasadnienie wyjątku musi mieć co najmniej 10 znaków.",
+        )
+
+
+async def _execute_intake_batch(
+    payload: DeviceIntakeBatchRequest,
+    *,
+    admin_session,
+    admin_user,
+    session: AsyncSession,
+) -> dict[str, Any]:
+    firebird_user = await _ensure_device_writer(session, admin_user)
+    runtime = await _ensure_firebird_write_enabled(session)
+    _validate_exception(payload)
+
+    request_payload = payload.model_dump(mode="json")
+    request_hash = canonical_request_hash(request_payload)
+    try:
+        operation, replayed = await begin_intake_operation(
+            session,
+            idempotency_key=str(payload.idempotency_key),
+            request_hash=request_hash,
+            request_payload=request_payload,
+            created_by=admin_user.id,
+            supplier_firebird_id=payload.supplier_id,
+            external_document=payload.external_document,
+            exception_reason=payload.exception_reason,
+        )
+    except DeviceIdempotencyConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if replayed and operation.status == "completed":
+        return {
+            "ok": True,
+            "replayed": True,
+            "operation": intake_operation_payload(operation),
+            "batch": operation.result_snapshot,
+        }
+
+    operation.status = "processing"
+    operation.error_text = None
+    await session.commit()
+
+    try:
+        with use_firebird_runtime_config(runtime):
+            result = await asyncio.to_thread(
+                create_device_intake_batch,
+                items=[
+                    DeviceIntakeItemInput(
+                        model_id=item.model_id,
+                        serial=item.serial,
+                        ewidencja=item.ewidencja,
+                        purchase_price_netto=item.purchase_price_netto,
+                    )
+                    for item in payload.items
+                ],
+                supplier_id=payload.supplier_id,
+                external_document=payload.external_document,
+                issued_by=firebird_user.login_user,
+                ewidencja_prefix=payload.ewidencja_prefix,
+                idempotency_key=str(payload.idempotency_key),
+                allow_exception=payload.allow_exception,
+                exception_reason=payload.exception_reason,
+                kto=f"CTIP/{firebird_user.login_user}",
+            )
+    except ValueError as exc:
+        operation = await find_intake_operation(session, str(payload.idempotency_key))
+        if operation is not None:
+            await mark_intake_operation_failed(session, operation, str(exc))
+            await session.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        operation = await find_intake_operation(session, str(payload.idempotency_key))
+        if operation is not None:
+            await mark_intake_operation_failed(session, operation, str(exc))
+            await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Błąd tworzenia przyjęcia PZ: {exc}",
+        ) from exc
+
+    result_payload = _batch_result_payload(result)
+    try:
+        operation = await find_intake_operation(session, str(payload.idempotency_key))
+        if operation is None:
+            raise RuntimeError("Brak rejestru rozpoczętej operacji przyjęcia.")
+        await session.refresh(operation)
+        if operation.status == "completed":
+            return {
+                "ok": True,
+                "replayed": True,
+                "operation": intake_operation_payload(operation),
+                "batch": operation.result_snapshot,
+                "sheet_sync_status": "pending",
+            }
+        await complete_intake_operation(session, operation, result_payload)
+        await record_audit(
+            session,
+            user_id=admin_user.id,
+            action="device_intake_batch_create",
+            client_ip=admin_session.client_ip,
+            payload={
+                "idempotency_key": str(payload.idempotency_key),
+                "pz_id": result.pz_id,
+                "pz_number": result.pz_number,
+                "supplier_id": result.supplier_id,
+                "item_count": len(result.items),
+                "exception_used": payload.allow_exception,
+                "exception_reason": payload.exception_reason,
+                "firebird_user_id": firebird_user.id,
+                "firebird_user_login": firebird_user.login_user,
+            },
+        )
         await session.commit()
-    return brands
+    except Exception as exc:
+        await session.rollback()
+        operation = await find_intake_operation(session, str(payload.idempotency_key))
+        if operation is not None:
+            await mark_intake_operation_failed(
+                session,
+                operation,
+                f"Firebird zatwierdzony, rejestr CTIP wymaga uzgodnienia: {exc}",
+                reconcile_required=True,
+            )
+            await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "PZ zapisano w Firebird, ale rejestr CTIP wymaga uzgodnienia. "
+                "Ponów żądanie z tym samym kluczem idempotencji."
+            ),
+        ) from exc
+
+    return {
+        "ok": True,
+        "replayed": replayed,
+        "message": (
+            f"Utworzono przyjęcie {result.pz_number}: "
+            f"PZ ID {result.pz_id}, pozycje {len(result.items)}."
+        ),
+        "operation": intake_operation_payload(operation),
+        "batch": result_payload,
+        "sheet_sync_status": "pending",
+    }
 
 
-class DeviceCatalogSyncRequest(BaseModel):
-    """Parametry synchronizacji kartoteki AUTO dla modeli."""
-
-    model_ids: list[int] | None = Field(default=None)
-    only_missing: bool = Field(default=True)
-
-
-class DeviceIntakeRequest(BaseModel):
-    """Parametry utworzenia pojedynczego przyjecia PZ."""
-
-    model_id: int = Field(gt=0)
-    serial: str = Field(min_length=1, max_length=100)
-    ewidencja: str = Field(min_length=1, max_length=100)
-    supplier_id: int | None = Field(default=None, gt=0)
-    external_document: str | None = Field(default=None, max_length=30)
-    issued_by: str | None = Field(default=None, max_length=100)
-    force: bool = Field(default=False)
-
-
-class DeviceIntakeBatchItemRequest(BaseModel):
-    """Pojedyncza pozycja egzemplarza dla dokumentu PZ."""
-
-    model_id: int = Field(gt=0)
-    serial: str = Field(min_length=1, max_length=100)
-    ewidencja: str | None = Field(default=None, max_length=100)
-    purchase_price_netto: float | None = Field(default=None, ge=0)
-
-
-class DeviceIntakeBatchRequest(BaseModel):
-    """Parametry utworzenia jednego dokumentu PZ z wieloma pozycjami."""
-
-    items: list[DeviceIntakeBatchItemRequest] = Field(min_length=1, max_length=200)
-    supplier_id: int | None = Field(default=None, gt=0)
-    external_document: str | None = Field(default=None, max_length=30)
-    issued_by: str | None = Field(default=None, max_length=100)
-    force: bool = Field(default=False)
-    ewidencja_prefix: str | None = Field(default=None, max_length=50)
-
-
-class DeviceSupplierCreateRequest(BaseModel):
-    """Podstawowy payload tworzenia dostawcy KLIENT."""
-
-    name: str = Field(min_length=1, max_length=500)
-    nip: str | None = Field(default=None, max_length=30)
-    address: str | None = Field(default=None, max_length=250)
-    postal_code: str | None = Field(default=None, max_length=6)
-    city: str | None = Field(default=None, max_length=150)
-    phone: str | None = Field(default=None, max_length=100)
-    email: str | None = Field(default=None, max_length=200)
-
-
-class DeviceModelCreateRequest(BaseModel):
-    """Payload dodania modelu i ewentualnej kartoteki AUTO."""
-
-    marka: str = Field(min_length=1, max_length=50)
-    model: str = Field(min_length=1, max_length=50)
-    grupa: str | None = Field(default=None, max_length=50)
-    rodzaj: str | None = Field(default=None, max_length=50)
-    kolor: bool = Field(default=False)
-    plik: str | None = Field(default=None, max_length=250)
-    sync_catalog: bool = Field(default=True)
-
-
-@router.get("/intake/defaults", summary="Pobierz domyslna numeracje ewidencyjna")
+@router.get("/intake/defaults", summary="Pobierz sugestię numeracji KP")
 async def device_intake_defaults(
     ewidencja_prefix: str | None = Query(default=None, max_length=50),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca kolejne oznaczenie KP wykorzystywane przy autouzupelnianiu formularza."""
     _, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-
+    await _ensure_device_access(session, admin_user)
     try:
-        defaults = await asyncio.to_thread(
+        defaults = await _run_firebird_read(
+            session,
             get_next_ewidencja_suggestion,
             prefix=ewidencja_prefix,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad odczytu numeracji ewidencyjnej: {exc}",
+            detail=f"Błąd odczytu numeracji KP: {exc}",
         ) from exc
-
     return {"ok": True, "defaults": defaults}
 
 
-@router.get("/models", summary="Wyszukaj modele dla formularza urzadzen")
+@router.get("/models", summary="Wyszukaj modele urządzeń")
 async def device_models_lookup(
     query: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=100, ge=1, le=500),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca liste modeli wraz z informacja o kartotece AUTO."""
     _, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
+    await _ensure_device_access(session, admin_user)
     try:
-        rows = await asyncio.to_thread(search_device_models, query=query, limit=limit)
-    except Exception as exc:  # noqa: BLE001
+        rows = await _run_firebird_read(
+            session,
+            search_device_models,
+            query=query,
+            limit=limit,
+        )
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad odczytu listy modeli: {exc}",
+            detail=f"Błąd odczytu listy modeli: {exc}",
         ) from exc
     return {"ok": True, "rows": rows}
 
 
-@router.get("/model-form-options", summary="Slowniki pola modelu: marka/grupa/rodzaj")
+@router.get("/model-form-options", summary="Słowniki formularza modelu")
 async def device_model_form_options(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca listy do formularza tworzenia modelu (`marka`, `grupa`, `rodzaj`)."""
     _, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
+    await _ensure_device_access(session, admin_user)
     try:
         brands = await _get_or_seed_device_brands(session)
-        taxonomy = await asyncio.to_thread(load_device_model_taxonomy)
-    except Exception as exc:  # noqa: BLE001
+        taxonomy = await _run_firebird_read(session, load_device_model_taxonomy)
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad odczytu slownikow modelu: {exc}",
+            detail=f"Błąd odczytu słowników modelu: {exc}",
         ) from exc
     return {
         "ok": True,
@@ -229,140 +565,98 @@ async def device_model_form_options(
     }
 
 
-@router.post("/models", summary="Dodaj nowy model i kartoteke AUTO")
+@router.post("/models", summary="Dodaj kompletny model urządzenia")
 async def device_model_create(
     payload: DeviceModelCreateRequest,
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Tworzy MODEL oraz opcjonalnie kartoteke AUTO dla magazynu 28."""
     admin_session, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-    enabled, reason = firebird_writes_enabled()
-    if not enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=reason or "Zapis do Firebird jest zablokowany.",
-        )
+    firebird_user = await _ensure_device_writer(session, admin_user)
+    runtime = await _ensure_firebird_write_enabled(session)
     try:
-        result = await asyncio.to_thread(
-            create_device_model,
-            marka=payload.marka,
-            model_name=payload.model,
-            grupa=payload.grupa,
-            rodzaj=payload.rodzaj,
-            kolor=payload.kolor,
-            plik=payload.plik,
-            sync_catalog=payload.sync_catalog,
-            kto=admin_user.email or "CTIP",
-        )
+        with use_firebird_runtime_config(runtime):
+            result = await asyncio.to_thread(
+                create_device_model,
+                marka=payload.marka,
+                model_name=payload.model,
+                grupa=payload.grupa,
+                rodzaj=payload.rodzaj,
+                kolor=payload.kolor,
+                plik=payload.plik,
+                kto=f"CTIP/{firebird_user.login_user}",
+            )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad tworzenia modelu: {exc}",
+            detail=f"Błąd tworzenia modelu: {exc}",
         ) from exc
-
     await record_audit(
         session,
         user_id=admin_user.id,
         action="device_model_create",
         client_ip=admin_session.client_ip,
-        payload={
-            "id_model": result.get("id_model"),
-            "created": result.get("created"),
-            "marka": result.get("marka"),
-            "model": result.get("model"),
-            "catalog": result.get("catalog"),
-        },
+        payload=result,
     )
     await session.commit()
     return {"ok": True, "model": result}
 
 
-@router.get("/suppliers", summary="Wyszukaj dostawcow KLIENT")
+@router.get("/suppliers", summary="Wyszukaj dostawców")
 async def device_suppliers_lookup(
     query: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=100, ge=1, le=500),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca liste dostawcow do wyboru po nazwie lub NIP."""
     _, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
+    await _ensure_device_access(session, admin_user)
     try:
-        rows = await asyncio.to_thread(search_device_suppliers, query=query, limit=limit)
-    except Exception as exc:  # noqa: BLE001
+        rows = await _run_firebird_read(
+            session,
+            search_device_suppliers,
+            query=query,
+            limit=limit,
+        )
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad odczytu listy dostawcow: {exc}",
+            detail=f"Błąd odczytu dostawców: {exc}",
         ) from exc
     return {"ok": True, "rows": rows}
 
 
-@router.post("/suppliers", summary="Dodaj podstawowego dostawce KLIENT")
+@router.post("/suppliers", summary="Dodaj dostawcę")
 async def device_supplier_create(
     payload: DeviceSupplierCreateRequest,
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Tworzy podstawowego dostawce z poziomu formularza urzadzen."""
     admin_session, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-    enabled, reason = firebird_writes_enabled()
-    if not enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=reason or "Zapis do Firebird jest zablokowany.",
-        )
+    firebird_user = await _ensure_device_writer(session, admin_user)
+    runtime = await _ensure_firebird_write_enabled(session)
     try:
-        supplier = await asyncio.to_thread(
-            create_device_supplier,
-            name=payload.name,
-            nip=payload.nip,
-            address=payload.address,
-            postal_code=payload.postal_code,
-            city=payload.city,
-            phone=payload.phone,
-            email=payload.email,
-            kto=admin_user.email or "CTIP",
-        )
+        with use_firebird_runtime_config(runtime):
+            supplier = await asyncio.to_thread(
+                create_device_supplier,
+                name=payload.name,
+                nip=payload.nip,
+                address=payload.address,
+                postal_code=payload.postal_code,
+                city=payload.city,
+                phone=payload.phone,
+                email=payload.email,
+                kto=f"CTIP/{firebird_user.login_user}",
+            )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad tworzenia dostawcy: {exc}",
+            detail=f"Błąd tworzenia dostawcy: {exc}",
         ) from exc
-
     await record_audit(
         session,
         user_id=admin_user.id,
@@ -374,314 +668,680 @@ async def device_supplier_create(
     return {"ok": True, "supplier": supplier}
 
 
-@router.get("/dashboard", summary="Dane dashboardu obslugi urzadzen")
+@router.get("/dashboard", summary="Podsumowanie obsługi urządzeń")
 async def device_dashboard_data(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca stan przyjec PZ i problemy danych urzadzen w lokalnej Firebird."""
     _, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-
+    await _ensure_device_access(session, admin_user)
     try:
-        return await asyncio.to_thread(load_device_dashboard_payload)
-    except FileNotFoundError as exc:
+        return await _run_firebird_read(session, load_device_dashboard_payload)
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad odczytu dashboardu urzadzen: {exc}",
+            detail=f"Błąd odczytu dashboardu urządzeń: {exc}",
         ) from exc
 
 
-@router.post("/catalog/sync", summary="Synchronizuj kartoteke AUTO dla modeli")
+def _serialize_device_audit_run(run: DeviceAuditRun) -> dict[str, Any]:
+    """Serializuje przebieg audytu do odpowiedzi API."""
+    return {
+        "id": run.id,
+        "status": run.status,
+        "requested_by": run.requested_by,
+        "phase": run.phase,
+        "processed_items": run.processed_items,
+        "total_items": run.total_items,
+        "summary": run.summary or {},
+        "source_snapshot": run.source_snapshot or {},
+        "error_text": run.error_text,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+    }
+
+
+def _serialize_device_audit_item(item: DeviceAuditItem) -> dict[str, Any]:
+    """Serializuje szczegół pojedynczego wyniku audytu."""
+    return {
+        "id": item.id,
+        "canonical_key": item.canonical_key,
+        "producer": item.producer,
+        "model": item.model,
+        "serial": item.serial,
+        "ewidencja": item.ewidencja,
+        "source_row": item.source_row,
+        "sheet_row": item.sheet_row,
+        "machine_id": item.machine_id,
+        "ctip_unit_id": item.ctip_unit_id,
+        "source_presence": {
+            "sheet": item.sheet_present,
+            "warehouse": item.warehouse_present,
+            "machine": item.machine_present,
+            "ctip": item.ctip_present,
+        },
+        "result_status": item.result_status,
+        "issue_codes": item.issue_codes or [],
+        "issue_summary": item.issue_summary,
+        "source_details": item.source_details or {},
+    }
+
+
+@router.post(
+    "/audits",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Uruchom audyt spójności urządzeń",
+)
+async def device_audit_create(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Kolejkuje jeden ręczny audyt; audyt nigdy nie modyfikuje źródeł."""
+    admin_session, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    async with _DEVICE_AUDIT_CREATE_LOCK:
+        active_run = (
+            (
+                await session.execute(
+                    select(DeviceAuditRun)
+                    .where(DeviceAuditRun.status.in_(("pending", "running")))
+                    .order_by(DeviceAuditRun.created_at.desc())
+                    .limit(1)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if active_run is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Audyt urządzeń jest już uruchomiony.",
+            )
+        run = DeviceAuditRun(
+            status="pending",
+            requested_by=admin_user.id,
+            phase="Oczekiwanie na worker",
+            processed_items=0,
+            total_items=0,
+        )
+        session.add(run)
+        await session.flush()
+        await record_audit(
+            session,
+            user_id=admin_user.id,
+            action="device_audit_requested",
+            client_ip=admin_session.client_ip,
+            payload={"run_id": run.id, "read_only": True},
+        )
+        await session.commit()
+    return {"ok": True, "run": _serialize_device_audit_run(run)}
+
+
+@router.get("/audits", summary="Historia audytów urządzeń")
+async def device_audit_history(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca maksymalnie 20 ostatnich przebiegów audytu."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    runs = list(
+        (
+            await session.execute(
+                select(DeviceAuditRun)
+                .order_by(DeviceAuditRun.created_at.desc(), DeviceAuditRun.id.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {"ok": True, "items": [_serialize_device_audit_run(run) for run in runs]}
+
+
+@router.get("/audits/latest", summary="Ostatni zakończony audyt urządzeń")
+async def device_audit_latest(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca ostatni poprawnie zakończony audyt."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    run = (
+        (
+            await session.execute(
+                select(DeviceAuditRun)
+                .where(DeviceAuditRun.status == "completed")
+                .order_by(DeviceAuditRun.completed_at.desc(), DeviceAuditRun.id.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    return {"ok": True, "run": _serialize_device_audit_run(run) if run else None}
+
+
+@router.get("/audits/{run_id}", summary="Szczegóły audytu urządzeń")
+async def device_audit_detail(
+    run_id: int,
+    query: str | None = Query(default=None, max_length=200),
+    result: str | None = Query(default=None, max_length=20),
+    source: str = Query(default="operational", max_length=20),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=10, le=200),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca stronicowane, filtrowalne wyniki wskazanego przebiegu."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    run = await session.get(DeviceAuditRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nie znaleziono audytu.")
+    base_conditions = [DeviceAuditItem.run_id == run_id]
+    normalized_source = str(source or "operational").strip().lower()
+    source_conditions = {
+        "operational": or_(
+            DeviceAuditItem.sheet_present.is_(True),
+            DeviceAuditItem.warehouse_present.is_(True),
+        ),
+        "sheet": DeviceAuditItem.sheet_present.is_(True),
+        "warehouse": DeviceAuditItem.warehouse_present.is_(True),
+        "machine": or_(
+            DeviceAuditItem.machine_present.is_(True),
+            cast(DeviceAuditItem.issue_codes, Text).ilike("%DUPLICATE_MACHINE%"),
+        ),
+        "ctip": or_(
+            DeviceAuditItem.ctip_present.is_(True),
+            cast(DeviceAuditItem.issue_codes, Text).ilike("%DUPLICATE_CTIP%"),
+        ),
+    }
+    if normalized_source != "all":
+        source_condition = source_conditions.get(normalized_source)
+        if source_condition is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nieprawidłowy filtr źródła audytu.",
+            )
+        base_conditions.append(source_condition)
+    normalized_query = str(query or "").strip()
+    if normalized_query:
+        pattern = f"%{normalized_query}%"
+        base_conditions.append(
+            or_(
+                DeviceAuditItem.producer.ilike(pattern),
+                DeviceAuditItem.model.ilike(pattern),
+                DeviceAuditItem.serial.ilike(pattern),
+                DeviceAuditItem.ewidencja.ilike(pattern),
+                DeviceAuditItem.issue_summary.ilike(pattern),
+            )
+        )
+    summary_rows = (
+        await session.execute(
+            select(
+                DeviceAuditItem.result_status,
+                func.count(DeviceAuditItem.id),
+            )
+            .where(*base_conditions)
+            .group_by(DeviceAuditItem.result_status)
+        )
+    ).all()
+    filtered_summary = {
+        "total": sum(int(count) for _, count in summary_rows),
+        "ok": 0,
+        "missing": 0,
+        "discrepancy": 0,
+        "duplicate": 0,
+    }
+    for result_status, count in summary_rows:
+        filtered_summary[str(result_status)] = int(count)
+
+    conditions = list(base_conditions)
+    normalized_result = str(result or "").strip().lower()
+    if normalized_result and normalized_result != "all":
+        if normalized_result not in {"ok", "missing", "discrepancy", "duplicate"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nieprawidłowy filtr wyniku audytu.",
+            )
+        conditions.append(DeviceAuditItem.result_status == normalized_result)
+    total = int(
+        (
+            await session.execute(select(func.count(DeviceAuditItem.id)).where(*conditions))
+        ).scalar_one()
+    )
+    pages = (total + page_size - 1) // page_size
+    safe_page = min(page, pages or 1)
+    items = list(
+        (
+            await session.execute(
+                select(DeviceAuditItem)
+                .where(*conditions)
+                .order_by(
+                    DeviceAuditItem.result_status.desc(),
+                    DeviceAuditItem.producer,
+                    DeviceAuditItem.model,
+                    DeviceAuditItem.id,
+                )
+                .offset((safe_page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "ok": True,
+        "run": _serialize_device_audit_run(run),
+        "source": normalized_source,
+        "filtered_summary": filtered_summary,
+        "items": [_serialize_device_audit_item(item) for item in items],
+        "total": total,
+        "page": safe_page,
+        "page_size": page_size,
+        "pages": pages,
+    }
+
+
+@router.get("/warehouse", summary="Scalony stan magazynu urządzeń")
+async def device_warehouse_list(
+    query: str | None = Query(default=None, max_length=200),
+    reservation: str | None = Query(default=None, max_length=20),
+    sheet_sync: str | None = Query(default=None, max_length=30),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=10, le=200),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca magazyn Firebird wzbogacony o rezerwacje, uwagi i stan arkusza."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    try:
+        firebird_rows = await _run_firebird_read(
+            session,
+            load_available_devices_from_firebird_warehouse,
+            limit=2000,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Błąd odczytu magazynu urządzeń: {exc}",
+        ) from exc
+    payload = await build_device_warehouse_payload(
+        session,
+        firebird_rows=firebird_rows,
+        query=query,
+        reservation_filter=reservation,
+        sheet_filter=sheet_sync,
+        page=page,
+        page_size=page_size,
+    )
+    return {"ok": True, **payload}
+
+
+@router.get("/warehouse/{source_row}", summary="Szczegóły egzemplarza magazynowego")
+async def device_warehouse_detail(
+    source_row: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca aktualny stan i historię pojedynczego egzemplarza."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    source = await _load_available_warehouse_row(session, source_row)
+    payload = await build_device_warehouse_payload(
+        session,
+        firebird_rows=[source],
+        page=1,
+        page_size=10,
+    )
+    if not payload["items"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nie znaleziono egzemplarza.",
+        )
+    item = payload["items"][0]
+    events = (
+        await serialize_device_events(session, unit_id=int(item["unit_id"]))
+        if item.get("unit_id")
+        else []
+    )
+    return {"ok": True, "item": item, "events": events}
+
+
+@router.post("/warehouse/{source_row}/notes", summary="Zapisz uwagę urządzenia")
+async def device_warehouse_note_save(
+    source_row: int,
+    payload: DeviceNoteRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Wersjonuje uwagę w CTIP i kolejkuje jej publikację w arkuszu."""
+    admin_session, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    unit, _ = await _ensure_registered_warehouse_unit(
+        session,
+        source_row=source_row,
+    )
+    try:
+        event = await add_device_note(
+            session,
+            unit=unit,
+            user_id=admin_user.id,
+            note=payload.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_note_change",
+        client_ip=admin_session.client_ip,
+        payload={"source_row": source_row, "unit_id": unit.id, "event_id": event.id},
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": "Zapisano uwagę; synchronizacja arkusza oczekuje w kolejce.",
+        "unit_id": unit.id,
+        "event_id": event.id,
+        "sheet_sync_status": unit.sheet_sync_status,
+    }
+
+
+@router.put("/warehouse/{source_row}/reservation", summary="Zapisz rezerwację ręczną")
+async def device_warehouse_reservation_save(
+    source_row: int,
+    payload: DeviceReservationRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Tworzy terminową rezerwację, o ile urządzenie nie jest zablokowane przez FLOW."""
+    admin_session, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    unit, _ = await _ensure_registered_warehouse_unit(
+        session,
+        source_row=source_row,
+    )
+    expires_at = payload.expires_at
+    if expires_at is None:
+        local_now = datetime.now(ZoneInfo("Europe/Warsaw"))
+        expires_at = local_now + timedelta(
+            days=max(1, int(settings.device_manual_reservation_default_days))
+        )
+    elif expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+    expires_at = expires_at.astimezone(UTC)
+    try:
+        reservation = await save_manual_reservation(
+            session,
+            unit=unit,
+            user_id=admin_user.id,
+            reserved_for=payload.reserved_for,
+            reason=payload.reason,
+            expires_at=expires_at,
+        )
+    except DeviceReservationConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_manual_reservation_save",
+        client_ip=admin_session.client_ip,
+        payload={
+            "source_row": source_row,
+            "unit_id": unit.id,
+            "reservation_id": reservation.id,
+            "reserved_for": reservation.reserved_for,
+            "expires_at": reservation.expires_at.isoformat(),
+            "reason": reservation.reason,
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": "Zapisano rezerwację ręczną.",
+        "reservation": {
+            "id": reservation.id,
+            "reserved_for": reservation.reserved_for,
+            "reason": reservation.reason,
+            "expires_at": reservation.expires_at.isoformat(),
+        },
+    }
+
+
+@router.delete("/warehouse/{source_row}/reservation", summary="Zwolnij rezerwację ręczną")
+async def device_warehouse_reservation_release(
+    source_row: int,
+    payload: DeviceReservationReleaseRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwalnia rezerwację ręczną z wymaganym uzasadnieniem."""
+    admin_session, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    unit = await find_unit_by_source_or_identity(session, source_row=source_row)
+    if unit is None or await get_active_manual_reservation(session, unit_id=unit.id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Egzemplarz nie ma aktywnej rezerwacji ręcznej.",
+        )
+    try:
+        reservation = await release_manual_reservation(
+            session,
+            unit=unit,
+            user_id=admin_user.id,
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_manual_reservation_release",
+        client_ip=admin_session.client_ip,
+        payload={
+            "source_row": source_row,
+            "unit_id": unit.id,
+            "reservation_id": reservation.id,
+            "reason": payload.reason,
+        },
+    )
+    await session.commit()
+    return {"ok": True, "message": "Zwolniono rezerwację ręczną."}
+
+
+@router.get("/history", summary="Historia przyjęć urządzeń")
+async def device_intake_history(
+    limit: int = Query(default=100, ge=1, le=500),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca operacje PZ bez automatycznego poprawiania danych historycznych."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    rows = list(
+        (
+            await session.execute(
+                select(DeviceIntakeOperation)
+                .order_by(
+                    DeviceIntakeOperation.created_at.desc(),
+                    DeviceIntakeOperation.id.desc(),
+                )
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "ok": True,
+        "items": [intake_operation_payload(row) for row in rows],
+    }
+
+
+@router.get("/issues", summary="Problemy wymagające uzgodnienia")
+async def device_issues(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca nieudane operacje PZ i zadania arkusza po wyczerpaniu prób."""
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    operations = list(
+        (
+            await session.execute(
+                select(DeviceIntakeOperation)
+                .where(DeviceIntakeOperation.status.in_(("failed", "reconcile_required")))
+                .order_by(DeviceIntakeOperation.updated_at.desc())
+                .limit(200)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    outbox = list(
+        (
+            await session.execute(
+                select(DeviceSheetOutbox)
+                .where(DeviceSheetOutbox.status == "failed")
+                .order_by(DeviceSheetOutbox.updated_at.desc())
+                .limit(200)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "ok": True,
+        "operations": [intake_operation_payload(row) for row in operations],
+        "sheet_outbox": [
+            {
+                "id": row.id,
+                "unit_id": row.unit_id,
+                "operation_type": row.operation_type,
+                "attempt_count": row.attempt_count,
+                "max_attempts": row.max_attempts,
+                "last_error": row.last_error,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            }
+            for row in outbox
+        ],
+    }
+
+
+@router.post("/sheet-outbox/{queue_item_id}/retry", summary="Ponów zadanie arkusza")
+async def device_sheet_outbox_retry(
+    queue_item_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Przywraca wskazane zadanie synchronizacji do kolejki."""
+    admin_session, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    queue_item = await retry_device_sheet_outbox(queue_item_id)
+    if queue_item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nie znaleziono zadania synchronizacji.",
+        )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_sheet_outbox_retry",
+        client_ip=admin_session.client_ip,
+        payload={"queue_item_id": queue_item_id, "status": queue_item.status},
+    )
+    await session.commit()
+    return {"ok": True, "message": "Zadanie przywrócono do kolejki."}
+
+
+@router.post("/catalog/sync", summary="Wyłączona synchronizacja kartotek AUTO")
 async def device_catalog_sync(
     payload: DeviceCatalogSyncRequest,
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Tworzy/uzupelnia kartoteke AUTO na magazynie 28 dla modeli Firebird."""
-    admin_session, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-
-    enabled, reason = firebird_writes_enabled()
-    if not enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=reason or "Zapis do Firebird jest zablokowany.",
-        )
-
-    try:
-        result = await asyncio.to_thread(
-            sync_device_catalog_from_models,
-            model_ids=payload.model_ids,
-            only_missing=payload.only_missing,
-            kto=admin_user.email or "CTIP",
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad synchronizacji kartoteki AUTO: {exc}",
-        ) from exc
-
-    await record_audit(
-        session,
-        user_id=admin_user.id,
-        action="device_catalog_sync",
-        client_ip=admin_session.client_ip,
-        payload={
-            "model_ids": payload.model_ids,
-            "only_missing": payload.only_missing,
-            "total_models": result.total_models,
-            "created": result.created,
-            "updated": result.updated,
-            "existing": result.existing,
-        },
-    )
-    await session.commit()
-    return {
-        "ok": True,
-        "message": (
-            "Synchronizacja kartoteki AUTO zakonczona: "
-            f"utworzono={result.created}, zaktualizowano={result.updated}, "
-            f"istniejace={result.existing}."
+    del payload
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            "Wspólne kartoteki AUTO zostały wyłączone. "
+            "Każdy egzemplarz należy przyjąć dokumentem PZ w /device/intake."
         ),
-        "summary": {
-            "total_models": result.total_models,
-            "created": result.created,
-            "updated": result.updated,
-            "existing": result.existing,
-        },
-        "rows": result.rows,
-    }
+    )
 
 
-@router.post("/intake", summary="Utworz przyjecie PZ urzadzenia")
+@router.post("/intake", summary="Utwórz przyjęcie pojedynczego urządzenia")
 async def device_intake_create(
     payload: DeviceIntakeRequest,
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Tworzy przyjecie PZ z wpisaniem S/N i numeru KP do procesu SERIAL."""
+    """Zgodnościowy wrapper korzystający z kanonicznego zapisu batch."""
     admin_session, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-
-    enabled, reason = firebird_writes_enabled()
-    if not enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=reason or "Zapis do Firebird jest zablokowany.",
-        )
-
-    try:
-        result = await asyncio.to_thread(
-            create_device_intake,
-            model_id=payload.model_id,
-            serial=payload.serial,
-            ewidencja=payload.ewidencja,
-            supplier_id=payload.supplier_id,
-            external_document=payload.external_document,
-            issued_by=payload.issued_by,
-            force=payload.force,
-            kto=admin_user.email or "CTIP",
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad tworzenia przyjecia PZ: {exc}",
-        ) from exc
-
-    await record_audit(
-        session,
-        user_id=admin_user.id,
-        action="device_intake_create",
-        client_ip=admin_session.client_ip,
-        payload={
-            "model_id": result.model_id,
-            "serial": result.serial,
-            "ewidencja": result.ewidencja,
-            "supplier_id": result.supplier_id,
-            "warehouse_item_id": result.warehouse_item_id,
-            "warehouse_index": result.warehouse_index,
-            "pz_id": result.pz_id,
-            "pz_number": result.pz_number,
-            "zakpozycja_id": result.zakpozycja_id,
-            "serial_id": result.serial_id,
-            "machine_id": result.machine_id,
-            "machine_table_id": result.machine_table_id,
-            "purchase_price_netto": float(result.purchase_price_netto or 0),
-        },
+    batch_payload = DeviceIntakeBatchRequest(
+        idempotency_key=payload.idempotency_key,
+        supplier_id=payload.supplier_id,
+        external_document=payload.external_document,
+        allow_exception=payload.allow_exception,
+        exception_reason=payload.exception_reason,
+        ewidencja_prefix=payload.ewidencja_prefix,
+        items=[
+            DeviceIntakeBatchItemRequest(
+                model_id=payload.model_id,
+                serial=payload.serial,
+                ewidencja=payload.ewidencja,
+                purchase_price_netto=payload.purchase_price_netto,
+            )
+        ],
     )
-    await session.commit()
-
-    return {
-        "ok": True,
-        "message": (
-            f"Utworzono przyjecie {result.pz_number}: "
-            f"PZ ID {result.pz_id}, ZAKPOZYCJA ID {result.zakpozycja_id}, "
-            f"SERIAL ID {result.serial_id}."
-        ),
-        "intake": {
-            "model_id": result.model_id,
-            "warehouse_item_id": result.warehouse_item_id,
-            "warehouse_index": result.warehouse_index,
-            "pz_id": result.pz_id,
-            "pz_number": result.pz_number,
-            "zakpozycja_id": result.zakpozycja_id,
-            "serial_id": result.serial_id,
-            "serial": result.serial,
-            "ewidencja": result.ewidencja,
-            "supplier_id": result.supplier_id,
-            "machine_id": result.machine_id,
-            "machine_table_id": result.machine_table_id,
-            "purchase_price_netto": float(result.purchase_price_netto or 0),
-        },
-    }
+    response = await _execute_intake_batch(
+        batch_payload,
+        admin_session=admin_session,
+        admin_user=admin_user,
+        session=session,
+    )
+    response["deprecated"] = True
+    return response
 
 
-@router.post("/intake/batch", summary="Utworz przyjecie PZ urzadzen (wiele pozycji)")
+@router.post("/intake/batch", summary="Utwórz przyjęcie PZ urządzeń")
 async def device_intake_batch_create(
     payload: DeviceIntakeBatchRequest,
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Tworzy dokument PZ z wieloma egzemplarzami i zaklada rekord MASZYNA dla kazdego."""
     admin_session, admin_user = admin_context
-    if admin_user.role not in {"admin", "operator"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operacja wymaga roli administratora lub operatora.",
-        )
-    if not await section_permissions.user_has_section(session, admin_user, "generator"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
-        )
-
-    enabled, reason = firebird_writes_enabled()
-    if not enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=reason or "Zapis do Firebird jest zablokowany.",
-        )
-
-    try:
-        result = await asyncio.to_thread(
-            create_device_intake_batch,
-            items=[
-                DeviceIntakeItemInput(
-                    model_id=item.model_id,
-                    serial=item.serial,
-                    ewidencja=item.ewidencja,
-                    purchase_price_netto=item.purchase_price_netto,
-                )
-                for item in payload.items
-            ],
-            supplier_id=payload.supplier_id,
-            external_document=payload.external_document,
-            issued_by=payload.issued_by,
-            force=payload.force,
-            ewidencja_prefix=payload.ewidencja_prefix,
-            kto=admin_user.email or "CTIP",
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Blad tworzenia przyjecia PZ batch: {exc}",
-        ) from exc
-
-    await record_audit(
-        session,
-        user_id=admin_user.id,
-        action="device_intake_batch_create",
-        client_ip=admin_session.client_ip,
-        payload={
-            "pz_id": result.pz_id,
-            "pz_number": result.pz_number,
-            "supplier_id": result.supplier_id,
-            "item_count": len(result.items),
-            "model_ids": [item.model_id for item in result.items],
-            "serial_ids": [item.serial_id for item in result.items],
-            "machine_ids": [item.machine_id for item in result.items],
-            "purchase_price_netto": [
-                float(item.purchase_price_netto or 0) for item in result.items
-            ],
-        },
+    return await _execute_intake_batch(
+        payload,
+        admin_session=admin_session,
+        admin_user=admin_user,
+        session=session,
     )
-    await session.commit()
 
-    return {
-        "ok": True,
-        "message": (
-            f"Utworzono przyjecie {result.pz_number}: "
-            f"PZ ID {result.pz_id}, pozycje {len(result.items)}."
-        ),
-        "batch": {
-            "pz_id": result.pz_id,
-            "pz_number": result.pz_number,
-            "supplier_id": result.supplier_id,
-            "items": [
-                {
-                    "model_id": item.model_id,
-                    "warehouse_item_id": item.warehouse_item_id,
-                    "warehouse_index": item.warehouse_index,
-                    "zakpozycja_id": item.zakpozycja_id,
-                    "serial_id": item.serial_id,
-                    "serial": item.serial,
-                    "ewidencja": item.ewidencja,
-                    "machine_id": item.machine_id,
-                    "machine_table_id": item.machine_table_id,
-                    "purchase_price_netto": float(item.purchase_price_netto or 0),
-                }
-                for item in result.items
-            ],
-        },
-    }
+
+@router.get("/intake/operations/{idempotency_key}", summary="Status operacji przyjęcia")
+async def device_intake_operation_status(
+    idempotency_key: UUID,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    _, admin_user = admin_context
+    await _ensure_device_access(session, admin_user)
+    operation = await find_intake_operation(session, str(idempotency_key))
+    if operation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nie znaleziono operacji przyjęcia.",
+        )
+    return {"ok": True, "operation": intake_operation_payload(operation)}
 
 
 __all__ = ["router"]

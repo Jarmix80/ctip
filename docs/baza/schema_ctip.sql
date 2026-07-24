@@ -773,11 +773,21 @@ CREATE TABLE ctip.workflow_sheet_status_cache (
     source_key text,
     source_type text DEFAULT 'firebird_magazyn_28'::text NOT NULL,
     source_row integer,
+    producer text,
+    model text,
+    serial text,
     device_index text,
     device_index_normalized text,
     sheet_row integer,
     sheet_status text,
+    sheet_notes text,
+    counter_bw text,
+    counter_color text,
+    reservation_status text,
     reservation_grenke text,
+    reservation_until date,
+    price text,
+    ms_id_maszyna integer,
     form_ctip text,
     ctip_form_id integer,
     ctip_workflow_case_id integer,
@@ -797,6 +807,271 @@ ALTER TABLE ctip.workflow_sheet_status_cache OWNER TO postgres;
 CREATE INDEX idx_workflow_sheet_status_cache_index_norm
     ON ctip.workflow_sheet_status_cache USING btree (device_index_normalized);
 
+CREATE SEQUENCE ctip.device_intake_operation_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_intake_operation_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_intake_operation (
+    id integer NOT NULL DEFAULT nextval('ctip.device_intake_operation_id_seq'::regclass),
+    idempotency_key text NOT NULL,
+    request_hash text NOT NULL,
+    status text NOT NULL,
+    created_by integer,
+    supplier_firebird_id integer NOT NULL,
+    external_document text,
+    exception_reason text,
+    firebird_pz_id integer,
+    firebird_pz_number text,
+    request_payload json NOT NULL,
+    result_snapshot json,
+    error_text text,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT device_intake_operation_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_device_intake_operation_idempotency_key UNIQUE (idempotency_key),
+    CONSTRAINT device_intake_operation_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL,
+    CONSTRAINT device_intake_operation_status_check CHECK (
+        status = ANY (
+            ARRAY[
+                'processing'::text,
+                'completed'::text,
+                'failed'::text,
+                'reconcile_required'::text
+            ]
+        )
+    )
+);
+ALTER TABLE ctip.device_intake_operation OWNER TO postgres;
+ALTER SEQUENCE ctip.device_intake_operation_id_seq
+    OWNED BY ctip.device_intake_operation.id;
+
+CREATE SEQUENCE ctip.device_inventory_unit_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_inventory_unit_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_inventory_unit (
+    id integer NOT NULL DEFAULT nextval('ctip.device_inventory_unit_id_seq'::regclass),
+    operation_id integer,
+    source_type text DEFAULT 'firebird_magazyn_28'::text NOT NULL,
+    source_row integer NOT NULL,
+    firebird_pz_id integer,
+    firebird_zakpozycja_id integer,
+    firebird_machine_id integer,
+    firebird_machine_table_id integer,
+    firebird_model_id integer,
+    firebird_supplier_id integer,
+    serial text NOT NULL,
+    serial_normalized text NOT NULL,
+    ewidencja text NOT NULL,
+    ewidencja_normalized text NOT NULL,
+    purchase_price_net numeric(18,4),
+    sheet_row integer,
+    sheet_sync_status text DEFAULT 'pending'::text NOT NULL,
+    sheet_sync_error text,
+    snapshot json,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT device_inventory_unit_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_device_inventory_unit_source UNIQUE (source_type, source_row),
+    CONSTRAINT uq_device_inventory_unit_zakpozycja UNIQUE (firebird_zakpozycja_id),
+    CONSTRAINT uq_device_inventory_unit_machine_table UNIQUE (firebird_machine_table_id),
+    CONSTRAINT uq_device_inventory_unit_serial_normalized UNIQUE (serial_normalized),
+    CONSTRAINT uq_device_inventory_unit_ewidencja_normalized UNIQUE (ewidencja_normalized),
+    CONSTRAINT device_inventory_unit_operation_id_fkey FOREIGN KEY (operation_id)
+        REFERENCES ctip.device_intake_operation (id) ON DELETE SET NULL,
+    CONSTRAINT device_inventory_unit_source_type_check CHECK (
+        source_type = 'firebird_magazyn_28'::text
+    )
+);
+ALTER TABLE ctip.device_inventory_unit OWNER TO postgres;
+ALTER SEQUENCE ctip.device_inventory_unit_id_seq
+    OWNED BY ctip.device_inventory_unit.id;
+
+CREATE SEQUENCE ctip.device_inventory_event_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_inventory_event_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_inventory_event (
+    id integer NOT NULL DEFAULT nextval('ctip.device_inventory_event_id_seq'::regclass),
+    unit_id integer NOT NULL,
+    event_type text NOT NULL,
+    created_by integer,
+    payload json,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT device_inventory_event_pkey PRIMARY KEY (id),
+    CONSTRAINT device_inventory_event_unit_id_fkey FOREIGN KEY (unit_id)
+        REFERENCES ctip.device_inventory_unit (id) ON DELETE CASCADE,
+    CONSTRAINT device_inventory_event_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL
+);
+ALTER TABLE ctip.device_inventory_event OWNER TO postgres;
+ALTER SEQUENCE ctip.device_inventory_event_id_seq
+    OWNED BY ctip.device_inventory_event.id;
+CREATE INDEX idx_device_inventory_event_unit_created
+    ON ctip.device_inventory_event USING btree (unit_id, created_at DESC);
+
+CREATE SEQUENCE ctip.device_manual_reservation_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_manual_reservation_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_manual_reservation (
+    id integer NOT NULL DEFAULT nextval('ctip.device_manual_reservation_id_seq'::regclass),
+    unit_id integer NOT NULL,
+    reserved_for text NOT NULL,
+    reason text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_by integer,
+    released_by integer,
+    release_reason text,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    released_at timestamp with time zone,
+    CONSTRAINT device_manual_reservation_pkey PRIMARY KEY (id),
+    CONSTRAINT device_manual_reservation_unit_id_fkey FOREIGN KEY (unit_id)
+        REFERENCES ctip.device_inventory_unit (id) ON DELETE CASCADE,
+    CONSTRAINT device_manual_reservation_created_by_fkey FOREIGN KEY (created_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL,
+    CONSTRAINT device_manual_reservation_released_by_fkey FOREIGN KEY (released_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL
+);
+ALTER TABLE ctip.device_manual_reservation OWNER TO postgres;
+ALTER SEQUENCE ctip.device_manual_reservation_id_seq
+    OWNED BY ctip.device_manual_reservation.id;
+CREATE UNIQUE INDEX uq_device_manual_reservation_active
+    ON ctip.device_manual_reservation USING btree (unit_id)
+    WHERE released_at IS NULL;
+
+CREATE SEQUENCE ctip.device_sheet_outbox_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_sheet_outbox_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_sheet_outbox (
+    id integer NOT NULL DEFAULT nextval('ctip.device_sheet_outbox_id_seq'::regclass),
+    unit_id integer NOT NULL,
+    idempotency_key text NOT NULL,
+    operation_type text NOT NULL,
+    status text NOT NULL,
+    payload json NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    max_attempts integer DEFAULT 10 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    locked_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT device_sheet_outbox_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_device_sheet_outbox_idempotency_key UNIQUE (idempotency_key),
+    CONSTRAINT device_sheet_outbox_unit_id_fkey FOREIGN KEY (unit_id)
+        REFERENCES ctip.device_inventory_unit (id) ON DELETE CASCADE,
+    CONSTRAINT device_sheet_outbox_operation_type_check CHECK (
+        operation_type = ANY (
+            ARRAY[
+                'upsert_device'::text,
+                'update_note'::text,
+                'update_reservation'::text,
+                'release_reservation'::text
+            ]
+        )
+    ),
+    CONSTRAINT device_sheet_outbox_status_check CHECK (
+        status = ANY (
+            ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text]
+        )
+    )
+);
+ALTER TABLE ctip.device_sheet_outbox OWNER TO postgres;
+ALTER SEQUENCE ctip.device_sheet_outbox_id_seq
+    OWNED BY ctip.device_sheet_outbox.id;
+CREATE INDEX idx_device_sheet_outbox_pending
+    ON ctip.device_sheet_outbox USING btree (status, next_attempt_at);
+
+CREATE SEQUENCE ctip.device_audit_run_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_audit_run_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_audit_run (
+    id integer NOT NULL DEFAULT nextval('ctip.device_audit_run_id_seq'::regclass),
+    status text DEFAULT 'pending'::text NOT NULL,
+    requested_by integer,
+    phase text,
+    processed_items integer DEFAULT 0 NOT NULL,
+    total_items integer DEFAULT 0 NOT NULL,
+    summary json,
+    source_snapshot json,
+    error_text text,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    CONSTRAINT device_audit_run_pkey PRIMARY KEY (id),
+    CONSTRAINT device_audit_run_requested_by_fkey FOREIGN KEY (requested_by)
+        REFERENCES ctip.admin_user (id) ON DELETE SET NULL,
+    CONSTRAINT device_audit_run_status_check CHECK (
+        status = ANY (
+            ARRAY[
+                'pending'::text,
+                'running'::text,
+                'completed'::text,
+                'failed'::text
+            ]
+        )
+    )
+);
+ALTER TABLE ctip.device_audit_run OWNER TO postgres;
+ALTER SEQUENCE ctip.device_audit_run_id_seq
+    OWNED BY ctip.device_audit_run.id;
+CREATE INDEX idx_device_audit_run_status_created
+    ON ctip.device_audit_run USING btree (status, created_at DESC);
+
+CREATE SEQUENCE ctip.device_audit_item_id_seq
+    START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE ctip.device_audit_item_id_seq OWNER TO postgres;
+
+CREATE TABLE ctip.device_audit_item (
+    id integer NOT NULL DEFAULT nextval('ctip.device_audit_item_id_seq'::regclass),
+    run_id integer NOT NULL,
+    canonical_key text NOT NULL,
+    producer text,
+    model text,
+    serial text,
+    ewidencja text,
+    source_row integer,
+    sheet_row integer,
+    machine_id integer,
+    ctip_unit_id integer,
+    sheet_present boolean DEFAULT false NOT NULL,
+    warehouse_present boolean DEFAULT false NOT NULL,
+    machine_present boolean DEFAULT false NOT NULL,
+    ctip_present boolean DEFAULT false NOT NULL,
+    result_status text NOT NULL,
+    issue_codes json DEFAULT '[]'::json NOT NULL,
+    issue_summary text,
+    source_details json DEFAULT '{}'::json NOT NULL,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT device_audit_item_pkey PRIMARY KEY (id),
+    CONSTRAINT uq_device_audit_item_run_key UNIQUE (run_id, canonical_key),
+    CONSTRAINT device_audit_item_run_id_fkey FOREIGN KEY (run_id)
+        REFERENCES ctip.device_audit_run (id) ON DELETE CASCADE,
+    CONSTRAINT device_audit_item_result_status_check CHECK (
+        result_status = ANY (
+            ARRAY[
+                'ok'::text,
+                'missing'::text,
+                'discrepancy'::text,
+                'duplicate'::text
+            ]
+        )
+    )
+);
+ALTER TABLE ctip.device_audit_item OWNER TO postgres;
+ALTER SEQUENCE ctip.device_audit_item_id_seq
+    OWNED BY ctip.device_audit_item.id;
+CREATE INDEX idx_device_audit_item_run_result
+    ON ctip.device_audit_item USING btree (run_id, result_status);
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_user TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_session TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_setting TO appuser;
@@ -805,6 +1080,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_request TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_case TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_device TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.workflow_sheet_status_cache TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_intake_operation TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_inventory_unit TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_inventory_event TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_manual_reservation TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_sheet_outbox TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_audit_run TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_audit_item TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_user_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_session_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_audit_log_id_seq TO appuser;
@@ -812,6 +1094,13 @@ GRANT ALL ON SEQUENCE ctip.form_request_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_workflow_case_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_workflow_device_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.workflow_sheet_status_cache_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_intake_operation_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_inventory_unit_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_inventory_event_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_manual_reservation_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_sheet_outbox_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_audit_run_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.device_audit_item_id_seq TO appuser;
 
 
 --

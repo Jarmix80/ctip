@@ -13,6 +13,7 @@ function sectionLabel(section) {
     admin: "Panel administracyjny",
     operator: "Panel operatora",
     generator: "Generator formularzy",
+    device: "Obsługa urządzeń",
   };
   return labels[section] || section;
 }
@@ -22,6 +23,7 @@ function sectionPath(section) {
     admin: "/admin",
     operator: "/operator",
     generator: "/genform",
+    device: "/device",
   };
   return paths[section] || "/choice";
 }

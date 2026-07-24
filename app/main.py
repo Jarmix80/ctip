@@ -18,6 +18,14 @@ from app.services.contracts_workflow_maintenance import (
     start_contracts_workflow_maintenance_scheduler,
     stop_contracts_workflow_maintenance_scheduler,
 )
+from app.services.device_audit_worker import (
+    start_device_audit_scheduler,
+    stop_device_audit_scheduler,
+)
+from app.services.device_sheet_worker import (
+    start_device_sheet_outbox_scheduler,
+    stop_device_sheet_outbox_scheduler,
+)
 from app.services.workflow_sheet_status_cache import (
     ensure_workflow_sheet_status_cache_table,
     start_workflow_sheet_status_cache_scheduler,
@@ -42,6 +50,8 @@ async def _app_lifespan(_: FastAPI):
     workflow_sheet_status_scheduler_started = False
     contracts_workflow_maintenance_scheduler_started = False
     contracts_mailbox_scheduler_started = False
+    device_sheet_outbox_scheduler_started = False
+    device_audit_scheduler_started = False
     await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
@@ -55,6 +65,11 @@ async def _app_lifespan(_: FastAPI):
     if settings.contracts_mailbox_scheduler_enabled:
         await start_contracts_mailbox_scheduler()
         contracts_mailbox_scheduler_started = True
+    if settings.device_sheet_outbox_scheduler_enabled:
+        await start_device_sheet_outbox_scheduler()
+        device_sheet_outbox_scheduler_started = True
+    await start_device_audit_scheduler()
+    device_audit_scheduler_started = True
     try:
         yield
     finally:
@@ -66,6 +81,10 @@ async def _app_lifespan(_: FastAPI):
             await stop_contracts_workflow_maintenance_scheduler()
         if contracts_mailbox_scheduler_started:
             await stop_contracts_mailbox_scheduler()
+        if device_sheet_outbox_scheduler_started:
+            await stop_device_sheet_outbox_scheduler()
+        if device_audit_scheduler_started:
+            await stop_device_audit_scheduler()
 
 
 def create_app() -> FastAPI:
@@ -100,7 +119,7 @@ def create_app() -> FastAPI:
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         if request.url.path.startswith(
-            ("/admin", "/auth", "/flow", "/contracts", "/choice", "/operator")
+            ("/admin", "/auth", "/flow", "/contracts", "/device", "/choice", "/operator")
         ):
             response.headers.setdefault("Cache-Control", "no-store")
         return response

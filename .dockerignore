@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.env.*
+__pycache__
+*.pyc
+*.log
+backups
+docs/LOG
+inbox
+logs
+runtime
+test-results

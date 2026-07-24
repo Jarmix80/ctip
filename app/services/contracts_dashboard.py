@@ -4,39 +4,22 @@ from __future__ import annotations
 
 import os
 import re
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import FormRequest
-
-
-@dataclass(slots=True, frozen=True)
-class FirebirdRuntimeConfig:
-    """Aktywna konfiguracja Firebird pobrana wyłącznie ze środowiska."""
-
-    mode: str
-    host: str
-    port: int
-    database: str
-    user: str
-    password: str
-    charset: str
-    role: str | None
-    local_copy_path: str
-    allow_writes: bool
-
-
-_firebird_runtime_config_var: ContextVar[FirebirdRuntimeConfig | None] = ContextVar(
-    "firebird_runtime_config",
-    default=None,
+from app.services.firebird_runtime import (
+    FirebirdRuntimeConfig,
+    firebird_writes_enabled,
+    load_firebird_runtime_config,
+    use_firebird_runtime_config,
+)
+from app.services.firebird_runtime import (
+    firebird_connection as _firebird_connection,
 )
 
 
@@ -162,71 +145,6 @@ class DeviceMatch:
     error: str | None = None
 
 
-def _coerce_firebird_port(value: str | int | None, default: int) -> int:
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-
-
-def _coerce_firebird_bool(value: str | bool | None, default: bool) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return value.strip().lower() in {"1", "true", "t", "yes", "on"}
-
-
-def _normalize_firebird_mode(value: str | None) -> str:
-    mode = (value or "").strip().lower() or settings.fb_mode.lower()
-    if mode not in {"network", "local"}:
-        return (
-            settings.fb_mode.lower()
-            if settings.fb_mode.lower() in {"network", "local"}
-            else "local"
-        )
-    return mode
-
-
-def _default_firebird_runtime_config() -> FirebirdRuntimeConfig:
-    return FirebirdRuntimeConfig(
-        mode=_normalize_firebird_mode(settings.fb_mode),
-        host=(settings.fb_host or "").strip(),
-        port=_coerce_firebird_port(settings.fb_port, 3050),
-        database=(settings.fb_database or "").strip(),
-        user=(settings.fb_user or "").strip(),
-        password=settings.fb_password or "",
-        charset=(settings.fb_charset or "").strip() or "UTF8",
-        role=(settings.fb_role or "").strip() or None,
-        local_copy_path=(settings.fb_local_copy_path or "").strip()
-        or "inbox/firebird/test_ms_local.fdb",
-        allow_writes=bool(settings.fb_allow_writes),
-    )
-
-
-async def load_firebird_runtime_config(session: AsyncSession) -> FirebirdRuntimeConfig:
-    """Ładuje bieżącą konfigurację Firebird wyłącznie z `.env`."""
-    del session
-    return _default_firebird_runtime_config()
-
-
-def _resolve_firebird_runtime_config() -> FirebirdRuntimeConfig:
-    return _firebird_runtime_config_var.get() or _default_firebird_runtime_config()
-
-
-@contextmanager
-def use_firebird_runtime_config(config: FirebirdRuntimeConfig | None):
-    """Aktywuje runtime config Firebird dla biezacego kontekstu zadania/watku."""
-    if config is None:
-        yield
-        return
-    token = _firebird_runtime_config_var.set(config)
-    try:
-        yield
-    finally:
-        _firebird_runtime_config_var.reset(token)
-
-
 def _extract_submitted_payload(item: FormRequest) -> dict[str, Any] | None:
     from app.services import form_generator
 
@@ -256,76 +174,6 @@ async def load_contract_forms(
     if submitted_only:
         return [item for item in items if item.status == "SUBMITTED"]
     return items
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _resolve_local_firebird_path() -> Path:
-    runtime = _resolve_firebird_runtime_config()
-    db_path = Path(runtime.local_copy_path)
-    if not db_path.is_absolute():
-        db_path = _repo_root() / db_path
-    return db_path
-
-
-def firebird_writes_enabled() -> tuple[bool, str | None]:
-    """Sprawdza, czy zapis do aktywnej bazy Firebird jest jawnie odblokowany."""
-    runtime = _resolve_firebird_runtime_config()
-    if not runtime.allow_writes:
-        return (
-            False,
-            "Zapis do Firebird jest zablokowany w konfiguracji środowiskowej. "
-            "Ustaw `FB_ALLOW_WRITES=true` w aktywnym pliku `.env`, a następnie uruchom ponownie usługę.",
-        )
-
-    if runtime.mode == "network":
-        if not runtime.host:
-            return False, "Brak hosta Firebird w aktywnej konfiguracji."
-        if not runtime.database:
-            return False, "Brak bazy Firebird w aktywnej konfiguracji."
-        return True, None
-
-    db_path = _resolve_local_firebird_path()
-    if not db_path.exists():
-        return False, f"Brak lokalnej kopii Firebird do zapisu: {db_path}"
-
-    return True, None
-
-
-def _firebird_connection():
-    import firebirdsql  # type: ignore[import-not-found]
-
-    runtime = _resolve_firebird_runtime_config()
-    connect_kwargs: dict[str, Any] = {
-        "port": runtime.port,
-        "user": runtime.user,
-        "password": runtime.password,
-        "charset": runtime.charset,
-    }
-    if runtime.role:
-        connect_kwargs["role"] = runtime.role
-
-    if runtime.mode == "network":
-        if not runtime.host:
-            raise FileNotFoundError("Brak hosta Firebird w aktywnej konfiguracji.")
-        if not runtime.database:
-            raise FileNotFoundError("Brak bazy Firebird w aktywnej konfiguracji.")
-        return firebirdsql.connect(
-            host=runtime.host,
-            database=runtime.database,
-            **connect_kwargs,
-        )
-
-    db_path = _resolve_local_firebird_path()
-    if not db_path.exists():
-        raise FileNotFoundError(f"Brak lokalnej kopii Firebird: {db_path}")
-    return firebirdsql.connect(
-        host="127.0.0.1",
-        database=str(db_path),
-        **connect_kwargs,
-    )
 
 
 def _truncate_text(value: str | None, max_length: int) -> str | None:
@@ -400,7 +248,7 @@ def _normalize_model_name_for_brand(brand: str | None, model_name: str | None) -
     if not brand_value or not model_value:
         return model_value
 
-    if brand_value.upper() != "RICOH":
+    if brand_value.upper() not in {"RICOH", "NASHUATEC"}:
         return model_value
 
     condensed = re.sub(r"\s+", "", model_value).upper()
@@ -758,154 +606,12 @@ def synchronize_device_from_sheet_row(
     *,
     kto: str = "CTIP",
 ) -> FirebirdDeviceSyncResult:
-    """Synchronizuje urzadzenie z arkusza do aktywnej Firebird (MASZYNA + MAGAZYN)."""
-    enabled, reason = firebird_writes_enabled()
-    if not enabled:
-        raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
-
-    device = load_device_from_sheet_row(row)
-    if device is None:
-        raise ValueError(f"Nie znaleziono wiersza {row} w arkuszu Urzadzenia.")
-
-    serial = _truncate_text(device.get("serial"), 100)
-    ewidencja = _truncate_text(device.get("ewidencja"), 100)
-    model_source = _truncate_text(device.get("model"), 50)
-    if not serial and not ewidencja:
-        raise ValueError(f"Wiersz {row} nie zawiera serialu ani ewidencji.")
-
-    machine = find_device_in_firebird(serial, ewidencja)
-    if machine.error:
-        raise RuntimeError(f"Nie udalo sie sprawdzic urzadzenia w Firebird: {machine.error}")
-    warehouse = find_warehouse_item_in_firebird(ewidencja)
-    if warehouse.error:
-        raise RuntimeError(f"Nie udalo sie sprawdzic pozycji magazynowej: {warehouse.error}")
-    model_match = find_model_in_firebird(model_source)
-    if model_match.error:
-        raise RuntimeError(f"Nie udalo sie sprawdzic modelu w Firebird: {model_match.error}")
-
-    if machine.found_in_firebird and warehouse.found:
-        return FirebirdDeviceSyncResult(
-            row=row,
-            serial=serial,
-            ewidencja=ewidencja,
-            model_source=model_source,
-            model_id=model_match.id_model,
-            machine_id=machine.id_maszyna,
-            machine_created=False,
-            warehouse_id=warehouse.id_magazyn_table,
-            warehouse_created=False,
-        )
-
-    connection = _firebird_connection()
-    cursor = connection.cursor()
-    try:
-        if not machine.found_in_firebird:
-            cursor.execute(
-                """
-                INSERT INTO MASZYNA (
-                    ID_ODDZIAL,
-                    ID_FIRMA,
-                    ID_KLIENT,
-                    ID_MODEL,
-                    MARKA,
-                    MODEL,
-                    SERIAL,
-                    EWIDENCJA,
-                    AKTYWNA,
-                    UWAGI
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    1,
-                    1,
-                    settings.fb_warehouse_client_id,
-                    model_match.id_model,
-                    _truncate_text(model_match.marka, 100),
-                    _truncate_text(model_match.model or model_source, 100),
-                    serial,
-                    ewidencja,
-                    "TAK",
-                    _build_device_note(row=row),
-                ),
-            )
-
-        if not warehouse.found:
-            stock_index = ewidencja or serial
-            cursor.execute(
-                """
-                INSERT INTO MAGAZYN (
-                    ID_ODDZIAL,
-                    ID_FIRMA,
-                    ID_MAGAZYN,
-                    INDEKS,
-                    NAZWA,
-                    JM,
-                    ILOSC,
-                    DATA_Z,
-                    MARKA,
-                    MODEL,
-                    ID_MODEL,
-                    SERIAL,
-                    IDVAT,
-                    VAT_STAWKA,
-                    UWAGI
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    1,
-                    1,
-                    settings.fb_warehouse_id,
-                    _truncate_text(stock_index, 100),
-                    _build_stock_name(
-                        serial=serial,
-                        ewidencja=ewidencja,
-                        model_name=model_match.model or model_source,
-                        marka=model_match.marka,
-                    ),
-                    "szt.",
-                    1,
-                    date.today(),
-                    _truncate_text(model_match.marka, 50),
-                    _truncate_text(model_match.model or model_source, 50),
-                    model_match.id_model,
-                    "NIE",
-                    1,
-                    "23 %",
-                    _build_device_note(row=row),
-                ),
-            )
-
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
-    finally:
-        cursor.close()
-        connection.close()
-
-    machine_after = find_device_in_firebird(serial, ewidencja)
-    warehouse_after = find_warehouse_item_in_firebird(ewidencja)
-    if machine_after.error:
-        raise RuntimeError(
-            f"Urzadzenie zapisane, ale odczyt po zapisie nie udal sie: {machine_after.error}"
-        )
-    if warehouse_after.error:
-        raise RuntimeError(
-            f"Pozycja magazynowa zapisana, ale odczyt po zapisie nie udal sie: {warehouse_after.error}"
-        )
-
-    return FirebirdDeviceSyncResult(
-        row=row,
-        serial=serial,
-        ewidencja=ewidencja,
-        model_source=model_source,
-        model_id=model_match.id_model,
-        machine_id=machine_after.id_maszyna,
-        machine_created=not machine.found_in_firebird,
-        warehouse_id=warehouse_after.id_magazyn_table,
-        warehouse_created=not warehouse.found,
+    """Blokuje historyczny zapis MAGAZYN/MASZYNA bez dokumentu PZ."""
+    del row, kto
+    raise RuntimeError(
+        "Historyczna synchronizacja arkusz → Firebird została wyłączona. "
+        "Nowy egzemplarz należy przyjąć w /device/intake, co tworzy PZ, "
+        "osobną kartotekę MAGAZYN i rekord MASZYNA."
     )
 
 
@@ -1197,6 +903,83 @@ def _format_quantity_text(value: Any) -> str:
     return format(normalized, "f").rstrip("0").rstrip(".") or "0"
 
 
+def _optional_flag_bool(value: Any) -> bool | None:
+    """Normalizuje opcjonalną flagę Firebird do wartości logicznej."""
+    normalized = str(value or "").strip().upper()
+    if normalized in {"1", "TAK", "TRUE", "Y"}:
+        return True
+    if normalized in {"0", "NIE", "FALSE", "N"}:
+        return False
+    return None
+
+
+def _model_color_key(producer: Any, model: Any) -> tuple[str, str]:
+    """Buduje znormalizowany klucz producenta i modelu dla flagi kolorowości."""
+    producer_value = normalize_device_key(str(producer or ""))
+    model_value = normalize_device_key(
+        _normalize_model_name_for_brand(
+            str(producer or ""),
+            str(model or ""),
+        )
+    )
+    return producer_value, model_value
+
+
+def _build_model_color_lookup(
+    rows: list[tuple[Any, ...]],
+) -> tuple[dict[tuple[str, str], bool], dict[str, bool]]:
+    """Buduje jednoznaczne mapy kolorowości modeli z tabeli MODEL."""
+    by_identity: dict[tuple[str, str], bool] = {}
+    values_by_model: dict[str, set[bool]] = {}
+    for producer, model, raw_flag in rows:
+        color_flag = _optional_flag_bool(raw_flag)
+        producer_key, model_key = _model_color_key(producer, model)
+        if color_flag is None or not model_key:
+            continue
+        by_identity[(producer_key, model_key)] = color_flag
+        values_by_model.setdefault(model_key, set()).add(color_flag)
+    by_model = {
+        model_key: next(iter(flags))
+        for model_key, flags in values_by_model.items()
+        if len(flags) == 1
+    }
+    return by_identity, by_model
+
+
+def _resolve_model_color(
+    *,
+    producer: Any,
+    model: Any,
+    direct_flag: Any,
+    by_identity: dict[tuple[str, str], bool],
+    by_model: dict[str, bool],
+) -> bool | None:
+    """Rozwiązuje kolorowość po ID, katalogu nazw i jednoznacznym oznaczeniu modelu."""
+    direct_value = _optional_flag_bool(direct_flag)
+    if direct_value is not None:
+        return direct_value
+    producer_key, model_key = _model_color_key(producer, model)
+    if not model_key:
+        return None
+    identity_key = (producer_key, model_key)
+    if identity_key in by_identity:
+        return by_identity[identity_key]
+    if model_key in by_model:
+        return by_model[model_key]
+    compact_name = normalize_device_key(f"{producer or ''} {model or ''}")
+    if (
+        re.search(r"(?:IMC|MPC)\d", compact_name)
+        or "DESIGNJET" in compact_name
+        or any(marker in compact_name for marker in ("COLOR", "COLOUR", "KOLOR"))
+        or (
+            any(brand in compact_name for brand in ("KONICA", "MINOLTA", "CANON"))
+            and re.search(r"C\d{3,5}", compact_name)
+        )
+    ):
+        return True
+    return False
+
+
 def _extract_vat_rate_text(value: Any) -> str:
     raw = str(value or "").strip().replace(",", ".")
     match = re.search(r"(\d+(?:\.\d+)?)", raw)
@@ -1205,9 +988,18 @@ def _extract_vat_rate_text(value: Any) -> str:
     return match.group(1).rstrip("0").rstrip(".") or "23"
 
 
-def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[dict[str, str]]:
-    """Pobiera dostepne pozycje magazynowe z Firebird jako zrodlo wyboru urzadzen dla FLOW."""
+def load_available_devices_from_firebird_warehouse(
+    *,
+    limit: int = 500,
+    source_row: int | None = None,
+) -> list[dict[str, Any]]:
+    """Pobiera dostępne egzemplarze i kolorowość modelu z magazynu Firebird."""
     safe_limit = max(1, min(int(limit), 2000))
+    source_row_filter = ""
+    query_params: list[int] = [settings.fb_warehouse_id]
+    if source_row is not None:
+        source_row_filter = " AND mg.ID_MAGAZYN_TABLE = ?"
+        query_params.append(int(source_row))
     try:
         connection = _firebird_connection()
         cursor = connection.cursor()
@@ -1215,28 +1007,63 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
             cursor.execute(
                 f"""
                 SELECT FIRST {safe_limit}
-                    ID_MAGAZYN_TABLE,
-                    ID_MODEL,
-                    INDEKS,
-                    NAZWA,
-                    MARKA,
-                    MODEL,
-                    ILOSC,
-                    IL_REZ,
-                    CENA_NETTO,
-                    CENA_BRUTTO,
-                    VAT_STAWKA,
-                    SERIAL
-                FROM MAGAZYN
-                WHERE COALESCE(ID_MAGAZYN, 0) = ?
-                  AND COALESCE(ILOSC, 0) > 0
-                ORDER BY ID_MAGAZYN_TABLE DESC
+                    mg.ID_MAGAZYN_TABLE,
+                    mg.ID_MODEL,
+                    mg.INDEKS,
+                    mg.NAZWA,
+                    mg.MARKA,
+                    mg.MODEL,
+                    mg.ILOSC,
+                    mg.IL_REZ,
+                    mg.CENA_NETTO,
+                    mg.CENA_BRUTTO,
+                    mg.VAT_STAWKA,
+                    mg.SERIAL,
+                    mg.CENA_Z1,
+                    model.KOLOR
+                FROM MAGAZYN mg
+                LEFT JOIN MODEL model ON model.ID_MODEL = mg.ID_MODEL
+                WHERE COALESCE(mg.ID_MAGAZYN, 0) = ?
+                  AND COALESCE(mg.ILOSC, 0) > 0
+                  {source_row_filter}
+                ORDER BY mg.ID_MAGAZYN_TABLE DESC
                 """,
-                (settings.fb_warehouse_id,),
+                tuple(query_params),
             )
 
-            output: list[dict[str, str]] = []
-            for row in cursor.fetchall():
+            warehouse_rows = list(cursor.fetchall())
+            cursor.execute(
+                """
+                SELECT MARKA, MODEL, KOLOR
+                FROM MODEL
+                WHERE KOLOR IS NOT NULL
+                  AND TRIM(KOLOR) <> ''
+                """
+            )
+            model_color_by_identity, model_color_by_model = _build_model_color_lookup(
+                list(cursor.fetchall())
+            )
+            cursor.execute(
+                """
+                SELECT ID_MASZYNA, SERIAL, EWIDENCJA
+                FROM MASZYNA
+                WHERE COALESCE(TRIM(SERIAL), '') <> ''
+                   OR COALESCE(TRIM(EWIDENCJA), '') <> ''
+                """
+            )
+            machine_by_serial: dict[str, list[int]] = {}
+            machine_by_index: dict[str, list[int]] = {}
+            for machine_id, machine_serial, machine_index in cursor.fetchall():
+                parsed_machine_id = int(machine_id) if machine_id is not None else 0
+                serial_key = normalize_device_key(str(machine_serial or ""))
+                index_key = normalize_device_key(str(machine_index or ""))
+                if serial_key:
+                    machine_by_serial.setdefault(serial_key, []).append(parsed_machine_id)
+                if index_key:
+                    machine_by_index.setdefault(index_key, []).append(parsed_machine_id)
+
+            output: list[dict[str, Any]] = []
+            for row in warehouse_rows:
                 total_qty = _decimal_or_zero(row[6])
                 reserved_qty = _decimal_or_zero(row[7])
                 available_qty = total_qty - reserved_qty
@@ -1286,6 +1113,18 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
                 raw_serial_flag = _truncate_text(str(row[11] or ""), 10) or ""
                 serial_required = "TAK" if serial_value else raw_serial_flag
                 model_id_value = str(int(row[1])) if row[1] is not None else ""
+                machine_candidates = machine_by_serial.get(
+                    normalize_device_key(serial_value),
+                    [],
+                )
+                if not machine_candidates:
+                    machine_candidates = machine_by_index.get(
+                        normalize_device_key(ewidencja_value),
+                        [],
+                    )
+                unique_machine_ids = {
+                    machine_id for machine_id in machine_candidates if machine_id > 0
+                }
 
                 output.append(
                     {
@@ -1302,6 +1141,7 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
                         "price": _format_decimal_text(row[9]),
                         "price_net": _format_decimal_text(row[8]),
                         "price_gross": _format_decimal_text(row[9]),
+                        "purchase_price_net": _format_decimal_text(row[12]),
                         "vat_rate": _extract_vat_rate_text(row[10]),
                         "reservation": "",
                         "reservation_status": reservation_status,
@@ -1310,7 +1150,19 @@ def load_available_devices_from_firebird_warehouse(*, limit: int = 500) -> list[
                         "reserved_quantity": _format_quantity_text(reserved_qty),
                         "warehouse_quantity": _format_quantity_text(total_qty),
                         "serial_required": serial_required,
+                        "is_color": _resolve_model_color(
+                            producer=producer_value,
+                            model=model_value,
+                            direct_flag=row[13],
+                            by_identity=model_color_by_identity,
+                            by_model=model_color_by_model,
+                        ),
                         "source_type": "firebird_magazyn_28",
+                        "machine_present": len(unique_machine_ids) == 1,
+                        "machine_id": (
+                            next(iter(unique_machine_ids)) if len(unique_machine_ids) == 1 else None
+                        ),
+                        "machine_ambiguous": len(unique_machine_ids) > 1,
                     }
                 )
             return output

@@ -1,9 +1,11 @@
 """Konfiguracja aplikacji oparta na zmiennych środowiskowych."""
 
+import os
 import socket
 from functools import lru_cache
 from ipaddress import ip_address, ip_network
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field
@@ -14,11 +16,43 @@ _ENV_TEST_FILE = _PROJECT_ROOT / ".env.test"
 _ENV_FILE = _PROJECT_ROOT / ".env"
 
 
+def _resolve_settings_env_file() -> str:
+    """Wybiera dokładnie jeden plik środowiskowy dla bieżącego procesu."""
+    configured = str(os.getenv("CTIP_ENV_FILE") or "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        if not path.is_absolute():
+            path = _PROJECT_ROOT / path
+        return str(path.resolve())
+    if _ENV_TEST_FILE.is_file():
+        return str(_ENV_TEST_FILE)
+    if _ENV_FILE.is_file():
+        return str(_ENV_FILE)
+    return str(_ENV_TEST_FILE)
+
+
+SETTINGS_ENV_FILE = _resolve_settings_env_file()
+_PRODUCTION_ENV_SELECTED = Path(SETTINGS_ENV_FILE).name == ".env"
+
+
 class Settings(BaseSettings):
     """Parametry działania backendu."""
 
     app_title: str = "CTIP API"
-    app_version: str = "0.2.13"
+    app_version: str = "0.2.14"
+    ctip_runtime_profile: Literal["test", "production"] = Field(
+        default="production" if _PRODUCTION_ENV_SELECTED else "test",
+        alias="CTIP_RUNTIME_PROFILE",
+    )
+    outbound_delivery_mode: Literal["live", "capture", "disabled"] = Field(
+        default="live" if _PRODUCTION_ENV_SELECTED else "disabled",
+        alias="OUTBOUND_DELIVERY_MODE",
+    )
+    outbound_audit_dir: str = Field(default="logs/outbound_test", alias="OUTBOUND_AUDIT_DIR")
+    outbound_audit_retention_days: int = Field(default=14, alias="OUTBOUND_AUDIT_RETENTION_DAYS")
+    test_network_isolation_required: bool = Field(
+        default=True, alias="TEST_NETWORK_ISOLATION_REQUIRED"
+    )
 
     pbx_host: str = Field(default="127.0.0.1", alias="PBX_HOST")
     pbx_port: int = Field(default=5525, alias="PBX_PORT")
@@ -131,6 +165,34 @@ class Settings(BaseSettings):
     google_sheets_config_lock: bool = Field(
         default=False,
         alias="GOOGLE_SHEETS_CONFIG_LOCK",
+    )
+    google_sheets_test_spreadsheet_id: str | None = Field(
+        default=None,
+        alias="GOOGLE_SHEETS_TEST_SPREADSHEET_ID",
+    )
+    google_sheets_test_spreadsheet_title: str = Field(
+        default="Zerowki_test",
+        alias="GOOGLE_SHEETS_TEST_SPREADSHEET_TITLE",
+    )
+    google_sheets_expected_timezone: str = Field(
+        default="Europe/Warsaw",
+        alias="GOOGLE_SHEETS_EXPECTED_TIMEZONE",
+    )
+    device_sheet_outbox_scheduler_enabled: bool = Field(
+        default=_PRODUCTION_ENV_SELECTED,
+        alias="DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED",
+    )
+    device_sheet_outbox_interval_seconds: int = Field(
+        default=60,
+        alias="DEVICE_SHEET_OUTBOX_INTERVAL_SECONDS",
+    )
+    device_sheet_outbox_batch_size: int = Field(
+        default=25,
+        alias="DEVICE_SHEET_OUTBOX_BATCH_SIZE",
+    )
+    device_manual_reservation_default_days: int = Field(
+        default=14,
+        alias="DEVICE_MANUAL_RESERVATION_DEFAULT_DAYS",
     )
     workflow_sheet_status_cache_scheduler_enabled: bool = Field(
         default=True,
@@ -275,10 +337,15 @@ class Settings(BaseSettings):
     office365_folder_optima: str = Field(default="BackupKP/Optima", alias="OFFICE365_FOLDER_OPTIMA")
 
     model_config = SettingsConfigDict(
-        env_file=(str(_ENV_TEST_FILE), str(_ENV_FILE)),
+        env_file=SETTINGS_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def is_test_runtime(self) -> bool:
+        """Określa, czy aplikacja działa w izolowanym profilu testowym."""
+        return self.ctip_runtime_profile == "test"
 
     @property
     def database_url(self) -> str:

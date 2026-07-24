@@ -88,43 +88,31 @@ def test_run_server_with_firebird_allows_test_env_without_production_flag() -> N
     assert "tmux-stub" in result.stderr
 
 
-def test_ctiptest_keeps_reload_opt_in() -> None:
-    """Domyslny start testowy nie powinien wlaczac reload watchera."""
+def test_ctiptest_uses_compose_without_reload() -> None:
+    """Domyślny start testowy ma używać Compose bez watchera reload."""
     script_content = (ROOT_DIR / "ctiptest").read_text(encoding="utf-8")
 
-    assert 'TEST_UVICORN_PORT="${TEST_UVICORN_PORT:-8000}"' in script_content
-    assert 'TEST_UVICORN_RELOAD="${TEST_UVICORN_RELOAD:-false}"' in script_content
-    assert "uvicorn_cmd" in script_content
-    assert "app.main:app --reload --host" not in script_content
-    assert "app.main:app --host 0.0.0.0 --port ${TEST_UVICORN_PORT}" in script_content
-    assert 'uvicorn_cmd="${uvicorn_cmd} --reload"' in script_content
+    assert "COMPOSE=(docker compose" in script_content
+    assert '"${COMPOSE[@]}" build' in script_content
+    assert '"${COMPOSE[@]}" up -d --force-recreate' in script_content
+    assert "scripts/test_env_preflight.py" in script_content
+    assert "--check-network" in script_content
+    assert "wait_for_web" in script_content
+    assert "--reload" not in script_content
 
 
-def test_ctiptest_publishes_lan_urls() -> None:
-    """Skrypt testowy powinien nadpisywac URL-e publiczne adresem hosta."""
+def test_ctiptest_publishes_lan_only_through_isolated_gateway() -> None:
+    """WWW testowe ma być publikowane wyłącznie przez izolowaną bramę."""
     script_content = (ROOT_DIR / "ctiptest").read_text(encoding="utf-8")
+    compose_content = (ROOT_DIR / "compose.test.yml").read_text(encoding="utf-8")
 
     assert 'ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"' in script_content
-    assert 'TEST_PUBLIC_HOST="${TEST_PUBLIC_HOST:-}"' in script_content
-    assert (
-        'TEST_PUBLIC_BASE_URL="http://${TEST_PUBLIC_HOST_VALUE}:${TEST_UVICORN_PORT}"'
-        in script_content
-    )
-    assert (
-        "export ADMIN_PANEL_URL='${TEST_ADMIN_PANEL_URL}' FORM_PUBLIC_BASE_URL='${TEST_PUBLIC_BASE_URL}'"
-        in script_content
-    )
-    assert "publiczny adres WWW" in script_content
-    assert (
-        'assert_env_value_not_production "PGHOST" "${PRODUCTION_DB_HOST}" "bazę PostgreSQL"'
-        in script_content
-    )
-    assert (
-        'assert_env_value_not_production "FB_HOST" "${PRODUCTION_DB_HOST}" "bazę Firebird"'
-        in script_content
-    )
-    assert 'assert_env_value_equals "PGDATABASE" "${LOCAL_TEST_DATABASE}"' in script_content
-    assert 'assert_env_value_equals "SMS_TEST_MODE" "true"' in script_content
+    assert "scripts/test_env_preflight.py" in script_content
+    assert "test-gateway:" in compose_content
+    assert '- "0.0.0.0:8000:8000"' in compose_content
+    assert '- "127.0.0.1:8100:8100"' in compose_content
+    assert "ctip_test_internal:" in compose_content
+    assert "internal: true" in compose_content
 
 
 def test_run_test_stack_tmux_publishes_lan_urls() -> None:

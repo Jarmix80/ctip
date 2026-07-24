@@ -17,7 +17,6 @@ from app.services.contracts_dashboard import (
     find_warehouse_item_in_firebird,
     firebird_writes_enabled,
     normalize_device_key,
-    synchronize_device_from_sheet_row,
 )
 from app.services.contracts_workflow import (
     WORKFLOW_DEVICE_SOURCE_FIREBIRD_SERIAL,
@@ -1162,20 +1161,10 @@ def _build_line_item(cursor, *, device: dict[str, Any], form_request_id: int) ->
                 f"Nie udalo sie odczytac pozycji magazynowej dla wiersza {source_row}: {warehouse_match.error}"
             )
         if not warehouse_match.found or warehouse_match.id_magazyn_table is None:
-            if source_row <= 0:
-                raise ValueError(
-                    "Wybrane urzadzenie nie ma pozycji magazynowej i nie zawiera numeru wiersza arkusza do synchronizacji."
-                )
-            synchronize_device_from_sheet_row(source_row, kto="CTIP/FLOW")
-            warehouse_match = find_warehouse_item_in_firebird(ewidencja)
-            if (
-                warehouse_match.error
-                or not warehouse_match.found
-                or warehouse_match.id_magazyn_table is None
-            ):
-                raise RuntimeError(
-                    f"Po synchronizacji nadal brak pozycji magazynowej dla wiersza {source_row}."
-                )
+            raise ValueError(
+                "Wybrane urządzenie nie ma pozycji MAGAZYN utworzonej dokumentem PZ. "
+                "Przyjmij egzemplarz w module /device/intake."
+            )
         warehouse = _fetch_warehouse_details(cursor, warehouse_match.id_magazyn_table)
 
     available_qty = _decimal_or_zero(warehouse.ilosc)

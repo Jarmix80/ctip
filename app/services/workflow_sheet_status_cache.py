@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -59,6 +59,22 @@ def _parse_datetime(value: str | None) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+def _parse_date(value: str | None) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        pass
+    for date_format in ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text[:10], date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _to_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -78,13 +94,23 @@ def _split_source_key(source_key: str | None) -> tuple[str, int | None]:
 def _entry_from_cache_row(row: WorkflowSheetStatusCache) -> dict[str, str]:
     return {
         "sheet_row": str(row.sheet_row or ""),
+        "producer": row.producer or "",
+        "model": row.model or "",
+        "serial": row.serial or "",
         "status": row.sheet_status or "",
+        "price": row.price or "",
+        "notes": row.sheet_notes or "",
+        "counter_bw": row.counter_bw or "",
+        "counter_color": row.counter_color or "",
+        "reservation_status": row.reservation_status or "",
+        "reservation_until": (row.reservation_until.isoformat() if row.reservation_until else ""),
         "reservation_grenke": row.reservation_grenke or "",
         "form_ctip": row.form_ctip or "",
         "ctip_form_id": str(row.ctip_form_id or ""),
         "ctip_workflow_case_id": str(row.ctip_workflow_case_id or ""),
         "business_status_legacy": row.business_status_legacy or "",
         "ms_id_magazyn_table": str(row.source_row or ""),
+        "ms_id_maszyna": str(row.ms_id_maszyna or ""),
         "index": row.device_index or "",
     }
 
@@ -243,11 +269,21 @@ def _build_cache_rows(
                 source_key=clean_source_key or None,
                 source_type=source_type,
                 source_row=source_row,
+                producer=str(entry.get("producer") or "").strip() or None,
+                model=str(entry.get("model") or "").strip() or None,
+                serial=str(entry.get("serial") or "").strip() or None,
                 device_index=device_index or None,
                 device_index_normalized=normalized_index or None,
                 sheet_row=_parse_int(entry.get("sheet_row")),
                 sheet_status=str(entry.get("status") or "").strip() or None,
+                sheet_notes=str(entry.get("notes") or "").strip() or None,
+                counter_bw=str(entry.get("counter_bw") or "").strip() or None,
+                counter_color=str(entry.get("counter_color") or "").strip() or None,
+                reservation_status=str(entry.get("reservation_status") or "").strip() or None,
                 reservation_grenke=str(entry.get("reservation_grenke") or "").strip() or None,
+                reservation_until=_parse_date(entry.get("reservation_until")),
+                price=str(entry.get("price") or "").strip() or None,
+                ms_id_maszyna=_parse_int(entry.get("ms_id_maszyna")),
                 form_ctip=str(entry.get("form_ctip") or "").strip() or None,
                 ctip_form_id=_parse_int(entry.get("ctip_form_id")),
                 ctip_workflow_case_id=_parse_int(entry.get("ctip_workflow_case_id")),
@@ -271,11 +307,21 @@ def _build_cache_rows(
                 source_key=source_key,
                 source_type=source_type,
                 source_row=source_row,
+                producer=str(entry.get("producer") or "").strip() or None,
+                model=str(entry.get("model") or "").strip() or None,
+                serial=str(entry.get("serial") or "").strip() or None,
                 device_index=str(entry.get("index") or "").strip() or None,
                 device_index_normalized=clean_index or None,
                 sheet_row=_parse_int(entry.get("sheet_row")),
                 sheet_status=str(entry.get("status") or "").strip() or None,
+                sheet_notes=str(entry.get("notes") or "").strip() or None,
+                counter_bw=str(entry.get("counter_bw") or "").strip() or None,
+                counter_color=str(entry.get("counter_color") or "").strip() or None,
+                reservation_status=str(entry.get("reservation_status") or "").strip() or None,
                 reservation_grenke=str(entry.get("reservation_grenke") or "").strip() or None,
+                reservation_until=_parse_date(entry.get("reservation_until")),
+                price=str(entry.get("price") or "").strip() or None,
+                ms_id_maszyna=_parse_int(entry.get("ms_id_maszyna")),
                 form_ctip=str(entry.get("form_ctip") or "").strip() or None,
                 ctip_form_id=_parse_int(entry.get("ctip_form_id")),
                 ctip_workflow_case_id=_parse_int(entry.get("ctip_workflow_case_id")),

@@ -115,18 +115,27 @@
           <label>Dostępne sekcje</label>
           <div class="users-sections-grid">
             <label class="users-section-option">
-              <input type="checkbox" value="admin" x-model="form.sections" :disabled="form.role !== 'admin'">
+              <input type="checkbox" value="admin" x-model="form.sections" disabled>
               Sekcja Admin
             </label>
             <label class="users-section-option">
-              <input type="checkbox" value="operator" x-model="form.sections">
+              <input type="checkbox" value="operator" x-model="form.sections" :disabled="form.role === 'admin'">
               Sekcja Operator
             </label>
             <label class="users-section-option">
-              <input type="checkbox" value="generator" x-model="form.sections">
+              <input type="checkbox" value="generator" x-model="form.sections" :disabled="form.role === 'admin'">
               Sekcja Generator
             </label>
+            <label class="users-section-option">
+              <input type="checkbox" value="delivery" x-model="form.sections" :disabled="form.role === 'admin'">
+              Obsługa dostaw
+            </label>
+            <label class="users-section-option">
+              <input type="checkbox" value="device" x-model="form.sections" :disabled="form.role === 'admin'">
+              Obsługa urządzeń
+            </label>
           </div>
+          <small>Administrator zawsze otrzymuje dostęp do wszystkich sekcji.</small>
         </div>
       </div>
       <div class="form-actions">
@@ -432,18 +441,27 @@
                   <label>Dostępne sekcje</label>
                   <div class="users-sections-grid">
                     <label class="users-section-option">
-                      <input type="checkbox" value="admin" x-model="modalEdit.sections" :disabled="modalEdit.role !== 'admin'">
+                      <input type="checkbox" value="admin" x-model="modalEdit.sections" disabled>
                       Sekcja Admin
                     </label>
                     <label class="users-section-option">
-                      <input type="checkbox" value="operator" x-model="modalEdit.sections">
+                      <input type="checkbox" value="operator" x-model="modalEdit.sections" :disabled="modalEdit.role === 'admin'">
                       Sekcja Operator
                     </label>
                     <label class="users-section-option">
-                      <input type="checkbox" value="generator" x-model="modalEdit.sections">
+                      <input type="checkbox" value="generator" x-model="modalEdit.sections" :disabled="modalEdit.role === 'admin'">
                       Sekcja Generator
                     </label>
+                    <label class="users-section-option">
+                      <input type="checkbox" value="delivery" x-model="modalEdit.sections" :disabled="modalEdit.role === 'admin'">
+                      Obsługa dostaw
+                    </label>
+                    <label class="users-section-option">
+                      <input type="checkbox" value="device" x-model="modalEdit.sections" :disabled="modalEdit.role === 'admin'">
+                      Obsługa urządzeń
+                    </label>
                   </div>
+                  <small>Administrator zawsze otrzymuje dostęp do wszystkich sekcji.</small>
                 </div>
               </div>
               <div class="form-actions">

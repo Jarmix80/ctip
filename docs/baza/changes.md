@@ -55,3 +55,15 @@
 - Rozszerzono workflow formularzy o status `CLOSED_NOT_REALIZED` (`Zamknięta bez realizacji`) i bucket archiwum `closed_other`.
 - `ctip.form_request` otrzymał rozszerzone ograniczenie `form_request_archive_bucket_check` (`accepted|rejected|unfilled|ksero_partner|closed_other`), a `ctip.form_workflow_case` ograniczenie `form_workflow_case_business_status_check` uwzględnia nowy status.
 - Status `CLOSED_NOT_REALIZED` kończy sprawę bez realizacji, uruchamia pełne zwolnienie zasobów i trafia po archiwizacji do menu „Odrzucone inne”.
+
+## 2026-07-23
+- Dodano idempotentny rejestr przyjęć urządzeń: `ctip.device_intake_operation` i `ctip.device_inventory_unit`. Rejestr przechowuje mapowania PZ, `ZAKPOZYCJA`, `MAGAZYN`, `MASZYNA`, serialu i numeru KP.
+- Dodano niemodyfikowalną historię działań `ctip.device_inventory_event` z indeksem `(unit_id, created_at DESC)` oraz terminowe rezerwacje ręczne `ctip.device_manual_reservation` z unikalnością jednej aktywnej rezerwacji na egzemplarz.
+- Dodano kolejkę niezawodnej synchronizacji Google Sheets `ctip.device_sheet_outbox` z licznikiem prób, harmonogramem ponowienia i stanem błędu.
+- Rozszerzono `ctip.workflow_sheet_status_cache` o producenta, model, serial, uwagę, cenę, osobny status i termin rezerwacji oraz identyfikator `MASZYNA`.
+- Rozszerzono `ctip.workflow_sheet_status_cache` o liczniki `counter_bw` i `counter_color`, aby tabela magazynu korzystała z lokalnego cache zamiast odczytywać Google Sheets przy każdym otwarciu.
+
+## 2026-07-24
+- Dodano tabelę `ctip.device_audit_run` przechowującą status, etap, postęp, podsumowanie i historię ręcznych audytów urządzeń.
+- Dodano tabelę `ctip.device_audit_item` z wynikiem porównania aktywnego arkusza `Urzadzenia_magazyn`, dostępnego magazynu Firebird nr 28, kartotek `MASZYNA` i rejestru CTIP.
+- Audyt jest operacją tylko do odczytu dla źródeł zewnętrznych, zachowuje 20 ostatnich przebiegów i klasyfikuje wyniki według priorytetu: duplikat, rozbieżność, braki, poprawny.

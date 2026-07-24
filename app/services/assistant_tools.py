@@ -853,6 +853,7 @@ class AssistantDataTools:
                     use_tls=delivery.use_tls,
                     use_ssl=delivery.use_ssl,
                     message=message,
+                    source="assistant_report",
                 ),
                 timeout=runtime.tool_timeout_seconds,
             )

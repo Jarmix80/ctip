@@ -29,6 +29,7 @@ provider = HttpSmsProvider(
     password=settings.sms_api_password,
     sms_type=settings.sms_type,
     test_mode=settings.sms_test_mode,
+    delivery_mode=settings.outbound_delivery_mode,
 )
 
 
@@ -77,7 +78,7 @@ def run_sender_loop(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, dest, text
+                    SELECT id, dest, text, source, origin
                     FROM sms_out
                     WHERE status='NEW'
                     ORDER BY created_at
@@ -90,10 +91,18 @@ def run_sender_loop(
                     sleep_fn(poll_sec)
                     continue
 
-                for sms_id, dest, text in rows:
+                for sms_id, dest, text, source, origin in rows:
                     log_fn(f"[{sms_id}] Próba wysyłki do {dest}")
                     try:
-                        result = sms_provider.send_sms(dest, text, metadata={"sms_id": sms_id})
+                        result = sms_provider.send_sms(
+                            dest,
+                            text,
+                            metadata={
+                                "sms_id": sms_id,
+                                "source": source or origin or "sms_sender",
+                                "origin": origin,
+                            },
+                        )
                         if result.success:
                             cur.execute(
                                 "UPDATE sms_out SET status='SENT', provider_status=%s, provider_msg_id=%s WHERE id=%s",

@@ -99,6 +99,7 @@ async def test_email_configuration(
             use_tls=bool(use_tls),
             use_ssl=bool(use_ssl),
             message=email_message,
+            source="admin_email_test",
         )
 
         audit_payload["test_email"] = {

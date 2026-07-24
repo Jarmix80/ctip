@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import secrets
-import smtplib
 import string
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -19,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import AdminSession, AdminUser, SmsOut
+from app.services.email_client import send_smtp_message
 from app.services.security import hash_password
 from app.services.settings_store import build_store
 
@@ -243,8 +242,10 @@ def _coerce_bool(value: str | bool | None, default: bool) -> bool:
 
 
 async def resolve_email_delivery_settings(session: AsyncSession) -> EmailDeliverySettings | None:
-    """Pobiera skonfigurowane parametry SMTP (lub None, jeśli niekompletne)."""
-    stored = await _settings_store.get_namespace(session, "email")
+    """Pobiera SMTP, ignorując ustawienia bazodanowe w profilu testowym."""
+    stored = (
+        {} if settings.is_test_runtime else await _settings_store.get_namespace(session, "email")
+    )
     host = (stored.get("host") or settings.email_host or "").strip()
     sender_address = (stored.get("sender_address") or settings.email_sender_address or "").strip()
     if not host or not sender_address:
@@ -318,32 +319,29 @@ async def send_credentials_email(
         "Pozdrawiamy,\nZespół CTIP"
     )
 
-    def _send() -> None:
-        if delivery.use_ssl:
-            connection = smtplib.SMTP_SSL(host=delivery.host, port=delivery.port, timeout=15)
-        else:
-            connection = smtplib.SMTP(host=delivery.host, port=delivery.port, timeout=15)
-        with connection:
-            connection.ehlo()
-            if delivery.use_tls:
-                connection.starttls()
-                connection.ehlo()
-            if delivery.username:
-                connection.login(delivery.username, delivery.password or "")
-            connection.send_message(message)
-
-    try:
-        await asyncio.to_thread(_send)
+    result = await send_smtp_message(
+        host=delivery.host,
+        port=delivery.port,
+        username=delivery.username,
+        password=delivery.password,
+        use_tls=delivery.use_tls,
+        use_ssl=delivery.use_ssl,
+        message=message,
+        timeout=15,
+        source="admin_user_credentials",
+    )
+    if result.success:
         logger.info(
             "Wysłano e-mail (%s) z danymi logowania do użytkownika %s.",
             "reset hasła" if reset_mode else "utworzenie konta",
             user.email,
         )
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Nie udało się wysłać e-maila (%s) z danymi logowania do %s.",
+    else:
+        logger.warning(
+            "Nie wysłano e-maila (%s) z danymi logowania do %s: %s",
             "reset hasła" if reset_mode else "utworzenie konta",
             user.email,
+            result.message,
         )
 
 

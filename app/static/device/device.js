@@ -1,5 +1,30 @@
 const DEVICE_TOKEN_KEY = "admin-session-token";
 
+const deviceState = {
+  view: document.body.dataset.deviceView || "home",
+  models: new Map(),
+  suppliers: new Map(),
+  intakeItems: [],
+  intakeKey: null,
+  kp: { prefix: "KP/", nextNumber: 1, width: 4 },
+  warehousePage: 1,
+  warehousePages: 1,
+  activeSourceRow: null,
+  activeDetail: null,
+  auditRunId: null,
+  auditPage: 1,
+  auditPages: 1,
+  auditPollTimer: null,
+};
+
+function debounce(callback, delay = 350) {
+  let timeoutId = null;
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => callback(...args), delay);
+  };
+}
+
 function readDeviceToken() {
   return (
     window.localStorage?.getItem(DEVICE_TOKEN_KEY) ||
@@ -22,119 +47,1475 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function displayValue(value) {
+  const text = String(value ?? "").trim();
+  return text || "—";
+}
+
+function renderWarehouseCounter(item) {
+  const counterBw = String(item.counter_bw ?? "").trim() || "bd";
+  if (item.is_color !== true) {
+    return `<span class="device-counter-value" aria-label="Licznik B/W: ${escapeHtml(
+      counterBw
+    )}">${escapeHtml(counterBw)}</span>`;
+  }
+  const counterColor = String(item.counter_color ?? "").trim() || "bd";
+  const label = `Licznik B/W: ${counterBw}; licznik kolor: ${counterColor}`;
+  return `
+    <span class="device-counter-value" aria-label="${escapeHtml(label)}">
+      <span>${escapeHtml(counterBw)}</span>
+      <span aria-hidden="true">/</span>
+      <span class="device-counter-color">${escapeHtml(counterColor)}</span>
+    </span>
+  `;
+}
+
+function renderPurchasePrice(value) {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) {
+    return '<span class="device-cell-sub">—</span>';
+  }
+  const numericValue = Number(rawValue.replace(/\s/g, "").replace(",", "."));
+  const formattedValue = Number.isFinite(numericValue)
+    ? numericValue.toLocaleString("pl-PL", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : rawValue;
+  return `
+    <div class="device-cell-main">${escapeHtml(formattedValue)} zł</div>
+    <div class="device-cell-sub">netto</div>
+  `;
+}
+
+function renderWarehouseNote(value) {
+  const note = String(value ?? "").trim();
+  if (!note) {
+    return '<span class="device-cell-sub">—</span>';
+  }
+  return `<div class="device-table-note" title="${escapeHtml(note)}">${escapeHtml(
+    note
+  )}</div>`;
+}
+
 function formatDate(value) {
   if (!value) {
     return "—";
   }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleString("pl-PL");
+}
+
+function createUuid() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(
+    16,
+    20
+  )}-${hex.slice(20)}`;
+}
+
+function localDateTimeValue(date) {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function setMessage(elementId, message) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    return;
+  }
+  element.textContent = message || "";
+  element.hidden = !message;
+}
+
+function setError(message = "") {
+  setMessage("device-error", message);
+}
+
+function setInfo(message = "") {
+  setMessage("device-info", message);
+}
+
+function setIntakeItemsMessage(message = "", variant = "error") {
+  const element = document.getElementById("device-items-message");
+  if (!element) {
+    return;
+  }
+  element.textContent = message;
+  element.hidden = !message;
+  element.classList.toggle("flow-message-error", variant === "error");
+  element.classList.toggle("flow-message-info", variant === "info");
+}
+
+function clearInvalidField(element) {
+  if (!element) {
+    return;
+  }
+  element.classList.remove("device-field-invalid");
+  element.removeAttribute("aria-invalid");
+}
+
+function clearIntakeValidation() {
+  document.querySelectorAll(".device-field-invalid").forEach(clearInvalidField);
+  const summary = document.getElementById("device-intake-validation");
+  if (!summary) {
+    return;
+  }
+  summary.textContent = "";
+  summary.hidden = true;
+  summary.classList.remove("flow-message-error", "flow-message-info");
+}
+
+function addIntakeIssue(issues, message, element = null) {
+  if (element) {
+    element.classList.add("device-field-invalid");
+    element.setAttribute("aria-invalid", "true");
+  }
+  issues.push({ message, element });
+}
+
+function showIntakeValidation(issues, variant = "error") {
+  const summary = document.getElementById("device-intake-validation");
+  if (!summary) {
+    return;
+  }
+  const normalized = issues.filter((issue) => issue?.message);
+  summary.classList.toggle("flow-message-error", variant === "error");
+  summary.classList.toggle("flow-message-info", variant === "info");
+  if (!normalized.length) {
+    summary.textContent = "";
+    summary.hidden = true;
+    return;
+  }
+  if (variant === "info") {
+    summary.textContent = normalized[0].message;
+  } else {
+    summary.innerHTML = `
+      <strong>Nie można utworzyć dokumentu PZ. Uzupełnij:</strong>
+      <ul>${normalized
+        .map((issue) => `<li>${escapeHtml(issue.message)}</li>`)
+        .join("")}</ul>
+    `;
+  }
+  summary.hidden = false;
+  if (variant !== "error") {
+    return;
+  }
+  const target = normalized.find((issue) => issue.element)?.element || summary;
+  target.focus?.();
+  target.scrollIntoView?.({ behavior: "smooth", block: "center" });
+}
+
+function setButtonBusy(button, busy, busyText, normalText) {
+  if (!button) {
+    return;
+  }
+  button.disabled = busy;
+  button.textContent = busy ? busyText : normalText;
+}
+
+async function fetchDeviceJson(
+  url,
+  { method = "GET", body = null, timeoutMs = 30000 } = {}
+) {
+  const token = readDeviceToken();
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return value;
+    const response = await fetch(url, {
+      method,
+      headers: {
+        "X-Admin-Session": token || "",
+        ...(body === null ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === null ? null : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.detail || `Błąd HTTP ${response.status}.`);
     }
-    return date.toLocaleString("pl-PL");
-  } catch (_err) {
-    return value;
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Przekroczono czas oczekiwania na odpowiedź.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
-function formatValue(value) {
-  const normalized = String(value ?? "").trim();
-  return normalized || "—";
+function activateView() {
+  document.querySelectorAll("[data-device-screen]").forEach((screen) => {
+    screen.hidden = screen.dataset.deviceScreen !== deviceState.view;
+  });
+  document.querySelectorAll("[data-device-nav]").forEach((link) => {
+    link.classList.toggle("active", link.dataset.deviceNav === deviceState.view);
+  });
 }
 
-function issueText(issue) {
-  const severityMap = {
-    critical: "Krytyczne",
-    warn: "Do poprawy",
-    info: "Uwaga",
+function modelLabel(model) {
+  return `${model.id_model} | ${model.marka || ""} ${model.model || ""}`.trim();
+}
+
+function supplierLabel(supplier) {
+  const nip = supplier.nip ? ` | NIP ${supplier.nip}` : "";
+  return `${supplier.id_klient} | ${supplier.nazwa || ""}${nip}`.trim();
+}
+
+function selectedId(inputId, values) {
+  const value = document.getElementById(inputId)?.value.trim() || "";
+  const exact = values.get(value);
+  if (exact) {
+    return exact;
+  }
+  const candidate = Number.parseInt(value.split("|", 1)[0].trim(), 10);
+  if (!Number.isInteger(candidate) || candidate <= 0) {
+    return null;
+  }
+  return Array.from(values.values()).find(
+    (item) => Number(item.id_model || item.id_klient) === candidate
+  );
+}
+
+async function loadModels(query = "") {
+  const response = await fetchDeviceJson(
+    `/admin/device/models?query=${encodeURIComponent(query)}&limit=300`
+  );
+  const list = document.getElementById("device-model-list");
+  if (!list) {
+    return;
+  }
+  deviceState.models.clear();
+  list.innerHTML = "";
+  for (const model of response.rows || []) {
+    const label = modelLabel(model);
+    deviceState.models.set(label, model);
+    const option = document.createElement("option");
+    option.value = label;
+    list.append(option);
+  }
+}
+
+async function loadSuppliers(query = "") {
+  const response = await fetchDeviceJson(
+    `/admin/device/suppliers?query=${encodeURIComponent(query)}&limit=300`
+  );
+  const list = document.getElementById("device-supplier-list");
+  if (!list) {
+    return;
+  }
+  deviceState.suppliers.clear();
+  list.innerHTML = "";
+  for (const supplier of response.rows || []) {
+    const label = supplierLabel(supplier);
+    deviceState.suppliers.set(label, supplier);
+    const option = document.createElement("option");
+    option.value = label;
+    list.append(option);
+  }
+}
+
+async function loadModelOptions() {
+  const response = await fetchDeviceJson("/admin/device/model-form-options");
+  const options = response.options || {};
+  const fields = [
+    ["device-model-brand", options.brands || [], options.default_brand],
+    ["device-model-group", options.groups || [], null],
+    ["device-model-kind", options.kinds || [], null],
+  ];
+  for (const [elementId, values, preferred] of fields) {
+    const select = document.getElementById(elementId);
+    if (!select) {
+      continue;
+    }
+    select.innerHTML = '<option value="">-- wybierz --</option>';
+    for (const value of values) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      option.selected = value === preferred;
+      select.append(option);
+    }
+  }
+}
+
+function kpNumber(offset = 0) {
+  const number = deviceState.kp.nextNumber + offset;
+  return `${deviceState.kp.prefix}${String(number).padStart(deviceState.kp.width, "0")}`;
+}
+
+async function loadKpSuggestion() {
+  const response = await fetchDeviceJson("/admin/device/intake/defaults?ewidencja_prefix=KP/");
+  const defaults = response.defaults || {};
+  deviceState.kp = {
+    prefix: defaults.prefix || "KP/",
+    nextNumber: Number(defaults.next_number || 1),
+    width: Number(defaults.width || 4),
   };
-  const prefix = severityMap[issue?.severity] || "Info";
-  return `${prefix}: ${issue?.message || ""}`;
-}
-
-function renderProcessStatus(status) {
-  const severity = status?.severity || "info";
-  const label = escapeHtml(status?.label || "Weryfikacja");
-  const detail = escapeHtml(status?.detail || "");
-  return `
-    <div class="device-status-wrap">
-      <span class="device-status-badge ${escapeHtml(severity)}">${label}</span>
-      ${detail ? `<div class="device-status-detail">${detail}</div>` : ""}
-    </div>
-  `;
-}
-
-function renderCellStack(rows) {
-  return `
-    <div class="device-cell-stack">
-      ${rows
-        .map((row) => {
-          const label = escapeHtml(row.label || "");
-          const value = escapeHtml(formatValue(row.value));
-          const extraClass = row.strong ? " device-cell-strong" : "";
-          return `
-            <div>
-              <div class="device-cell-label">${label}</div>
-              <div class="${`device-cell-value${extraClass}`}">${value}</div>
-            </div>
-          `;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-function renderIssueSummary(item) {
-  const issues = Array.isArray(item?.issues) ? item.issues : [];
-  if (issues.length === 0) {
-    return '<span class="flow-badge ok">Gotowe</span>';
+  const label = document.getElementById("device-kp-suggestion");
+  if (label) {
+    label.textContent = `Kolejny numer sugerowany przez Firebird: ${
+      defaults.suggested || kpNumber()
+    }.`;
   }
-  return `
-    <div class="device-issues">
-      ${issues
+}
+
+function renderIntakeItems() {
+  const body = document.getElementById("device-intake-items");
+  if (!body) {
+    return;
+  }
+  if (!deviceState.intakeItems.length) {
+    body.innerHTML = '<tr><td colspan="6" class="device-empty">Dodaj co najmniej jeden egzemplarz.</td></tr>';
+    return;
+  }
+  body.innerHTML = deviceState.intakeItems
+    .map(
+      (item, index) => `
+        <tr data-intake-index="${index}">
+          <td>${index + 1}</td>
+          <td class="device-model-cell">
+            <div class="device-cell-main">${escapeHtml(
+              `${item.model.marka || ""} ${item.model.model || ""}`.trim()
+            )}</div>
+            <div class="device-cell-sub">MODEL ID ${escapeHtml(item.model.id_model)}</div>
+          </td>
+          <td><input data-item-field="serial" value="${escapeHtml(item.serial)}" maxlength="100"></td>
+          <td><input data-item-field="ewidencja" value="${escapeHtml(
+            item.ewidencja
+          )}" maxlength="100"></td>
+          <td><input data-item-field="price" type="number" min="0" step="0.01" value="${escapeHtml(
+            item.price
+          )}"></td>
+          <td><button type="button" class="flow-secondary" data-item-remove="${index}">Usuń</button></td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function resetIntake() {
+  deviceState.intakeItems = [];
+  deviceState.intakeKey = null;
+  setIntakeItemsMessage("");
+  clearIntakeValidation();
+  const key = document.getElementById("device-intake-key");
+  if (key) {
+    key.textContent = "";
+  }
+  renderIntakeItems();
+}
+
+async function createSupplier() {
+  const button = document.getElementById("device-supplier-create");
+  const payload = {
+    name: document.getElementById("device-supplier-name").value.trim(),
+    nip: document.getElementById("device-supplier-nip").value.trim() || null,
+    address: document.getElementById("device-supplier-address").value.trim() || null,
+    postal_code: document.getElementById("device-supplier-postal").value.trim() || null,
+    city: document.getElementById("device-supplier-city").value.trim() || null,
+    phone: document.getElementById("device-supplier-phone").value.trim() || null,
+    email: document.getElementById("device-supplier-email").value.trim() || null,
+  };
+  if (!payload.name) {
+    throw new Error("Podaj nazwę dostawcy.");
+  }
+  setButtonBusy(button, true, "Zapisywanie…", "Dodaj dostawcę");
+  try {
+    const response = await fetchDeviceJson("/admin/device/suppliers", {
+      method: "POST",
+      body: payload,
+      timeoutMs: 60000,
+    });
+    await loadSuppliers(String(response.supplier?.id_klient || payload.name));
+    const matched = Array.from(deviceState.suppliers.entries()).find(
+      ([, supplier]) =>
+        Number(supplier.id_klient) === Number(response.supplier?.id_klient)
+    );
+    if (matched) {
+      document.getElementById("device-supplier-search").value = matched[0];
+    }
+    setInfo("Dodano dostawcę w Menadżerze Serwisu.");
+  } finally {
+    setButtonBusy(button, false, "Zapisywanie…", "Dodaj dostawcę");
+  }
+}
+
+async function createModel() {
+  const button = document.getElementById("device-model-create");
+  const payload = {
+    marka: document.getElementById("device-model-brand").value,
+    model: document.getElementById("device-model-name").value.trim(),
+    grupa: document.getElementById("device-model-group").value,
+    rodzaj: document.getElementById("device-model-kind").value,
+    kolor: document.getElementById("device-model-color").checked,
+    plik: document.getElementById("device-model-image").value.trim() || null,
+  };
+  if (!payload.marka || !payload.model || !payload.grupa || !payload.rodzaj) {
+    throw new Error("Marka, model, grupa i rodzaj są wymagane.");
+  }
+  setButtonBusy(button, true, "Zapisywanie…", "Dodaj model");
+  try {
+    const response = await fetchDeviceJson("/admin/device/models", {
+      method: "POST",
+      body: payload,
+      timeoutMs: 60000,
+    });
+    await loadModels(String(response.model?.id_model || payload.model));
+    const matched = Array.from(deviceState.models.entries()).find(
+      ([, model]) => Number(model.id_model) === Number(response.model?.id_model)
+    );
+    if (matched) {
+      document.getElementById("device-model-search").value = matched[0];
+    }
+    setInfo("Dodano kompletny model urządzenia.");
+  } finally {
+    setButtonBusy(button, false, "Zapisywanie…", "Dodaj model");
+  }
+}
+
+function addIntakeItems() {
+  const model = selectedId("device-model-search", deviceState.models);
+  if (!model) {
+    throw new Error("Wybierz model z listy.");
+  }
+  const quantity = Number(document.getElementById("device-item-quantity").value || 1);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 50) {
+    throw new Error("Liczba egzemplarzy musi mieścić się w zakresie 1–50.");
+  }
+  const price = document.getElementById("device-item-price").value.trim();
+  const offset = deviceState.intakeItems.length;
+  for (let index = 0; index < quantity; index += 1) {
+    deviceState.intakeItems.push({
+      model,
+      serial: "",
+      ewidencja: kpNumber(offset + index),
+      price,
+    });
+  }
+  renderIntakeItems();
+  document
+    .querySelector(`[data-intake-index="${offset}"] [data-item-field="serial"]`)
+    ?.focus();
+  return quantity;
+}
+
+async function submitIntake() {
+  clearIntakeValidation();
+  const issues = [];
+  const supplierInput = document.getElementById("device-supplier-search");
+  const supplier = selectedId("device-supplier-search", deviceState.suppliers);
+  if (!supplier) {
+    addIntakeIssue(issues, "Wybierz dostawcę z listy.", supplierInput);
+  }
+  if (!deviceState.intakeItems.length) {
+    addIntakeIssue(
+      issues,
+      "Dodaj co najmniej jeden egzemplarz.",
+      document.getElementById("device-items-add")
+    );
+  }
+  const serials = new Set();
+  const ewidencje = new Set();
+  for (const [index, item] of deviceState.intakeItems.entries()) {
+    const row = document.querySelector(`[data-intake-index="${index}"]`);
+    const serialInput = row?.querySelector('[data-item-field="serial"]');
+    const ewidencjaInput = row?.querySelector('[data-item-field="ewidencja"]');
+    const priceInput = row?.querySelector('[data-item-field="price"]');
+    const serial = String(item.serial ?? "").trim();
+    const ewidencja = String(item.ewidencja ?? "").trim();
+    const priceText = String(item.price ?? "").trim();
+    const priceValue = Number(priceText);
+    if (!serial) {
+      addIntakeIssue(issues, `Pozycja ${index + 1}: wpisz serial.`, serialInput);
+    }
+    if (!ewidencja) {
+      addIntakeIssue(
+        issues,
+        `Pozycja ${index + 1}: wpisz numer KP.`,
+        ewidencjaInput
+      );
+    }
+    if (!priceText) {
+      addIntakeIssue(
+        issues,
+        `Pozycja ${index + 1}: wpisz cenę netto, również gdy wynosi 0.`,
+        priceInput
+      );
+    } else if (!Number.isFinite(priceValue) || priceValue < 0) {
+      addIntakeIssue(
+        issues,
+        `Pozycja ${index + 1}: cena netto musi być liczbą nieujemną.`,
+        priceInput
+      );
+    }
+    const serialKey = serial.replace(/[^a-z0-9]/gi, "").toUpperCase();
+    const kpKey = ewidencja.replace(/[^a-z0-9]/gi, "").toUpperCase();
+    if (serialKey && serials.has(serialKey)) {
+      addIntakeIssue(
+        issues,
+        `Pozycja ${index + 1}: serial jest powtórzony.`,
+        serialInput
+      );
+    }
+    if (kpKey && ewidencje.has(kpKey)) {
+      addIntakeIssue(
+        issues,
+        `Pozycja ${index + 1}: numer KP jest powtórzony.`,
+        ewidencjaInput
+      );
+    }
+    if (serialKey) {
+      serials.add(serialKey);
+    }
+    if (kpKey) {
+      ewidencje.add(kpKey);
+    }
+  }
+
+  const externalDocumentInput = document.getElementById("device-external-document");
+  const exceptionInput = document.getElementById("device-exception-enabled");
+  const exceptionReasonInput = document.getElementById("device-exception-reason");
+  const externalDocument = externalDocumentInput.value.trim();
+  const allowException = exceptionInput.checked;
+  const exceptionReason = exceptionReasonInput.value.trim();
+  const hasExplicitZeroPrice = deviceState.intakeItems.some(
+    (item) => String(item.price ?? "").trim() && Number(item.price) === 0
+  );
+  const requiresException = !externalDocument || hasExplicitZeroPrice;
+  if (requiresException && !allowException) {
+    if (!externalDocument) {
+      addIntakeIssue(
+        issues,
+        "Podaj numer dokumentu zewnętrznego albo zaznacz wyjątek.",
+        externalDocumentInput
+      );
+    }
+    addIntakeIssue(
+      issues,
+      "Brak dokumentu lub cena 0 wymagają zaznaczenia wyjątku.",
+      exceptionInput
+    );
+  }
+  if (allowException && exceptionReason.length < 10) {
+    document.getElementById("device-exception-reason-wrap").hidden = false;
+    addIntakeIssue(
+      issues,
+      "Wpisz uzasadnienie wyjątku mające co najmniej 10 znaków.",
+      exceptionReasonInput
+    );
+  }
+  if (issues.length) {
+    showIntakeValidation(issues);
+    return false;
+  }
+
+  if (!deviceState.intakeKey) {
+    deviceState.intakeKey = createUuid();
+  }
+  document.getElementById(
+    "device-intake-key"
+  ).textContent = `UUID operacji: ${deviceState.intakeKey}`;
+  const payload = {
+    idempotency_key: deviceState.intakeKey,
+    supplier_id: Number(supplier.id_klient),
+    external_document: externalDocument || null,
+    allow_exception: allowException,
+    exception_reason: allowException ? exceptionReason : null,
+    ewidencja_prefix: "KP/",
+    items: deviceState.intakeItems.map((item) => ({
+      model_id: Number(item.model.id_model),
+      serial: item.serial.trim(),
+      ewidencja: item.ewidencja.trim(),
+      purchase_price_netto: Number(item.price || 0),
+    })),
+  };
+
+  const button = document.getElementById("device-intake-submit");
+  setButtonBusy(button, true, "Tworzenie PZ…", "Utwórz dokument PZ");
+  try {
+    const response = await fetchDeviceJson("/admin/device/intake/batch", {
+      method: "POST",
+      body: payload,
+      timeoutMs: 120000,
+    });
+    const successMessage = `${
+      response.message || "Utworzono dokument PZ."
+    } Synchronizacja arkusza została dodana do kolejki.`;
+    resetIntake();
+    document.getElementById("device-external-document").value = "";
+    document.getElementById("device-exception-enabled").checked = false;
+    document.getElementById("device-exception-reason").value = "";
+    document.getElementById("device-exception-reason-wrap").hidden = true;
+    showIntakeValidation([{ message: successMessage }], "info");
+    setInfo(successMessage);
+    await loadKpSuggestion();
+    return true;
+  } finally {
+    setButtonBusy(button, false, "Tworzenie PZ…", "Utwórz dokument PZ");
+  }
+}
+
+function renderWarehouseSummary(summary) {
+  const container = document.getElementById("device-warehouse-summary");
+  if (!container) {
+    return;
+  }
+  const labels = {
+    available: "Dostępne",
+    flow_reserved: "FLOW",
+    manual_reserved: "Ręczne",
+    sheet_errors: "Błędy arkusza",
+    audit_only: "Historyczne",
+  };
+  container.innerHTML = Object.entries(labels)
+    .map(
+      ([key, label]) =>
+        `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(
+          summary?.[key] ?? 0
+        )}</strong></article>`
+    )
+    .join("");
+}
+
+function reservationBadge(item) {
+  const classes = {
+    flow: "flow",
+    manual: "warn",
+    sheet: "warn",
+    none: "ok",
+  };
+  return `<span class="device-badge ${classes[item.reservation_kind] || ""}">${escapeHtml(
+    item.reservation_status
+  )}</span>${
+    item.reservation_for
+      ? `<div class="device-cell-sub">${escapeHtml(item.reservation_for)}</div>`
+      : ""
+  }`;
+}
+
+function sheetBadge(item) {
+  const classes = {
+    synced: "ok",
+    failed: "error",
+    pending: "warn",
+    processing: "warn",
+    history_not_registered: "",
+  };
+  const labels = {
+    synced: "Zsynchronizowano",
+    failed: "Błąd",
+    pending: "Oczekuje",
+    processing: "W trakcie",
+    history_not_registered: "Tylko audyt",
+  };
+  return `<span class="device-badge ${classes[item.sheet_sync_status] || ""}">${escapeHtml(
+    labels[item.sheet_sync_status] || item.sheet_sync_status
+  )}</span>`;
+}
+
+function sourcePresenceBadges(presence = {}) {
+  const sources = [
+    ["sheet", "Arkusz"],
+    ["warehouse", "Magazyn"],
+    ["machine", "Urządzenie"],
+    ["ctip", "CTIP"],
+  ];
+  return `<div class="device-source-presence" aria-label="Obecność w źródłach">${sources
+    .map(([key, label]) => {
+      const present = presence[key] === true;
+      return `<span title="${escapeHtml(label)}" class="device-badge ${
+        present ? "ok" : "error"
+      }">${present ? "OK" : "BD"}</span>`;
+    })
+    .join('<span class="device-source-separator" aria-hidden="true">/</span>')}</div>`;
+}
+
+function renderWarehouseRows(items) {
+  const body = document.getElementById("device-warehouse-body");
+  if (!body) {
+    return;
+  }
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="11" class="device-empty">Brak pozycji dla wybranych filtrów.</td></tr>';
+    return;
+  }
+  body.innerHTML = items
+    .map(
+      (item) => `
+        <tr>
+          <td>
+            <div class="device-cell-main">${escapeHtml(
+              `${item.producer || ""} ${item.model || ""}`.trim()
+            )}</div>
+            <div class="device-cell-sub">MAGAZYN ID ${escapeHtml(item.source_row)}</div>
+          </td>
+          <td>
+            <div class="device-cell-main">${escapeHtml(displayValue(item.serial))}</div>
+            <div class="device-cell-sub">${escapeHtml(displayValue(item.ewidencja))}</div>
+          </td>
+          <td>
+            <span class="device-badge ok">${escapeHtml(item.warehouse_status)}</span>
+            <div class="device-cell-sub">Dostępne: ${escapeHtml(
+              item.available_quantity
+            )}</div>
+          </td>
+          <td>${renderWarehouseCounter(item)}</td>
+          <td class="device-price-cell">${renderPurchasePrice(item.purchase_price_net)}</td>
+          <td>${renderWarehouseNote(item.note)}</td>
+          <td>${escapeHtml(displayValue(item.zeroing_status))}</td>
+          <td>${reservationBadge(item)}</td>
+          <td>${sheetBadge(item)}</td>
+          <td>${sourcePresenceBadges(item.source_presence)}</td>
+          <td><button type="button" class="flow-secondary" data-device-detail="${
+            item.source_row
+          }">Szczegóły</button></td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function auditResultBadge(status) {
+  const labels = {
+    ok: "OK",
+    missing: "BRAKI",
+    discrepancy: "ROZBIEŻNOŚĆ",
+    duplicate: "DUPLIKAT",
+  };
+  const classes = {
+    ok: "ok",
+    missing: "warn",
+    discrepancy: "error",
+    duplicate: "error",
+  };
+  return `<span class="device-badge ${classes[status] || ""}">${escapeHtml(
+    labels[status] || status || "—"
+  )}</span>`;
+}
+
+function renderAuditSummary(summary = {}) {
+  const container = document.getElementById("device-audit-summary");
+  if (!container) {
+    return;
+  }
+  const labels = {
+    total: "Wszystkie",
+    ok: "Poprawne",
+    missing: "Braki",
+    discrepancy: "Rozbieżności",
+    duplicate: "Duplikaty",
+  };
+  container.innerHTML = Object.entries(labels)
+    .map(
+      ([key, label]) =>
+        `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(
+          summary[key] ?? 0
+        )}</strong></article>`
+    )
+    .join("");
+}
+
+function renderAuditRunStatus(run) {
+  const progress = document.getElementById("device-audit-progress");
+  if (!progress) {
+    return;
+  }
+  if (!run) {
+    progress.hidden = true;
+    progress.textContent = "";
+    return;
+  }
+  const labels = {
+    pending: "Oczekuje",
+    running: "W trakcie",
+    completed: "Zakończono",
+    failed: "Błąd",
+  };
+  const counts =
+    Number(run.total_items || 0) > 0
+      ? ` (${Number(run.processed_items || 0)} z ${Number(run.total_items || 0)})`
+      : "";
+  progress.textContent = `${labels[run.status] || run.status}: ${
+    run.phase || "brak etapu"
+  }${counts}${run.error_text ? ` — ${run.error_text}` : ""}`;
+  progress.hidden = false;
+  progress.classList.toggle("error", run.status === "failed");
+}
+
+function renderAuditRows(items) {
+  const body = document.getElementById("device-audit-body");
+  if (!body) {
+    return;
+  }
+  if (!items.length) {
+    body.innerHTML =
+      '<tr><td colspan="5" class="device-empty">Brak wyników dla wybranych filtrów.</td></tr>';
+    return;
+  }
+  body.innerHTML = items
+    .map(
+      (item) => `
+        <tr>
+          <td>
+            <div class="device-cell-main">${escapeHtml(
+              `${item.producer || ""} ${item.model || ""}`.trim() || "—"
+            )}</div>
+            <div class="device-cell-sub">${escapeHtml(item.canonical_key)}</div>
+          </td>
+          <td>
+            <div class="device-cell-main">${escapeHtml(displayValue(item.serial))}</div>
+            <div class="device-cell-sub">${escapeHtml(displayValue(item.ewidencja))}</div>
+          </td>
+          <td>${sourcePresenceBadges(item.source_presence)}</td>
+          <td>
+            ${auditResultBadge(item.result_status)}
+            <div class="device-audit-issues">${escapeHtml(
+              item.issue_summary || "Brak rozbieżności."
+            )}</div>
+          </td>
+          <td>
+            <details class="device-audit-details">
+              <summary>Dane źródłowe</summary>
+              <pre>${escapeHtml(JSON.stringify(item.source_details || {}, null, 2))}</pre>
+            </details>
+          </td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function scheduleAuditPoll(run) {
+  window.clearTimeout(deviceState.auditPollTimer);
+  deviceState.auditPollTimer = null;
+  if (!run || !["pending", "running"].includes(run.status)) {
+    return;
+  }
+  deviceState.auditPollTimer = window.setTimeout(async () => {
+    if (deviceState.view !== "warehouse") {
+      return;
+    }
+    try {
+      await loadAuditHistory({ preserveSelection: true });
+    } catch (error) {
+      setError(error.message);
+    }
+  }, 2500);
+}
+
+async function loadAuditDetail(runId) {
+  if (!runId) {
+    renderAuditSummary({});
+    renderAuditRunStatus(null);
+    renderAuditRows([]);
+    return null;
+  }
+  const query = document.getElementById("device-audit-query")?.value.trim() || "";
+  const result = document.getElementById("device-audit-result")?.value || "all";
+  const source =
+    document.getElementById("device-audit-source")?.value || "operational";
+  const params = new URLSearchParams({
+    query,
+    result,
+    source,
+    page: String(deviceState.auditPage),
+    page_size: "100",
+  });
+  const response = await fetchDeviceJson(
+    `/admin/device/audits/${runId}?${params.toString()}`
+  );
+  deviceState.auditRunId = Number(runId);
+  deviceState.auditPage = Number(response.page || 1);
+  deviceState.auditPages = Number(response.pages || 1);
+  renderAuditRunStatus(response.run);
+  renderAuditSummary(response.filtered_summary || response.run?.summary || {});
+  renderAuditRows(response.items || []);
+  const pageLabel = document.getElementById("device-audit-page-label");
+  if (pageLabel) {
+    pageLabel.textContent = `Strona ${deviceState.auditPage} z ${
+      deviceState.auditPages || 1
+    }`;
+  }
+  const previous = document.getElementById("device-audit-prev");
+  const next = document.getElementById("device-audit-next");
+  if (previous) {
+    previous.disabled = deviceState.auditPage <= 1;
+  }
+  if (next) {
+    next.disabled =
+      deviceState.auditPages === 0 || deviceState.auditPage >= deviceState.auditPages;
+  }
+  scheduleAuditPoll(response.run);
+  return response.run;
+}
+
+async function loadAuditHistory({ preserveSelection = false } = {}) {
+  const response = await fetchDeviceJson("/admin/device/audits");
+  const runs = response.items || [];
+  const select = document.getElementById("device-audit-run");
+  const currentId = preserveSelection ? Number(deviceState.auditRunId || 0) : 0;
+  const selected =
+    runs.find((run) => run.id === currentId) ||
+    runs.find((run) => ["pending", "running"].includes(run.status)) ||
+    runs.find((run) => run.status === "completed") ||
+    runs[0] ||
+    null;
+  if (select) {
+    select.innerHTML = runs.length
+      ? runs
+          .map(
+            (run) =>
+              `<option value="${run.id}" ${
+                selected?.id === run.id ? "selected" : ""
+              }>#${run.id} · ${escapeHtml(formatDate(run.created_at))} · ${escapeHtml(
+                run.status
+              )}</option>`
+          )
+          .join("")
+      : '<option value="">Brak historii audytów</option>';
+  }
+  deviceState.auditRunId = selected?.id || null;
+  return loadAuditDetail(deviceState.auditRunId);
+}
+
+async function startDeviceAudit() {
+  const button = document.getElementById("device-audit-start");
+  setButtonBusy(button, true, "Uruchamianie…", "Uruchom audyt");
+  try {
+    const response = await fetchDeviceJson("/admin/device/audits", { method: "POST" });
+    deviceState.auditRunId = response.run.id;
+    deviceState.auditPage = 1;
+    setInfo("Audyt został dodany do kolejki. Dane źródłowe pozostają bez zmian.");
+    await loadAuditHistory({ preserveSelection: true });
+  } finally {
+    setButtonBusy(button, false, "Uruchamianie…", "Uruchom audyt");
+  }
+}
+
+async function loadWarehouse() {
+  const query = document.getElementById("device-warehouse-query")?.value.trim() || "";
+  const reservation =
+    document.getElementById("device-warehouse-reservation")?.value || "all";
+  const sheetSync = document.getElementById("device-warehouse-sheet")?.value || "all";
+  const params = new URLSearchParams({
+    query,
+    reservation,
+    sheet_sync: sheetSync,
+    page: String(deviceState.warehousePage),
+    page_size: "100",
+  });
+  const response = await fetchDeviceJson(`/admin/device/warehouse?${params.toString()}`);
+  deviceState.warehousePage = Number(response.page || 1);
+  deviceState.warehousePages = Number(response.pages || 1);
+  renderWarehouseSummary(response.summary || {});
+  renderWarehouseRows(response.items || []);
+  const pageLabel = document.getElementById("device-page-label");
+  if (pageLabel) {
+    pageLabel.textContent = `Strona ${deviceState.warehousePage} z ${
+      deviceState.warehousePages || 1
+    }`;
+  }
+  const previous = document.getElementById("device-page-prev");
+  const next = document.getElementById("device-page-next");
+  if (previous) {
+    previous.disabled = deviceState.warehousePage <= 1;
+  }
+  if (next) {
+    next.disabled =
+      deviceState.warehousePages === 0 ||
+      deviceState.warehousePage >= deviceState.warehousePages;
+  }
+  await loadAuditHistory({ preserveSelection: true });
+  return response;
+}
+
+function renderDetail(item, events) {
+  deviceState.activeSourceRow = Number(item.source_row);
+  deviceState.activeDetail = item;
+  document.getElementById(
+    "device-detail-title"
+  ).textContent = `${item.producer || ""} ${item.model || ""}`.trim() || "Urządzenie";
+  const meta = [
+    ["Serial", item.serial],
+    ["Numer KP", item.ewidencja],
+    ["Status zerówki", item.zeroing_status],
+    ["Stan arkusza", item.sheet_sync_status],
+    ["MAGAZYN ID", item.source_row],
+    ["MASZYNA ID", item.firebird_machine_id],
+    ["PZ ID", item.firebird_pz_id],
+    ["Cena zakupu netto", item.purchase_price_net],
+  ];
+  document.getElementById("device-detail-meta").innerHTML = meta
+    .map(
+      ([label, value]) =>
+        `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(
+          displayValue(value)
+        )}</strong></div>`
+    )
+    .join("");
+  document.getElementById("device-note-text").value = item.note || "";
+  document.getElementById("device-reserved-for").value = item.reservation_for || "";
+  document.getElementById("device-reservation-reason").value =
+    item.reservation_reason || "";
+  const until = document.getElementById("device-reservation-until");
+  until.value = item.reservation_until
+    ? localDateTimeValue(new Date(item.reservation_until))
+    : localDateTimeValue(new Date(Date.now() + 14 * 86400000));
+  const reservationForm = document.getElementById("device-reservation-form");
+  const locked = Boolean(item.reservation_locked);
+  reservationForm.querySelectorAll("input, textarea, button[type='submit']").forEach((field) => {
+    field.disabled = locked;
+  });
+  const releaseButton = document.getElementById("device-reservation-release");
+  releaseButton.hidden = item.reservation_kind !== "manual";
+  releaseButton.disabled = locked;
+  const list = document.getElementById("device-event-list");
+  list.innerHTML = events.length
+    ? events
         .map(
-          (issue) => `
-            <span class="device-issue ${escapeHtml(issue.severity || "info")}" title="${escapeHtml(
-              issueText(issue)
-            )}">
-              ${escapeHtml(issue.message || issue.code || "Problem")}
-            </span>
+          (event) => `
+            <li>
+              <div class="device-cell-main">${escapeHtml(event.event_type)}</div>
+              <div class="device-cell-sub">${escapeHtml(formatDate(event.created_at))}</div>
+              <div class="device-cell-sub">${escapeHtml(
+                JSON.stringify(event.payload || {})
+              )}</div>
+            </li>
           `
         )
-      .join("")}
-    </div>
-  `;
+        .join("")
+    : '<li class="device-empty">Brak historii CTIP dla danych historycznych.</li>';
 }
 
-function renderActions(item) {
-  const actions = Array.isArray(item?.next_actions) ? item.next_actions : [];
-  const recommended = item?.internal_number?.recommended || "";
-  const source = item?.internal_number?.source || "";
-  const inconsistent = item?.internal_number?.consistent === false;
+async function openDeviceDetail(sourceRow) {
+  const response = await fetchDeviceJson(`/admin/device/warehouse/${sourceRow}`);
+  renderDetail(response.item, response.events || []);
+  const dialog = document.getElementById("device-detail-dialog");
+  if (typeof dialog.showModal === "function" && !dialog.open) {
+    dialog.showModal();
+  } else if (!dialog.open) {
+    dialog.setAttribute("open", "");
+  }
+}
 
-  return `
-    <div class="device-actions">
-      ${
-        recommended
-          ? `
-            <div class="device-action-lead${inconsistent ? " mismatch" : ""}">
-              Nr wew docelowy: <strong>${escapeHtml(recommended)}</strong>
-              ${source ? ` z ${escapeHtml(source)}` : ""}
-            </div>
+async function saveDeviceNote() {
+  if (!deviceState.activeSourceRow) {
+    return;
+  }
+  const note = document.getElementById("device-note-text").value.trim();
+  if (note.length < 3) {
+    throw new Error("Uwaga musi zawierać co najmniej 3 znaki.");
+  }
+  await fetchDeviceJson(
+    `/admin/device/warehouse/${deviceState.activeSourceRow}/notes`,
+    { method: "POST", body: { note } }
+  );
+  setInfo("Zapisano uwagę i dodano aktualizację arkusza do kolejki.");
+  await openDeviceDetail(deviceState.activeSourceRow);
+}
+
+async function saveDeviceReservation() {
+  if (!deviceState.activeSourceRow) {
+    return;
+  }
+  const reservedFor = document.getElementById("device-reserved-for").value.trim();
+  const reason = document.getElementById("device-reservation-reason").value.trim();
+  const until = document.getElementById("device-reservation-until").value;
+  if (reason.length < 10) {
+    throw new Error("Uzasadnienie rezerwacji musi zawierać co najmniej 10 znaków.");
+  }
+  await fetchDeviceJson(
+    `/admin/device/warehouse/${deviceState.activeSourceRow}/reservation`,
+    {
+      method: "PUT",
+      body: {
+        reserved_for: reservedFor,
+        reason,
+        expires_at: until ? new Date(until).toISOString() : null,
+      },
+    }
+  );
+  setInfo("Zapisano rezerwację ręczną.");
+  await openDeviceDetail(deviceState.activeSourceRow);
+  await loadWarehouse();
+}
+
+async function releaseDeviceReservation() {
+  if (!deviceState.activeSourceRow) {
+    return;
+  }
+  const reason = document.getElementById("device-reservation-reason").value.trim();
+  if (reason.length < 10) {
+    throw new Error("Podaj uzasadnienie zwolnienia zawierające co najmniej 10 znaków.");
+  }
+  await fetchDeviceJson(
+    `/admin/device/warehouse/${deviceState.activeSourceRow}/reservation`,
+    { method: "DELETE", body: { reason } }
+  );
+  setInfo("Zwolniono rezerwację ręczną.");
+  await openDeviceDetail(deviceState.activeSourceRow);
+  await loadWarehouse();
+}
+
+async function loadHistory() {
+  const response = await fetchDeviceJson("/admin/device/history?limit=300");
+  const body = document.getElementById("device-history-body");
+  const items = response.items || [];
+  body.innerHTML = items.length
+    ? items
+        .map(
+          (item) => `
+            <tr>
+              <td>${escapeHtml(formatDate(item.created_at))}</td>
+              <td>${escapeHtml(displayValue(item.firebird_pz_number))}</td>
+              <td><span class="device-badge ${
+                item.status === "completed" ? "ok" : "error"
+              }">${escapeHtml(item.status)}</span></td>
+              <td>${escapeHtml(
+                displayValue(item.result?.supplier_id || item.supplier_firebird_id)
+              )}</td>
+              <td>${escapeHtml(item.result?.items?.length || 0)}</td>
+              <td>${escapeHtml(displayValue(item.error))}</td>
+            </tr>
           `
-          : ""
-      }
-      ${
-        actions.length
-          ? `
-            <ul class="device-action-list">
-              ${actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}
-            </ul>
+        )
+        .join("")
+    : '<tr><td colspan="6" class="device-empty">Brak operacji przyjęcia.</td></tr>';
+}
+
+function renderOperationIssues(items) {
+  const container = document.getElementById("device-operation-issues");
+  container.innerHTML = items.length
+    ? items
+        .map(
+          (item) => `
+            <article>
+              <div class="device-cell-main">${escapeHtml(
+                item.firebird_pz_number || item.idempotency_key
+              )}</div>
+              <div class="device-cell-sub">Status: ${escapeHtml(
+                item.status
+              )}; UUID: ${escapeHtml(item.idempotency_key)}</div>
+              <div>${escapeHtml(displayValue(item.error))}</div>
+            </article>
           `
-          : ""
+        )
+        .join("")
+    : '<p class="device-empty">Brak problemów operacji PZ.</p>';
+}
+
+function renderSheetIssues(items) {
+  const container = document.getElementById("device-sheet-issues");
+  container.innerHTML = items.length
+    ? items
+        .map(
+          (item) => `
+            <article>
+              <div class="device-cell-main">Zadanie #${escapeHtml(item.id)} – ${escapeHtml(
+                item.operation_type
+              )}</div>
+              <div class="device-cell-sub">Próby: ${escapeHtml(
+                item.attempt_count
+              )}/${escapeHtml(item.max_attempts)}</div>
+              <div>${escapeHtml(displayValue(item.last_error))}</div>
+              <button type="button" class="flow-secondary" data-outbox-retry="${
+                item.id
+              }">Ponów</button>
+            </article>
+          `
+        )
+        .join("")
+    : '<p class="device-empty">Brak błędów synchronizacji arkusza.</p>';
+}
+
+async function loadIssues() {
+  const response = await fetchDeviceJson("/admin/device/issues");
+  renderOperationIssues(response.operations || []);
+  renderSheetIssues(response.sheet_outbox || []);
+}
+
+async function loadHome() {
+  const response = await fetchDeviceJson("/admin/device/warehouse?page=1&page_size=10");
+  const summary = response.summary || {};
+  document.querySelectorAll("#device-home-summary [data-summary]").forEach((element) => {
+    element.textContent = String(summary[element.dataset.summary] ?? 0);
+  });
+}
+
+async function loadIntake() {
+  await Promise.all([
+    loadModels(),
+    loadSuppliers(),
+    loadModelOptions(),
+    loadKpSuggestion(),
+  ]);
+  renderIntakeItems();
+}
+
+async function loadCurrentView() {
+  setError("");
+  const refreshButton = document.getElementById("device-refresh");
+  setButtonBusy(refreshButton, true, "Odświeżanie…", "Odśwież");
+  try {
+    if (deviceState.view === "home") {
+      await loadHome();
+    } else if (deviceState.view === "intake") {
+      await loadIntake();
+    } else if (deviceState.view === "warehouse") {
+      await loadWarehouse();
+    } else if (deviceState.view === "history") {
+      await loadHistory();
+    } else if (deviceState.view === "issues") {
+      await loadIssues();
+    }
+  } catch (error) {
+    setError(error instanceof Error ? error.message : "Nie udało się pobrać danych.");
+  } finally {
+    setButtonBusy(refreshButton, false, "Odświeżanie…", "Odśwież");
+  }
+}
+
+function bindIntakeEvents() {
+  document.getElementById("device-model-search")?.addEventListener(
+    "input",
+    debounce(async (event) => {
+      try {
+        const query = event.target.value.trim();
+        clearInvalidField(event.target);
+        if (deviceState.models.has(query)) {
+          setIntakeItemsMessage("");
+          return;
+        }
+        await loadModels(query);
+      } catch (error) {
+        setError(error.message);
       }
-    </div>
-  `;
+    })
+  );
+  document.getElementById("device-supplier-search")?.addEventListener(
+    "input",
+    debounce(async (event) => {
+      try {
+        const query = event.target.value.trim();
+        clearInvalidField(event.target);
+        if (deviceState.suppliers.has(query)) {
+          return;
+        }
+        await loadSuppliers(query);
+      } catch (error) {
+        setError(error.message);
+      }
+    })
+  );
+  document.getElementById("device-items-add")?.addEventListener("click", () => {
+    try {
+      const quantity = addIntakeItems();
+      clearInvalidField(document.getElementById("device-items-add"));
+      setError("");
+      setIntakeItemsMessage(
+        `Dodano ${quantity} ${quantity === 1 ? "egzemplarz" : "egzemplarzy"}. Uzupełnij serial.`,
+        "info"
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udało się dodać pozycji.";
+      setError("");
+      setIntakeItemsMessage(message, "error");
+    }
+  });
+  document.getElementById("device-items-clear")?.addEventListener("click", resetIntake);
+  document.getElementById("device-supplier-create")?.addEventListener("click", async () => {
+    try {
+      setError("");
+      await createSupplier();
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document.getElementById("device-model-create")?.addEventListener("click", async () => {
+    try {
+      setError("");
+      await createModel();
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document.getElementById("device-intake-submit")?.addEventListener("click", async () => {
+    try {
+      setError("");
+      await submitIntake();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Nie udało się utworzyć dokumentu PZ.";
+      setError("");
+      showIntakeValidation([{ message }]);
+    }
+  });
+  document.getElementById("device-intake-items")?.addEventListener("input", (event) => {
+    const row = event.target.closest("[data-intake-index]");
+    if (!row) {
+      return;
+    }
+    const index = Number(row.dataset.intakeIndex);
+    const field = event.target.dataset.itemField;
+    if (deviceState.intakeItems[index] && field) {
+      deviceState.intakeItems[index][field] = event.target.value;
+      clearInvalidField(event.target);
+    }
+  });
+  document.getElementById("device-intake-items")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-item-remove]");
+    if (!button) {
+      return;
+    }
+    deviceState.intakeItems.splice(Number(button.dataset.itemRemove), 1);
+    renderIntakeItems();
+  });
+  document.getElementById("device-exception-enabled")?.addEventListener("change", (event) => {
+    document.getElementById("device-exception-reason-wrap").hidden = !event.target.checked;
+    clearInvalidField(event.target);
+    if (event.target.checked) {
+      clearInvalidField(document.getElementById("device-external-document"));
+    }
+  });
+  document.getElementById("device-external-document")?.addEventListener("input", (event) => {
+    clearInvalidField(event.target);
+  });
+  document.getElementById("device-exception-reason")?.addEventListener("input", (event) => {
+    clearInvalidField(event.target);
+  });
+}
+
+function bindWarehouseEvents() {
+  document.getElementById("device-warehouse-search")?.addEventListener("click", async () => {
+    deviceState.warehousePage = 1;
+    await loadCurrentView();
+  });
+  document.getElementById("device-warehouse-query")?.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    deviceState.warehousePage = 1;
+    await loadCurrentView();
+  });
+  document.getElementById("device-page-prev")?.addEventListener("click", async () => {
+    deviceState.warehousePage = Math.max(1, deviceState.warehousePage - 1);
+    await loadCurrentView();
+  });
+  document.getElementById("device-page-next")?.addEventListener("click", async () => {
+    deviceState.warehousePage = Math.min(
+      deviceState.warehousePages,
+      deviceState.warehousePage + 1
+    );
+    await loadCurrentView();
+  });
+  document.getElementById("device-audit-start")?.addEventListener("click", async () => {
+    try {
+      await startDeviceAudit();
+    } catch (error) {
+      setError(error.message);
+      await loadAuditHistory({ preserveSelection: true });
+    }
+  });
+  document.getElementById("device-audit-run")?.addEventListener("change", async (event) => {
+    deviceState.auditRunId = Number(event.target.value) || null;
+    deviceState.auditPage = 1;
+    await loadAuditDetail(deviceState.auditRunId);
+  });
+  document.getElementById("device-audit-filter")?.addEventListener("click", async () => {
+    deviceState.auditPage = 1;
+    await loadAuditDetail(deviceState.auditRunId);
+  });
+  document.getElementById("device-audit-query")?.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    deviceState.auditPage = 1;
+    await loadAuditDetail(deviceState.auditRunId);
+  });
+  document.getElementById("device-audit-prev")?.addEventListener("click", async () => {
+    deviceState.auditPage = Math.max(1, deviceState.auditPage - 1);
+    await loadAuditDetail(deviceState.auditRunId);
+  });
+  document.getElementById("device-audit-next")?.addEventListener("click", async () => {
+    deviceState.auditPage = Math.min(
+      deviceState.auditPages,
+      deviceState.auditPage + 1
+    );
+    await loadAuditDetail(deviceState.auditRunId);
+  });
+  document.getElementById("device-warehouse-body")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-device-detail]");
+    if (!button) {
+      return;
+    }
+    try {
+      setError("");
+      await openDeviceDetail(button.dataset.deviceDetail);
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document.getElementById("device-note-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await saveDeviceNote();
+    } catch (error) {
+      setError(error.message);
+    }
+  });
+  document
+    .getElementById("device-reservation-form")
+    ?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await saveDeviceReservation();
+      } catch (error) {
+        setError(error.message);
+      }
+    });
+  document
+    .getElementById("device-reservation-release")
+    ?.addEventListener("click", async () => {
+      try {
+        await releaseDeviceReservation();
+      } catch (error) {
+        setError(error.message);
+      }
+    });
+}
+
+function bindIssueEvents() {
+  document.getElementById("device-sheet-issues")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-outbox-retry]");
+    if (!button) {
+      return;
+    }
+    try {
+      await fetchDeviceJson(
+        `/admin/device/sheet-outbox/${button.dataset.outboxRetry}/retry`,
+        { method: "POST" }
+      );
+      setInfo("Zadanie przywrócono do kolejki.");
+      await loadIssues();
+    } catch (error) {
+      setError(error.message);
+    }
+  });
 }
 
 async function initializeDevicePage() {
@@ -143,1488 +1524,38 @@ async function initializeDevicePage() {
     window.location.replace("/");
     return;
   }
-
-  const refreshBtn = document.getElementById("device-refresh");
-  const logoutBtn = document.getElementById("device-logout");
-  const userChip = document.getElementById("device-user-chip");
-  const errorBox = document.getElementById("device-error");
-  const infoBox = document.getElementById("device-info");
-  const summaryRows = document.getElementById("device-summary-rows");
-  const summarySerial = document.getElementById("device-summary-serial");
-  const summaryMachines = document.getElementById("device-summary-machines");
-  const summaryCritical = document.getElementById("device-summary-critical");
-  const summaryReady = document.getElementById("device-summary-ready");
-  const intakesBody = document.getElementById("device-intakes-body");
-  const modelDuplicates = document.getElementById("device-model-duplicates");
-  const modelMissingKind = document.getElementById("device-model-missing-kind");
-  const modelMissingColor = document.getElementById("device-model-missing-color");
-  const modelMissingImage = document.getElementById("device-model-missing-image");
-  const modelDuplicatesBody = document.getElementById("device-model-duplicates-body");
-  const operationalNotes = document.getElementById("device-operational-notes");
-  const processRules = document.getElementById("device-process-rules");
-  const catalogForm = document.getElementById("device-catalog-form");
-  const catalogModelSelect = document.getElementById("device-catalog-model-select");
-  const catalogOnlyMissingInput = document.getElementById("device-catalog-only-missing");
-  const catalogSyncBtn = document.getElementById("device-catalog-sync-btn");
-  const catalogSyncAllBtn = document.getElementById("device-catalog-sync-all-btn");
-  const modelCreateMarkaInput = document.getElementById("device-model-create-marka");
-  const modelCreateModelInput = document.getElementById("device-model-create-model");
-  const modelCreateGrupaInput = document.getElementById("device-model-create-grupa");
-  const modelCreateRodzajInput = document.getElementById("device-model-create-rodzaj");
-  const modelCreatePlikInput = document.getElementById("device-model-create-plik");
-  const modelCreateKolorInput = document.getElementById("device-model-create-kolor");
-  const modelCreateSyncCatalogInput = document.getElementById("device-model-create-sync-catalog");
-  const modelCreateBtn = document.getElementById("device-model-create-btn");
-  const intakeForm = document.getElementById("device-intake-form");
-  const intakeEwidPrefixInput = document.getElementById("device-intake-ewid-prefix");
-  const intakeEwidNextNumberInput = document.getElementById("device-intake-ewid-next-number");
-  const supplierInput = document.getElementById("device-supplier-input");
-  const supplierOptions = document.getElementById("device-supplier-options");
-  const supplierCreateNameInput = document.getElementById("device-supplier-create-name");
-  const supplierCreateNipInput = document.getElementById("device-supplier-create-nip");
-  const supplierCreateAddressInput = document.getElementById("device-supplier-create-address");
-  const supplierCreatePostalInput = document.getElementById("device-supplier-create-postal");
-  const supplierCreateCityInput = document.getElementById("device-supplier-create-city");
-  const supplierCreatePhoneInput = document.getElementById("device-supplier-create-phone");
-  const supplierCreateEmailInput = document.getElementById("device-supplier-create-email");
-  const supplierCreateBtn = document.getElementById("device-supplier-create-btn");
-  const supplierStatusBox = document.getElementById("device-supplier-status");
-  const modelInput = document.getElementById("device-model-input");
-  const modelOptions = document.getElementById("device-model-options");
-  const intakeDocExternalInput = document.getElementById("device-intake-doc-external");
-  const intakeIssuedByInput = document.getElementById("device-intake-issued-by");
-  const intakeAddQuantityInput = document.getElementById("device-intake-add-quantity");
-  const intakeAddPriceNettoInput = document.getElementById("device-intake-add-price-netto");
-  const intakeAddItemsBtn = document.getElementById("device-intake-add-items-btn");
-  const intakeClearBtn = document.getElementById("device-intake-clear-btn");
-  const intakeItemsBody = document.getElementById("device-intake-items-body");
-  const intakeForceInput = document.getElementById("device-intake-force");
-  const intakeCreateBtn = document.getElementById("device-intake-create-btn");
-  const intakeSubmitStatusBox = document.getElementById("device-intake-submit-status");
-  const intakeResultBox = document.getElementById("device-intake-result");
-  const intakeResultHead = document.getElementById("device-intake-result-head");
-  const intakeResultList = document.getElementById("device-intake-result-list");
-
-  const requiredElements = [
-    ["device-refresh", refreshBtn],
-    ["device-logout", logoutBtn],
-    ["device-user-chip", userChip],
-    ["device-error", errorBox],
-    ["device-info", infoBox],
-    ["device-summary-rows", summaryRows],
-    ["device-summary-serial", summarySerial],
-    ["device-summary-machines", summaryMachines],
-    ["device-summary-critical", summaryCritical],
-    ["device-summary-ready", summaryReady],
-    ["device-intakes-body", intakesBody],
-    ["device-model-duplicates", modelDuplicates],
-    ["device-model-missing-kind", modelMissingKind],
-    ["device-model-missing-color", modelMissingColor],
-    ["device-model-missing-image", modelMissingImage],
-    ["device-model-duplicates-body", modelDuplicatesBody],
-    ["device-operational-notes", operationalNotes],
-    ["device-process-rules", processRules],
-    ["device-catalog-form", catalogForm],
-    ["device-catalog-model-select", catalogModelSelect],
-    ["device-catalog-only-missing", catalogOnlyMissingInput],
-    ["device-catalog-sync-btn", catalogSyncBtn],
-    ["device-catalog-sync-all-btn", catalogSyncAllBtn],
-    ["device-model-create-marka", modelCreateMarkaInput],
-    ["device-model-create-model", modelCreateModelInput],
-    ["device-model-create-grupa", modelCreateGrupaInput],
-    ["device-model-create-rodzaj", modelCreateRodzajInput],
-    ["device-model-create-plik", modelCreatePlikInput],
-    ["device-model-create-kolor", modelCreateKolorInput],
-    ["device-model-create-sync-catalog", modelCreateSyncCatalogInput],
-    ["device-model-create-btn", modelCreateBtn],
-    ["device-intake-form", intakeForm],
-    ["device-intake-ewid-prefix", intakeEwidPrefixInput],
-    ["device-intake-ewid-next-number", intakeEwidNextNumberInput],
-    ["device-supplier-input", supplierInput],
-    ["device-supplier-options", supplierOptions],
-    ["device-supplier-create-name", supplierCreateNameInput],
-    ["device-supplier-create-nip", supplierCreateNipInput],
-    ["device-supplier-create-address", supplierCreateAddressInput],
-    ["device-supplier-create-postal", supplierCreatePostalInput],
-    ["device-supplier-create-city", supplierCreateCityInput],
-    ["device-supplier-create-phone", supplierCreatePhoneInput],
-    ["device-supplier-create-email", supplierCreateEmailInput],
-    ["device-supplier-create-btn", supplierCreateBtn],
-    ["device-supplier-status", supplierStatusBox],
-    ["device-model-input", modelInput],
-    ["device-model-options", modelOptions],
-    ["device-intake-doc-external", intakeDocExternalInput],
-    ["device-intake-issued-by", intakeIssuedByInput],
-    ["device-intake-add-quantity", intakeAddQuantityInput],
-    ["device-intake-add-price-netto", intakeAddPriceNettoInput],
-    ["device-intake-add-items-btn", intakeAddItemsBtn],
-    ["device-intake-clear-btn", intakeClearBtn],
-    ["device-intake-items-body", intakeItemsBody],
-    ["device-intake-force", intakeForceInput],
-    ["device-intake-create-btn", intakeCreateBtn],
-    ["device-intake-submit-status", intakeSubmitStatusBox],
-    ["device-intake-result", intakeResultBox],
-    ["device-intake-result-head", intakeResultHead],
-    ["device-intake-result-list", intakeResultList],
-  ];
-  const missingElements = requiredElements.filter(([, element]) => !element).map(([id]) => id);
-  if (missingElements.length) {
-    console.error("Brak wymaganych elementow UI DEVICE:", missingElements);
-    if (errorBox) {
-      errorBox.textContent = `Blad UI DEVICE. Brak elementow: ${missingElements.join(", ")}`;
-      errorBox.hidden = false;
+  activateView();
+  try {
+    const me = await fetchDeviceJson("/auth/me");
+    const sections = new Set(Array.isArray(me.sections) ? me.sections : []);
+    if (!sections.has("device")) {
+      throw new Error("Konto nie ma prawa „Obsługa urządzeń”.");
     }
+    const displayName = [me.first_name, me.last_name].filter(Boolean).join(" ").trim();
+    document.getElementById("device-user-chip").textContent =
+      displayName || me.email || "Użytkownik";
+  } catch (error) {
+    clearDeviceToken();
+    setError(error.message);
+    window.setTimeout(() => window.location.replace("/"), 1200);
     return;
   }
 
-  const headers = () => ({
-    "X-Admin-Session": token,
-  });
-
-  const DEFAULT_TIMEOUT_MS = 20000;
-  const LONG_TIMEOUT_MS = 120000;
-  const DEVICE_EWIDENCJA_BASE_PREFIX = "KP/";
-
-  const buildTimeoutMessage = (timeoutMs) => {
-    const seconds = Math.max(1, Math.round(Number(timeoutMs) / 1000));
-    return `Przekroczono limit czasu odpowiedzi (${seconds}s). Sprobuj ponownie.`;
-  };
-
-  const fetchJson = async (
-    url,
-    {
-      method = "GET",
-      extraHeaders = null,
-      body = null,
-      timeoutMs = DEFAULT_TIMEOUT_MS,
-      defaultError = "Nie udalo sie wykonac operacji.",
-    } = {}
-  ) => {
-    const abortController = new AbortController();
-    const timeoutHandle = window.setTimeout(() => abortController.abort(), timeoutMs);
+  bindIntakeEvents();
+  bindWarehouseEvents();
+  bindIssueEvents();
+  document.getElementById("device-refresh").addEventListener("click", loadCurrentView);
+  document.getElementById("device-logout").addEventListener("click", async () => {
     try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          ...headers(),
-          ...(extraHeaders || {}),
-        },
-        body,
-        signal: abortController.signal,
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.detail || defaultError);
-      }
-      return payload;
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error(buildTimeoutMessage(timeoutMs));
-      }
-      if (err instanceof Error) {
-        throw err;
-      }
-      throw new Error(defaultError);
-    } finally {
-      window.clearTimeout(timeoutHandle);
-    }
-  };
-
-  const setError = (message = "") => {
-    errorBox.textContent = message;
-    errorBox.hidden = !message;
-  };
-
-  const setInfo = (message = "") => {
-    infoBox.textContent = message;
-    infoBox.hidden = !message;
-  };
-
-  const setBusy = (busy) => {
-    refreshBtn.disabled = busy;
-    refreshBtn.textContent = busy ? "Odswiezanie..." : "Odswiez dane";
-  };
-
-  const setActionBusy = (button, busy, busyLabel, defaultLabel) => {
-    button.disabled = busy;
-    button.textContent = busy ? busyLabel : defaultLabel;
-  };
-
-  const setInlineStatus = (element, message = "", kind = "info") => {
-    const kinds = new Set(["info", "success", "warn", "error"]);
-    element.textContent = message;
-    element.hidden = !message;
-    element.classList.remove("info", "success", "warn", "error");
-    if (message) {
-      element.classList.add(kinds.has(kind) ? kind : "info");
-    }
-  };
-
-  const setSupplierStatus = (message = "", kind = "info") =>
-    setInlineStatus(supplierStatusBox, message, kind);
-
-  const setIntakeSubmitStatus = (message = "", kind = "info") =>
-    setInlineStatus(intakeSubmitStatusBox, message, kind);
-
-  const clearIntakeResult = () => {
-    intakeResultHead.textContent = "";
-    intakeResultList.innerHTML = "";
-    intakeResultBox.hidden = true;
-  };
-
-  const renderIntakeResult = ({ batch, modelLabels }) => {
-    const pzNumber = String(batch?.pz_number || "—");
-    const pzId = Number(batch?.pz_id || 0);
-    const rows = Array.isArray(batch?.items) ? batch.items : [];
-    const createdAt = formatDate(new Date().toISOString());
-
-    intakeResultHead.textContent = `Dokument ${pzNumber} (ID ${pzId}) zapisany. Pozycji: ${rows.length}. Czas: ${createdAt}.`;
-    intakeResultList.innerHTML = "";
-
-    const previewLimit = 6;
-    rows.slice(0, previewLimit).forEach((item, index) => {
-      const modelId = Number(item?.model_id || 0);
-      const modelLabel = modelLabels.get(modelId) || `ID ${modelId}`;
-      const serial = String(item?.serial || "").trim() || "—";
-      const ewidencja = String(item?.ewidencja || "").trim() || "—";
-      const li = document.createElement("li");
-      li.textContent = `${index + 1}. ${modelLabel} | S/N: ${serial} | KP: ${ewidencja}`;
-      intakeResultList.appendChild(li);
-    });
-
-    if (rows.length > previewLimit) {
-      const li = document.createElement("li");
-      li.textContent = `... oraz ${rows.length - previewLimit} kolejnych pozycji.`;
-      intakeResultList.appendChild(li);
-    }
-
-    intakeResultBox.hidden = false;
-  };
-
-  const updateSummary = (summary) => {
-    summaryRows.textContent = String(Number(summary?.device_rows || 0));
-    summarySerial.textContent = String(Number(summary?.serial_linked_rows || 0));
-    summaryMachines.textContent = String(Number(summary?.machine_linked_rows || 0));
-    summaryCritical.textContent = String(Number(summary?.critical_rows || 0));
-    summaryReady.textContent = String(Number(summary?.ready_rows || 0));
-  };
-
-  const renderIntakes = (items) => {
-    if (!Array.isArray(items) || items.length === 0) {
-      intakesBody.innerHTML = "<tr><td colspan='8'>Brak danych przyjec urzadzen.</td></tr>";
-      return;
-    }
-
-    intakesBody.innerHTML = items
-      .map((item) => {
-        const supplierName = item?.supplier?.nazwa || item?.supplier?.id_klient || "—";
-        const supplierNip = item?.supplier?.nip || "";
-        return `
-          <tr>
-            <td>
-              ${renderCellStack([
-                { label: "Numer", value: item.pz_number, strong: true },
-                { label: "Data", value: formatDate(item.pz_date) },
-                { label: "Dok. zew.", value: item.external_document_number || "—" },
-              ])}
-            </td>
-            <td>
-              ${renderCellStack([
-                { label: "Dostawca", value: supplierName, strong: true },
-                { label: "NIP", value: supplierNip || "—" },
-                { label: "Przyjal", value: item.issued_by || "—" },
-              ])}
-            </td>
-            <td>
-              ${renderCellStack([
-                { label: "Nazwa", value: item.purchase?.name, strong: true },
-                { label: "Serial z PZ", value: item.purchase?.serial || "—" },
-                { label: "Nr wew z PZ", value: item.purchase?.ewidencja || "—" },
-              ])}
-            </td>
-            <td>
-              ${renderCellStack([
-                { label: "ID", value: item.warehouse?.id_magazyn_table || "—", strong: true },
-                { label: "INDEKS", value: item.warehouse?.index || "—" },
-                { label: "ID_MODEL", value: item.warehouse?.id_model || "—" },
-              ])}
-            </td>
-            <td>
-              ${renderCellStack([
-                { label: "ID_SERIAL", value: item.serial?.id_serial || "—", strong: true },
-                { label: "Serial", value: item.serial?.serial || "—" },
-                { label: "Nr wew", value: item.serial?.ewidencja || "—" },
-              ])}
-            </td>
-            <td>
-              ${renderCellStack([
-                { label: "ID_MASZYNA", value: item.machine?.id_maszyna || "—", strong: true },
-                { label: "EWIDENCJA", value: item.machine?.ewidencja || "—" },
-                { label: "SYNWP", value: item.machine?.synwp ?? "—" },
-              ])}
-            </td>
-            <td>
-              ${renderCellStack([
-                { label: "Model", value: item.model?.model || item.warehouse?.model || "—", strong: true },
-                { label: "RODZAJ", value: item.model?.rodzaj || "—" },
-                { label: "PLIK", value: item.model?.plik || "—" },
-              ])}
-            </td>
-            <td>
-              <div class="device-process-cell">
-                ${renderProcessStatus(item.process_status)}
-                ${renderActions(item)}
-                ${renderIssueSummary(item)}
-              </div>
-            </td>
-          </tr>
-        `;
-      })
-      .join("");
-  };
-
-  const renderModelQuality = (quality) => {
-    modelDuplicates.textContent = String(Number(quality?.duplicate_signatures_count || 0));
-    modelMissingKind.textContent = String(Number(quality?.missing_rodzaj_count || 0));
-    modelMissingColor.textContent = String(Number(quality?.missing_kolor_count || 0));
-    modelMissingImage.textContent = String(Number(quality?.missing_plik_count || 0));
-
-    const duplicates = Array.isArray(quality?.top_duplicate_signatures)
-      ? quality.top_duplicate_signatures
-      : [];
-    if (duplicates.length === 0) {
-      modelDuplicatesBody.innerHTML = "<tr><td colspan='4'>Brak duplikatow modelu.</td></tr>";
-      return;
-    }
-
-    modelDuplicatesBody.innerHTML = duplicates
-      .map(
-        (item) => `
-          <tr>
-            <td>${escapeHtml(item.marka || "—")}</td>
-            <td>${escapeHtml(item.model || "—")}</td>
-            <td>${escapeHtml(item.count || 0)}</td>
-            <td>${escapeHtml((item.id_models || []).join(", ") || "—")}</td>
-          </tr>
-        `
-      )
-      .join("");
-  };
-
-  const renderOperationalNotes = (items) => {
-    if (!Array.isArray(items) || items.length === 0) {
-      operationalNotes.innerHTML = "<li>Brak notatek operacyjnych.</li>";
-      return;
-    }
-    operationalNotes.innerHTML = items
-      .map((item) => `<li>${escapeHtml(item)}</li>`)
-      .join("");
-  };
-
-  const renderProcessRules = (items) => {
-    if (!Array.isArray(items) || items.length === 0) {
-      processRules.innerHTML = "<li>Brak zdefiniowanych regul procesu.</li>";
-      return;
-    }
-    processRules.innerHTML = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
-  };
-
-  const intakeItems = [];
-  let availableModels = [];
-  let catalogModels = [];
-  let availableSuppliers = [];
-
-  const normalizeDeviceKey = (value) =>
-    String(value || "")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "");
-
-  const normalizeEwidPrefix = (value) => {
-    const trimmed = String(value || "")
-      .trim()
-      .toUpperCase();
-    if (!trimmed) {
-      return "KP/";
-    }
-    return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
-  };
-
-  const parsePositiveInt = (value, errorMessage) => {
-    const number = Number(String(value || "").trim());
-    if (!Number.isInteger(number) || number <= 0) {
-      throw new Error(errorMessage);
-    }
-    return number;
-  };
-
-  const formatEwidencjaBase = (prefix, number, width = 4) =>
-    `${normalizeEwidPrefix(prefix)}${String(number).padStart(Math.max(1, width), "0")}/`;
-
-  const splitEwidencjaBase = (value) => {
-    const match = String(value || "")
-      .trim()
-      .toUpperCase()
-      .match(/^(.*?)(\d+)\/?$/);
-    if (!match) {
-      return null;
-    }
-    const prefixRaw = String(match[1] || "");
-    const parsedNumber = Number(match[2]);
-    if (!Number.isInteger(parsedNumber) || parsedNumber <= 0) {
-      return null;
-    }
-    return {
-      prefix: normalizeEwidPrefix(prefixRaw),
-      number: parsedNumber,
-      width: String(match[2]).length,
-    };
-  };
-
-  const buildFullEwidencja = (baseValue, suffixValue) => {
-    const parsed = splitEwidencjaBase(baseValue);
-    if (!parsed) {
-      return "";
-    }
-    const normalizedBase = formatEwidencjaBase(parsed.prefix, parsed.number, parsed.width);
-    const suffix = String(suffixValue || "")
-      .trim()
-      .replace(/^\/+/, "");
-    if (!suffix) {
-      return normalizedBase;
-    }
-    return `${normalizedBase}${suffix}`;
-  };
-
-  const isDeviceBasePrefix = (value) =>
-    normalizeEwidPrefix(value) === normalizeEwidPrefix(DEVICE_EWIDENCJA_BASE_PREFIX);
-
-  const parseNonNegativeDecimal = (value, errorMessage) => {
-    const normalized = String(value || "").trim().replace(",", ".");
-    if (!normalized) {
-      return null;
-    }
-    const number = Number(normalized);
-    if (!Number.isFinite(number) || number < 0) {
-      throw new Error(errorMessage);
-    }
-    return Number(number.toFixed(4));
-  };
-
-  const normalizeNipValue = (value) =>
-    String(value || "")
-      .trim()
-      .replace(/[^0-9]/g, "");
-
-  const normalizeNameForCompare = (value) =>
-    String(value || "")
-      .trim()
-      .replace(/\s+/g, " ")
-      .toUpperCase();
-
-  const normalizeLookupQuery = (value) => {
-    const normalized = String(value || "").trim();
-    if (!normalized) {
-      return "";
-    }
-    const selectedFromList = normalized.match(/^(\d+)\s*\|/);
-    if (selectedFromList) {
-      return selectedFromList[1];
-    }
-    return normalized;
-  };
-
-  const normalizeSupplierLookupQuery = (value) => {
-    const normalized = String(value || "").trim();
-    if (!normalized) {
-      return "";
-    }
-    const selectedMatch = normalized.match(/^(\d+)\s*\|\s*(.*?)\s*\|\s*NIP:\s*(.*)$/i);
-    if (!selectedMatch) {
-      return normalizeLookupQuery(normalized);
-    }
-    const selectedName = String(selectedMatch[2] || "").trim();
-    const selectedNip = normalizeNipValue(selectedMatch[3]);
-    if (selectedNip) {
-      return selectedNip;
-    }
-    if (selectedName) {
-      return selectedName;
-    }
-    return String(selectedMatch[1] || "").trim();
-  };
-
-  const formatSupplierLabel = (item) =>
-    `${item.id_klient} | ${item.nazwa || "Brak nazwy"} | NIP: ${item.nip || "—"}`;
-
-  const findSupplierByFuzzyValue = (normalized) => {
-    const normalizedName = normalizeNameForCompare(normalized);
-    const normalizedDigits = normalizeNipValue(normalized);
-    const fuzzyMatches = availableSuppliers.filter((item) => {
-      const itemName = normalizeNameForCompare(item.nazwa);
-      const itemNip = normalizeNipValue(item.nip);
-      return (
-        (normalizedName.length >= 3 && itemName.includes(normalizedName)) ||
-        (normalizedDigits.length >= 3 && itemNip.includes(normalizedDigits))
-      );
-    });
-    if (fuzzyMatches.length === 1) {
-      return fuzzyMatches[0];
-    }
-    return null;
-  };
-
-  const findSupplierByInputValue = (value) => {
-    const normalized = String(value || "").trim();
-    if (!normalized) {
-      return null;
-    }
-    const exact = availableSuppliers.find((item) => formatSupplierLabel(item) === normalized);
-    if (exact) {
-      return exact;
-    }
-    const match = normalized.match(/^(\d+)\b/);
-    if (!match) {
-      return findSupplierByFuzzyValue(normalized);
-    }
-    const id = Number(match[1]);
-    if (!Number.isInteger(id) || id <= 0) {
-      return findSupplierByFuzzyValue(normalized);
-    }
-    return availableSuppliers.find((item) => Number(item.id_klient) === id) || null;
-  };
-
-  const formatModelLabel = (item) => {
-    const modelLabel = [item.marka || "", item.model || ""].join(" ").trim() || "Brak nazwy";
-    return `${item.id_model} | ${modelLabel}`;
-  };
-
-  const formatCatalogModelLabel = (item) =>
-    [item.marka || "", item.model || ""].join(" ").trim() || "Brak nazwy";
-
-  const findModelByFuzzyValue = (normalized) => {
-    const normalizedText = normalizeNameForCompare(normalized);
-    const fuzzyMatches = availableModels.filter((item) =>
-      normalizeNameForCompare([item.marka || "", item.model || ""].join(" ")).includes(
-        normalizedText
-      )
-    );
-    if (fuzzyMatches.length === 1) {
-      return fuzzyMatches[0];
-    }
-    return null;
-  };
-
-  const findModelByInputValue = (value) => {
-    const normalized = String(value || "").trim();
-    if (!normalized) {
-      return null;
-    }
-    const exact = availableModels.find((item) => formatModelLabel(item) === normalized);
-    if (exact) {
-      return exact;
-    }
-    const match = normalized.match(/^(\d+)\b/);
-    if (!match) {
-      return findModelByFuzzyValue(normalized);
-    }
-    const id = Number(match[1]);
-    if (!Number.isInteger(id) || id <= 0) {
-      return findModelByFuzzyValue(normalized);
-    }
-    return availableModels.find((item) => Number(item.id_model) === id) || null;
-  };
-
-  const renderSupplierOptions = () => {
-    if (!availableSuppliers.length) {
-      supplierOptions.innerHTML = "";
-      return;
-    }
-    supplierOptions.innerHTML = availableSuppliers
-      .map((item) => {
-        const label = formatSupplierLabel(item);
-        return `<option value="${escapeHtml(label)}"></option>`;
-      })
-      .join("");
-  };
-
-  const renderModelOptions = () => {
-    if (!availableModels.length) {
-      modelOptions.innerHTML = "";
-      return;
-    }
-    modelOptions.innerHTML = availableModels
-      .map((item) => {
-        const label = formatModelLabel(item);
-        return `<option value="${escapeHtml(label)}"></option>`;
-      })
-      .join("");
-  };
-
-  const renderCatalogModelOptions = () => {
-    const currentValue = String(catalogModelSelect.value || "");
-    const options = ["<option value=''>-- wszystkie modele --</option>"];
-    const ordered = [...catalogModels].sort((a, b) =>
-      formatCatalogModelLabel(a).localeCompare(formatCatalogModelLabel(b), "pl")
-    );
-    ordered.forEach((item) => {
-      const modelId = Number(item.id_model);
-      if (!Number.isInteger(modelId) || modelId <= 0) {
-        return;
-      }
-      options.push(
-        `<option value="${escapeHtml(modelId)}">${escapeHtml(formatCatalogModelLabel(item))}</option>`
-      );
-    });
-    catalogModelSelect.innerHTML = options.join("");
-    if (currentValue && options.some((option) => option.includes(`value="${currentValue}"`))) {
-      catalogModelSelect.value = currentValue;
-    }
-  };
-
-  const applySupplierToCreateForm = (supplier) => {
-    if (!supplier) {
-      return;
-    }
-    supplierCreateNameInput.value = String(supplier.nazwa || "");
-    supplierCreateNipInput.value = String(supplier.nip || "");
-    supplierCreateAddressInput.value = String(supplier.adres || "");
-    supplierCreatePostalInput.value = String(supplier.kod || "");
-    supplierCreateCityInput.value = String(supplier.poczta || "");
-    supplierCreatePhoneInput.value = String(supplier.telefon || "");
-    supplierCreateEmailInput.value = String(supplier.email || "");
-  };
-
-  const findExistingSupplierBeforeCreate = async ({ name, nip }) => {
-    const normalizedName = normalizeNameForCompare(name);
-    const normalizedNip = normalizeNipValue(nip);
-    const queries = [normalizedNip, normalizeLookupQuery(name)]
-      .map((value) => String(value || "").trim())
-      .map((value) => value.slice(0, 100))
-      .filter(Boolean);
-    const checked = new Set();
-
-    for (const query of queries) {
-      if (checked.has(query)) {
-        continue;
-      }
-      checked.add(query);
-      const body = await fetchJson(
-        `/admin/device/suppliers?query=${encodeURIComponent(query)}&limit=200`,
-        {
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-          defaultError: "Nie udalo sie zweryfikowac istnienia dostawcy.",
-        }
-      );
-      const rows = Array.isArray(body.rows) ? body.rows : [];
-      const existing = rows.find((item) => {
-        const sameNip = normalizedNip && normalizeNipValue(item.nip) === normalizedNip;
-        const sameName =
-          normalizedName && normalizeNameForCompare(item.nazwa) === normalizedName;
-        return Boolean(sameNip || sameName);
-      });
-      if (existing) {
-        return existing;
-      }
-    }
-    return null;
-  };
-
-  const loadSuppliers = async (query = "") => {
-    const queryValue = normalizeSupplierLookupQuery(query);
-    const body = await fetchJson(
-      `/admin/device/suppliers?query=${encodeURIComponent(queryValue)}&limit=200`,
-      {
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Nie udalo sie pobrac listy dostawcow.",
-      }
-    );
-    availableSuppliers = Array.isArray(body.rows) ? body.rows : [];
-    renderSupplierOptions();
-  };
-
-  const loadModels = async (query = "") => {
-    const queryValue = normalizeLookupQuery(query);
-    const body = await fetchJson(
-      `/admin/device/models?query=${encodeURIComponent(queryValue)}&limit=200`,
-      {
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Nie udalo sie pobrac listy modeli.",
-      }
-    );
-    availableModels = Array.isArray(body.rows) ? body.rows : [];
-    renderModelOptions();
-  };
-
-  const loadCatalogModels = async () => {
-    const body = await fetchJson("/admin/device/models?query=&limit=500", {
-      timeoutMs: DEFAULT_TIMEOUT_MS,
-      defaultError: "Nie udalo sie pobrac listy modeli do synchronizacji AUTO.",
-    });
-    catalogModels = Array.isArray(body.rows) ? body.rows : [];
-    renderCatalogModelOptions();
-  };
-
-  const renderModelCreateOptions = (options) => {
-    const brands = Array.isArray(options?.brands) ? options.brands : [];
-    const groups = Array.isArray(options?.groups) ? options.groups : [];
-    const kinds = Array.isArray(options?.kinds) ? options.kinds : [];
-    const defaultBrand = String(options?.default_brand || "Ricoh");
-
-    modelCreateMarkaInput.innerHTML = brands
-      .map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`)
-      .join("");
-    if (brands.includes(defaultBrand)) {
-      modelCreateMarkaInput.value = defaultBrand;
-    }
-
-    modelCreateGrupaInput.innerHTML = [
-      "<option value=''>-- wybierz --</option>",
-      ...groups.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`),
-    ].join("");
-    const defaultGroup = groups.find((item) => normalizeNameForCompare(item) === "DRUK");
-    modelCreateGrupaInput.value = defaultGroup || "";
-
-    modelCreateRodzajInput.innerHTML = [
-      "<option value=''>-- wybierz --</option>",
-      ...kinds.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`),
-    ].join("");
-  };
-
-  const loadModelFormOptions = async () => {
-    const body = await fetchJson("/admin/device/model-form-options", {
-      timeoutMs: DEFAULT_TIMEOUT_MS,
-      defaultError: "Nie udalo sie pobrac slownikow modelu.",
-    });
-    renderModelCreateOptions(body.options || {});
-  };
-
-  const renderIntakeItems = () => {
-    if (!intakeItems.length) {
-      intakeItemsBody.innerHTML = "<tr><td colspan='6'>Brak pozycji. Dodaj model i ilosc.</td></tr>";
-      return;
-    }
-    intakeItemsBody.innerHTML = intakeItems
-      .map(
-        (item, index) => `
-          <tr data-row-index="${index}">
-            <td>${index + 1}</td>
-            <td>
-              <div class="device-cell-stack">
-                <div>
-                  <div class="device-cell-value device-cell-strong">${escapeHtml(
-                    item.model_label || `ID ${item.model_id}`
-                  )}</div>
-                  <div class="device-cell-label">ID_MODEL: ${escapeHtml(item.model_id)}</div>
-                </div>
-              </div>
-            </td>
-            <td>
-              <input
-                type="text"
-                maxlength="100"
-                class="device-editor-input device-editor-serial"
-                value="${escapeHtml(item.serial)}"
-              >
-            </td>
-            <td>
-              <div class="device-ewidencja-stack">
-                <input
-                  type="text"
-                  maxlength="100"
-                  class="device-editor-input device-editor-ewidencja-base"
-                  value="${escapeHtml(item.ewidencja_base)}"
-                  placeholder="KP/0001/"
-                >
-                <input
-                  type="text"
-                  maxlength="100"
-                  class="device-editor-input device-editor-ewidencja-suffix"
-                  value="${escapeHtml(item.ewidencja_suffix || "")}"
-                  placeholder="Dalsza czesc (opcjonalnie), np. 22/333"
-                >
-              </div>
-            </td>
-            <td>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                class="device-editor-input device-editor-price"
-                value="${escapeHtml(item.purchase_price_netto ?? "")}"
-              >
-            </td>
-            <td>
-              <button type="button" class="flow-secondary device-editor-remove">Usun</button>
-            </td>
-          </tr>
-        `
-      )
-      .join("");
-  };
-
-  const appendIntakeItems = () => {
-    const selectedModel = findModelByInputValue(modelInput.value);
-    if (!selectedModel) {
-      throw new Error("Wybierz model z listy (ID / marka / model).");
-    }
-    const modelId = parsePositiveInt(selectedModel.id_model, "Wybierz poprawny model z listy.");
-    const modelLabel = [selectedModel.marka || "", selectedModel.model || ""].join(" ").trim() || `ID ${modelId}`;
-    const quantity = parsePositiveInt(
-      intakeAddQuantityInput.value,
-      "Ilosc egzemplarzy musi byc dodatnia liczba calkowita."
-    );
-    const priceNetto = parseNonNegativeDecimal(
-      intakeAddPriceNettoInput.value,
-      "Cena zakupu netto musi byc liczba >= 0."
-    );
-    const prefix = normalizeEwidPrefix(intakeEwidPrefixInput.value);
-    const startNumber = parsePositiveInt(
-      intakeEwidNextNumberInput.value,
-      "Podaj poprawny numer startowy ewidencji."
-    );
-    let nextNumber = startNumber;
-    if (intakeItems.length) {
-      const extracted = intakeItems
-        .map((item) => splitEwidencjaBase(item.ewidencja_base))
-        .filter(Boolean)
-        .map((item) => item.number);
-      if (extracted.length) {
-        nextNumber = Math.max(...extracted) + 1;
-      }
-    }
-    const width = Math.max(4, String(nextNumber + quantity - 1).length);
-    for (let offset = 0; offset < quantity; offset += 1) {
-      const ewidencjaBase = formatEwidencjaBase(prefix, nextNumber + offset, width);
-      intakeItems.push({
-        model_id: modelId,
-        model_label: modelLabel,
-        serial: "",
-        ewidencja_base: ewidencjaBase,
-        ewidencja_suffix: "",
-        system_ewidencja_base: ewidencjaBase,
-        purchase_price_netto: priceNetto,
-      });
-    }
-    intakeEwidPrefixInput.value = prefix;
-    renderIntakeItems();
-    setInfo(`Dodano ${quantity} pozycje/pozycji dla modelu ${modelLabel} (ID=${modelId}).`);
-    setIntakeSubmitStatus("", "info");
-  };
-
-  const validateIntakeItems = () => {
-    if (!intakeItems.length) {
-      throw new Error("Dodaj przynajmniej jedna pozycje do dokumentu PZ.");
-    }
-    const seenSerial = new Set();
-    const seenEwidencja = new Set();
-    return intakeItems.map((item, index) => {
-      const rowNo = index + 1;
-      const modelId = Number(item.model_id);
-      const serial = String(item.serial || "").trim();
-      const ewidencjaBase = String(item.ewidencja_base || "").trim();
-      const ewidencjaSuffix = String(item.ewidencja_suffix || "").trim();
-      const priceNetto = parseNonNegativeDecimal(
-        item.purchase_price_netto,
-        `Wiersz ${rowNo}: cena zakupu netto musi byc liczba >= 0.`
-      );
-      if (!Number.isInteger(modelId) || modelId <= 0) {
-        throw new Error(`Wiersz ${rowNo}: niepoprawne ID_MODEL.`);
-      }
-      if (!serial) {
-        throw new Error(`Wiersz ${rowNo}: pole S/N jest wymagane.`);
-      }
-      const parsedBase = splitEwidencjaBase(ewidencjaBase);
-      if (!parsedBase) {
-        throw new Error(
-          `Wiersz ${rowNo}: baza ewidencji musi miec format typu KP/0001/.`
-        );
-      }
-      if (!isDeviceBasePrefix(parsedBase.prefix)) {
-        throw new Error(
-          `Wiersz ${rowNo}: baza ewidencji musi zaczynac sie od ${DEVICE_EWIDENCJA_BASE_PREFIX}.`
-        );
-      }
-      const ewidencja = buildFullEwidencja(ewidencjaBase, ewidencjaSuffix);
-      const serialKey = normalizeDeviceKey(serial);
-      const ewidencjaKey = normalizeDeviceKey(ewidencja);
-      if (seenSerial.has(serialKey)) {
-        throw new Error(`Wiersz ${rowNo}: duplikat numeru seryjnego w formularzu.`);
-      }
-      if (seenEwidencja.has(ewidencjaKey)) {
-        throw new Error(`Wiersz ${rowNo}: duplikat numeru ewidencyjnego w formularzu.`);
-      }
-      seenSerial.add(serialKey);
-      seenEwidencja.add(ewidencjaKey);
-      return {
-        model_id: modelId,
-        serial,
-        ewidencja,
-        purchase_price_netto: priceNetto,
-      };
-    });
-  };
-
-  const loadIntakeDefaults = async (prefixOverride = null) => {
-    const prefix = normalizeEwidPrefix(prefixOverride || DEVICE_EWIDENCJA_BASE_PREFIX);
-    try {
-      const body = await fetchJson(
-        `/admin/device/intake/defaults?ewidencja_prefix=${encodeURIComponent(prefix)}`,
-        {
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-          defaultError: "Nie udalo sie pobrac numeracji ewidencyjnej.",
-        }
-      );
-      const defaults = body.defaults || {};
-      intakeEwidPrefixInput.value = normalizeEwidPrefix(DEVICE_EWIDENCJA_BASE_PREFIX);
-      intakeEwidNextNumberInput.value = String(Number(defaults.next_number || 1));
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Blad odczytu domyslnej numeracji ewidencyjnej."
-      );
-    }
-  };
-
-  const loadData = async () => {
-    setError("");
-    setBusy(true);
-    try {
-      const me = await fetchJson("/auth/me", {
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Sesja wygasla.",
-      });
-      const sections = new Set(Array.isArray(me.sections) ? me.sections : []);
-      if (!sections.has("generator")) {
-        throw new Error("Brak uprawnien do sekcji DEVICE.");
-      }
-
-      const displayName = [me.first_name, me.last_name].filter(Boolean).join(" ").trim();
-      userChip.textContent = displayName || me.email || "Uzytkownik";
-
-      const data = await fetchJson("/admin/device/dashboard", {
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Nie udalo sie pobrac dashboardu urzadzen.",
-      });
-
-      updateSummary(data.summary || {});
-      renderIntakes(data.recent_intakes || []);
-      renderModelQuality(data.model_quality || {});
-      renderProcessRules(data.process_rules || []);
-      renderOperationalNotes(data.operational_notes || []);
-      if (!intakeItems.length) {
-        await loadIntakeDefaults();
-      }
-      await loadSuppliers(supplierInput.value);
-      await loadModels(modelInput.value);
-      await loadCatalogModels();
-      await loadModelFormOptions();
-      setInfo(`Dane urzadzen odswiezone: ${formatDate(new Date().toISOString())}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Blad ladowania danych.";
-      setError(message);
-      if (message.includes("Sesja")) {
-        clearDeviceToken();
-        window.location.replace("/");
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  refreshBtn.addEventListener("click", () => {
-    loadData();
-  });
-
-  catalogForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setError("");
-    setInfo("");
-    try {
-      const selectedModelId = Number(String(catalogModelSelect.value || "").trim());
-      const modelIds =
-        Number.isInteger(selectedModelId) && selectedModelId > 0 ? [selectedModelId] : null;
-      const payload = {
-        model_ids: modelIds,
-        only_missing: Boolean(catalogOnlyMissingInput.checked),
-      };
-      setActionBusy(
-        catalogSyncBtn,
-        true,
-        "Synchronizacja...",
-        "Synchronizuj kartoteke AUTO"
-      );
-      const body = await fetchJson("/admin/device/catalog/sync", {
-        method: "POST",
-        extraHeaders: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        timeoutMs: LONG_TIMEOUT_MS,
-        defaultError: "Nie udalo sie zsynchronizowac kartoteki AUTO.",
-      });
-      setInfo(body.message || "Synchronizacja kartoteki AUTO zakonczona.");
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Blad synchronizacji kartoteki AUTO.");
-    } finally {
-      setActionBusy(
-        catalogSyncBtn,
-        false,
-        "Synchronizacja...",
-        "Synchronizuj kartoteke AUTO"
-      );
-    }
-  });
-
-  catalogSyncAllBtn.addEventListener("click", async () => {
-    setError("");
-    setInfo("");
-    try {
-      setActionBusy(
-        catalogSyncAllBtn,
-        true,
-        "Synchronizacja...",
-        "Pelna synchronizacja wszystkich modeli"
-      );
-      const body = await fetchJson("/admin/device/catalog/sync", {
-        method: "POST",
-        extraHeaders: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ model_ids: null, only_missing: false }),
-        timeoutMs: LONG_TIMEOUT_MS,
-        defaultError: "Nie udalo sie uruchomic pelnej synchronizacji.",
-      });
-      setInfo(body.message || "Pelna synchronizacja kartoteki AUTO zakonczona.");
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Blad pelnej synchronizacji AUTO.");
-    } finally {
-      setActionBusy(
-        catalogSyncAllBtn,
-        false,
-        "Synchronizacja...",
-        "Pelna synchronizacja wszystkich modeli"
-      );
-    }
-  });
-
-  modelCreateBtn.addEventListener("click", async () => {
-    setError("");
-    setInfo("");
-    try {
-      const marka = String(modelCreateMarkaInput.value || "").trim();
-      const model = String(modelCreateModelInput.value || "").trim();
-      if (!marka || !model) {
-        throw new Error("Podaj marke i model dla nowego rekordu.");
-      }
-      const payload = {
-        marka,
-        model,
-        grupa: String(modelCreateGrupaInput.value || "").trim() || null,
-        rodzaj: String(modelCreateRodzajInput.value || "").trim() || null,
-        kolor: Boolean(modelCreateKolorInput.checked),
-        plik: String(modelCreatePlikInput.value || "").trim() || null,
-        sync_catalog: Boolean(modelCreateSyncCatalogInput.checked),
-      };
-      setActionBusy(modelCreateBtn, true, "Dodawanie...", "Dodaj model");
-      const body = await fetchJson("/admin/device/models", {
-        method: "POST",
-        extraHeaders: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Nie udalo sie dodac modelu.",
-      });
-      const result = body.model || {};
-      setInfo(
-        `Model zapisany: ID_MODEL=${result.id_model}, marka=${result.marka}, model=${result.model}.`
-      );
-      modelCreateModelInput.value = "";
-      const defaultGroupOption = Array.from(modelCreateGrupaInput.options).find(
-        (option) => normalizeNameForCompare(option.value) === "DRUK"
-      );
-      modelCreateGrupaInput.value = defaultGroupOption ? defaultGroupOption.value : "";
-      modelCreateRodzajInput.value = "";
-      modelCreatePlikInput.value = "";
-      modelCreateKolorInput.checked = false;
-      modelCreateSyncCatalogInput.checked = true;
-      await loadModels(modelInput.value);
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Blad tworzenia modelu.");
-    } finally {
-      setActionBusy(modelCreateBtn, false, "Dodawanie...", "Dodaj model");
-    }
-  });
-
-  intakeForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setError("");
-    setInfo("");
-    clearIntakeResult();
-    setIntakeSubmitStatus("", "info");
-    try {
-      const modelLabels = new Map();
-      intakeItems.forEach((item) => {
-        const modelId = Number(item.model_id);
-        if (!modelLabels.has(modelId)) {
-          modelLabels.set(modelId, String(item.model_label || `ID ${modelId}`));
-        }
-      });
-      const items = validateIntakeItems();
-      const supplierValue = String(supplierInput.value || "").trim();
-      let supplierId = null;
-      if (supplierValue) {
-        let supplier = findSupplierByInputValue(supplierValue);
-        if (!supplier) {
-          await loadSuppliers(supplierValue);
-          supplier = findSupplierByInputValue(supplierValue);
-        }
-        if (!supplier) {
-          throw new Error("Wybierz dostawce z listy filtrowanej (NIP / nazwa / ID).");
-        }
-        supplierId = Number(supplier.id_klient);
-        supplierInput.value = formatSupplierLabel(supplier);
-        applySupplierToCreateForm(supplier);
-        setSupplierStatus(
-          `Wybrano dostawce: ID ${supplier.id_klient}, ${supplier.nazwa || "Brak nazwy"}.`,
-          "success"
-        );
-      }
-      const payload = {
-        items,
-        supplier_id: supplierId,
-        external_document: String(intakeDocExternalInput.value || "").trim() || null,
-        issued_by: String(intakeIssuedByInput.value || "").trim() || null,
-        force: Boolean(intakeForceInput.checked),
-        ewidencja_prefix: normalizeEwidPrefix(intakeEwidPrefixInput.value),
-      };
-      setActionBusy(
-        intakeCreateBtn,
-        true,
-        "Tworzenie PZ...",
-        "Utworz przyjecie PZ (batch)"
-      );
-      setIntakeSubmitStatus("Wysylanie dokumentu PZ do systemu...", "info");
-      const body = await fetchJson("/admin/device/intake/batch", {
-        method: "POST",
-        extraHeaders: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        timeoutMs: LONG_TIMEOUT_MS,
-        defaultError: "Nie udalo sie utworzyc przyjecia PZ.",
-      });
-      setInfo(body.message || "Przyjecie PZ utworzone.");
-      setIntakeSubmitStatus("Przyjecie PZ zapisane poprawnie.", "success");
-      renderIntakeResult({
-        batch: body.batch || {},
-        modelLabels,
-      });
-      intakeItems.length = 0;
-      renderIntakeItems();
-      intakeDocExternalInput.value = "";
-      loadIntakeDefaults().catch(() => null);
-      loadData().catch(() => null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Blad tworzenia przyjecia PZ.";
-      setError(message);
-      setIntakeSubmitStatus(message, "error");
-      intakeSubmitStatusBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    } finally {
-      setActionBusy(
-        intakeCreateBtn,
-        false,
-        "Tworzenie PZ...",
-        "Utworz przyjecie PZ (batch)"
-      );
-    }
-  });
-
-  intakeAddItemsBtn.addEventListener("click", () => {
-    setError("");
-    try {
-      appendIntakeItems();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Nie udalo sie dodac pozycji.");
-    }
-  });
-
-  intakeClearBtn.addEventListener("click", async () => {
-    intakeItems.length = 0;
-    renderIntakeItems();
-    setInfo("Wyczyszczono wszystkie pozycje przyjecia.");
-    await loadIntakeDefaults(intakeEwidPrefixInput.value);
-  });
-
-  let supplierSearchTimer = null;
-  supplierInput.addEventListener("input", () => {
-    if (supplierSearchTimer) {
-      window.clearTimeout(supplierSearchTimer);
-    }
-    supplierSearchTimer = window.setTimeout(async () => {
-      try {
-        await loadSuppliers(String(supplierInput.value || "").trim());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Blad odczytu dostawcow.");
-      }
-    }, 250);
-  });
-  supplierInput.addEventListener("change", () => {
-    const supplier = findSupplierByInputValue(supplierInput.value);
-    if (supplier) {
-      supplierInput.value = formatSupplierLabel(supplier);
-      applySupplierToCreateForm(supplier);
-      setSupplierStatus(
-        `Wybrano istniejacego dostawce: ID ${supplier.id_klient}, ${supplier.nazwa || "Brak nazwy"}.`,
-        "success"
-      );
-      return;
-    }
-    const rawValue = String(supplierInput.value || "").trim();
-    if (rawValue) {
-      setSupplierStatus(
-        "Nie znaleziono jednoznacznego dostawcy. Wybierz pozycje z listy lub dodaj nowego dostawce.",
-        "warn"
-      );
-      return;
-    }
-    setSupplierStatus("", "info");
-  });
-
-  let modelSearchTimer = null;
-  modelInput.addEventListener("input", () => {
-    if (modelSearchTimer) {
-      window.clearTimeout(modelSearchTimer);
-    }
-    modelSearchTimer = window.setTimeout(async () => {
-      try {
-        await loadModels(String(modelInput.value || "").trim());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Blad odczytu modeli.");
-      }
-    }, 250);
-  });
-  modelInput.addEventListener("change", () => {
-    const model = findModelByInputValue(modelInput.value);
-    if (model) {
-      modelInput.value = formatModelLabel(model);
-    }
-  });
-
-  supplierCreateBtn.addEventListener("click", async () => {
-    setError("");
-    setInfo("");
-    try {
-      const name = String(supplierCreateNameInput.value || "").trim();
-      if (!name) {
-        throw new Error("Podaj nazwe nowego dostawcy.");
-      }
-      const payload = {
-        name,
-        nip: String(supplierCreateNipInput.value || "").trim() || null,
-        address: String(supplierCreateAddressInput.value || "").trim() || null,
-        postal_code: String(supplierCreatePostalInput.value || "").trim() || null,
-        city: String(supplierCreateCityInput.value || "").trim() || null,
-        phone: String(supplierCreatePhoneInput.value || "").trim() || null,
-        email: String(supplierCreateEmailInput.value || "").trim() || null,
-      };
-      const existing = await findExistingSupplierBeforeCreate({
-        name: payload.name,
-        nip: payload.nip,
-      });
-      if (existing) {
-        supplierInput.value = formatSupplierLabel(existing);
-        applySupplierToCreateForm(existing);
-        setSupplierStatus(
-          `Dostawca juz istnieje: ID ${existing.id_klient}. Uzyj istniejacego rekordu.`,
-          "warn"
-        );
-        setInfo(
-          `Dostawca juz istnieje: ID_KLIENT=${existing.id_klient}. Nie dodano nowego rekordu.`
-        );
-        return;
-      }
-
-      setActionBusy(
-        supplierCreateBtn,
-        true,
-        "Zapisywanie...",
-        "Dodaj nowego dostawce"
-      );
-      const body = await fetchJson("/admin/device/suppliers", {
-        method: "POST",
-        extraHeaders: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Nie udalo sie utworzyc dostawcy.",
-      });
-      const supplier = body.supplier || {};
-      supplierInput.value = String(supplier.nazwa || "");
-      await loadSuppliers(supplierInput.value);
-      if (supplier.id_klient && supplier.nazwa) {
-        supplierInput.value = formatSupplierLabel(supplier);
-      }
-      applySupplierToCreateForm(supplier);
-      setSupplierStatus(`Dodano nowego dostawce: ID ${supplier.id_klient}.`, "success");
-      setInfo(`Dostawca zapisany: ID_KLIENT=${supplier.id_klient}.`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Blad tworzenia dostawcy.";
-      setError(message);
-      setSupplierStatus(message, "error");
-    } finally {
-      setActionBusy(supplierCreateBtn, false, "Zapisywanie...", "Dodaj nowego dostawce");
-    }
-  });
-
-  intakeEwidPrefixInput.addEventListener("change", async () => {
-    if (intakeItems.length) {
-      return;
-    }
-    await loadIntakeDefaults(intakeEwidPrefixInput.value);
-  });
-
-  intakeItemsBody.addEventListener("click", async (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) {
-      return;
-    }
-    if (!target.classList.contains("device-editor-remove")) {
-      return;
-    }
-    const row = target.closest("tr[data-row-index]");
-    if (!row) {
-      return;
-    }
-    const index = Number(row.getAttribute("data-row-index"));
-    if (!Number.isInteger(index) || index < 0 || index >= intakeItems.length) {
-      return;
-    }
-    intakeItems.splice(index, 1);
-    renderIntakeItems();
-    if (!intakeItems.length) {
-      await loadIntakeDefaults(intakeEwidPrefixInput.value);
-    }
-  });
-
-  intakeItemsBody.addEventListener("input", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
-      return;
-    }
-    const row = target.closest("tr[data-row-index]");
-    if (!row) {
-      return;
-    }
-    const index = Number(row.getAttribute("data-row-index"));
-    if (!Number.isInteger(index) || index < 0 || index >= intakeItems.length) {
-      return;
-    }
-    if (target.classList.contains("device-editor-serial")) {
-      intakeItems[index].serial = target.value;
-      return;
-    }
-    if (target.classList.contains("device-editor-ewidencja-base")) {
-      intakeItems[index].ewidencja_base = target.value;
-      return;
-    }
-    if (target.classList.contains("device-editor-ewidencja-suffix")) {
-      intakeItems[index].ewidencja_suffix = target.value;
-      return;
-    }
-    if (target.classList.contains("device-editor-price")) {
-      intakeItems[index].purchase_price_netto = target.value;
-    }
-  });
-
-  intakeItemsBody.addEventListener("change", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
-      return;
-    }
-    if (!target.classList.contains("device-editor-ewidencja-base")) {
-      return;
-    }
-    const row = target.closest("tr[data-row-index]");
-    if (!row) {
-      return;
-    }
-    const index = Number(row.getAttribute("data-row-index"));
-    if (!Number.isInteger(index) || index < 0 || index >= intakeItems.length) {
-      return;
-    }
-    const item = intakeItems[index];
-    const changedValue = String(target.value || "").trim().toUpperCase();
-    item.ewidencja_base = changedValue;
-    if (!changedValue || changedValue === item.system_ewidencja_base) {
-      return;
-    }
-
-    const continueFromManual = window.confirm(
-      "Zmieniles kolejnosc numeracji ewidencyjnej. Czy kolejne pozycje maja byc numerowane od podanego numeru?"
-    );
-    if (!continueFromManual) {
-      for (let cursor = index + 1; cursor < intakeItems.length; cursor += 1) {
-        if (intakeItems[cursor].system_ewidencja_base) {
-          intakeItems[cursor].ewidencja_base = intakeItems[cursor].system_ewidencja_base;
-        }
-      }
-      renderIntakeItems();
-      setInfo("Zachowano systemowa numeracje dla kolejnych pozycji.");
-      return;
-    }
-
-    const parsed = splitEwidencjaBase(changedValue);
-    if (!parsed) {
-      setError(
-        "Nie mozna kontynuowac numeracji od zmienionego numeru. Podaj baze w formacie typu KP/0001/."
-      );
-      return;
-    }
-    if (!isDeviceBasePrefix(parsed.prefix)) {
-      setError(`Baza ewidencji musi zaczynac sie od ${DEVICE_EWIDENCJA_BASE_PREFIX}.`);
-      return;
-    }
-
-    intakeEwidPrefixInput.value = parsed.prefix;
-    let nextNumber = parsed.number + 1;
-    for (let cursor = index + 1; cursor < intakeItems.length; cursor += 1) {
-      const nextValue = formatEwidencjaBase(parsed.prefix, nextNumber, parsed.width);
-      intakeItems[cursor].ewidencja_base = nextValue;
-      intakeItems[cursor].system_ewidencja_base = nextValue;
-      nextNumber += 1;
-    }
-    if (index === 0) {
-      intakeEwidNextNumberInput.value = String(parsed.number);
-    }
-    const normalizedChanged = formatEwidencjaBase(parsed.prefix, parsed.number, parsed.width);
-    item.ewidencja_base = normalizedChanged;
-    item.system_ewidencja_base = normalizedChanged;
-    renderIntakeItems();
-    setInfo("Zmieniono kolejnosc: kolejne numery ewidencyjne kontynuuja od recznej wartosci.");
-  });
-
-  logoutBtn.addEventListener("click", async () => {
-    try {
-      await fetchJson("/auth/logout", {
-        method: "POST",
-        timeoutMs: DEFAULT_TIMEOUT_MS,
-        defaultError: "Nie udalo sie zakonczyc sesji.",
-      });
-    } catch (_err) {
-      // Token i tak jest usuwany lokalnie.
+      await fetchDeviceJson("/auth/logout", { method: "POST" });
+    } catch (_error) {
+      setInfo("Sesja lokalna została zakończona.");
     } finally {
       clearDeviceToken();
       window.location.replace("/");
     }
   });
-
-  await loadData();
+  await loadCurrentView();
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  initializeDevicePage();
-});
+document.addEventListener("DOMContentLoaded", initializeDevicePage);

@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.core.config import settings
 from app.services.contracts_dashboard import (
+    _resolve_model_color,
     extract_stock_device_identity,
     find_model_in_firebird,
     load_available_devices_from_firebird_warehouse,
@@ -22,18 +23,58 @@ def test_normalize_device_key_keeps_alnum_uppercase() -> None:
     assert normalize_device_key(None) == ""
 
 
+def test_resolve_model_color_uses_catalog_and_safe_name_fallback() -> None:
+    assert (
+        _resolve_model_color(
+            producer="Nashuatec",
+            model="IMC 3500",
+            direct_flag=None,
+            by_identity={},
+            by_model={"IMC3500": True},
+        )
+        is True
+    )
+    assert (
+        _resolve_model_color(
+            producer="Konica",
+            model="Minolta C258",
+            direct_flag=None,
+            by_identity={},
+            by_model={},
+        )
+        is True
+    )
+    assert (
+        _resolve_model_color(
+            producer="Ricoh",
+            model="P502",
+            direct_flag=None,
+            by_identity={},
+            by_model={},
+        )
+        is False
+    )
+
+
 def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> None:
     class FakeCursor:
         def __init__(self) -> None:
             self.closed = False
             self.executed = False
+            self.query = ""
 
-        def execute(self, query: str, params: tuple[int, ...]) -> None:
+        def execute(self, query: str, params: tuple[int, ...] = ()) -> None:
             self.executed = True
-            assert "FROM MAGAZYN" in query
-            assert params == (settings.fb_warehouse_id,)
+            self.query = query
+            if "FROM MAGAZYN" in query:
+                assert params == (settings.fb_warehouse_id,)
 
         def fetchall(self) -> list[tuple[object, ...]]:
+            if "FROM MODEL" in self.query:
+                return [
+                    ("Ricoh", "IM C300", "TAK"),
+                    ("Ricoh", "MP C2503", "TAK"),
+                ]
             return [
                 (
                     101,
@@ -47,6 +88,8 @@ def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> 
                     100,
                     123,
                     "23",
+                    "NIE",
+                    80,
                     "NIE",
                 ),
                 (
@@ -62,8 +105,25 @@ def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> 
                     246,
                     "23",
                     "",
+                    160,
+                    None,
                 ),
-                (103, None, "KP/5003", "Zuzyte", "Test", "Skip", 1, 1, 50, 61.5, "23", "NIE"),
+                (
+                    103,
+                    None,
+                    "KP/5003",
+                    "Zuzyte",
+                    "Test",
+                    "Skip",
+                    1,
+                    1,
+                    50,
+                    61.5,
+                    "23",
+                    "NIE",
+                    40,
+                    "NIE",
+                ),
             ]
 
         def close(self) -> None:
@@ -95,12 +155,15 @@ def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> 
     assert devices[0]["serial_required"] == "TAK"
     assert devices[0]["available_quantity"] == "1"
     assert devices[0]["reservation_status"] == "brak rezerwacji"
+    assert devices[0]["purchase_price_net"] == "80.00"
+    assert devices[0]["is_color"] is False
     assert devices[1]["model"] == "MP C2503"
     assert devices[1]["serial"] == "EEA1234567"
     assert devices[1]["ewidencja"] == "WEKP/5002"
     assert devices[1]["serial_required"] == "TAK"
     assert devices[1]["available_quantity"] == "1"
     assert devices[1]["reservation_status"] == "czesciowa rezerwacja (1 z 2)"
+    assert devices[1]["is_color"] is True
     assert fake_connection.cursor_obj.closed is True
     assert fake_connection.closed is True
 

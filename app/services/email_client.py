@@ -7,6 +7,11 @@ import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
 
+from app.core.config import settings
+from app.services.outbound_audit import record_email_attempt
+
+_CAPTURE_SMTP_HOSTS = {"127.0.0.1", "::1", "localhost", "mailpit"}
+
 
 @dataclass(slots=True)
 class EmailTestResult:
@@ -20,6 +25,28 @@ class EmailSendResult:
     message: str
 
 
+def _resolve_transport(
+    *,
+    host: str,
+    port: int,
+    username: str | None,
+    password: str | None,
+    use_tls: bool,
+    use_ssl: bool,
+) -> tuple[str, int, str | None, str | None, bool, bool]:
+    """Wymusza lokalny transport SMTP w profilu przechwytującym."""
+    mode = settings.outbound_delivery_mode
+    if settings.is_test_runtime and mode == "live":
+        raise ValueError("Profil testowy nie może używać trybu komunikacji live.")
+    if mode != "capture":
+        return host, port, username, password, use_tls, use_ssl
+
+    capture_host = str(settings.email_host or "").strip().lower()
+    if capture_host not in _CAPTURE_SMTP_HOSTS:
+        raise ValueError("Tryb capture wymaga lokalnego hosta SMTP Mailpit.")
+    return capture_host, int(settings.email_port), None, None, False, False
+
+
 def test_smtp_connection(
     *,
     host: str,
@@ -31,6 +58,21 @@ def test_smtp_connection(
     timeout: float = 10.0,
 ) -> EmailTestResult:
     """Weryfikuje możliwość połączenia z serwerem SMTP i ewentualnego logowania."""
+
+    if settings.outbound_delivery_mode == "disabled":
+        return EmailTestResult(False, "Transport SMTP jest wyłączony przez profil środowiska.")
+
+    try:
+        host, port, username, password, use_tls, use_ssl = _resolve_transport(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            use_tls=use_tls,
+            use_ssl=use_ssl,
+        )
+    except ValueError as exc:
+        return EmailTestResult(False, str(exc))
 
     if not host:
         return EmailTestResult(False, "Brak hosta SMTP w konfiguracji.")
@@ -71,7 +113,39 @@ async def send_smtp_message(
     use_ssl: bool,
     message: EmailMessage,
     timeout: float = 10.0,
+    source: str = "smtp",
 ) -> EmailSendResult:
+    mode = settings.outbound_delivery_mode
+    if mode == "disabled":
+        try:
+            record_email_attempt(message, source=source, status="BLOCKED")
+        except OSError as exc:
+            return EmailSendResult(False, f"Nie udało się zapisać raportu komunikacji: {exc}")
+        return EmailSendResult(False, "Wysyłka została zablokowana przez profil środowiska.")
+
+    try:
+        host, port, username, password, use_tls, use_ssl = _resolve_transport(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            use_tls=use_tls,
+            use_ssl=use_ssl,
+        )
+    except ValueError as exc:
+        return EmailSendResult(False, str(exc))
+
+    if mode == "capture":
+        try:
+            record_email_attempt(
+                message,
+                source=source,
+                status="CAPTURED",
+                metadata={"smtp_host": host, "smtp_port": port},
+            )
+        except OSError as exc:
+            return EmailSendResult(False, f"Nie udało się zapisać raportu komunikacji: {exc}")
+
     if not host:
         return EmailSendResult(False, "Brak hosta SMTP w konfiguracji.")
     if use_tls and use_ssl:
@@ -98,6 +172,8 @@ async def send_smtp_message(
             )
         except Exception as exc:
             return EmailSendResult(False, f"Błąd wysyłki SMTP: {exc}")
+        if mode == "capture":
+            return EmailSendResult(True, "Wiadomość została przechwycona lokalnie przez Mailpit.")
         return EmailSendResult(True, "Wiadomość została wysłana.")
 
     return await asyncio.to_thread(_send)

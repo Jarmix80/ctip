@@ -7,19 +7,29 @@ import unittest
 from pathlib import Path
 
 import psycopg
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 env_path = Path(".env.test")
-if env_path.exists():
-    load_dotenv(env_path, override=False)
+env_values = dotenv_values(env_path) if env_path.exists() else {}
+
+
+def _connection_value(name: str, default: str) -> str:
+    """Pobiera parametr połączenia bez modyfikowania środowiska procesu testowego."""
+    process_value = os.getenv(name)
+    if process_value is not None:
+        return process_value
+    file_value = env_values.get(name)
+    return str(file_value) if file_value else default
 
 
 def _connect():
-    host = os.getenv("PGHOST", "127.0.0.1")
-    port = int(os.getenv("PGPORT", "5432"))
-    db = os.getenv("PGDATABASE", "ctip_test")
-    user = os.getenv("PGUSER", "ctip_test")
-    password = os.getenv("PGPASSWORD", "ctip_test")
+    host = _connection_value("PGHOST", "127.0.0.1")
+    if host == "postgres" and not Path("/.dockerenv").exists():
+        host = "127.0.0.1"
+    port = int(_connection_value("PGPORT", "5432"))
+    db = _connection_value("PGDATABASE", "ctip_test")
+    user = _connection_value("PGUSER", "ctip_test")
+    password = _connection_value("PGPASSWORD", "ctip_test")
     return psycopg.connect(host=host, port=port, dbname=db, user=user, password=password)
 
 
@@ -110,6 +120,27 @@ class DatabaseSchemaTest(unittest.TestCase):
         )
         indexes = {row[0] for row in rows}
         self.assertIn("idx_sms_template_scope", indexes)
+
+    def test_workflow_sheet_cache_has_counter_columns(self) -> None:
+        rows = self._fetchall(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='workflow_sheet_status_cache'"
+        )
+        columns = {row[0] for row in rows}
+        self.assertTrue(
+            {"counter_bw", "counter_color"}.issubset(columns),
+            "Cache arkusza nie ma obu kolumn liczników.",
+        )
+
+    def test_device_audit_tables_exist(self) -> None:
+        rows = self._fetchall(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='ctip' AND table_name IN ('device_audit_run','device_audit_item')"
+        )
+        self.assertEqual(
+            {row[0] for row in rows},
+            {"device_audit_run", "device_audit_item"},
+        )
 
 
 if __name__ == "__main__":

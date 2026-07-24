@@ -898,6 +898,7 @@ async def notify_binding_issues_to_admins(
                     use_tls=email_delivery.use_tls,
                     use_ssl=email_delivery.use_ssl,
                     message=message,
+                    source="workflow_machine_binding",
                 )
                 if result.success:
                     email_sent += 1

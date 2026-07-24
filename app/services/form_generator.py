@@ -465,6 +465,7 @@ async def _dispatch_notifications(
                 use_tls=email_delivery.use_tls,
                 use_ssl=email_delivery.use_ssl,
                 message=message,
+                source="form_invitation",
             )
             if send_result.success:
                 form.email_status = "SENT"
@@ -544,6 +545,7 @@ async def _dispatch_submission_notifications(
                 use_tls=email_delivery.use_tls,
                 use_ssl=email_delivery.use_ssl,
                 message=message,
+                source="form_submission_confirmation",
             )
             if send_result.success:
                 result.client_email_sent = True

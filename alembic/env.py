@@ -36,6 +36,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
     )
 
     with context.begin_transaction():
@@ -55,6 +56,7 @@ async def run_migrations_online() -> None:
                 connection=sync_conn,
                 target_metadata=target_metadata,
                 compare_type=True,
+                include_schemas=True,
             )
         )
         await connection.run_sync(lambda _: context.run_migrations())

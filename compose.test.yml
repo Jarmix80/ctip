@@ -1,0 +1,186 @@
+name: ctip-prod-mirror
+
+x-ctip-service: &ctip-service
+  build:
+    context: .
+    dockerfile: Dockerfile.test
+  image: ctip/prod-mirror:test
+  env_file:
+    - .env.test
+  environment:
+    CTIP_ENV_FILE: /app/.env.test
+  user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+  group_add:
+    - "${LOCAL_LOG_GID:-101}"
+  volumes:
+    - .:/app
+  networks:
+    - ctip_test_internal
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: ctip_test
+      POSTGRES_USER: ctip_test
+      POSTGRES_PASSWORD: ctip_test
+    volumes:
+      - ctip_mirror_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ctip_test -d ctip_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks:
+      - ctip_test_internal
+    restart: unless-stopped
+
+  firebird:
+    image: jacobalberty/firebird:v2.5.9-sc
+    environment:
+      ISC_PASSWORD: masterkey
+    volumes:
+      - ./runtime/firebird:/data
+      - ./ops/firebird/aliases.test.conf:/firebird/etc/aliases.conf:ro
+    networks:
+      - ctip_test_internal
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_DATA_FILE: /data/mailpit.db
+      MP_MAX_MESSAGES: "5000"
+    volumes:
+      - ctip_mirror_mailpit_data:/data
+    networks:
+      - ctip_test_internal
+    restart: unless-stopped
+
+  mock-ctip:
+    <<: *ctip-service
+    command:
+      - python
+      - -u
+      - scripts/mock/mock_ctip_server.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5525"
+      - --loop
+      - --log-level
+      - INFO
+
+  test-gateway:
+    image: haproxy:3.0-alpine
+    volumes:
+      - ./ops/test-gateway/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      firebird:
+        condition: service_started
+      mailpit:
+        condition: service_started
+      web:
+        condition: service_started
+      forms-public:
+        condition: service_started
+    ports:
+      - "0.0.0.0:8000:8000"
+      - "127.0.0.1:8100:8100"
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:5432:5432"
+      - "0.0.0.0:3050:3050"
+    networks:
+      - ctip_test_internal
+      - ctip_test_edge
+    restart: unless-stopped
+
+  google-egress:
+    image: haproxy:3.0-alpine
+    volumes:
+      - ./ops/google-egress/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      ctip_test_internal:
+        ipv4_address: 172.28.250.20
+      ctip_test_edge:
+    restart: unless-stopped
+
+  web:
+    <<: *ctip-service
+    environment:
+      CTIP_ENV_FILE: /app/.env.test
+      GOOGLE_APPLICATION_CREDENTIALS: "${TEST_GOOGLE_APPLICATION_CREDENTIALS:-}"
+      GOOGLE_SHEETS_CONFIG_LOCK: "true"
+      GOOGLE_SHEETS_ENABLED: "${TEST_GOOGLE_SHEETS_RUNTIME_ENABLED:-false}"
+      GOOGLE_SHEETS_SPREADSHEET_ID: "${GOOGLE_SHEETS_TEST_SPREADSHEET_ID:-}"
+      DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED: "${TEST_DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED:-false}"
+    volumes:
+      - .:/app
+      - ./runtime/secrets:/run/secrets:ro
+    extra_hosts:
+      - "oauth2.googleapis.com:172.28.250.20"
+      - "sheets.googleapis.com:172.28.250.20"
+      - "www.googleapis.com:172.28.250.20"
+    command: >-
+      sh -lc "python scripts/test_env_preflight.py --check-network &&
+      python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      firebird:
+        condition: service_started
+      mailpit:
+        condition: service_started
+      mock-ctip:
+        condition: service_started
+      google-egress:
+        condition: service_started
+
+  forms-public:
+    <<: *ctip-service
+    command: >-
+      sh -lc "python scripts/test_env_preflight.py --check-network &&
+      python -m uvicorn app.public_forms_app:app --host 0.0.0.0 --port 8100 --workers 2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  collector:
+    <<: *ctip-service
+    command: >-
+      sh -lc "python scripts/test_env_preflight.py --check-network &&
+      python -u collector_full.py"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-ctip:
+        condition: service_started
+
+  sms-sender:
+    <<: *ctip-service
+    command: >-
+      sh -lc "python scripts/test_env_preflight.py --check-network &&
+      python -u sms_sender.py"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+networks:
+  ctip_test_internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.250.0/24
+  ctip_test_edge:
+    ipam:
+      config:
+        - subnet: 172.28.251.0/24
+
+volumes:
+  ctip_mirror_postgres_data:
+  ctip_mirror_mailpit_data:

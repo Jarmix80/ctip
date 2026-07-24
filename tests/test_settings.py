@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import mock
 
+from app.core import config
 from app.core.config import Settings
 
 
@@ -24,6 +28,42 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(cfg.sms_test_mode)
         self.assertEqual(cfg.sms_api_url, "")
         self.assertFalse(cfg.block_client_communications)
+        self.assertEqual(cfg.ctip_runtime_profile, "test")
+        self.assertEqual(cfg.outbound_delivery_mode, "disabled")
+        self.assertTrue(cfg.test_network_isolation_required)
+
+    def test_resolver_prefers_test_file_without_explicit_override(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            test_file = root / ".env.test"
+            production_file = root / ".env"
+            test_file.touch()
+            production_file.touch()
+            with (
+                mock.patch.dict("os.environ", {}, clear=True),
+                mock.patch.object(config, "_PROJECT_ROOT", root),
+                mock.patch.object(config, "_ENV_TEST_FILE", test_file),
+                mock.patch.object(config, "_ENV_FILE", production_file),
+            ):
+                selected = config._resolve_settings_env_file()
+
+        self.assertEqual(selected, str(test_file))
+
+    def test_resolver_uses_production_file_when_test_file_is_absent(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            test_file = root / ".env.test"
+            production_file = root / ".env"
+            production_file.touch()
+            with (
+                mock.patch.dict("os.environ", {}, clear=True),
+                mock.patch.object(config, "_PROJECT_ROOT", root),
+                mock.patch.object(config, "_ENV_TEST_FILE", test_file),
+                mock.patch.object(config, "_ENV_FILE", production_file),
+            ):
+                selected = config._resolve_settings_env_file()
+
+        self.assertEqual(selected, str(production_file))
 
     def test_database_url_uses_psycopg_async_driver(self) -> None:
         cfg = Settings(_env_file=None)

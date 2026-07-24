@@ -12,6 +12,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from app.api import deps
+from app.core.config import settings
 from app.main import create_app
 from app.models import AdminUser
 from app.services import admin_users
@@ -365,6 +366,22 @@ def test_email_partial_requires_authentication():
     assert response.status_code == 401
 
 
+def test_email_partial_accepts_non_routable_test_sender():
+    app = create_app()
+    app.dependency_overrides[deps.get_admin_session_context] = _fake_admin_context
+    app.dependency_overrides[deps.get_db_session] = _fake_db_session
+    client = TestClient(app)
+
+    with patch.object(settings, "email_sender_address", "ctip-test@example.invalid"):
+        response = client.get(
+            "/admin/partials/config/email",
+            headers={"X-Admin-Session": "test-token"},
+        )
+
+    assert response.status_code == 200
+    assert "ctip-test@example.invalid" in response.text
+
+
 def test_form_handling_partial_requires_authentication():
     app = create_app()
     client = TestClient(app)
@@ -452,7 +469,7 @@ def test_users_partial_renders_listing():
     now = datetime.now(UTC)
     user = AdminUser(
         id=5,
-        email="panel@example.com",
+        email="panel@test.local",
         first_name="Pawel",
         last_name="Serwis",
         internal_ext="150",
@@ -470,7 +487,7 @@ def test_users_partial_renders_listing():
         (),
         {
             "enabled": False,
-            "email": "panel@example.com",
+            "email": "panel@test.local",
             "host": None,
             "port": None,
             "username": None,
@@ -494,11 +511,13 @@ def test_users_partial_renders_listing():
 
     assert response.status_code == 200
     assert "users-table" in response.text
-    assert "panel@example.com" in response.text
+    assert "panel@test.local" in response.text
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
     assert "Handlowiec" in response.text
     assert "Użytkownik MS" in response.text
+    assert "Obsługa dostaw" in response.text
+    assert "Obsługa urządzeń" in response.text
     assert "+48600900900" in response.text
 
 
@@ -560,17 +579,69 @@ def test_device_page_renders_devices_layout():
     client = TestClient(app)
     response = client.get("/device")
     assert response.status_code == 200
-    assert "Operacyjna obsluga urzadzen" in response.text
-    assert "Obsluga urzadzen" in response.text
+    assert f"/static/device/device.css?v={app.version}-device-audit-2" in response.text
+    assert f"/static/device/device.js?v={app.version}-device-audit-2" in response.text
+    assert "Obsługa urządzeń" in response.text
     assert "device-user-chip" in response.text
     assert "device-refresh" in response.text
-    assert "device-intakes-body" in response.text
-    assert "device-model-duplicates-body" in response.text
-    assert "device-process-rules" in response.text
-    assert "Status i nastepny krok" in response.text
-    assert "Reguly procesu" in response.text
-    assert "Wnioski operacyjne" in response.text
-    assert "PZ urzadzen" in response.text
+    assert "device-intake-items" in response.text
+    assert "device-items-message" in response.text
+    assert "device-intake-validation" in response.text
+    assert "device-warehouse-body" in response.text
+    assert "device-history-body" in response.text
+    assert "device-sheet-issues" in response.text
+    assert "Przyjęcie dokumentem PZ" in response.text
+    assert "Magazyn urządzeń" in response.text
+    assert "Licznik B/W / kolor" in response.text
+    assert "Cena zakupu" in response.text
+    assert "<th>Uwagi</th>" in response.text
+    assert 'id="device-warehouse-legend"' in response.text
+    assert "Legenda tabeli" in response.text
+    assert "Arkusz/Magazyn/Urządzenie/CTIP" in response.text
+    assert "Audyt rozbieżności urządzeń" in response.text
+    assert "Nie naprawia, nie migruje i nie zapisuje danych źródłowych" in response.text
+    assert 'id="device-audit-source"' in response.text
+    assert '<option value="operational" selected>Widok operacyjny</option>' in response.text
+    assert "Źródło: Magazyn 28 (stan min. 1)" in response.text
+    assert "Tylko audyt" in response.text
+    assert "Pozycja historyczna bez wpisu w rejestrze CTIP" in response.text
+    assert "Rezerwacja FLOW" in response.text
+    assert "Stan Firebird" in response.text
+    assert "Historia przyjęć PZ" in response.text
+    assert "Zezwól na brak dokumentu zewnętrznego lub cenę 0" in response.text
+
+
+def test_device_script_preserves_selected_datalist_model():
+    content = Path("app/static/device/device.js").read_text(encoding="utf-8")
+    assert "if (deviceState.models.has(query))" in content
+    assert "if (deviceState.suppliers.has(query))" in content
+    assert "setIntakeItemsMessage(" in content
+    assert "showIntakeValidation(" in content
+    assert "device-field-invalid" in content
+    assert '[data-item-field="serial"]' in content
+    assert "renderWarehouseCounter(item)" in content
+    assert "renderPurchasePrice(item.purchase_price_net)" in content
+    assert "renderWarehouseNote(item.note)" in content
+    assert 'colspan="11"' in content
+    assert "sourcePresenceBadges(item.source_presence)" in content
+    assert 'fetchDeviceJson("/admin/device/audits"' in content
+    assert 'document.getElementById("device-audit-source")' in content
+    assert '|| "operational"' in content
+
+
+def test_device_subpages_select_requested_view():
+    app = create_app()
+    client = TestClient(app)
+
+    for path, view in (
+        ("/device/intake", "intake"),
+        ("/device/warehouse", "warehouse"),
+        ("/device/history", "history"),
+        ("/device/issues", "issues"),
+    ):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert f'data-device-view="{view}"' in response.text
 
 
 def test_flow_invoice_preview_page_renders_sample_document():

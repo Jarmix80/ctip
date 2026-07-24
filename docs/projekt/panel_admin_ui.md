@@ -121,7 +121,7 @@
 
 ### 7. Użytkownicy
 - Tabela z kolumnami: `E-mail`, `Imię i nazwisko`, `Numer wewnętrzny`, `Telefon`, `Rola`, `Handlowiec`, `Sekcje`, `Status`, `Ostatnie logowanie`, `Aktywne sesje` oraz akcjami (`Edytuj`, `Reset hasła`, `Dezaktywuj`, `Usuń`).
-- Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli, znacznika `Handlowiec` i przypisanych sekcji (`admin`, `operator`, `generator`).
+- Akcja `Edytuj` otwiera modal z formularzem zmiany numeru telefonu, roli, znacznika `Handlowiec` i przypisanych sekcji (`admin`, `operator`, `generator`, `delivery`, `device`). Rola `admin` zawsze otrzymuje wszystkie sekcje.
 - Formularz dodawania i edycji zawiera listę rozwijaną `Użytkownik MS`, ładowaną z aktywnej bazy Firebird z trwałej konfiguracji użytkowników (`CONFIG.WYSTAWIA` + `CONFIG.EMAIL`), aby przypisać konto CTIP do operatora Menadżera Serwisu.
 - Modal edycji laduje pelny edytowalny formularz, a nie tylko widok szczegolow; zmiany sa zapisywane bez opuszczania listy uzytkownikow.
 - Formularz dodawania wymusza podanie telefonu komórkowego – po utworzeniu konta system wysyła e-mail i SMS z danymi logowania.
@@ -145,7 +145,7 @@
 ### 8a. Logowanie centralne i sekcje
 - Strona główna (`/`) zawiera wyłącznie formularz logowania (`/auth/login`).
 - Po poprawnym logowaniu użytkownik trafia na `/choice`, gdzie widzi sekcje przypisane do konta.
-- Lista sekcji jest przechowywana per użytkownik jako zestaw `admin`, `operator`, `generator` i zwracana przez `/auth/me`.
+- Lista sekcji jest przechowywana per użytkownik jako zestaw `admin`, `operator`, `generator`, `delivery`, `device` i zwracana przez `/auth/me`; dla roli `admin` backend zawsze zwraca pełny zestaw, także przy starszym niepełnym wpisie.
 - Widok `/choice` udostępnia dodatkowy formularz edycji własnego profilu (`/auth/profile`) z polami: imię, nazwisko, e-mail, numer wewnętrzny i telefon komórkowy.
 - Widok `/choice` udostępnia również formularz zmiany hasła (`/auth/profile/change-password`) z polityką: minimum 9 znaków, co najmniej jedna duża litera, jedna cyfra i jeden znak specjalny.
 - Wylogowanie strony głównej realizuje endpoint `/auth/logout`.

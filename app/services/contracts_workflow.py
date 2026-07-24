@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FormRequest, FormWorkflowCase, FormWorkflowDevice
@@ -496,49 +496,68 @@ async def replace_form_workflow_devices(
     selected_devices: Iterable[dict[str, Any]],
     updated_by: int | None,
 ) -> list[FormWorkflowDevice]:
-    """Podmienia zestaw urządzeń wybranych do sprawy formularza."""
-    await session.execute(
-        delete(FormWorkflowDevice).where(FormWorkflowDevice.workflow_case_id == workflow_case.id)
+    """Aktualizuje wybór urządzeń bez utraty trwałych identyfikatorów i powiązań MS."""
+    current_rows = await list_form_workflow_devices(
+        session,
+        workflow_case_id=workflow_case.id,
     )
-
-    new_rows: list[FormWorkflowDevice] = []
+    current_by_key = {
+        (row.source_type, row.source_row): row for row in current_rows if row.source_row is not None
+    }
+    selected_keys: set[tuple[str, int | None]] = set()
+    result_rows: list[FormWorkflowDevice] = []
     for device in selected_devices:
         row_value = device.get("row")
         try:
             source_row = int(row_value) if row_value not in (None, "") else None
         except (TypeError, ValueError):
             source_row = None
+        source_type = normalize_workflow_device_source_type(device.get("source_type"))
+        source_key = (source_type, source_row)
+        if source_key in selected_keys:
+            raise ValueError("Ten sam egzemplarz został wskazany więcej niż raz.")
+        selected_keys.add(source_key)
+        mapped = current_by_key.get(source_key)
+        if mapped is None:
+            mapped = FormWorkflowDevice(
+                workflow_case_id=workflow_case.id,
+                source_type=source_type,
+                source_row=source_row,
+            )
+            session.add(mapped)
 
-        mapped = FormWorkflowDevice(
-            workflow_case_id=workflow_case.id,
-            source_type=normalize_workflow_device_source_type(device.get("source_type")),
-            source_row=source_row,
-            producer=str(device.get("producer") or "").strip() or None,
-            model=str(device.get("model") or "").strip() or None,
-            serial=str(device.get("serial") or "").strip() or None,
-            ewidencja=str(device.get("ewidencja") or "").strip() or None,
-            device_status=str(device.get("status") or "").strip() or None,
-            reservation_status=str(device.get("reservation_status") or "").strip() or None,
-            price=str(device.get("price") or "").strip() or None,
-            price_net=_normalize_price_text(device.get("price_net")),
-            price_gross=_normalize_price_text(device.get("price_gross")),
-            firebird_machine_id=_coerce_int(device.get("ms_id_maszyna")),
-            firebird_client_id=_coerce_int(device.get("ms_id_klient")),
-            snapshot=device,
-        )
-        new_rows.append(mapped)
-        session.add(mapped)
+        incoming_machine_id = _coerce_int(device.get("ms_id_maszyna"))
+        incoming_client_id = _coerce_int(device.get("ms_id_klient"))
+        mapped.producer = str(device.get("producer") or "").strip() or None
+        mapped.model = str(device.get("model") or "").strip() or None
+        mapped.serial = str(device.get("serial") or "").strip() or None
+        mapped.ewidencja = str(device.get("ewidencja") or "").strip() or None
+        mapped.device_status = str(device.get("status") or "").strip() or None
+        mapped.reservation_status = str(device.get("reservation_status") or "").strip() or None
+        mapped.price = str(device.get("price") or "").strip() or None
+        mapped.price_net = _normalize_price_text(device.get("price_net"))
+        mapped.price_gross = _normalize_price_text(device.get("price_gross"))
+        if incoming_machine_id is not None:
+            mapped.firebird_machine_id = incoming_machine_id
+        if incoming_client_id is not None:
+            mapped.firebird_client_id = incoming_client_id
+        mapped.snapshot = {**dict(mapped.snapshot or {}), **dict(device)}
+        result_rows.append(mapped)
+
+    for current in current_rows:
+        if (current.source_type, current.source_row) not in selected_keys:
+            await session.delete(current)
 
     workflow_case.updated_by = updated_by
     workflow_case.updated_at = datetime.now(UTC)
     workflow_case.stage = derive_workflow_stage(
         firebird_client_id=workflow_case.firebird_client_id,
-        devices_count=len(new_rows),
+        devices_count=len(result_rows),
         proforma_number=workflow_case.proforma_number,
         proforma_firebird_id=workflow_case.proforma_firebird_id,
     )
     await session.flush()
-    return new_rows
+    return result_rows
 
 
 async def set_form_workflow_proforma(

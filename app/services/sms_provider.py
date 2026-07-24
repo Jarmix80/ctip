@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from app.services.outbound_audit import record_outbound_attempt
+
 
 @dataclass(slots=True)
 class SmsSendResult:
@@ -41,6 +43,7 @@ class HttpSmsProvider:
         password: str | None = None,
         sms_type: str | None = None,
         test_mode: bool = True,
+        delivery_mode: str = "live",
         timeout: float = 10.0,
     ) -> None:
         self.base_url = (base_url or "").rstrip("/")
@@ -50,6 +53,7 @@ class HttpSmsProvider:
         self.sender = sender or ""
         self.sms_type = sms_type or None
         self.test_mode = test_mode
+        self.delivery_mode = str(delivery_mode or "disabled").strip().lower()
         self.timeout = timeout
 
     @staticmethod
@@ -137,10 +141,25 @@ class HttpSmsProvider:
         *,
         metadata: Mapping[str, Any] | None = None,
     ) -> SmsSendResult:
-        """Wysyła SMS – przy braku konfiguracji zwraca wynik symulowany.
+        """Wysyła SMS albo zapisuje pełny raport lokalnej symulacji.
 
         Dla dlugich tresci lub znakow spoza ASCII wymusza typ FULL i ustawia utf.
         """
+        if self.test_mode or self.delivery_mode != "live":
+            status = "BLOCKED" if self.delivery_mode == "disabled" else "SIMULATED"
+            try:
+                record_outbound_attempt(
+                    channel="sms",
+                    recipients=[dest],
+                    content=text,
+                    source=str((metadata or {}).get("source") or "sms_sender"),
+                    status=status,
+                    metadata=dict(metadata or {}),
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise SmsTransportError(f"Nie udało się zapisać raportu SMS: {exc}") from exc
+            return SmsSendResult(True, "SIMULATED", None, None)
+
         if not self._is_configured():
             return SmsSendResult(True, "SIMULATED", None, None)
 
@@ -159,8 +178,6 @@ class HttpSmsProvider:
             payload["type"] = sms_type
         if use_utf:
             payload["utf"] = True
-        if self.test_mode:
-            payload["test"] = True
         if unique_id:
             payload["unique_id"] = [unique_id]
 

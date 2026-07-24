@@ -25,10 +25,17 @@ _HEADER_LABELS = {
     "index": "INDEKS",
     "serial": "SERIAL",
     "status": "STATUS",
+    "counter_bw": "LICZNIK B/W",
+    "counter_color": "LICZNIK KOLOR",
+    "price": "CENA",
+    "notes": "UWAGI",
+    "reservation_status": "STATUS REZERWACJI",
+    "reservation_until": "REZERWACJA DO",
     "ms_id_magazyn_table": "MS_ID_MAGAZYN_TABLE",
     "ms_id_maszyna": "MS_ID_MASZYNA",
     "reservation_grenke": "REZERWACJA GRENKE",
     "proforma_grenke": "FAKTURA PROFORMA GRENKE",
+    "ctip_env": "CTIP_ENV",
 }
 
 _HEADER_ALIASES = {
@@ -37,7 +44,16 @@ _HEADER_ALIASES = {
     "index": {"indeks", "ewidencja", "nr wewnetrzny", "nr wew", "index"},
     "serial": {"serial", "sn", "s n", "s/n", "nr seryjny"},
     "status": {"status", "status urzadzenia"},
+    "counter_bw": {"licznik b w", "licznik bw", "licznik mono"},
+    "counter_color": {"licznik kolor", "licznik color"},
+    "price": {"cena", "cena netto", "cena zakupu"},
     "notes": {"uwagi", "uwaga", "informacja"},
+    "reservation_status": {"status rezerwacji"},
+    "reservation_until": {
+        "rezerwacja do",
+        "termin rezerwacji",
+        "rezerwacja wazna do",
+    },
     "form_ctip": {"formularz ctip", "nr formularza", "numer formularza", "formularz"},
     "ctip_form_id": {"ctip_form_id", "ctip form id"},
     "ctip_workflow_case_id": {
@@ -67,6 +83,7 @@ _HEADER_ALIASES = {
         "proforma grenke",
         "nr proformy grenke",
     },
+    "ctip_env": {"ctip_env", "ctip env", "srodowisko ctip"},
 }
 
 _REQUIRED_HEADER_KEYS = (
@@ -75,13 +92,16 @@ _REQUIRED_HEADER_KEYS = (
     "index",
     "serial",
     "status",
+    "price",
+    "notes",
+    "reservation_status",
+    "reservation_until",
     "ms_id_magazyn_table",
     "ms_id_maszyna",
     "reservation_grenke",
     "proforma_grenke",
+    "ctip_env",
 )
-
-_PREFERRED_STATUS_HEADER_TOKENS = ("status rezerwacji",)
 
 _WORKFLOW_BOOTSTRAP_HEADER_LAYOUT = [
     "PRODUCENT",
@@ -93,6 +113,8 @@ _WORKFLOW_BOOTSTRAP_HEADER_LAYOUT = [
     "LICZNIK KOLOR",
     "CENA",
     "UWAGI",
+    "STATUS REZERWACJI",
+    "REZERWACJA DO",
     "REZERWACJA GRENKE",
     "Osoba obsługująca",
     "FORMULARZ CTIP",
@@ -102,6 +124,7 @@ _WORKFLOW_BOOTSTRAP_HEADER_LAYOUT = [
     "STATUS HANDLOWY (LEGACY)",
     "MS_ID_MAGAZYN_TABLE",
     "MS_ID_MASZYNA",
+    "CTIP_ENV",
 ]
 
 _OPTIONAL_WORKSHEET_HEADER_TOKENS = {
@@ -109,12 +132,15 @@ _OPTIONAL_WORKSHEET_HEADER_TOKENS = {
     "licznik kolor",
     "cena",
     "uwagi",
+    "status rezerwacji",
+    "rezerwacja do",
     "osoba obslugujaca",
     "osoba obs ugujaca",
     "formularz ctip",
     "ctip form id",
     "ctip workflow case id",
     "status handlowy legacy",
+    "ctip env",
 }
 
 
@@ -391,8 +417,17 @@ def load_workflow_sheet_devices_lookup(
 
     for row_number, row in enumerate(values[1:], start=2):
         local_row = _ensure_row_width(list(row), len(headers))
+        producer_value = _row_value(local_row, header_index.get("producer"))
+        model_value = _row_value(local_row, header_index.get("model"))
+        serial_value = _row_value(local_row, header_index.get("serial"))
         index_value = _row_value(local_row, header_index.get("index"))
         status_value = _row_value(local_row, header_index.get("status"))
+        counter_bw_value = _row_value(local_row, header_index.get("counter_bw"))
+        counter_color_value = _row_value(local_row, header_index.get("counter_color"))
+        price_value = _row_value(local_row, header_index.get("price"))
+        notes_value = _row_value(local_row, header_index.get("notes"))
+        reservation_status_value = _row_value(local_row, header_index.get("reservation_status"))
+        reservation_until_value = _row_value(local_row, header_index.get("reservation_until"))
         reservation_value = _row_value(local_row, header_index.get("reservation_grenke"))
         form_ctip_value = _row_value(local_row, header_index.get("form_ctip"))
         ctip_form_id_value = _row_value(local_row, header_index.get("ctip_form_id"))
@@ -402,7 +437,16 @@ def load_workflow_sheet_devices_lookup(
         ms_machine_id_value = _row_value(local_row, header_index.get("ms_id_maszyna"))
         entry = {
             "sheet_row": str(row_number),
+            "producer": producer_value,
+            "model": model_value,
+            "serial": serial_value,
             "status": status_value,
+            "counter_bw": counter_bw_value,
+            "counter_color": counter_color_value,
+            "price": price_value,
+            "notes": notes_value,
+            "reservation_status": reservation_status_value,
+            "reservation_until": reservation_until_value,
             "reservation_grenke": reservation_value,
             "form_ctip": form_ctip_value,
             "ctip_form_id": ctip_form_id_value,
@@ -411,6 +455,7 @@ def load_workflow_sheet_devices_lookup(
             "ms_id_magazyn_table": ms_id_value,
             "ms_id_maszyna": ms_machine_id_value,
             "index": index_value,
+            "ctip_env": _row_value(local_row, header_index.get("ctip_env")),
         }
 
         try:
@@ -475,6 +520,7 @@ def sync_workflow_devices_to_sheet(
     overwrite_identity_fields: bool = False,
 ) -> dict[str, Any]:
     """Aktualizuje arkusz urządzeń po zapisie workflow i synchronizacji rezerwacji."""
+    del note_value
 
     config = _resolve_workflow_sheet_runtime_config()
     enabled, reason = workflow_sheet_sync_configured(config)
@@ -493,7 +539,6 @@ def sync_workflow_devices_to_sheet(
 
     headers, header_index, values, added_headers = _prepare_headers(workbook, worksheet)
     data_rows = [list(row) for row in values[1:]] if len(values) > 1 else []
-    should_write_reservation_status = _should_write_reservation_status(headers, header_index)
 
     updates: list[dict[str, Any]] = []
     row_results: list[dict[str, Any]] = []
@@ -513,9 +558,7 @@ def sync_workflow_devices_to_sheet(
             action = "appended"
             row_values = [""] * len(headers)
             _fill_base_device_fields(row_values, header_index, device)
-            if should_write_reservation_status:
-                _set_row_value(row_values, header_index, "status", status_value)
-            _set_row_value(row_values, header_index, "notes", note_value)
+            _set_row_value(row_values, header_index, "reservation_status", status_value)
             _set_row_value(row_values, header_index, "reservation_grenke", reservation_label)
             _set_row_value(row_values, header_index, "form_ctip", form_request_text)
             _set_row_value(row_values, header_index, "proforma_grenke", proforma_number)
@@ -539,19 +582,25 @@ def sync_workflow_devices_to_sheet(
                 "ms_id_maszyna",
                 _coerce_machine_id_text(device),
             )
+            _set_row_value(
+                row_values,
+                header_index,
+                "ctip_env",
+                settings.ctip_runtime_profile.upper(),
+            )
 
-            worksheet.append_row(row_values, value_input_option="USER_ENTERED")
             row_number = next_row_number
+            worksheet.update(
+                range_name=f"A{row_number}:{_column_letter(len(headers))}{row_number}",
+                values=[row_values],
+                value_input_option="USER_ENTERED",
+            )
             next_row_number += 1
             data_rows.append(row_values)
         else:
             local_row = _ensure_row_width(data_rows[row_number - 2], len(headers))
-            current_status = _row_value(local_row, header_index.get("status"))
-            if (
-                should_write_reservation_status
-                and current_status
-                and current_status != status_value
-            ):
+            current_status = _row_value(local_row, header_index.get("reservation_status"))
+            if current_status and current_status != status_value:
                 previous_status = current_status
             _fill_base_device_fields(
                 local_row,
@@ -559,20 +608,12 @@ def sync_workflow_devices_to_sheet(
                 device,
                 only_if_missing=not overwrite_identity_fields,
             )
-            if should_write_reservation_status:
-                _queue_single_cell_update(
-                    updates,
-                    row_number,
-                    header_index,
-                    "status",
-                    status_value,
-                )
             _queue_single_cell_update(
                 updates,
                 row_number,
                 header_index,
-                "notes",
-                note_value,
+                "reservation_status",
+                status_value,
             )
             _queue_single_cell_update(
                 updates,
@@ -630,6 +671,13 @@ def sync_workflow_devices_to_sheet(
                 "ms_id_maszyna",
                 _coerce_machine_id_text(device),
             )
+            _queue_single_cell_update(
+                updates,
+                row_number,
+                header_index,
+                "ctip_env",
+                settings.ctip_runtime_profile.upper(),
+            )
             if overwrite_identity_fields:
                 _queue_single_cell_update(
                     updates,
@@ -678,6 +726,7 @@ def release_workflow_devices_from_sheet(
     default_status: str = "DOSTEPNE",
 ) -> dict[str, Any]:
     """Czyści rezerwację urządzeń workflow w arkuszu Google."""
+    del default_status
 
     config = _resolve_workflow_sheet_runtime_config()
     enabled, reason = workflow_sheet_sync_configured(config)
@@ -696,8 +745,6 @@ def release_workflow_devices_from_sheet(
 
     headers, header_index, values, added_headers = _prepare_headers(workbook, worksheet)
     data_rows = [list(row) for row in values[1:]] if len(values) > 1 else []
-    should_write_reservation_status = _should_write_reservation_status(headers, header_index)
-    release_status_value = _default_release_status_value(headers, header_index, default_status)
 
     updates: list[dict[str, Any]] = []
     row_results: list[dict[str, Any]] = []
@@ -707,22 +754,14 @@ def release_workflow_devices_from_sheet(
         if row_number is None:
             continue
 
-        current_row = _ensure_row_width(data_rows[row_number - 2], len(headers))
-        current_status = _row_value(current_row, header_index.get("status"))
-        restore_status = (
-            str(device.get("sheet_previous_status") or "").strip() or release_status_value
+        _queue_single_cell_update(
+            updates,
+            row_number,
+            header_index,
+            "reservation_status",
+            "brak rezerwacji",
         )
-        if should_write_reservation_status and _normalize_header_token(
-            current_status
-        ) == _normalize_header_token(WORKFLOW_RESERVATION_STATUS):
-            _queue_single_cell_update(
-                updates,
-                row_number,
-                header_index,
-                "status",
-                restore_status,
-            )
-        _queue_single_cell_update(updates, row_number, header_index, "notes", "")
+        _queue_single_cell_update(updates, row_number, header_index, "reservation_until", "")
         _queue_single_cell_update(updates, row_number, header_index, "reservation_grenke", "")
         _queue_single_cell_update(updates, row_number, header_index, "form_ctip", "")
         _queue_single_cell_update(updates, row_number, header_index, "proforma_grenke", "")
@@ -812,6 +851,172 @@ def clear_workflow_proforma_from_sheet(*, devices: list[dict[str, Any]]) -> dict
     }
 
 
+def sync_device_inventory_to_sheet(
+    *,
+    operation_type: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Realizuje pojedyncze zadanie outboxu urządzeń bez zmiany statusu zerówki."""
+    config = _resolve_workflow_sheet_runtime_config()
+    enabled, reason = workflow_sheet_sync_configured(config)
+    if not enabled:
+        return {
+            "enabled": False,
+            "reason": reason,
+            "worksheet_title": None,
+            "sheet_row": None,
+        }
+    if operation_type not in {
+        "upsert_device",
+        "update_note",
+        "update_reservation",
+        "release_reservation",
+    }:
+        raise ValueError(f"Nieobsługiwany typ operacji arkusza: {operation_type}.")
+
+    workbook, _ = _open_workbook(config)
+    worksheet = _resolve_devices_worksheet(workbook, config, strict=True)
+    _validate_test_worksheet_target(workbook, worksheet, config)
+    headers, header_index, values, added_headers = _prepare_headers(workbook, worksheet)
+    data_rows = [list(row) for row in values[1:]] if len(values) > 1 else []
+    row_number = _find_matching_row_number(data_rows, header_index, payload)
+    action = "updated"
+
+    if row_number is None:
+        action = "appended"
+        row_values = [""] * len(headers)
+        _apply_inventory_sheet_values(
+            row_values,
+            header_index,
+            operation_type=operation_type,
+            payload=payload,
+            new_row=True,
+        )
+        row_number = len(data_rows) + 2
+        worksheet.update(
+            range_name=f"A{row_number}:{_column_letter(len(headers))}{row_number}",
+            values=[row_values],
+            value_input_option="USER_ENTERED",
+        )
+    else:
+        row_values = _ensure_row_width(data_rows[row_number - 2], len(headers))
+        _validate_inventory_row_identity(row_values, header_index, payload)
+        _apply_inventory_sheet_values(
+            row_values,
+            header_index,
+            operation_type=operation_type,
+            payload=payload,
+            new_row=False,
+        )
+        worksheet.update(
+            range_name=f"A{row_number}:{_column_letter(len(headers))}{row_number}",
+            values=[row_values],
+            value_input_option="USER_ENTERED",
+        )
+
+    if operation_type in {"upsert_device", "update_note"}:
+        _set_inventory_note_text_color(
+            workbook,
+            worksheet,
+            row_number=row_number,
+            header_index=header_index,
+            red=bool(payload.get("notes_red")),
+        )
+
+    return {
+        "enabled": True,
+        "reason": None,
+        "spreadsheet_title": str(workbook.title),
+        "worksheet_title": str(worksheet.title),
+        "sheet_row": row_number,
+        "action": action,
+        "added_headers": added_headers,
+        "status": str(payload.get("status") or "").strip() or None,
+        "reservation_status": str(payload.get("reservation_status") or "").strip() or None,
+        "reservation_until": str(payload.get("reservation_until") or "").strip() or None,
+        "notes": str(payload.get("notes") or "").strip() or None,
+        "notes_red": bool(payload.get("notes_red")),
+    }
+
+
+def _apply_inventory_sheet_values(
+    row_values: list[str],
+    header_index: dict[str, int],
+    *,
+    operation_type: str,
+    payload: dict[str, Any],
+    new_row: bool,
+) -> None:
+    """Nakłada dozwolone pola operacji outboxu na pojedynczy wiersz."""
+    _fill_base_device_fields(
+        row_values,
+        header_index,
+        payload,
+        only_if_missing=not (new_row or operation_type == "upsert_device"),
+    )
+    _set_row_value(
+        row_values,
+        header_index,
+        "ms_id_magazyn_table",
+        _coerce_source_row_text(payload),
+    )
+    _set_row_value(
+        row_values,
+        header_index,
+        "ms_id_maszyna",
+        _coerce_machine_id_text(payload),
+    )
+    _set_row_value(
+        row_values,
+        header_index,
+        "ctip_env",
+        str(payload.get("ctip_env") or settings.ctip_runtime_profile).strip().upper(),
+    )
+
+    if operation_type == "upsert_device":
+        for key in (
+            "status",
+            "price",
+            "notes",
+            "reservation_status",
+            "reservation_until",
+            "reservation_grenke",
+        ):
+            _set_row_value(row_values, header_index, key, payload.get(key))
+        return
+
+    if operation_type == "update_note":
+        _set_row_value(row_values, header_index, "notes", payload.get("notes"))
+        return
+
+    for key in ("reservation_status", "reservation_until", "reservation_grenke"):
+        _set_row_value(row_values, header_index, key, payload.get(key))
+
+
+def _validate_inventory_row_identity(
+    row_values: list[str],
+    header_index: dict[str, int],
+    payload: dict[str, Any],
+) -> None:
+    """Blokuje nadpisanie innego egzemplarza lub wiersza z obcego środowiska."""
+    expected_source = _coerce_source_row_text(payload)
+    current_source = _row_value(row_values, header_index.get("ms_id_magazyn_table"))
+    if current_source and expected_source and current_source != expected_source:
+        raise RuntimeError(
+            "Arkusz zawiera inną wartość MS_ID_MAGAZYN_TABLE dla wskazanego egzemplarza."
+        )
+
+    expected_serial = _normalize_device_key(payload.get("serial"))
+    current_serial = _normalize_device_key(_row_value(row_values, header_index.get("serial")))
+    if current_serial and expected_serial and current_serial != expected_serial:
+        raise RuntimeError("Arkusz zawiera inny numer seryjny dla wskazanego egzemplarza.")
+
+    if settings.ctip_runtime_profile == "test":
+        row_environment = _row_value(row_values, header_index.get("ctip_env")).upper()
+        if row_environment and row_environment != "TEST":
+            raise RuntimeError("Środowisko testowe nie może modyfikować wiersza spoza TEST.")
+
+
 def _open_workbook(
     config: WorkflowSheetRuntimeConfig | None = None,
     *,
@@ -843,7 +1048,65 @@ def _open_workbook(
         scopes=scopes,
     )
     client = gspread.authorize(credentials)
-    return client.open_by_key(active_config.spreadsheet_id), credentials.service_account_email
+    workbook = client.open_by_key(active_config.spreadsheet_id)
+    if not readonly:
+        _validate_test_workbook_target(workbook, active_config)
+        _ensure_workbook_timezone(workbook)
+    return workbook, credentials.service_account_email
+
+
+def _validate_test_workbook_target(workbook, config: WorkflowSheetRuntimeConfig) -> None:
+    """Wymusza dedykowany skoroszyt podczas zapisów środowiska testowego."""
+    if settings.ctip_runtime_profile != "test":
+        return
+    expected_id = normalize_workflow_sheet_spreadsheet_id(
+        settings.google_sheets_test_spreadsheet_id
+    )
+    if not expected_id:
+        raise RuntimeError(
+            "Brak GOOGLE_SHEETS_TEST_SPREADSHEET_ID; zapis arkusza testowego zablokowany."
+        )
+    if config.spreadsheet_id != expected_id:
+        raise RuntimeError("Środowisko testowe może zapisywać wyłącznie dedykowany skoroszyt TEST.")
+    expected_title = str(settings.google_sheets_test_spreadsheet_title or "").strip()
+    if expected_title and str(workbook.title).strip() != expected_title:
+        raise RuntimeError("Tytuł skoroszytu nie odpowiada GOOGLE_SHEETS_TEST_SPREADSHEET_TITLE.")
+
+
+def _validate_test_worksheet_target(
+    workbook,
+    worksheet,
+    config: WorkflowSheetRuntimeConfig,
+) -> None:
+    """Weryfikuje pełny cel zapisu TEST: skoroszyt i arkusz urządzeń."""
+    _validate_test_workbook_target(workbook, config)
+    if settings.ctip_runtime_profile != "test":
+        return
+    expected_worksheet = str(config.workflow_devices_worksheet or "").strip()
+    if str(worksheet.title).strip() != expected_worksheet:
+        raise RuntimeError("Środowisko testowe nie może zapisywać zastępczego arkusza.")
+
+
+def _ensure_workbook_timezone(workbook) -> None:
+    """Ustawia strefę czasową skoroszytu zgodną z procesami CTIP."""
+    timezone_name = str(settings.google_sheets_expected_timezone or "").strip()
+    if not timezone_name:
+        return
+    try:
+        workbook.batch_update(
+            {
+                "requests": [
+                    {
+                        "updateSpreadsheetProperties": {
+                            "properties": {"timeZone": timezone_name},
+                            "fields": "timeZone",
+                        }
+                    }
+                ]
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Nie udało się ustawić strefy czasowej arkusza: {exc}") from exc
 
 
 def _resolve_devices_worksheet(
@@ -1124,8 +1387,6 @@ def _looks_like_header_row(row: list[str]) -> bool:
 def _is_known_header_token(token: str) -> bool:
     if not token:
         return True
-    if token in _PREFERRED_STATUS_HEADER_TOKENS:
-        return True
     if token in _OPTIONAL_WORKSHEET_HEADER_TOKENS:
         return True
     return any(token in aliases for aliases in _HEADER_ALIASES.values())
@@ -1161,39 +1422,10 @@ def _strip_appended_header_suffix(row: list[str]) -> list[str]:
 def _build_header_index(headers: list[str]) -> dict[str, int]:
     output: dict[str, int] = {}
     for idx, header in enumerate(headers):
-        token = _normalize_header_token(header)
-        if token in _PREFERRED_STATUS_HEADER_TOKENS:
-            output["status"] = idx
-            break
-    for idx, header in enumerate(headers):
         canonical = _header_to_canonical_key(header)
         if canonical and canonical not in output:
             output[canonical] = idx
     return output
-
-
-def _default_release_status_value(
-    headers: list[str],
-    header_index: dict[str, int],
-    fallback: str,
-) -> str:
-    status_idx = header_index.get("status")
-    if status_idx is None or status_idx < 0 or status_idx >= len(headers):
-        return fallback
-    token = _normalize_header_token(headers[status_idx])
-    if token in _PREFERRED_STATUS_HEADER_TOKENS:
-        return "brak rezerwacji"
-    return fallback
-
-
-def _should_write_reservation_status(
-    headers: list[str],
-    header_index: dict[str, int],
-) -> bool:
-    status_idx = header_index.get("status")
-    if status_idx is None or status_idx < 0 or status_idx >= len(headers):
-        return False
-    return _normalize_header_token(headers[status_idx]) in _PREFERRED_STATUS_HEADER_TOKENS
 
 
 def _header_to_canonical_key(header: str | None) -> str | None:
@@ -1413,6 +1645,49 @@ def _hide_helper_column(workbook, worksheet, header_index: dict[str, int]) -> No
         return
 
 
+def _set_inventory_note_text_color(
+    workbook,
+    worksheet,
+    *,
+    row_number: int,
+    header_index: dict[str, int],
+    red: bool,
+) -> None:
+    """Ustawia czerwony kolor uwagi PZ albo czarny kolor uwagi ręcznej."""
+    note_idx = header_index.get("notes")
+    if note_idx is None:
+        return
+
+    foreground_color = (
+        {"red": 1.0, "green": 0.0, "blue": 0.0} if red else {"red": 0.0, "green": 0.0, "blue": 0.0}
+    )
+    workbook.batch_update(
+        {
+            "requests": [
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": worksheet.id,
+                            "startRowIndex": row_number - 1,
+                            "endRowIndex": row_number,
+                            "startColumnIndex": note_idx,
+                            "endColumnIndex": note_idx + 1,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "textFormat": {
+                                    "foregroundColor": foreground_color,
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.textFormat.foregroundColor",
+                    }
+                }
+            ]
+        }
+    )
+
+
 def _set_row_background_color(
     workbook,
     worksheet,
@@ -1486,6 +1761,7 @@ __all__ = [
     "normalize_workflow_sheet_spreadsheet_id",
     "release_workflow_devices_from_sheet",
     "resolve_workflow_sheet_assignee",
+    "sync_device_inventory_to_sheet",
     "sync_workflow_devices_to_sheet",
     "test_workflow_sheet_connection",
     "WorkflowSheetRuntimeConfig",

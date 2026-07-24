@@ -417,6 +417,7 @@ async def notify_data_entered(
         use_tls=email_delivery.use_tls,
         use_ssl=email_delivery.use_ssl,
         message=message,
+        source="form_data_entered_notification",
     )
     if not send_result.success:
         raise HTTPException(

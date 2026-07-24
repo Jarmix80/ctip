@@ -15,7 +15,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
-from app.models import AdminAuditLog, AdminUser, FormRequest, FormWorkflowCase, FormWorkflowDevice
+from app.models import (
+    AdminAuditLog,
+    AdminUser,
+    DeviceInventoryUnit,
+    DeviceManualReservation,
+    FormRequest,
+    FormWorkflowCase,
+    FormWorkflowDevice,
+)
 from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.contracts_dashboard import (
@@ -28,7 +36,6 @@ from app.services.contracts_dashboard import (
     load_device_from_sheet_row,
     load_firebird_runtime_config,
     normalize_nip,
-    synchronize_device_from_sheet_row,
     use_firebird_runtime_config,
 )
 from app.services.contracts_mailbox_sync_runtime import (
@@ -416,6 +423,27 @@ def _parse_price(value: str | None) -> Decimal | None:
         return Decimal(text)
     except (InvalidOperation, ValueError):
         return None
+
+
+def _validate_explicit_device_prices(devices: list[dict[str, Any]]) -> None:
+    """Odrzuca jawnie zapisaną zerową lub nieprawidłową cenę urządzenia."""
+    for device in devices:
+        raw_prices = [
+            device.get("price_gross"),
+            device.get("price_net"),
+            device.get("price"),
+        ]
+        provided_prices = [value for value in raw_prices if str(value or "").strip()]
+        if not provided_prices:
+            continue
+        if any(
+            parsed_price is not None and parsed_price > 0
+            for value in provided_prices
+            if (parsed_price := _parse_price(str(value))) is not None
+        ):
+            continue
+        label = device.get("ewidencja") or device.get("serial") or "?"
+        raise ValueError(f"Brak ceny dla urzadzenia {label}.")
 
 
 def _format_price(value: Decimal | None) -> str:
@@ -1738,10 +1766,39 @@ async def contracts_delivery_schedule(
         .order_by(FormWorkflowCase.delivery_date.asc(), FormWorkflowCase.id.asc())
     )
     rows = (await session.execute(stmt)).all()
+    case_ids = [workflow_case.id for workflow_case, _ in rows]
+    devices_by_case: dict[int, list[dict[str, Any]]] = {}
+    if case_ids:
+        device_rows = list(
+            (
+                await session.execute(
+                    select(FormWorkflowDevice)
+                    .where(FormWorkflowDevice.workflow_case_id.in_(case_ids))
+                    .order_by(
+                        FormWorkflowDevice.workflow_case_id.asc(), FormWorkflowDevice.id.asc()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for device in device_rows:
+            devices_by_case.setdefault(device.workflow_case_id, []).append(
+                {
+                    "id": device.id,
+                    "producer": device.producer,
+                    "model": device.model,
+                    "serial": device.serial,
+                    "ewidencja": device.ewidencja,
+                    "source_row": device.source_row,
+                    "firebird_machine_id": device.firebird_machine_id,
+                }
+            )
 
     items: list[dict] = []
     for workflow_case, form in rows:
         label = _delivery_label(workflow_case.delivery_date, workflow_case.delivery_time_window)
+        devices = devices_by_case.get(workflow_case.id, [])
         items.append(
             {
                 "workflow_case_id": workflow_case.id,
@@ -1757,6 +1814,24 @@ async def contracts_delivery_schedule(
                 "customer_name": _schedule_customer_name(workflow_case, form),
                 "business_status": workflow_case.business_status,
                 "proforma_number": workflow_case.proforma_number,
+                "devices": devices,
+                "devices_count": len(devices),
+                "devices_label": ", ".join(
+                    " ".join(
+                        part
+                        for part in (
+                            str(device.get("producer") or "").strip(),
+                            str(device.get("model") or "").strip(),
+                            (
+                                f"S/N {device['serial']}"
+                                if str(device.get("serial") or "").strip()
+                                else ""
+                            ),
+                        )
+                        if part
+                    )
+                    for device in devices
+                ),
             }
         )
 
@@ -2089,6 +2164,36 @@ async def contracts_form_workflow_devices(
                 )
             )
         }
+    for source_key, previous_device in previous_devices_by_key.items():
+        if source_key in available_rows:
+            continue
+        previous_snapshot = dict(previous_device.snapshot or {})
+        previous_snapshot.update(
+            {
+                "row": previous_device.source_row,
+                "source_type": previous_device.source_type,
+                "producer": previous_snapshot.get("producer") or previous_device.producer,
+                "model": previous_snapshot.get("model") or previous_device.model,
+                "serial": previous_snapshot.get("serial") or previous_device.serial,
+                "ewidencja": previous_snapshot.get("ewidencja") or previous_device.ewidencja,
+                "status": previous_snapshot.get("status") or previous_device.device_status,
+                "reservation_status": (
+                    previous_snapshot.get("reservation_status")
+                    or previous_device.reservation_status
+                ),
+                "price": previous_snapshot.get("price") or previous_device.price,
+                "price_net": previous_device.price_net,
+                "price_gross": previous_device.price_gross,
+                "ms_id_maszyna": (
+                    previous_snapshot.get("ms_id_maszyna") or previous_device.firebird_machine_id
+                ),
+                "ms_id_klient": (
+                    previous_snapshot.get("ms_id_klient") or previous_device.firebird_client_id
+                ),
+                "unavailable_but_selected": True,
+            }
+        )
+        available_rows[source_key] = previous_snapshot
     missing_rows = [
         item["source_key"] or f"{item['source_type']}:{item['row']}"
         for item in selected_devices_meta
@@ -2133,6 +2238,37 @@ async def contracts_form_workflow_devices(
                 f"{reservation_labels}."
             ),
         )
+
+    selected_source_rows = [
+        int(item["row"])
+        for item in selected_devices_meta
+        if item["source_type"] == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE
+    ]
+    if selected_source_rows:
+        manual_rows = (
+            await session.execute(
+                select(DeviceInventoryUnit, DeviceManualReservation)
+                .join(
+                    DeviceManualReservation,
+                    DeviceManualReservation.unit_id == DeviceInventoryUnit.id,
+                )
+                .where(
+                    DeviceInventoryUnit.source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE,
+                    DeviceInventoryUnit.source_row.in_(selected_source_rows),
+                    DeviceManualReservation.released_at.is_(None),
+                    DeviceManualReservation.expires_at > datetime.now(UTC),
+                )
+            )
+        ).all()
+        if manual_rows:
+            manual_labels = ", ".join(
+                f"{unit.source_row} ({reservation.reserved_for})"
+                for unit, reservation in manual_rows
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=("Wybrane urządzenia mają aktywną rezerwację ręczną: " f"{manual_labels}."),
+            )
 
     selected_devices = []
     for selected_item in selected_payloads:
@@ -2724,6 +2860,32 @@ async def contracts_form_workflow_proforma(
             "workflow": serialize_workflow_case(workflow_case, workflow_devices),
         }
 
+    selected_devices = [
+        device.snapshot
+        or {
+            "row": device.source_row,
+            "producer": device.producer,
+            "model": device.model,
+            "serial": device.serial,
+            "ewidencja": device.ewidencja,
+            "status": device.device_status,
+            "reservation_status": device.reservation_status,
+            "price": device.price,
+            "price_net": device.price_net,
+            "price_gross": device.price_gross,
+            "ms_id_maszyna": device.firebird_machine_id,
+            "ms_id_klient": device.firebird_client_id,
+        }
+        for device in workflow_devices
+    ]
+    try:
+        _validate_explicit_device_prices(selected_devices)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
     issuer_name = (
         " ".join(
             part.strip()
@@ -2749,25 +2911,6 @@ async def contracts_form_workflow_proforma(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
-
-    selected_devices = [
-        device.snapshot
-        or {
-            "row": device.source_row,
-            "producer": device.producer,
-            "model": device.model,
-            "serial": device.serial,
-            "ewidencja": device.ewidencja,
-            "status": device.device_status,
-            "reservation_status": device.reservation_status,
-            "price": device.price,
-            "price_net": device.price_net,
-            "price_gross": device.price_gross,
-            "ms_id_maszyna": device.firebird_machine_id,
-            "ms_id_klient": device.firebird_client_id,
-        }
-        for device in workflow_devices
-    ]
 
     firebird_config = await load_firebird_runtime_config(session)
     with use_firebird_runtime_config(firebird_config):
@@ -3951,6 +4094,14 @@ async def contracts_dashboard_action(
         )
 
     if payload.entity == "device":
+        if payload.action in {"synchronizuj", "podlacz"}:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail=(
+                    "Synchronizacja urządzenia z arkusza została wyłączona. "
+                    "Nowy egzemplarz należy przyjąć dokumentem PZ w /device/intake."
+                ),
+            )
         if payload.row is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -3963,65 +4114,6 @@ async def contracts_dashboard_action(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Nie znaleziono {target_text} w arkuszu Urzadzenia.",
             )
-
-        if payload.action in {"synchronizuj", "podlacz"}:
-            firebird_config = await load_firebird_runtime_config(session)
-            with use_firebird_runtime_config(firebird_config):
-                enabled, reason = firebird_writes_enabled()
-                if not enabled:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=reason or "Zapis do Firebird jest zablokowany.",
-                    )
-                try:
-                    result = await asyncio.to_thread(
-                        synchronize_device_from_sheet_row,
-                        payload.row,
-                        kto="CTIP",
-                    )
-                except ValueError as exc:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=str(exc),
-                    ) from exc
-                except RuntimeError as exc:
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail=str(exc),
-                    ) from exc
-
-            await record_audit(
-                session,
-                user_id=admin_user.id,
-                action="contracts_device_sync",
-                client_ip=admin_session.client_ip,
-                payload={
-                    "row": payload.row,
-                    "serial": result.serial,
-                    "ewidencja": result.ewidencja,
-                    "machine_id": result.machine_id,
-                    "machine_created": result.machine_created,
-                    "warehouse_id": result.warehouse_id,
-                    "warehouse_created": result.warehouse_created,
-                    "model_id": result.model_id,
-                },
-            )
-            await session.commit()
-            return {
-                "ok": True,
-                "message": (
-                    f"Zsynchronizowano {target_text}: "
-                    f"MASZYNA ID {result.machine_id} "
-                    f"({'utworzono' if result.machine_created else 'istnialo'}), "
-                    f"MAGAZYN ID {result.warehouse_id} "
-                    f"({'utworzono' if result.warehouse_created else 'istnialo'})."
-                ),
-                "machine_id": result.machine_id,
-                "machine_created": result.machine_created,
-                "warehouse_id": result.warehouse_id,
-                "warehouse_created": result.warehouse_created,
-                "model_id": result.model_id,
-            }
 
         if payload.action == "do_weryfikacji":
             await record_audit(

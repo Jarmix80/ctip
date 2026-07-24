@@ -36,10 +36,12 @@ scripts/windows/collector_service_config.json
 .DS_Store
 Thumbs.db
 logs/
+runtime/
 *:Zone.Identifier
 .cache/
 docs/archiwum/
-docs/raport/
+docs/raport/*
+!docs/raport/.gitkeep
 
 # Katalog wymiany plikow Windows -> serwer (lokalny, poza repo)
 inbox/
