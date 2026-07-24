@@ -1,5 +1,9 @@
 # Obsługa urządzeń – model procesu
 
+> **Status etapu:** funkcjonalna przebudowa została zakończona `2026-07-24` na produkcyjnym
+> commicie `b82bd81`. Stan wdrożenia, wykonane próby i instrukcję powrotu do projektu
+> opisuje `docs/projekt/device_status_2026-07-24.md`.
+
 ## Cel
 
 Moduł `/device` prowadzi nowy fizyczny egzemplarz jedną kontrolowaną ścieżką:

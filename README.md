@@ -911,6 +911,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu), `panel_admin_ui.md` (plan interfejsu administratora), `dziennik_2026-02-26.md` (podsumowanie wdrozen z 26 lutego 2026), `dziennik_2026-03-05.md` (podsumowanie prac SharePoint/backup z 5 marca 2026) oraz `dziennik_2026-04-09.md` (domkniecie etapu publicznych formularzy, automatu MS i zmian panelu administratora).
 - `docs/projekt/obsluga_urzadzen.md` – reguły przyjęcia PZ, rezerwacji, danych historycznych, outboxu Google Sheets i uprawnień modułu `/device`.
+- `docs/projekt/device_status_2026-07-24.md` – raport zamknięcia etapu `/device`: wdrożony zakres, testy produkcyjne, punkty obserwacji oraz instrukcja powrotu do projektu.
 - `docs/raport` – statyczny raport CPC (HTML + CSV) udostępniany bez logowania pod `http://127.0.0.1:8000/raport`; serwer FastAPI montuje katalog bez prawa zapisu, dzięki czemu pełni rolę tylko-do-odczytu.
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.
