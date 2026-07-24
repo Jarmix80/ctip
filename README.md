@@ -12,6 +12,10 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Pomocniczy skrypt operatorski (Windows, bez `Read-Host`) do wykonania kroku Google Sheets + mailbox dry-run po wdrozeniu: `inbox/krok9_10_google_sheets_mailbox_noninteractive.ps1`.
 - Hotfix produkcyjny dla toru `mailbox -> APPROVED_ORDER` z jednorazowa naprawa formularza `39`: `docs/instal/hotfix_mailbox_binding_prod_2026-05-22.md`.
 
+## Dokumentacja operacyjna (poza zakresem CTIP)
+- Raport z optymalizacji wydajności testowej bazy Menadżer Serwisu (Firebird), obejmujący benchmarki zapytań i dodane indeksy: `docs/firebird/przyspieszenie_bazy_bazams_test_2026-05-14.md`.
+- Audyt wydajności produkcyjnej bazy Menadżer Serwisu w trybie tylko do odczytu (`192.168.0.8`, `BAZAMS.FDB`) z analizą długich transakcji, planów zapytań i kandydatów indeksów do testów na kopii: `docs/firebird/audyt_wydajnosci_bazams_prod_2026-06-30.md`.
+
 ## Najważniejsze komponenty
 - `collector_full.py` – produkcyjny kolektor CTIP: łączy się z centralą, koreluje zdarzenia, persystuje rekordy w schemacie `ctip` oraz rejestruje zadania SMS.
 - `collector_service.py` – wrapper w formie usługi Windows utrzymujący działanie `collector_full.py` i restartujący proces po awarii; automatycznie dopina ścieżki `pywin32` oraz dodaje katalog `pywin32_system32` do ścieżki DLL (start jako `pythonservice.exe`), wymagane wcześniejsze `pywin32_postinstall`.
@@ -36,6 +40,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/assistant.py` + `app/services/assistant_*` + `app/web/assistant_ui.py` + `app/templates/assistant/` + `app/static/assistant/` – moduł CTIP AI Asystent (chat z historią, streaming SSE, narzędzia `firebird_read`, `firebird_business_read`, `firebird_knowledge_read`, `workflow_devices_audit`, `sheets_read`, `imap_read`, `ctip_schema_read` i `email_send_report`; odczyt danych pozostaje read-only, a wysyłka raportu idzie przez systemową skrzynkę SMTP CTIP, automatyczne wnioski o zmiany). Wyjątkiem wykonawczym jest kontrolowana akcja operatora po audycie urządzeń: zapis świeżej paczki do zakładki roboczej `urzadzenia_chat`, bez modyfikacji docelowej zakładki `Urzadzenia_magazyn`.
 - `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
 - `inbox/` – lokalny katalog wymiany plików z Windows (dropzone), celowo odcięty od repozytorium Git.
+- `inbox/firebird_audit/` – lokalne artefakty audytów Firebird MS, w tym surowe raporty JSON i zakomentowane propozycje SQL; katalog jest roboczy i nie służy do przechowywania sekretów.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
 - `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
 - `scripts/sync_prod_forms_to_test.py` – import najnowszych formularzy workflow z produkcyjnego PostgreSQL do lokalnego `ctip_test` z odczytem `read_only` po stronie źródła i upsertami po stronie testu.

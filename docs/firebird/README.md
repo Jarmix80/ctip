@@ -14,12 +14,16 @@ Ten katalog przechowuje materiały referencyjne i robocze dotyczące integracji 
 3. Mapowanie kontaktów CTIP ↔ Firebird:
    - pole `ctip.contact.firebird_id` w `docs/baza/schema_ctip.sql`,
    - API kontaktów: `app/api/routes/admin_contacts.py`, `app/api/routes/operator_portal.py`.
+4. Audyty wydajności i utrzymania:
+   - testowa optymalizacja indeksów: `docs/firebird/przyspieszenie_bazy_bazams_test_2026-05-14.md`,
+   - audyt produkcji BAZAMS z `2026-06-30` w trybie tylko do odczytu: `docs/firebird/audyt_wydajnosci_bazams_prod_2026-06-30.md`.
 
 ## Co umieszczać w tym katalogu
 1. Wybrane pliki z `bazams` wymagane do integracji (opis struktury tabel, zapytania, słowniki kodów).
 2. Notatki mapowania pól Firebird -> `ctip.contact` / `ctip.contact_device`.
 3. Utrwalone analizy workflow Menadżera Serwisu (klient, magazyn, PZ, proforma, FV) wraz z triggerami i zapytaniami diagnostycznymi.
 4. Eksporty pomocnicze do testów lokalnych (bez danych wrażliwych).
+5. Raporty audytowe tylko do odczytu oraz propozycje optymalizacji wymagające osobnego testu na kopii bazy.
 
 ## Lokalne kopie bazy roboczej
 1. Docelowa ścieżka lokalnej kopii jest konfigurowana przez `FB_LOCAL_COPY_PATH`.
