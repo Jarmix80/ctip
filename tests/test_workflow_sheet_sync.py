@@ -459,6 +459,7 @@ def test_inventory_upsert_appends_complete_test_row() -> None:
     assert row[header_index["status"]] == "01. Przed zerówką"
     assert row[header_index["notes"]] == "dodana automatem PZ z CTIP"
     assert row[header_index["reservation_status"]] == "brak rezerwacji"
+    assert row[header_index["price"]] == 1200.0
     assert row[header_index["ms_id_magazyn_table"]] == "19001"
     assert row[header_index["ms_id_maszyna"]] == "7701"
     assert row[header_index["ctip_env"]] == "TEST"
@@ -481,6 +482,23 @@ def test_inventory_upsert_appends_complete_test_row() -> None:
         "endRowIndex": 2,
         "startColumnIndex": header_index["notes"],
         "endColumnIndex": header_index["notes"] + 1,
+    }
+    price_format_request = next(
+        request["repeatCell"]
+        for body in workbook.requests
+        for request in body["requests"]
+        if request.get("repeatCell", {})
+        .get("cell", {})
+        .get("userEnteredFormat", {})
+        .get("numberFormat")
+        == {"type": "NUMBER", "pattern": "#,##0.00"}
+    )
+    assert price_format_request["range"] == {
+        "sheetId": 12,
+        "startRowIndex": 1,
+        "endRowIndex": 2,
+        "startColumnIndex": header_index["price"],
+        "endColumnIndex": header_index["price"] + 1,
     }
 
 

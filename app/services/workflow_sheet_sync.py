@@ -7,6 +7,7 @@ import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -927,9 +928,14 @@ def sync_device_inventory_to_sheet(
             new_row=True,
         )
         row_number = len(data_rows) + 2
+        outgoing_values = _prepare_inventory_sheet_row_values(
+            row_values,
+            header_index,
+            operation_type=operation_type,
+        )
         worksheet.update(
             range_name=f"A{row_number}:{_column_letter(len(headers))}{row_number}",
-            values=[row_values],
+            values=[outgoing_values],
             value_input_option="USER_ENTERED",
         )
     else:
@@ -942,10 +948,23 @@ def sync_device_inventory_to_sheet(
             payload=payload,
             new_row=False,
         )
+        outgoing_values = _prepare_inventory_sheet_row_values(
+            row_values,
+            header_index,
+            operation_type=operation_type,
+        )
         worksheet.update(
             range_name=f"A{row_number}:{_column_letter(len(headers))}{row_number}",
-            values=[row_values],
+            values=[outgoing_values],
             value_input_option="USER_ENTERED",
+        )
+
+    if operation_type == "upsert_device":
+        _set_inventory_price_number_format(
+            workbook,
+            worksheet,
+            row_number=row_number,
+            header_index=header_index,
         )
 
     if operation_type in {"upsert_device", "update_note"}:
@@ -1033,6 +1052,36 @@ def _apply_inventory_sheet_values(
 
     for key in ("reservation_status", "reservation_until", "reservation_grenke"):
         _set_row_value(row_values, header_index, key, payload.get(key))
+
+
+def _prepare_inventory_sheet_row_values(
+    row_values: list[str],
+    header_index: dict[str, int],
+    *,
+    operation_type: str,
+) -> list[Any]:
+    """Przekazuje cenę PZ jako liczbę, aby arkusz nie interpretował jej jako daty."""
+    outgoing_values: list[Any] = list(row_values)
+    if operation_type != "upsert_device":
+        return outgoing_values
+
+    price_idx = header_index.get("price")
+    if price_idx is None or price_idx >= len(outgoing_values):
+        return outgoing_values
+
+    raw_price = str(outgoing_values[price_idx] or "").strip()
+    if not raw_price:
+        return outgoing_values
+
+    try:
+        price = Decimal(raw_price.replace(",", "."))
+    except InvalidOperation as exc:
+        raise ValueError(f"Nieprawidłowa cena przekazywana do arkusza: {raw_price}") from exc
+    if not price.is_finite():
+        raise ValueError(f"Nieprawidłowa cena przekazywana do arkusza: {raw_price}")
+
+    outgoing_values[price_idx] = float(price)
+    return outgoing_values
 
 
 def _validate_inventory_row_identity(
@@ -1723,6 +1772,46 @@ def _set_inventory_note_text_color(
                             }
                         },
                         "fields": "userEnteredFormat.textFormat.foregroundColor",
+                    }
+                }
+            ]
+        }
+    )
+
+
+def _set_inventory_price_number_format(
+    workbook,
+    worksheet,
+    *,
+    row_number: int,
+    header_index: dict[str, int],
+) -> None:
+    """Wymusza format liczbowy ceny niezależnie od lokalizacji arkusza."""
+    price_idx = header_index.get("price")
+    if price_idx is None:
+        return
+
+    workbook.batch_update(
+        {
+            "requests": [
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": worksheet.id,
+                            "startRowIndex": row_number - 1,
+                            "endRowIndex": row_number,
+                            "startColumnIndex": price_idx,
+                            "endColumnIndex": price_idx + 1,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "numberFormat": {
+                                    "type": "NUMBER",
+                                    "pattern": "#,##0.00",
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.numberFormat",
                     }
                 }
             ]
