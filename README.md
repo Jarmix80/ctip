@@ -29,6 +29,9 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/web/delivery_ui.py` + `app/templates/delivery/` + `app/static/delivery/` + `app/api/routes/admin_delivery.py` + `app/services/delivery.py` – moduł `/delivery` („Obsługa dostaw”): lista dostaw z FLOW GRENKE po statusie `APPROVED_ORDER`, ręczne zakładanie dostaw spoza GRENKE, powiązanie z klientem Firebird oraz kalendarz końców umów GRENKE wymagający potwierdzenia operatora i wysyłający przypomnienia aktywnym handlowcom.
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + `app/services/device_dashboard.py` + `app/services/device_intake.py` – wydzielony widok `/device` dla procesu urzadzen: audyt przyjec `PZ` na magazyn `28`, kontrola powiazan `MAGAZYN` / `SERIAL` / `MASZYNA`, lista problemow danych, audyt tabeli `MODEL` oraz automatyzacja kartoteki `AUTO/XXXX` i przyjecia `PZ` (single + batch) z automatycznym utworzeniem wpisu `MASZYNA`.
+- `app/web/crm_ui.py` + `app/templates/crm/` + `app/static/crm/` + `app/api/routes/crm.py` + `app/services/crm_cases.py` – trwałe Centrum Obsługi pod adresem `/crm`: sześć kolejek, Kanban Handlu, pulpit dyspozytora, oś zdarzeń, wybór deklarowanego operatora testowego, idempotentne przyjmowanie spraw i retencja 360 dni. Operacje LAB zapisują się wyłącznie w `ctip_test`; SMS, e-mail i zapis Firebird pozostają zablokowane.
+- `app/crm_prototype_app.py` – izolowana aplikacja LAB udostępniająca `/crm`, chronione `/api/crm/v1/*` i statyczne zasoby. Tryb wymaga `CRM_PUBLIC_PROTOTYPE_MODE=true`, `CRM_ENABLED=true`, `CRM_LAB_MODE=true`, `PGDATABASE=ctip_test`, lokalnego Firebird i `SMS_TEST_MODE=true`; CSP dopuszcza iframe wyłącznie ze skonfigurowanych źródeł.
+- `app/lab_portal_app.py` + `app/templates/lab/` + `app/static/lab/` – brama laboratorium na porcie `8790`: formularze zastępujące obecne wejścia Bitrix, generator scenariuszy oraz ograniczone proxy lokalnego widgetu CHAT_KP. Brama przyjmuje krótko ważny bilet HMAC z wtyczki WordPress, nie udostępnia produkcyjnych tras CTIP i zapisuje formularze wyłącznie jako sprawy `is_lab=true`.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
 - `app/services/grenke_launch.py` – integracja API-only do przycisku `Wniosek GRENKE` w `/genform`: budowa `calculationKey`, prefill kalkulacji (`setSession.php`, `calculate.php`, `saveCalculation.php`) i fallback URL `partial` z query kodowanym pod parser `decodeURI` po stronie GRENKE (bez formatu `+` dla spacji); w trybie pełnym usługa uzupełnia dane dostawcy (`provider*`) na podstawie sprzedawcy z zapisanej proformy Firebird, zapisuje pole `rate` jako listę opcji (`kwartalna`, `miesieczna`) kompatybilną z frontendem GRENKE, ustawia opłatę początkową `0%`, odczytuje limity `default/min/maxMonths` po `setSession.php` i wybiera najwyższy poprawny okres leasingu w granicach tych limitów. Przejście do kroku 2 pozostaje fizycznym kliknięciem `Wypełnij wniosek online` w aplikacji GRENKE.
 - `app/services/workflow_machine_binding.py` – automat dla statusu `APPROVED_ORDER`: wiązanie urządzeń workflow z klientem w `MASZYNA.ID_KLIENT` (główna operacja), wymuszenie `AKTYWNA=TAK` i `SYNWP=1`, próba normalizacji `MASZYNA.EWIDENCJA` do `KP/<numer>/GRENKE/<reszta>` (brak poprawnego formatu nie blokuje powiązania klienta), tworzenie nowych rekordów `MASZYNA` z mapowaniem danych z tabeli `MODEL` (`ID_MODEL`, `MARKA`, `MODEL`, `GRUPA`, `RODZAJ`, `KOLOROWA`, `TYP`, `RODZAJ_US`) oraz synchronizacja tych pól dla istniejących kart; dla źródła `firebird_magazyn_28` automat dociąga bieżący rekord `MAGAZYN`, parsuje techniczne `NAZWA` (`S/N`, `nr.wew`) i normalizuje warianty modeli Ricoh (`IMC` -> `IM C`, `MPC` -> `MP C`) zanim dopasuje `MODEL`; status zwracany do `/genform` pokazuje też licznik `powiązane/wszystkie` i skrót pierwszych błędów z identyfikatorem urządzenia (`producent`, `model`, `serial` albo `ewidencja`).
@@ -37,6 +40,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/portal_auth.py` + `app/static/root/root.js` – centralne logowanie na stronie głównej (`/`) oraz wybór sekcji na osobnym widoku `/choice`.
 - `app/api/routes/assistant.py` + `app/services/assistant_*` + `app/web/assistant_ui.py` + `app/templates/assistant/` + `app/static/assistant/` – moduł CTIP AI Asystent (chat z historią, streaming SSE, narzędzia `firebird_read`, `firebird_business_read`, `firebird_knowledge_read`, `workflow_devices_audit`, `sheets_read`, `imap_read`, `ctip_schema_read` i `email_send_report`; odczyt danych pozostaje read-only, a wysyłka raportu idzie przez systemową skrzynkę SMTP CTIP, automatyczne wnioski o zmiany). Wyjątkiem wykonawczym jest kontrolowana akcja operatora po audycie urządzeń: zapis świeżej paczki do zakładki roboczej `urzadzenia_chat`, bez modyfikacji docelowej zakładki `Urzadzenia_magazyn`.
 - `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
+- `app/services/bot_identity_directory.py` + `app/api/routes/bot_identity.py` + `app/api/routes/admin_bot_identity.py` – centralny katalog rozpoznawania kont klientów dla botów voice/chat, synchronizowany z Firebird wyłącznie do odczytu; zasady i kontrakt opisuje `docs/bot_identity_directory.md`.
 - `inbox/` – lokalny katalog wymiany plików z Windows (dropzone), celowo odcięty od repozytorium Git.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
 - `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
@@ -390,6 +394,63 @@ Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11`
 | `FB_WAREHOUSE_CLIENT_ID` | `656` | Domyślny `ID_KLIENT` dla technicznych zapisów urządzeń magazynowych w lokalnej Firebird. |
 | `FB_WAREHOUSE_ID` | `28` | Domyślny `ID_MAGAZYN` dla pozycji magazynowych tworzonych przez synchronizację urządzeń. |
 
+### Zmienne środowiskowe Centrum Obsługi i katalogu tożsamości
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `CRM_ENABLED` | `false` | Włącza trwałe API Centrum Obsługi. |
+| `CRM_LAB_MODE` | `false` | Wymusza oznaczanie nowych spraw jako LAB i udostępnia kontrolowany reset danych testowych. |
+| `CRM_PUBLIC_PROTOTYPE_MODE` | `false` | Włącza interfejs bez logowania wyłącznie w izolowanej aplikacji LAB. |
+| `CRM_RETENTION_DAYS` | `360` | Retencja treści spraw i ich osi zdarzeń. |
+| `CRM_AUTO_ARCHIVE_DAYS` | `30` | Termin automatycznej archiwizacji po zakończeniu lub przekazaniu sprawy. |
+| `CRM_RETENTION_SCHEDULER_ENABLED` | `false` | Włącza okresowe usuwanie spraw po retencji. |
+| `CRM_FRAME_ANCESTORS` | domeny Ksero Partner | Lista originów dopuszczonych przez CSP do osadzenia LAB w iframe. |
+| `CRM_LAB_IFRAME_SECRET` | brak | Wspólny sekret HMAC bramy LAB i wtyczki `pagekp`; wartość musi odpowiadać `KP_CTIP_LAB_IFRAME_SECRET`. |
+| `CRM_LAB_CHAT_BASE_URL` | `http://192.168.0.9:8787` | Stały adres lokalnej instancji publicznego widgetu CHAT_KP używany wyłącznie przez ograniczone proxy. |
+| `CRM_LAB_PROXY_TIMEOUT_SECONDS` | `60` | Limit czasu połączenia bramy z lokalnym CHAT_KP. |
+| `BOT_IDENTITY_ENABLED` | `false` | Włącza synchronizację centralnego katalogu z Firebird. |
+| `BOT_IDENTITY_SECRET_KEY` | *(puste)* | Klucz Fernet oraz źródło kluczy HMAC dla telefonu, NIP i numeru seryjnego. |
+| `BOT_IDENTITY_VOICE_TOKEN`, `BOT_IDENTITY_CHAT_TOKEN` | *(puste)* | Różne tokeny usługowe związane odpowiednio z kanałem voice i chat. |
+| `BOT_IDENTITY_TEST_SMS_CODE` | *(puste)* | Opcjonalny sześciocyfrowy kod wyłącznie dla izolowanego testu SMS w `ctip_test`; LAB używa `123456`, kod nie jest zwracany przez API i zmienna nie może występować w produkcyjnym `.env`. |
+| `BOT_IDENTITY_IMAGE_HTTPS_HOSTS` | domeny Ksero Partner | Lista hostów HTTPS, z których katalog może zwracać zdjęcia modeli zapisane w `MODEL.PLIK`. |
+| `BOT_IDENTITY_IMAGE_LAB_HTTP_HOSTS` | lokalne hosty LAB | Lista hostów HTTP dopuszczonych wyłącznie przy `CRM_LAB_MODE=true`, `PGDATABASE=ctip_test` i `SMS_TEST_MODE=true`. |
+| `BOT_IDENTITY_MODEL_IMAGE_ROOT` | *(puste)* | Opcjonalny bezwzględny katalog kontrolowanych obrazów obsługiwanych przez `/v1/device-model-images/{image_ref}`. |
+| `BOT_IDENTITY_IMAGE_MAX_BYTES` | `5242880` | Maksymalny rozmiar pojedynczego obrazu udostępnianego przez CTIP. |
+| `BOT_IDENTITY_IMAGE_CACHE_SECONDS` | `3600` | Czas bezpiecznego cache obrazu modelu w przeglądarce. |
+| `BOT_IDENTITY_SYNC_INTERVAL_SECONDS` | `300` | Cykl odczytu lokalnej bazy Firebird w trybie read-only. |
+| `BOT_IDENTITY_WARN_AFTER_SECONDS`, `BOT_IDENTITY_BLOCK_AFTER_SECONDS` | `900`, `3600` | Progi ostrzeżenia i blokady ujawniania dla nieświeżego katalogu. |
+
+Synchronizację bez pozostałych usług uruchamia `python -m app.bot_identity_worker`.
+Worker odmawia startu przy `FB_ALLOW_WRITES=true`. W środowisku `ctip_test`
+wymagane są `FB_MODE=local`, testowa nazwa bazy oraz lokalny host lub alias
+kontenera `firebird`. Sterownik otwiera transakcję Firebird jako
+`ISOLATION_LEVEL_READ_COMMITED_RO`.
+
+Izolowane API dla CHAT_KP i kanału voice uruchamia
+`uvicorn app.bot_identity_api_app:app`. Proces udostępnia tylko trasy
+`/internal/v1`, kompatybilne trasy `/v1` oraz `/health`; nie uruchamia
+schedulera synchronizacji ani paneli CTIP. Trasa `/v1/capabilities` odpowiada
+kontraktem `1.0` wymaganym przez CHAT_KP.
+
+Odpowiedź `POST /v1/customers/resolve` zawiera `company_name` wyłącznie dla
+jednoznacznego wyniku `exact` lub `unique`. Dla `ambiguous` i `not_found` nazwa
+oraz `customer_ref` pozostają puste; API nie zwraca danych kontaktowych ani
+uwierzytelniających.
+
+Po poprawnej weryfikacji SMS
+`POST /v1/customers/{customer_ref}/devices/masked` zwraca wyłącznie aktywne
+urządzenia potwierdzonego klienta: losowe `device_ref`, producenta i model z
+projekcji `MASZYNA → MODEL`, pełny `serial`, zgodne `serial_last4`, bezpieczne
+`image_url`, lokalizację i flagę aktywności. Kontrakt spraw obsługuje stare
+`device_ref` oraz opcjonalne `device_refs` z deduplikacją i limitem 20.
+Szczegółowe reguły ujawniania oraz mapowanie `MODEL.PLIK` opisuje
+`docs/bot_identity_directory.md`.
+
+W lokalnym środowisku integracyjnym CHAT_KP wskazuje
+`http://ctip-bot-api:8082`. API działa bez portu hosta jako kontrolowany most
+dwóch sieci Docker, a sam CHAT_KP nie otrzymuje dostępu do sieci Firebird ani
+PostgreSQL CTIP. Szczegóły scenariusza znajdują się w
+`docs/bot_identity_directory.md`.
+
 ### Zmienne środowiskowe Google Sheets (FLOW)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -508,7 +569,7 @@ Warstwa HTTP dodaje teraz również podstawowe nagłówki bezpieczeństwa (`X-Fr
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
 2. Dla pracy lokalnej skopiuj `.env.test.example` do `.env.test`, pozostaw `PGDATABASE=ctip_test`, `PBX_HOST=127.0.0.1`, `SMS_TEST_MODE=true` i wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
-3. Wykonaj migracje na lokalnej bazie testowej: `set -a && source .env.test && set +a && alembic upgrade head`.
+3. Przed migracją potwierdź `PGHOST=127.0.0.1` i `PGDATABASE=ctip_test`, wykonaj backup, sprawdź `alembic current`, `alembic heads` i dopiero wtedy uruchom `set -a && source .env.test && set +a && alembic upgrade head`.
    Jeżeli panel `/contracts` zwraca błąd `UndefinedColumnError` dla `ctip.form_request.archive_bucket`, oznacza to brak pełnych migracji i należy ponowić `alembic upgrade head` dla `ctip_test`.
 4. Dodaj pierwszego administratora, np. w SQL: `INSERT INTO ctip.admin_user (email, role, password_hash, is_active) VALUES (...)`; skrót hasła wygeneruj funkcją `hash_password` z `app.services.security`.
 5. Zweryfikuj instalację: `source .venv/bin/activate && pytest` oraz testowe logowanie do `/admin/auth/login` (ciasteczko `HttpOnly` lub nagłówek `X-Admin-Session`).
@@ -945,7 +1006,7 @@ Krotki runbook kolejnej poprawki produkcyjnej po tym porzadkowaniu znajduje sie 
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
-- `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu), `panel_admin_ui.md` (plan interfejsu administratora), `dziennik_2026-02-26.md` (podsumowanie wdrozen z 26 lutego 2026), `dziennik_2026-03-05.md` (podsumowanie prac SharePoint/backup z 5 marca 2026) oraz `dziennik_2026-04-09.md` (domkniecie etapu publicznych formularzy, automatu MS i zmian panelu administratora).
+- `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; `centrum_obslugi_prototyp_2026-07-25.md` opisuje warstwę widoków CRM, a `laboratorium_formularzy_chat_crm_2026-07-27.md` opisuje trwały LAB, kontrakty kanałów, izolację i etapy integracji WordPress/CHAT_KP.
 - `docs/raport` – statyczny raport CPC (HTML + CSV) udostępniany bez logowania pod `http://127.0.0.1:8000/raport`; serwer FastAPI montuje katalog bez prawa zapisu, dzięki czemu pełni rolę tylko-do-odczytu.
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.

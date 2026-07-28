@@ -55,6 +55,7 @@ from app.schemas.admin_ctip import AdminIvrMapEntry
 from app.services import admin_contacts, admin_ivr_map, admin_users, section_permissions
 from app.services.admin_user_imap import load_user_imap_config
 from app.services.backup_runner import BACKUP_DIR, format_backup_size, list_backup_files
+from app.services.bot_identity_directory import directory_status, list_duplicate_groups
 from app.services.call_sms_rules import CALL_SMS_SCENARIO_LABELS
 
 templates = Jinja2Templates(directory="app/templates")
@@ -78,6 +79,23 @@ async def admin_dashboard_partial(
     cards = await compute_status_summary(session)
     return templates.TemplateResponse(
         "admin/partials/dashboard.html", {"request": request, "cards": cards}
+    )
+
+
+@router.get("/admin/partials/bot-identities", response_class=HTMLResponse)
+async def admin_bot_identities_partial(
+    request: Request,
+    _: tuple = Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> HTMLResponse:
+    """Panel świeżości synchronizacji i rozstrzygania duplikatów telefonu."""
+    return templates.TemplateResponse(
+        "admin/partials/bot_identities.html",
+        {
+            "request": request,
+            "status": await directory_status(session),
+            "groups": await list_duplicate_groups(session),
+        },
     )
 
 

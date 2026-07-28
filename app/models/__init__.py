@@ -25,9 +25,22 @@ from .assistant import (  # noqa: F401
     AssistantWeeklyInsight,
 )
 from .base import Base  # noqa: F401
+from .bot_identity import (  # noqa: F401
+    BotDisclosureGrant,
+    BotIdentityBinding,
+    BotIdentityCustomer,
+    BotIdentityDevice,
+    BotIdentityOverride,
+    BotIdentityPhone,
+    BotIdentityResolution,
+    BotIdentitySmsChallenge,
+    BotIdentitySubject,
+    BotIdentitySyncRun,
+)
 from .call import Call  # noqa: F401
 from .call_event import CallEvent  # noqa: F401
 from .contact import Contact, ContactDevice  # noqa: F401
+from .crm import CrmCase, CrmCaseEvent  # noqa: F401
 from .ivr_map import IvrMap  # noqa: F401
 from .sms_out import SmsOut  # noqa: F401
 from .sms_template import SmsTemplate  # noqa: F401

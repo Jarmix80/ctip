@@ -10,6 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.api.routes.admin_backup import start_backup_scheduler, stop_backup_scheduler
 from app.core.config import settings
+from app.services.bot_identity_scheduler import (
+    start_bot_identity_scheduler,
+    stop_bot_identity_scheduler,
+)
 from app.services.contracts_mailbox_scheduler import (
     start_contracts_mailbox_scheduler,
     stop_contracts_mailbox_scheduler,
@@ -17,6 +21,10 @@ from app.services.contracts_mailbox_scheduler import (
 from app.services.contracts_workflow_maintenance import (
     start_contracts_workflow_maintenance_scheduler,
     stop_contracts_workflow_maintenance_scheduler,
+)
+from app.services.crm_retention_scheduler import (
+    start_crm_retention_scheduler,
+    stop_crm_retention_scheduler,
 )
 from app.services.delivery_notifications import (
     start_delivery_notifications_scheduler,
@@ -30,6 +38,7 @@ from app.services.workflow_sheet_status_cache import (
 from app.web.admin_ui import router as admin_ui_router
 from app.web.assistant_ui import router as assistant_ui_router
 from app.web.contracts_ui import router as contracts_ui_router
+from app.web.crm_ui import router as crm_ui_router
 from app.web.delivery_ui import router as delivery_ui_router
 from app.web.device_ui import router as device_ui_router
 from app.web.flow_ui import router as flow_ui_router
@@ -48,6 +57,8 @@ async def _app_lifespan(_: FastAPI):
     contracts_workflow_maintenance_scheduler_started = False
     contracts_mailbox_scheduler_started = False
     delivery_notifications_scheduler_started = False
+    bot_identity_scheduler_started = False
+    crm_retention_scheduler_started = False
     await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
@@ -64,6 +75,12 @@ async def _app_lifespan(_: FastAPI):
     if settings.delivery_notifications_scheduler_enabled:
         await start_delivery_notifications_scheduler()
         delivery_notifications_scheduler_started = True
+    if settings.bot_identity_enabled:
+        await start_bot_identity_scheduler()
+        bot_identity_scheduler_started = True
+    if settings.crm_enabled and settings.crm_retention_scheduler_enabled:
+        await start_crm_retention_scheduler()
+        crm_retention_scheduler_started = True
     try:
         yield
     finally:
@@ -77,6 +94,10 @@ async def _app_lifespan(_: FastAPI):
             await stop_contracts_mailbox_scheduler()
         if delivery_notifications_scheduler_started:
             await stop_delivery_notifications_scheduler()
+        if bot_identity_scheduler_started:
+            await stop_bot_identity_scheduler()
+        if crm_retention_scheduler_started:
+            await stop_crm_retention_scheduler()
 
 
 def create_app() -> FastAPI:
@@ -111,7 +132,17 @@ def create_app() -> FastAPI:
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         if request.url.path.startswith(
-            ("/admin", "/auth", "/flow", "/contracts", "/choice", "/operator", "/delivery")
+            (
+                "/admin",
+                "/auth",
+                "/flow",
+                "/contracts",
+                "/choice",
+                "/operator",
+                "/delivery",
+                "/device",
+                "/crm",
+            )
         ):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
@@ -120,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(assistant_ui_router)
     app.include_router(admin_ui_router)
     app.include_router(contracts_ui_router)
+    app.include_router(crm_ui_router)
     app.include_router(delivery_ui_router)
     app.include_router(device_ui_router)
     app.include_router(flow_ui_router)

@@ -73,3 +73,28 @@
 - Rozszerzono `ctip.form_workflow_case` o kolumny `grenke_contract_start_date` i `kp_contract_start_date`, aby rozdzielić początek umowy GRENKE od początku umowy Ksero-Partner.
 - Rozszerzono `ctip.grenke_contract_end` o kolumnę `grenke_contract_start_date`, kopiowaną z workflow do kalendarza końców umów GRENKE.
 - Migracja uzupełnia `grenke_contract_start_date` z pierwszego wpisu statusu `APPROVED_ORDER`/`APPROVED` w `status_history`, a `kp_contract_start_date` z istniejącego `delivery_date`.
+
+## 2026-07-24
+
+- Dodano centralny katalog tożsamości botów w tabelach `bot_identity_customer`, `bot_identity_subject`, `bot_identity_phone`, `bot_identity_binding` i `bot_identity_device`.
+- Dodano audytowalne rozstrzyganie duplikatów telefonu przez `bot_identity_override` oraz historię prób w `bot_identity_resolution`.
+- Dodano krótkotrwałe uprawnienia `bot_disclosure_grant`; pełny numer seryjny jest dostępny wyłącznie po zaufanym powiązaniu i potwierdzeniu jego aktualności.
+- Dodano historię synchronizacji `bot_identity_sync_run`, progi świeżości 15/60 minut i ochronę przed przypadkową dezaktywacją przy niepełnym odczycie Firebird.
+- Źródłem reguł kont mobilnych jest `Jarmix80/bazams@9e2d36073f943bb9b2926edbf00e55458ddc2cf9`; wartości `KONTAKT.LOCK_USER` nie są odczytywane ani kopiowane.
+
+## 2026-07-27
+
+- Dodano rewizje gałęzi urządzeń `4e2a9c7d1b60`–`c4d8e2f6a1b3` do wspólnego grafu i scalono je z gałęzią umów/dostaw rewizją `d6f1a8c3e740`; graf Alembic ma jeden head.
+- Rozszerzono katalog tożsamości na wszystkich aktywnych klientów, kontakty, telefony firm i urządzenia; konta mobilne zachowują wyższy poziom zaufania.
+- Dodano zaszyfrowany NIP, indeks HMAC NIP oraz stan weryfikacji NIP w rozpoznaniu. Zwykły kontakt wymaga poprawnego NIP przed potwierdzeniem firmy.
+- Dodano haszowane, krótkotrwałe wyzwania SMS dla izolowanego środowiska testowego.
+- Dodano tabele `crm_case` i `crm_case_event` dla trwałych spraw Centrum Obsługi, idempotencji, kolejek, deklarowanego operatora, osi zdarzeń i retencji 360 dni.
+- Reset LAB usuwa wyłącznie sprawy oznaczone `is_lab` i zachowuje zagregowany wpis w `admin_audit_log`.
+- Lokalna baza `ctip_test` została zmigrowana z `c4d8e2f6a1b3` do `e2b7c4d9a610` po wykonaniu zweryfikowanego backupu; nie wykonano migracji produkcyjnej.
+
+## 2026-07-28
+
+- Migracja `a6f3c8d2e910` dodaje losowe i unikalne `bot_identity_device.device_ref`, niezależne od identyfikatora Firebird.
+- Projekcja urządzenia otrzymuje `bot_identity_device.image_url`, synchronizowane z bezpiecznie zweryfikowanego `MODEL.PLIK`.
+- `crm_case.device_refs` zapisuje uporządkowany wybór maksymalnie 20 urządzeń przy zachowaniu zgodności z pojedynczym `device_label`.
+- Pełny numer seryjny w kontrakcie CHAT_KP jest dostępny dopiero po poprawnej weryfikacji SMS; kontrakt wewnętrzny nadal wymaga ważnego i jednorazowego `disclosure_grant`.

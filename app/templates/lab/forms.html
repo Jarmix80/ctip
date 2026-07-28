@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+    <title>Formularze – Centrum Obsługi LAB</title>
+    <link rel="stylesheet" href="/static/lab/lab.css?v=0.1.0">
+    <script defer src="/static/lab/lab.js?v=0.1.0"></script>
+  </head>
+  <body>
+    <main class="lab-shell">
+      <header class="lab-hero">
+        <div>
+          <span class="lab-badge">CTIP LAB · FORMULARZE</span>
+          <h1>Jedno wejście dla wszystkich spraw klientów</h1>
+          <p>
+            Prototypy zastępują formularze Bitrix używane na stronie. Każda próba
+            tworzy wyłącznie sprawę w lokalnym CRM LAB.
+          </p>
+        </div>
+        <aside>
+          <strong>Bezpieczny test</strong>
+          <span>Bez SMS, e-mail i zapisów do Firebird</span>
+        </aside>
+      </header>
+
+      <section class="lab-panel">
+        <div class="lab-panel__intro">
+          <div>
+            <span class="lab-eyebrow">Rodzaj kontaktu</span>
+            <h2>Wybierz cel zgłoszenia</h2>
+          </div>
+          <p>
+            Zestaw obejmuje formularz kontaktowy, produktowy, aplikację KP oraz
+            nowe kanały operacyjne Centrum Obsługi.
+          </p>
+        </div>
+
+        <form class="lab-form" data-lab-form novalidate>
+          <label class="lab-field lab-field--wide">
+            <span>Typ formularza</span>
+            <select name="form_type" data-form-type required>
+              <option value="contact">Kontakt ogólny</option>
+              <option value="product">Produkt, zakup lub wynajem</option>
+              <option value="service">Serwis urządzenia lub pomoc IT</option>
+              <option value="meters">Przekazanie liczników</option>
+              <option value="accounting">Księgowość i dokumenty</option>
+              <option value="contracts">Umowy i rozliczenia</option>
+              <option value="app">Aplikacja Ksero Partner</option>
+            </select>
+          </label>
+
+          <div class="lab-form__section">
+            <h3>Firma i osoba kontaktowa</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Nazwa firmy</span>
+                <input name="company_name" maxlength="300" required>
+              </label>
+              <label class="lab-field">
+                <span>Imię i nazwisko</span>
+                <input name="contact_name" maxlength="200" required>
+              </label>
+              <label class="lab-field">
+                <span>Telefon</span>
+                <input name="phone" type="tel" maxlength="40">
+              </label>
+              <label class="lab-field">
+                <span>Adres e-mail</span>
+                <input name="email" type="email" maxlength="254">
+              </label>
+            </div>
+            <p class="lab-hint">Wymagany jest telefon lub adres e-mail.</p>
+          </div>
+
+          <div class="lab-form__section" data-show-for="product">
+            <h3>Zapytanie o produkt</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Produkt lub model</span>
+                <input name="product_name" maxlength="200">
+              </label>
+              <label class="lab-field">
+                <span>Cel</span>
+                <select name="product_intent">
+                  <option value="wynajem">Wynajem</option>
+                  <option value="zakup">Zakup</option>
+                  <option value="test">Test urządzenia</option>
+                  <option value="dobor">Pomoc w doborze</option>
+                </select>
+              </label>
+              <label class="lab-field">
+                <span>Planowana liczba urządzeń</span>
+                <input name="quantity" type="number" min="1" max="999">
+              </label>
+            </div>
+          </div>
+
+          <div class="lab-form__section" data-show-for="service,meters">
+            <h3>Urządzenie</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Numer seryjny</span>
+                <input name="serial" maxlength="80">
+              </label>
+              <label class="lab-field">
+                <span>Lokalizacja urządzenia</span>
+                <input name="location" maxlength="200">
+              </label>
+            </div>
+          </div>
+
+          <div class="lab-form__section" data-show-for="service">
+            <h3>Rodzaj pomocy</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Obszar</span>
+                <select name="service_area">
+                  <option value="serwis">Awaria lub serwis urządzenia</option>
+                  <option value="materialy">Materiały eksploatacyjne</option>
+                  <option value="it">Pomoc IT lub konfiguracja</option>
+                </select>
+              </label>
+              <label class="lab-field">
+                <span>Kod błędu</span>
+                <input name="error_code" maxlength="80">
+              </label>
+            </div>
+          </div>
+
+          <div class="lab-form__section" data-show-for="meters">
+            <h3>Stany liczników</h3>
+            <div class="lab-form__grid lab-form__grid--three">
+              <label class="lab-field">
+                <span>B/W</span>
+                <input name="meter_bw" type="number" min="0">
+              </label>
+              <label class="lab-field">
+                <span>Kolor</span>
+                <input name="meter_color" type="number" min="0">
+              </label>
+              <label class="lab-field">
+                <span>Skan</span>
+                <input name="meter_scan" type="number" min="0">
+              </label>
+            </div>
+          </div>
+
+          <div class="lab-form__section" data-show-for="accounting">
+            <h3>Dokument księgowy</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Numer faktury lub dokumentu</span>
+                <input name="document_number" maxlength="100">
+              </label>
+              <label class="lab-field">
+                <span>Rodzaj sprawy</span>
+                <select name="accounting_area">
+                  <option value="faktura">Pytanie o fakturę</option>
+                  <option value="platnosc">Płatność lub rozrachunek</option>
+                  <option value="korekta">Korekta dokumentu</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="lab-form__section" data-show-for="contracts">
+            <h3>Umowa</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Numer umowy</span>
+                <input name="contract_number" maxlength="100">
+              </label>
+              <label class="lab-field">
+                <span>Rodzaj sprawy</span>
+                <select name="contract_area">
+                  <option value="warunki">Warunki umowy</option>
+                  <option value="aneks">Aneks lub zmiana</option>
+                  <option value="zakonczenie">Zakończenie lub przedłużenie</option>
+                  <option value="grenke">Umowa GRENKE</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="lab-form__section" data-show-for="app">
+            <h3>Aplikacja Ksero Partner</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Rodzaj sprawy</span>
+                <select name="app_area">
+                  <option value="dostep">Dostęp do aplikacji</option>
+                  <option value="urzadzenie">Urządzenie w aplikacji</option>
+                  <option value="zgloszenie">Zgłoszenie przez aplikację</option>
+                  <option value="inne">Inna pomoc</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <label class="lab-field lab-field--wide">
+            <span>Opis sprawy</span>
+            <textarea name="message" rows="5" maxlength="12000"
+              placeholder="Opisz krótko, czego potrzebujesz."></textarea>
+          </label>
+
+          <label class="lab-consent">
+            <input name="lab_consent" type="checkbox" required>
+            <span>
+              Potwierdzam, że używam danych testowych i rozumiem, że formularz
+              nie wysyła wiadomości do klienta.
+            </span>
+          </label>
+
+          <div class="lab-form__actions">
+            <button class="lab-primary" type="submit">Utwórz sprawę testową</button>
+            <button class="lab-secondary" type="reset">Wyczyść formularz</button>
+          </div>
+          <div class="lab-result" data-lab-result role="status" aria-live="polite" hidden></div>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

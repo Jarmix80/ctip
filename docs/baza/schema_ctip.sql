@@ -1171,3 +1171,38 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 --
 
 \unrestrict ZhoCtUc30GzkxBj7Yh0bzFBbOdWa7nQwYCLFFyI6FrXZAs0p8C43i7qFe78uujG
+-- Katalog tożsamości botów (migracja 71c4e8a2d9f0, 2026-07-24):
+-- ctip.bot_identity_customer
+-- ctip.bot_identity_subject
+-- ctip.bot_identity_phone
+-- ctip.bot_identity_binding
+-- ctip.bot_identity_device
+-- ctip.bot_identity_override
+-- ctip.bot_identity_sync_run
+-- ctip.bot_identity_resolution
+-- ctip.bot_disclosure_grant
+-- Pełna definicja, klucze i ograniczenia są utrzymywane w:
+-- alembic/versions/71c4e8a2d9f0_add_bot_identity_directory.py
+-- Rozszerzenie katalogu i Centrum Obsługi (migracja e2b7c4d9a610, 2026-07-27):
+-- ctip.bot_identity_customer.nip_enc
+-- ctip.bot_identity_customer.nip_hmac
+-- ctip.bot_identity_resolution.nip_failure_count
+-- ctip.bot_identity_resolution.nip_verified_at
+-- ctip.bot_identity_sms_challenge
+-- ctip.crm_case
+-- ctip.crm_case_event
+-- Pełna definicja, klucze i ograniczenia są utrzymywane w:
+-- alembic/versions/e2b7c4d9a610_add_crm_cases_and_nip_verification.py
+-- Bezpieczne referencje i rozszerzony kontrakt urządzeń (migracja a6f3c8d2e910, 2026-07-28):
+-- ctip.bot_identity_device.device_ref
+-- ctip.bot_identity_device.image_url
+-- ctip.crm_case.device_refs
+-- Pełna definicja, backfill UUID i ograniczenia są utrzymywane w:
+-- alembic/versions/a6f3c8d2e910_expand_bot_device_disclosure.py
+-- Wspólny graf migracji urządzeń, dostaw i umów:
+-- alembic/versions/4e2a9c7d1b60_add_device_inventory_registry.py
+-- alembic/versions/7c91e2f4a6b8_add_workflow_sheet_counters.py
+-- alembic/versions/9d4b6f2a1c80_add_device_audit.py
+-- alembic/versions/b5c7d9e1f302_add_device_counters_and_pz_withdrawal.py
+-- alembic/versions/c4d8e2f6a1b3_add_device_theme_to_admin_user.py
+-- alembic/versions/d6f1a8c3e740_merge_device_and_contract_heads.py

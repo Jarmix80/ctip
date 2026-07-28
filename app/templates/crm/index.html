@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>Ksero Partner – Centrum Obsługi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/crm/crm.css?v=0.6.0">
+    <script defer src="/static/crm/crm.js?v=0.6.0"></script>
+  </head>
+  <body data-crm-public-prototype="{{ 'true' if crm_public_prototype_mode else 'false' }}">
+    <div id="crm-app" class="crm-shell" hidden>
+      <aside class="crm-sidebar">
+        <div class="crm-brand">
+          <span class="crm-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" role="img">
+              <path d="M12 10h24a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4h-5l-7 8-7-8h-5a4 4 0 0 1-4-4V14a4 4 0 0 1 4-4Z"></path>
+              <path d="M16 18h16M16 24h10"></path>
+            </svg>
+          </span>
+          <span>
+            <strong>Centrum Obsługi</strong>
+            <small>Ksero Partner</small>
+          </span>
+        </div>
+
+        <nav class="crm-nav" aria-label="Sekcje Centrum Obsługi">
+          <button class="crm-nav-item active" type="button" data-view="home">
+            <span class="crm-nav-icon">⌂</span>
+            <span>Strona główna</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="inbox">
+            <span class="crm-nav-icon">⌁</span>
+            <span>Skrzynka wejściowa</span>
+            <span class="crm-nav-count" data-count="inbox">7</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="my">
+            <span class="crm-nav-icon">◎</span>
+            <span>Moje sprawy</span>
+            <span class="crm-nav-count" data-count="my">3</span>
+          </button>
+          <p class="crm-nav-label">Kolejki działów</p>
+          <button class="crm-nav-item" type="button" data-view="sales">
+            <span class="crm-nav-dot sales"></span>
+            <span>Handel</span>
+            <span class="crm-nav-count" data-count="sales">4</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="service_it">
+            <span class="crm-nav-dot service"></span>
+            <span>Serwis + IT</span>
+            <span class="crm-nav-count" data-count="service_it">3</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="accounting">
+            <span class="crm-nav-dot accounting"></span>
+            <span>Księgowość</span>
+            <span class="crm-nav-count" data-count="accounting">1</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="contracts">
+            <span class="crm-nav-dot contracts"></span>
+            <span>Umowy</span>
+            <span class="crm-nav-count" data-count="contracts">1</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="meters">
+            <span class="crm-nav-dot meters"></span>
+            <span>Liczniki</span>
+            <span class="crm-nav-count" data-count="meters">1</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="other">
+            <span class="crm-nav-dot other"></span>
+            <span>Inne sprawy</span>
+            <span class="crm-nav-count" data-count="other">1</span>
+          </button>
+          <p class="crm-nav-label">Narzędzia</p>
+          <button class="crm-nav-item" type="button" data-view="forms">
+            <span class="crm-nav-icon">▤</span>
+            <span>Formularze WWW</span>
+          </button>
+          <button class="crm-nav-item" type="button" data-view="archive">
+            <span class="crm-nav-icon">□</span>
+            <span>Archiwum</span>
+          </button>
+        </nav>
+
+        <div class="crm-sidebar-footer">
+          <div class="crm-system-status">
+            <span class="crm-status-light"></span>
+            <span>
+              <strong>Izolowany LAB</strong>
+              <small>ctip_test · bez wysyłek</small>
+            </span>
+          </div>
+          <a id="crm-choice-link" href="/choice" class="crm-back-link">Wybór sekcji</a>
+        </div>
+      </aside>
+
+      <main class="crm-main">
+        <header class="crm-topbar">
+          <div>
+            <p id="crm-breadcrumb" class="crm-breadcrumb">Centrum Obsługi / Strona główna</p>
+            <h1 id="crm-page-title">Dzień dobry</h1>
+            <p id="crm-page-lead">Najważniejsze sprawy i kolejki w jednym miejscu.</p>
+          </div>
+          <div class="crm-topbar-actions">
+            <label class="crm-operator-picker">
+              <span>Operator testowy</span>
+              <select id="crm-operator-select" aria-label="Wybierz operatora testowego"></select>
+            </label>
+            <label class="crm-search">
+              <span aria-hidden="true">⌕</span>
+              <input id="crm-global-search" type="search" placeholder="Szukaj sprawy, firmy, telefonu…">
+            </label>
+            <button id="crm-notifications" class="crm-icon-button" type="button" aria-label="Powiadomienia">
+              <span>♢</span>
+              <b>3</b>
+            </button>
+            <button id="crm-user-button" class="crm-user-button" type="button">
+              <span id="crm-user-avatar">MJ</span>
+              <span>
+                <strong id="crm-user-name">Użytkownik</strong>
+                <small id="crm-user-role">Centrum Obsługi</small>
+              </span>
+              <span aria-hidden="true">⌄</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="crm-demo-banner">
+          <span>LAB 0.6.0</span>
+          <p>Sprawy zapisują się w ctip_test. SMS, e-mail i zapis do Firebird pozostają zablokowane.</p>
+          <button id="crm-reset-demo" type="button">Wyczyść dane LAB</button>
+        </section>
+
+        <div id="crm-feedback" class="crm-feedback" hidden></div>
+        <section id="crm-view-root" class="crm-view-root"></section>
+      </main>
+    </div>
+
+    <div id="crm-loading" class="crm-loading">
+      <span></span>
+      <p>Otwieranie Centrum Obsługi…</p>
+    </div>
+
+    <dialog id="crm-case-dialog" class="crm-dialog">
+      <div class="crm-dialog-shell">
+        <header class="crm-dialog-header">
+          <div>
+            <p id="crm-dialog-kicker">Szczegóły sprawy</p>
+            <h2 id="crm-dialog-title">Sprawa</h2>
+          </div>
+          <button class="crm-dialog-close" type="button" data-close-dialog aria-label="Zamknij">×</button>
+        </header>
+        <div id="crm-dialog-body" class="crm-dialog-body"></div>
+      </div>
+    </dialog>
+
+    <dialog id="crm-note-dialog" class="crm-note-dialog">
+      <form id="crm-note-form" method="dialog">
+        <header>
+          <div>
+            <p>Nowa aktywność</p>
+            <h2>Dodaj notatkę do sprawy</h2>
+          </div>
+          <button type="button" data-close-note aria-label="Zamknij">×</button>
+        </header>
+        <label>
+          <span>Treść notatki</span>
+          <textarea id="crm-note-text" rows="5" minlength="3" required placeholder="Zapisz ustalenia lub następny krok…"></textarea>
+        </label>
+        <div class="crm-note-actions">
+          <button type="button" class="crm-button secondary" data-close-note>Anuluj</button>
+          <button type="submit" class="crm-button primary">Dodaj notatkę</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="crm-new-case-dialog" class="crm-new-case-dialog">
+      <form id="crm-new-case-form">
+        <header>
+          <div>
+            <p>Ręczne przyjęcie kontaktu</p>
+            <h2>Nowa sprawa</h2>
+            <small>Zapis pozostaje wyłącznie w pamięci tej karty przeglądarki.</small>
+          </div>
+          <button type="button" data-close-new-case aria-label="Zamknij">×</button>
+        </header>
+        <div class="crm-new-case-grid">
+          <label>
+            <span>Kanał przyjęcia</span>
+            <select id="crm-new-case-source" required>
+              <option value="phone">Telefon</option>
+              <option value="email">E-mail</option>
+              <option value="voice">Voice 998</option>
+              <option value="web_chat">Chat WWW</option>
+              <option value="web_form">Formularz WWW</option>
+            </select>
+          </label>
+          <label>
+            <span>Kolejka docelowa</span>
+            <select id="crm-new-case-department" required>
+              <option value="sales">Handel</option>
+              <option value="service_it">Serwis + IT</option>
+              <option value="accounting">Księgowość</option>
+              <option value="contracts">Umowy</option>
+              <option value="meters">Liczniki</option>
+              <option value="other">Inne sprawy</option>
+            </select>
+          </label>
+          <label>
+            <span>Priorytet</span>
+            <select id="crm-new-case-priority" required>
+              <option value="medium">Standardowy</option>
+              <option value="high">Pilny</option>
+              <option value="low">Niski</option>
+            </select>
+          </label>
+          <label>
+            <span>Firma</span>
+            <input id="crm-new-case-company" required minlength="2" placeholder="Nazwa firmy lub klient indywidualny">
+          </label>
+          <label>
+            <span>Osoba kontaktowa</span>
+            <input id="crm-new-case-contact" required minlength="2" placeholder="Imię i nazwisko">
+          </label>
+          <label>
+            <span>Telefon</span>
+            <input id="crm-new-case-phone" type="tel" placeholder="+48 …">
+          </label>
+          <label>
+            <span>Adres e-mail</span>
+            <input id="crm-new-case-email" type="email" placeholder="adres@firma.pl">
+          </label>
+          <label class="full">
+            <span>Temat sprawy</span>
+            <input id="crm-new-case-subject" required minlength="3" placeholder="Krótki opis potrzeby klienta">
+          </label>
+          <label class="full">
+            <span>Opis rozmowy lub wiadomości</span>
+            <textarea id="crm-new-case-message" rows="5" required minlength="3" placeholder="Najważniejsze informacje, ustalenia i oczekiwania klienta…"></textarea>
+          </label>
+        </div>
+        <footer>
+          <p><strong>Izolowany LAB:</strong> klient nie otrzyma potwierdzenia, a sprawa zapisze się wyłącznie w ctip_test.</p>
+          <div>
+            <button type="button" class="crm-button secondary" data-close-new-case>Anuluj</button>
+            <button type="submit" class="crm-button primary">Dodaj sprawę LAB</button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="crm-transfer-dialog" class="crm-action-dialog">
+      <form id="crm-transfer-form">
+        <header>
+          <div>
+            <p>Przekazanie sprawy</p>
+            <h2>Wybierz użytkownika CTIP</h2>
+            <small>SMS i e-mail zostaną wyłącznie zasymulowane.</small>
+          </div>
+          <button type="button" data-close-action-dialog aria-label="Zamknij">×</button>
+        </header>
+        <div id="crm-transfer-users" class="crm-transfer-users"></div>
+        <div id="crm-transfer-preview" class="crm-action-preview"></div>
+        <footer>
+          <button type="button" class="crm-button secondary" data-close-action-dialog>Anuluj</button>
+          <button type="submit" class="crm-button primary">Przekaż i zasymuluj powiadomienia</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="crm-ms-dialog" class="crm-action-dialog">
+      <form id="crm-ms-form">
+        <header>
+          <div>
+            <p>Menadżer Serwisu</p>
+            <h2>Wpisz jako zlecenie do MS</h2>
+            <small>Operacja testowa — zapis wyłącznie w audycie sprawy, bez Firebird.</small>
+          </div>
+          <button type="button" data-close-action-dialog aria-label="Zamknij">×</button>
+        </header>
+        <div id="crm-ms-summary" class="crm-action-summary"></div>
+        <footer>
+          <button type="button" class="crm-button secondary" data-close-action-dialog>Anuluj</button>
+          <button type="submit" class="crm-button success">Potwierdź symulację zlecenia</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="crm-meter-dialog" class="crm-action-dialog">
+      <form id="crm-meter-form">
+        <header>
+          <div>
+            <p>Kontrola liczników</p>
+            <h2>Zaktualizuj licznik w MS</h2>
+            <small>Porównaj nowy odczyt z ostatnim stanem zapisanym w MS.</small>
+          </div>
+          <button type="button" data-close-action-dialog aria-label="Zamknij">×</button>
+        </header>
+        <div id="crm-meter-device" class="crm-action-summary"></div>
+        <div class="crm-meter-grid">
+          <div class="crm-meter-heading">
+            <span>Typ</span><span>Poprzedni stan</span><span>Nowy odczyt</span>
+          </div>
+          <label>
+            <strong>B/W</strong>
+            <span id="crm-meter-prev-bw">—</span>
+            <input id="crm-meter-new-bw" type="number" min="0" placeholder="Opcjonalnie">
+          </label>
+          <label>
+            <strong>Kolor</strong>
+            <span id="crm-meter-prev-color">—</span>
+            <input id="crm-meter-new-color" type="number" min="0" placeholder="Opcjonalnie">
+          </label>
+          <label>
+            <strong>Skan</strong>
+            <span id="crm-meter-prev-scan">—</span>
+            <input id="crm-meter-new-scan" type="number" min="0" placeholder="Opcjonalnie">
+          </label>
+        </div>
+        <p id="crm-meter-error" class="crm-form-error" hidden></p>
+        <footer>
+          <button type="button" class="crm-button secondary" data-close-action-dialog>Anuluj</button>
+          <button type="submit" class="crm-button success">Sprawdź i zasymuluj aktualizację</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <div id="crm-user-menu" class="crm-user-menu" hidden>
+      <span id="crm-public-menu-info" hidden>LAB w zaufanej sieci LAN</span>
+      <a id="crm-menu-choice-link" href="/choice">Wybór sekcji</a>
+      <button id="crm-logout" type="button">Wyloguj</button>
+    </div>
+  </body>
+</html>
