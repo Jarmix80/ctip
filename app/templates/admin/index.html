@@ -94,6 +94,10 @@
             <span class="icon">📇</span>
             Książka adresowa
           </button>
+          <button :class="{ 'active': section === 'bot-identities' }" @click.prevent="openSection('bot-identities')">
+            <span class="icon">🪪</span>
+            Tożsamości botów
+          </button>
           <button x-show="isAdmin" x-cloak :class="{ 'active': section === 'sql' }" @click.prevent="openSection('sql')">
             <span class="icon">🧪</span>
             Konsola SQL

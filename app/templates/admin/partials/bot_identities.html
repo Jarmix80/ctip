@@ -1,0 +1,69 @@
+<section class="admin-section" id="bot-identities-panel">
+  <div class="section-header">
+    <div>
+      <h2>Tożsamości botów</h2>
+      <p>Synchronizacja kont aplikacji mobilnej i rozstrzyganie wspólnych numerów.</p>
+    </div>
+    <button type="button" onclick="botIdentitySync(this)">Uruchom synchronizację</button>
+  </div>
+
+  <div class="status-grid">
+    <article class="status-card">
+      <h3>Stan katalogu</h3>
+      <strong>{{ status.status }}</strong>
+      <p>Wiek: {{ status.age_seconds if status.age_seconds is not none else "brak danych" }} s</p>
+      <p>Konta: {{ status.accounts_seen }}, firmy: {{ status.customers_seen }},
+        urządzenia: {{ status.devices_seen }}</p>
+      <small>Źródło: {{ status.source_revision }}</small>
+    </article>
+  </div>
+
+  <h3>Numery niejednoznaczne</h3>
+  {% if not groups %}
+    <p>Brak duplikatów wymagających decyzji operatora.</p>
+  {% endif %}
+  {% for group in groups %}
+    <article class="status-card">
+      <h4>Telefon kończący się na {{ group.phone_last4 }}
+        ({{ group.candidate_count }} kont)</h4>
+      {% for candidate in group.candidates %}
+        <form onsubmit="return botIdentityOverride(event)">
+          <input type="hidden" name="phone_ref" value="{{ group.phone_ref }}">
+          <input type="hidden" name="subject_id" value="{{ candidate.subject_id }}">
+          <input type="hidden" name="binding_id" value="{{ candidate.binding_id }}">
+          <span>{{ candidate.display_name or "bez nazwy osoby" }} —
+            {{ candidate.company_name }}</span>
+          <input name="reason" required minlength="3"
+            placeholder="Powód wyboru" value="Zweryfikowano ręcznie">
+          <button type="submit">Ustaw jako domyślne</button>
+        </form>
+      {% endfor %}
+    </article>
+  {% endfor %}
+</section>
+
+<script>
+async function botIdentitySync(button) {
+  button.disabled = true;
+  const response = await fetch("/admin/bot-identities/sync", {method: "POST"});
+  if (!response.ok) alert("Synchronizacja nie powiodła się.");
+  window.htmx.ajax("GET", "/admin/partials/bot-identities", "#admin-content");
+}
+async function botIdentityOverride(event) {
+  event.preventDefault();
+  const values = new FormData(event.target);
+  const response = await fetch("/admin/bot-identities/overrides", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      phone_ref: values.get("phone_ref"),
+      subject_id: Number(values.get("subject_id")),
+      binding_id: Number(values.get("binding_id")),
+      reason: values.get("reason")
+    })
+  });
+  if (!response.ok) alert("Nie udało się zapisać rozstrzygnięcia.");
+  window.htmx.ajax("GET", "/admin/partials/bot-identities", "#admin-content");
+  return false;
+}
+</script>

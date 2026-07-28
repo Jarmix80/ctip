@@ -222,6 +222,8 @@ document.addEventListener("alpine:init", () => {
           return "/admin/partials/sms/history";
         case "contacts":
           return "/admin/partials/contacts";
+        case "bot-identities":
+          return "/admin/partials/bot-identities";
         case "sql":
           return buildUrl(
             "Konsola SQL",

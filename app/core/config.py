@@ -53,6 +53,45 @@ class Settings(BaseSettings):
     test_network_isolation_required: bool = Field(
         default=True, alias="TEST_NETWORK_ISOLATION_REQUIRED"
     )
+    crm_public_prototype_mode: bool = Field(
+        default=False,
+        alias="CRM_PUBLIC_PROTOTYPE_MODE",
+    )
+    crm_enabled: bool = Field(default=False, alias="CRM_ENABLED")
+    crm_lab_mode: bool = Field(default=False, alias="CRM_LAB_MODE")
+    crm_retention_days: int = Field(default=360, alias="CRM_RETENTION_DAYS")
+    crm_auto_archive_days: int = Field(default=30, alias="CRM_AUTO_ARCHIVE_DAYS")
+    crm_retention_scheduler_enabled: bool = Field(
+        default=False,
+        alias="CRM_RETENTION_SCHEDULER_ENABLED",
+    )
+    crm_retention_interval_seconds: int = Field(
+        default=21600,
+        alias="CRM_RETENTION_INTERVAL_SECONDS",
+    )
+    crm_frame_ancestors_raw: str = Field(
+        default=(
+            "'self' "
+            "http://192.168.0.9:8074 "
+            "http://127.0.0.1:8074 "
+            "http://localhost:8074 "
+            "https://ksero-partner.com.pl "
+            "https://www.ksero-partner.com.pl"
+        ),
+        alias="CRM_FRAME_ANCESTORS",
+    )
+    crm_lab_iframe_secret: str | None = Field(
+        default=None,
+        alias="CRM_LAB_IFRAME_SECRET",
+    )
+    crm_lab_chat_base_url: str = Field(
+        default="http://192.168.0.9:8787",
+        alias="CRM_LAB_CHAT_BASE_URL",
+    )
+    crm_lab_proxy_timeout_seconds: float = Field(
+        default=60.0,
+        alias="CRM_LAB_PROXY_TIMEOUT_SECONDS",
+    )
 
     pbx_host: str = Field(default="127.0.0.1", alias="PBX_HOST")
     pbx_port: int = Field(default=5525, alias="PBX_PORT")
@@ -73,6 +112,48 @@ class Settings(BaseSettings):
     fb_password: str = Field(default="masterkey", alias="FB_PASSWORD")
     fb_charset: str = Field(default="UTF8", alias="FB_CHARSET")
     fb_role: str | None = Field(default=None, alias="FB_ROLE")
+    bot_identity_enabled: bool = Field(default=False, alias="BOT_IDENTITY_ENABLED")
+    bot_identity_secret_key: str | None = Field(default=None, alias="BOT_IDENTITY_SECRET_KEY")
+    bot_identity_sync_interval_seconds: int = Field(
+        default=300, alias="BOT_IDENTITY_SYNC_INTERVAL_SECONDS"
+    )
+    bot_identity_warn_after_seconds: int = Field(
+        default=900, alias="BOT_IDENTITY_WARN_AFTER_SECONDS"
+    )
+    bot_identity_block_after_seconds: int = Field(
+        default=3600, alias="BOT_IDENTITY_BLOCK_AFTER_SECONDS"
+    )
+    bot_identity_row_limit: int = Field(default=20000, alias="BOT_IDENTITY_ROW_LIMIT")
+    bot_identity_source_revision: str = Field(
+        default="bazams@9e2d36073f943bb9b2926edbf00e55458ddc2cf9",
+        alias="BOT_IDENTITY_SOURCE_REVISION",
+    )
+    bot_identity_voice_token: str | None = Field(default=None, alias="BOT_IDENTITY_VOICE_TOKEN")
+    bot_identity_chat_token: str | None = Field(default=None, alias="BOT_IDENTITY_CHAT_TOKEN")
+    bot_identity_test_sms_code: str | None = Field(
+        default=None,
+        alias="BOT_IDENTITY_TEST_SMS_CODE",
+    )
+    bot_identity_image_https_hosts_raw: str = Field(
+        default="ksero-partner.com.pl,www.ksero-partner.com.pl",
+        alias="BOT_IDENTITY_IMAGE_HTTPS_HOSTS",
+    )
+    bot_identity_image_lab_http_hosts_raw: str = Field(
+        default="127.0.0.1,localhost,192.168.0.9",
+        alias="BOT_IDENTITY_IMAGE_LAB_HTTP_HOSTS",
+    )
+    bot_identity_model_image_root: str | None = Field(
+        default=None,
+        alias="BOT_IDENTITY_MODEL_IMAGE_ROOT",
+    )
+    bot_identity_image_max_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        alias="BOT_IDENTITY_IMAGE_MAX_BYTES",
+    )
+    bot_identity_image_cache_seconds: int = Field(
+        default=3600,
+        alias="BOT_IDENTITY_IMAGE_CACHE_SECONDS",
+    )
     fb_local_copy_path: str = Field(
         default="inbox/firebird/test_ms_local.fdb", alias="FB_LOCAL_COPY_PATH"
     )
@@ -462,6 +543,43 @@ class Settings(BaseSettings):
             and "TEST" in database_name.upper()
         )
 
+    @property
+    def is_safe_test_firebird(self) -> bool:
+        """Potwierdza lokalną testową bazę Firebird z bezwzględną blokadą zapisu."""
+        host = self.fb_host.strip().lower()
+        database_name = self.fb_database.replace("\\", "/").rsplit("/", maxsplit=1)[-1].upper()
+        return bool(
+            self.fb_mode.strip().lower() == "local"
+            and not self.fb_allow_writes
+            and host
+            in {
+                "127.0.0.1",
+                "localhost",
+                "::1",
+                "firebird",
+                "ctip-prod-mirror-firebird-1",
+            }
+            and "TEST" in database_name
+        )
+
+    @property
+    def bot_identity_image_https_hosts(self) -> set[str]:
+        """Zwraca hosty HTTPS dopuszczone dla zdjęć modeli."""
+        return {
+            value.strip().lower()
+            for value in self.bot_identity_image_https_hosts_raw.split(",")
+            if value.strip()
+        }
+
+    @property
+    def bot_identity_image_lab_http_hosts(self) -> set[str]:
+        """Zwraca laboratoryjne hosty HTTP dopuszczone dla zdjęć modeli."""
+        return {
+            value.strip().lower()
+            for value in self.bot_identity_image_lab_http_hosts_raw.split(",")
+            if value.strip()
+        }
+
     @staticmethod
     def _resolve_host_ips(host: str) -> set[str]:
         """Zwraca zestaw adresów IP rozwiązywanych dla podanego hosta."""
@@ -533,6 +651,19 @@ class Settings(BaseSettings):
             if origin and origin not in origins:
                 origins.append(origin)
         return origins
+
+    @property
+    def crm_frame_ancestors(self) -> str:
+        """Zwraca ograniczoną listę źródeł uprawnionych do osadzenia LAB w iframe."""
+        allowed = ["'self'"]
+        for value in self.crm_frame_ancestors_raw.split():
+            normalized = value.strip()
+            if normalized == "'self'":
+                continue
+            origin = self._normalize_origin(normalized)
+            if origin and origin not in allowed:
+                allowed.append(origin)
+        return " ".join(allowed)
 
     @property
     def public_form_trusted_hosts(self) -> list[str]:

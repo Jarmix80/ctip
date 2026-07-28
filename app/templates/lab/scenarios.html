@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+    <title>Scenariusze – Centrum Obsługi LAB</title>
+    <link rel="stylesheet" href="/static/lab/lab.css?v=0.1.0">
+    <script defer src="/static/lab/lab.js?v=0.1.0"></script>
+  </head>
+  <body>
+    <main class="lab-shell">
+      <header class="lab-hero">
+        <div>
+          <span class="lab-badge">CTIP LAB · SCENARIUSZE</span>
+          <h1>Symulacja wielu kanałów i typów spraw</h1>
+          <p>
+            Każdy scenariusz tworzy nową sprawę z pełnym źródłem, kolejką,
+            priorytetem i przykładową treścią.
+          </p>
+        </div>
+        <aside>
+          <strong>Kontrolowane dane</strong>
+          <span>Wszystkie firmy i osoby są fikcyjne</span>
+        </aside>
+      </header>
+
+      <section class="lab-panel">
+        <div class="lab-panel__intro">
+          <div>
+            <span class="lab-eyebrow">Generator</span>
+            <h2>Dodaj zdarzenie do dyspozytorni</h2>
+          </div>
+          <p>
+            Scenariusze ułatwiają sprawdzenie widoków Kanban, listy i pulpitu
+            dyspozytora bez ręcznego wpisywania danych.
+          </p>
+        </div>
+
+        <div class="scenario-grid" data-scenario-grid>
+          <article class="scenario-card scenario-card--sales">
+            <span>Chat · Handel</span>
+            <h3>Wynajem trzech urządzeń</h3>
+            <p>Nowy klient pyta o ofertę dla dwóch oddziałów i termin wdrożenia.</p>
+            <button type="button" data-scenario="sales_chat">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--sales">
+            <span>Konfigurator · Handel</span>
+            <h3>Zakup urządzenia kolorowego</h3>
+            <p>Klient przeszedł konfigurator i oczekuje porównania dwóch modeli.</p>
+            <button type="button" data-scenario="sales_configurator">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--service">
+            <span>Voice · Serwis + IT</span>
+            <h3>Awaria blokująca druk</h3>
+            <p>Rozpoznany klient zgłasza kod SC542 i pilny przestój urządzenia.</p>
+            <button type="button" data-scenario="service_voice">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--service">
+            <span>Formularz · Serwis + IT</span>
+            <h3>Konfiguracja skanowania</h3>
+            <p>Użytkownik potrzebuje pomocy ze skanowaniem SMB po zmianie serwera.</p>
+            <button type="button" data-scenario="it_form">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--accounting">
+            <span>E-mail · Księgowość</span>
+            <h3>Prośba o korektę faktury</h3>
+            <p>Klient wskazuje błędny adres na dokumencie sprzedażowym.</p>
+            <button type="button" data-scenario="accounting_email">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--contracts">
+            <span>Telefon · Umowy</span>
+            <h3>Kończąca się umowa GRENKE</h3>
+            <p>Klient pyta o wykup urządzenia i wariant przedłużenia współpracy.</p>
+            <button type="button" data-scenario="contract_phone">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--meters">
+            <span>Formularz · Liczniki</span>
+            <h3>Komplet liczników urządzenia</h3>
+            <p>Przekazano licznik B/W, kolor i skan dla rozpoznanego urządzenia.</p>
+            <button type="button" data-scenario="meters_form">Dodaj do kolejki</button>
+          </article>
+          <article class="scenario-card scenario-card--other">
+            <span>Chat · Inne</span>
+            <h3>Niejednoznaczna tożsamość</h3>
+            <p>Numer telefonu pasuje do kilku kont i sprawa wymaga operatora.</p>
+            <button type="button" data-scenario="ambiguous_chat">Dodaj do kolejki</button>
+          </article>
+        </div>
+        <div class="lab-result" data-scenario-result role="status" aria-live="polite" hidden></div>
+      </section>
+    </main>
+  </body>
+</html>
