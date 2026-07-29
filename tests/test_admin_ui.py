@@ -579,8 +579,8 @@ def test_device_page_renders_devices_layout():
     client = TestClient(app)
     response = client.get("/device")
     assert response.status_code == 200
-    assert f"/static/device/device.css?v={app.version}-device-v0.3.1" in response.text
-    assert f"/static/device/device.js?v={app.version}-device-v0.3.1" in response.text
+    assert f"/static/device/device.css?v={app.version}-device-v0.6.0" in response.text
+    assert f"/static/device/device.js?v={app.version}-device-v0.6.0" in response.text
     assert "Obsługa urządzeń" in response.text
     assert "device-user-chip" in response.text
     assert "device-refresh" in response.text
@@ -593,6 +593,13 @@ def test_device_page_renders_devices_layout():
     assert 'id="device-sync-history"' in response.text
     assert 'id="device-event-history"' in response.text
     assert 'href="/device/audit"' in response.text
+    assert 'href="/device/bnp-buyout"' in response.text
+    assert 'href="/device/bnp-buyout/prototypes"' in response.text
+    assert "<strong>Wykup BNP</strong>" in response.text
+    assert 'id="device-bnp-lookup-form"' in response.text
+    assert 'id="device-bnp-create-catalog-action"' in response.text
+    assert "Nie tworzy jeszcze dokumentu PZ i nie zmienia KP maszyny" in response.text
+    assert "przyjmie urządzenie na" in response.text
     assert "Nowy dokument PZ" in response.text
     assert "+ Dodaj urządzenie" in response.text
     assert "Szukaj na liście: model, serial lub numer KP" in response.text
@@ -616,7 +623,7 @@ def test_device_page_renders_devices_layout():
     assert '<option value="blue">Niebieska</option>' in response.text
     assert '<option value="graphite">Grafitowa</option>' in response.text
     assert '<option value="mint">Miętowa</option>' in response.text
-    assert "/device v0.3.1" in response.text
+    assert "/device v0.6.0" in response.text
     assert "device-warehouse-table" in response.text
     assert "device-warehouse-card" in response.text
     assert "Urządzenie / CTIP" in response.text
@@ -658,6 +665,9 @@ def test_device_script_preserves_selected_datalist_model():
     assert "function applyDeviceTheme(" in content
     assert 'fetchDeviceJson("/auth/preferences/device-theme"' in content
     assert 'applyDeviceTheme(me.device_theme || "blue"' in content
+    assert "function buildBnpDefaultItemName(" in content
+    assert "serial ? `S/N:${serial}`" in content
+    assert 'class="device-bnp-summary-head"' in content
     assert 'data-device-detail-row="' in content
     assert 'warehouseBody?.addEventListener("dblclick"' in content
     assert 'warehouseBody?.addEventListener("keydown"' in content
@@ -673,6 +683,8 @@ def test_device_styles_hide_inactive_screens_and_define_responsive_sidebar():
     assert 'body[data-device-theme="mint"]' in content
     assert ".device-table tbody tr:nth-child(even) td" in content
     assert ".device-warehouse-row" in content
+    assert "grid-template-columns: minmax(0, 1fr) 340px" in content
+    assert ".device-bnp-summary-head" in content
     assert "@media (max-width: 760px)" in content
     assert ".device-nav {" in content
     assert "overflow-x: auto" in content
@@ -684,6 +696,7 @@ def test_device_subpages_select_requested_view():
 
     for path, view in (
         ("/device/intake", "intake"),
+        ("/device/bnp-buyout", "bnp-buyout"),
         ("/device/warehouse", "warehouse"),
         ("/device/audit", "audit"),
         ("/device/history", "history"),
@@ -712,6 +725,33 @@ def test_device_intake_prototypes_are_visual_and_test_only():
 
         settings.ctip_runtime_profile = "production"
         production_response = client.get("/device/intake/prototypes")
+        assert production_response.status_code == 404
+    finally:
+        settings.ctip_runtime_profile = previous_profile
+
+
+def test_device_bnp_prototypes_are_visual_and_test_only():
+    previous_profile = settings.ctip_runtime_profile
+    try:
+        settings.ctip_runtime_profile = "test"
+        app = create_app()
+        client = TestClient(app)
+        response = client.get("/device/bnp-buyout/prototypes")
+        assert response.status_code == 200
+        assert "Trzy warianty wyglądu Wykupu BNP" in response.text
+        assert "Karty etapowe" in response.text
+        assert "Panel operacyjny" in response.text
+        assert "dokument i akcje po prawej" not in response.text
+        assert "kafelek urządzenia pozostaje widoczny po prawej" in response.text
+        assert "Kreator 3 kroków" in response.text
+        assert "Makieta – brak zapisu" in response.text
+        assert "Stwórz pozycję ze stanem 0" in response.text
+        assert "Zatwierdź wykup BNP" in response.text
+        assert "/static/device/device.js" not in response.text
+        assert "<script" not in response.text
+
+        settings.ctip_runtime_profile = "production"
+        production_response = client.get("/device/bnp-buyout/prototypes")
         assert production_response.status_code == 404
     finally:
         settings.ctip_runtime_profile = previous_profile

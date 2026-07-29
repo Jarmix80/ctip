@@ -11,7 +11,7 @@ from app.core.config import settings
 templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["device-ui"])
-DEVICE_UI_VERSION = "0.3.1"
+DEVICE_UI_VERSION = "0.6.0"
 
 
 async def _device_template(request: Request, view: str) -> HTMLResponse:
@@ -37,6 +37,23 @@ async def device_page(request: Request) -> HTMLResponse:
 async def device_intake_page(request: Request) -> HTMLResponse:
     """Formularz przyjęcia urządzeń dokumentem PZ."""
     return await _device_template(request, "intake")
+
+
+@router.get("/device/bnp-buyout", response_class=HTMLResponse)
+async def device_bnp_buyout_page(request: Request) -> HTMLResponse:
+    """Formularz wykupu urządzenia po zakończeniu wynajmu BNP."""
+    return await _device_template(request, "bnp-buyout")
+
+
+@router.get("/device/bnp-buyout/prototypes", response_class=HTMLResponse)
+async def device_bnp_buyout_prototypes_page(request: Request) -> HTMLResponse:
+    """Galeria testowych makiet formularza wykupu BNP."""
+    if not settings.is_test_runtime:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse(
+        "device/bnp_buyout_prototypes.html",
+        {"request": request},
+    )
 
 
 @router.get("/device/intake/prototypes", response_class=HTMLResponse)

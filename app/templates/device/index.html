@@ -55,6 +55,10 @@
               <span class="device-nav-symbol" aria-hidden="true">＋</span>
               <span><strong>Przyjęcie PZ</strong><small>Nowe urządzenia</small></span>
             </a>
+            <a href="/device/bnp-buyout" data-device-nav="bnp-buyout">
+              <span class="device-nav-symbol" aria-hidden="true">W</span>
+              <span><strong>Wykup BNP</strong><small>Zmiana KP na WKP</small></span>
+            </a>
             <a href="/device/warehouse" data-device-nav="warehouse">
               <span class="device-nav-symbol" aria-hidden="true">▦</span>
               <span><strong>Magazyn</strong><small>Stan i szczegóły</small></span>
@@ -273,6 +277,151 @@
                    role="alert" aria-live="assertive" hidden></div>
             </aside>
           </div>
+        </section>
+
+        <section class="device-view" data-device-screen="bnp-buyout" hidden>
+          <div class="flow-panel-head">
+            <div>
+              <p class="flow-panel-kicker">Magazyn 27 / Urządzenia Wynajem</p>
+              <h2>Wykup BNP</h2>
+              <p class="flow-panel-lead">
+                Wyszukaj urządzenie po numerze seryjnym, sprawdź klienta i kartoteki,
+                a następnie utwórz PZ wykupu i zmień KP na WKP.
+              </p>
+            </div>
+            {% if show_intake_prototypes %}
+            <a href="/device/bnp-buyout/prototypes" class="flow-secondary">
+              Porównaj 3 prototypy wyglądu
+            </a>
+            {% endif %}
+          </div>
+
+          <section class="flow-card device-bnp-panel">
+            <form id="device-bnp-lookup-form" class="device-bnp-search">
+              <label>
+                <span>Numer seryjny z dokumentu BNP</span>
+                <input
+                  id="device-bnp-serial"
+                  type="text"
+                  maxlength="100"
+                  autocomplete="off"
+                  placeholder="Wpisz pełny numer seryjny"
+                >
+              </label>
+              <button id="device-bnp-lookup-btn" type="submit" class="flow-action-btn">
+                Wyszukaj urządzenie
+              </button>
+            </form>
+
+            <section id="device-bnp-result" class="device-bnp-result" hidden>
+              <div id="device-bnp-machine-summary" class="device-bnp-summary"></div>
+              <div id="device-bnp-blockers" class="device-bnp-messages error" hidden></div>
+              <div id="device-bnp-warnings" class="device-bnp-messages warn" hidden></div>
+
+              <div class="device-table-wrap">
+                <table class="flow-table device-table">
+                  <thead>
+                    <tr>
+                      <th>Magazyn</th>
+                      <th>Pozycja</th>
+                      <th>Nazwa</th>
+                      <th>Stan</th>
+                      <th>Cena zakupu</th>
+                    </tr>
+                  </thead>
+                  <tbody id="device-bnp-warehouse-body">
+                    <tr>
+                      <td colspan="5">Brak kartotek magazynowych.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <section class="device-bnp-form-grid">
+                <label>
+                  <span>Docelowa ewidencja MASZYNA</span>
+                  <input id="device-bnp-target-ewidencja" type="text" maxlength="100">
+                </label>
+                <label>
+                  <span>Indeks kartoteki magazynu 27</span>
+                  <input id="device-bnp-warehouse-index" type="text" maxlength="100">
+                </label>
+                <label>
+                  <span>Numer dokumentu BNP</span>
+                  <input id="device-bnp-document" type="text" maxlength="30">
+                </label>
+                <label>
+                  <span>Data dokumentu BNP</span>
+                  <input id="device-bnp-document-date" type="date">
+                </label>
+                <label class="device-bnp-name-field">
+                  <span>Nazwa pozycji z dokumentu</span>
+                  <input id="device-bnp-item-name" type="text" maxlength="250">
+                </label>
+                <label>
+                  <span>Cena wykupu netto</span>
+                  <input id="device-bnp-price-netto" type="number" min="0.01" step="0.01">
+                </label>
+                <label>
+                  <span>Wartość brutto (VAT 23%)</span>
+                  <input id="device-bnp-price-brutto" type="text" readonly>
+                </label>
+              </section>
+
+              <section class="device-bnp-actions">
+                <article
+                  id="device-bnp-create-catalog-action"
+                  class="device-bnp-action-card device-bnp-action-card-catalog"
+                  hidden
+                >
+                  <div>
+                    <span class="device-bnp-action-step">Krok przygotowawczy</span>
+                    <h3>Brakuje pozycji na magazynie 27</h3>
+                    <p>
+                      Przycisk utworzy kartotekę <strong>WKP</strong> ze stanem
+                      <strong>0 szt.</strong> Nie tworzy jeszcze dokumentu PZ i nie zmienia KP maszyny.
+                    </p>
+                  </div>
+                  <button
+                    id="device-bnp-create-catalog-btn"
+                    type="button"
+                    class="device-bnp-action-button device-bnp-action-button-catalog"
+                  >
+                    Stwórz pozycję ze stanem 0
+                  </button>
+                </article>
+                <label class="device-check">
+                  <input id="device-bnp-confirm" type="checkbox">
+                  <span>Potwierdzam dane dokumentu, zmianę KP na WKP i przyjęcie ilości 1.</span>
+                </label>
+                <article class="device-bnp-action-card device-bnp-action-card-complete">
+                  <div>
+                    <span class="device-bnp-action-step">Operacja końcowa</span>
+                    <h3>Zapisz wykup BNP</h3>
+                    <p>
+                      Przycisk utworzy PZ z ilością <strong>1 szt.</strong>, przyjmie urządzenie na
+                      magazyn 27 oraz zmieni oznaczenie maszyny z <strong>KP</strong> na
+                      <strong>WKP</strong>.
+                    </p>
+                  </div>
+                  <button
+                    id="device-bnp-complete-btn"
+                    type="button"
+                    class="device-bnp-action-button device-bnp-action-button-complete"
+                    disabled
+                  >
+                    Zatwierdź wykup BNP
+                  </button>
+                </article>
+              </section>
+
+              <p id="device-bnp-status" class="flow-message" hidden></p>
+              <section id="device-bnp-final-result" class="device-bnp-final-result" hidden>
+                <h3>Potwierdzenie wykupu BNP</h3>
+                <p id="device-bnp-final-result-text"></p>
+              </section>
+            </section>
+          </section>
         </section>
 
         <section class="device-view" data-device-screen="warehouse" hidden>

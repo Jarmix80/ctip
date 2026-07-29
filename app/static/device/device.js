@@ -18,6 +18,7 @@ const deviceState = {
   auditPages: 1,
   auditPollTimer: null,
   withdrawalOperation: null,
+  bnpLookup: null,
 };
 
 function applyDeviceTheme(theme, { persist = false } = {}) {
@@ -1561,6 +1562,417 @@ async function loadIntake() {
   renderIntakeItems();
 }
 
+function setBnpStatus(message = "", variant = "info") {
+  const element = document.getElementById("device-bnp-status");
+  if (!element) {
+    return;
+  }
+  element.textContent = message;
+  element.hidden = !message;
+  element.classList.toggle("flow-message-error", variant === "error");
+  element.classList.toggle("flow-message-info", variant !== "error");
+}
+
+function renderBnpMessageList(elementId, messages) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    return;
+  }
+  const rows = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  element.innerHTML = rows.length
+    ? `<ul>${rows.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ul>`
+    : "";
+  element.hidden = rows.length === 0;
+}
+
+function localIsoDate() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function updateBnpGross() {
+  const input = document.getElementById("device-bnp-price-netto");
+  const output = document.getElementById("device-bnp-price-brutto");
+  if (!input || !output) {
+    return;
+  }
+  const value = Number(String(input.value || "").trim().replace(",", "."));
+  output.value =
+    Number.isFinite(value) && value > 0
+      ? (value * 1.23).toLocaleString("pl-PL", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
+      : "";
+}
+
+function updateBnpCompleteState() {
+  const button = document.getElementById("device-bnp-complete-btn");
+  const confirmation = document.getElementById("device-bnp-confirm");
+  const fieldIds = [
+    "device-bnp-target-ewidencja",
+    "device-bnp-warehouse-index",
+    "device-bnp-document",
+    "device-bnp-document-date",
+    "device-bnp-item-name",
+    "device-bnp-price-netto",
+  ];
+  if (!button || !confirmation) {
+    return;
+  }
+  const fieldsComplete = fieldIds.every(
+    (fieldId) => String(document.getElementById(fieldId)?.value || "").trim().length > 0
+  );
+  button.disabled = !(
+    deviceState.bnpLookup?.can_complete &&
+    deviceState.bnpLookup?.target_item &&
+    confirmation.checked &&
+    fieldsComplete
+  );
+}
+
+function clearBnpFinalResult() {
+  const result = document.getElementById("device-bnp-final-result");
+  const text = document.getElementById("device-bnp-final-result-text");
+  if (text) {
+    text.textContent = "";
+  }
+  if (result) {
+    result.hidden = true;
+  }
+}
+
+function buildBnpDefaultItemName(machine, fallbackSerial = "") {
+  if (!machine) {
+    return "";
+  }
+  const deviceName = [machine.marka, machine.model].filter(Boolean).join(" ").trim();
+  const serial = String(machine.serial || machine.serial2 || fallbackSerial).trim();
+  return [deviceName, serial ? `S/N:${serial}` : ""].filter(Boolean).join(" ");
+}
+
+function renderBnpLookup(lookup, preserved = {}) {
+  deviceState.bnpLookup = lookup || null;
+  const result = document.getElementById("device-bnp-result");
+  const summary = document.getElementById("device-bnp-machine-summary");
+  const warehouseBody = document.getElementById("device-bnp-warehouse-body");
+  const machine = lookup?.machine;
+  const supplier = lookup?.supplier;
+  if (!result || !summary || !warehouseBody) {
+    return;
+  }
+
+  if (machine) {
+    const serial = machine.serial || machine.serial2 || lookup.serial;
+    summary.innerHTML = `
+      <header class="device-bnp-summary-head">
+        <span>Znalezione urządzenie</span>
+        <strong>${escapeHtml(
+          `${machine.marka || ""} ${machine.model || ""}`.trim() || "Urządzenie"
+        )}</strong>
+        <small>Dane powiązane z numerem seryjnym w lokalnym Firebird.</small>
+      </header>
+      <article><span>Klient</span><strong>${escapeHtml(
+        machine.client_name || `ID ${machine.id_klient || "—"}`
+      )}</strong></article>
+      <article><span>Urządzenie</span><strong>${escapeHtml(
+        `${machine.marka || ""} ${machine.model || ""}`.trim() || "—"
+      )}</strong></article>
+      <article><span>Serial / KP</span><strong>${escapeHtml(serial || "—")}<br>${escapeHtml(
+        machine.ewidencja || "—"
+      )}</strong></article>
+      <article><span>Dostawca wykupu</span><strong>${escapeHtml(
+        supplier?.name || "Nie znaleziono BNP"
+      )}</strong></article>
+    `;
+  } else {
+    summary.innerHTML = `
+      <header class="device-bnp-summary-head">
+        <span>Wynik wyszukiwania</span>
+        <strong>Brak jednoznacznego urządzenia</strong>
+        <small>Sprawdź numer seryjny albo wyjaśnij znalezione blokady.</small>
+      </header>
+      <article><span>Wynik</span><strong>Brak jednoznacznego urządzenia</strong></article>
+    `;
+  }
+
+  renderBnpMessageList("device-bnp-blockers", lookup?.blockers);
+  renderBnpMessageList("device-bnp-warnings", lookup?.warnings);
+  const warehouseRows = Array.isArray(lookup?.warehouse_rows) ? lookup.warehouse_rows : [];
+  warehouseBody.innerHTML = warehouseRows.length
+    ? warehouseRows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(
+                `${row.id_magazyn ?? "—"}${row.warehouse_name ? ` / ${row.warehouse_name}` : ""}`
+              )}</td>
+              <td>${escapeHtml(row.index || "—")}</td>
+              <td>${escapeHtml(row.name || "—")}</td>
+              <td>${escapeHtml(row.quantity ?? 0)}</td>
+              <td>${escapeHtml(row.purchase_price ?? row.net_price ?? 0)} zł</td>
+            </tr>
+          `
+        )
+        .join("")
+    : '<tr><td colspan="5">Brak kartotek magazynowych.</td></tr>';
+
+  document.getElementById("device-bnp-target-ewidencja").value =
+    preserved.targetEwidencja || lookup?.suggested_ewidencja || "";
+  document.getElementById("device-bnp-warehouse-index").value =
+    preserved.warehouseIndex || lookup?.suggested_index || "";
+  document.getElementById("device-bnp-document").value = preserved.document || "";
+  document.getElementById("device-bnp-document-date").value =
+    preserved.documentDate || localIsoDate();
+  document.getElementById("device-bnp-item-name").value =
+    preserved.itemName || buildBnpDefaultItemName(machine, lookup?.serial);
+  document.getElementById("device-bnp-price-netto").value = preserved.priceNetto || "";
+  document.getElementById("device-bnp-confirm").checked = false;
+  document.getElementById("device-bnp-create-catalog-action").hidden =
+    !lookup?.can_create_catalog;
+  result.hidden = false;
+  updateBnpGross();
+  updateBnpCompleteState();
+}
+
+async function loadBnpLookup({ preserveForm = false } = {}) {
+  const serialInput = document.getElementById("device-bnp-serial");
+  const serial = String(serialInput?.value || "").trim();
+  if (!serial) {
+    throw new Error("Podaj numer seryjny z dokumentu BNP.");
+  }
+  const preserved = preserveForm
+    ? {
+        targetEwidencja: document.getElementById("device-bnp-target-ewidencja")?.value,
+        warehouseIndex: document.getElementById("device-bnp-warehouse-index")?.value,
+        document: document.getElementById("device-bnp-document")?.value,
+        documentDate: document.getElementById("device-bnp-document-date")?.value,
+        itemName: document.getElementById("device-bnp-item-name")?.value,
+        priceNetto: document.getElementById("device-bnp-price-netto")?.value,
+      }
+    : {};
+  const response = await fetchDeviceJson(
+    `/admin/device/bnp-buyout/lookup?serial=${encodeURIComponent(serial)}`
+  );
+  renderBnpLookup(response.lookup || {}, preserved);
+  return response.lookup || {};
+}
+
+function validateBnpIdentifiers() {
+  const sourceValue = String(deviceState.bnpLookup?.machine?.ewidencja || "")
+    .trim()
+    .toUpperCase();
+  const sourceMatch = sourceValue.match(/^KP\/(\d+)(?:\/.*)?$/);
+  if (!sourceMatch) {
+    throw new Error("Źródłowa ewidencja urządzenia nie ma formatu KP/<numer>/...");
+  }
+  [
+    ["Docelowa ewidencja", "device-bnp-target-ewidencja"],
+    ["Indeks magazynowy", "device-bnp-warehouse-index"],
+  ].forEach(([label, fieldId]) => {
+    const match = String(document.getElementById(fieldId)?.value || "")
+      .trim()
+      .toUpperCase()
+      .match(/^WKP\/(\d+)(?:\/.*)?$/);
+    if (!match) {
+      throw new Error(`${label} musi mieć format WKP/<numer>/...`);
+    }
+    if (match[1] !== sourceMatch[1]) {
+      throw new Error(`${label} musi zachować numer KP/${sourceMatch[1]}.`);
+    }
+  });
+}
+
+function readBnpDocumentFields() {
+  const itemName = String(document.getElementById("device-bnp-item-name")?.value || "").trim();
+  const externalDocument = String(
+    document.getElementById("device-bnp-document")?.value || ""
+  ).trim();
+  const documentDate = String(
+    document.getElementById("device-bnp-document-date")?.value || ""
+  ).trim();
+  const priceNetto = Number(
+    String(document.getElementById("device-bnp-price-netto")?.value || "")
+      .trim()
+      .replace(",", ".")
+  );
+  if (!itemName) {
+    throw new Error("Podaj nazwę pozycji z dokumentu BNP.");
+  }
+  if (!externalDocument) {
+    throw new Error("Podaj numer dokumentu BNP.");
+  }
+  if (!documentDate) {
+    throw new Error("Podaj datę dokumentu BNP.");
+  }
+  if (!Number.isFinite(priceNetto) || priceNetto <= 0) {
+    throw new Error("Cena netto wykupu musi być większa od 0.");
+  }
+  return {
+    itemName,
+    externalDocument,
+    documentDate,
+    priceNetto: Number(priceNetto.toFixed(4)),
+  };
+}
+
+async function loadBnpView() {
+  const dateInput = document.getElementById("device-bnp-document-date");
+  if (dateInput && !dateInput.value) {
+    dateInput.value = localIsoDate();
+  }
+}
+
+function bindBnpEvents() {
+  document.getElementById("device-bnp-lookup-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setError("");
+    setInfo("");
+    clearBnpFinalResult();
+    const button = document.getElementById("device-bnp-lookup-btn");
+    setButtonBusy(button, true, "Wyszukiwanie…", "Wyszukaj urządzenie");
+    setBnpStatus("Wyszukiwanie urządzenia i kartotek…");
+    try {
+      const lookup = await loadBnpLookup();
+      if (Array.isArray(lookup.blockers) && lookup.blockers.length) {
+        setBnpStatus("Wyszukiwanie zakończone z blokadami.", "error");
+      } else if (lookup.can_create_catalog) {
+        setBnpStatus(
+          "Brak kartoteki magazynu 27. Uzupełnij nazwę i utwórz pozycję ze stanem 0."
+        );
+      } else {
+        setBnpStatus("Urządzenie i kartoteka są gotowe do wykupu.");
+      }
+    } catch (error) {
+      setError(error.message);
+      setBnpStatus(error.message, "error");
+    } finally {
+      setButtonBusy(button, false, "Wyszukiwanie…", "Wyszukaj urządzenie");
+    }
+  });
+
+  document
+    .getElementById("device-bnp-create-catalog-btn")
+    ?.addEventListener("click", async () => {
+      setError("");
+      setInfo("");
+      clearBnpFinalResult();
+      const button = document.getElementById("device-bnp-create-catalog-btn");
+      try {
+        if (!deviceState.bnpLookup?.machine || !deviceState.bnpLookup?.can_create_catalog) {
+          throw new Error("Brak urządzenia gotowego do utworzenia kartoteki.");
+        }
+        validateBnpIdentifiers();
+        const itemName = String(
+          document.getElementById("device-bnp-item-name")?.value || ""
+        ).trim();
+        if (!itemName) {
+          throw new Error("Podaj nazwę pozycji z dokumentu BNP.");
+        }
+        setButtonBusy(button, true, "Tworzenie…", "Stwórz pozycję ze stanem 0");
+        const response = await fetchDeviceJson("/admin/device/bnp-buyout/catalog", {
+          method: "POST",
+          timeoutMs: 60000,
+          body: {
+            serial: document.getElementById("device-bnp-serial").value.trim(),
+            machine_table_id: Number(deviceState.bnpLookup.machine.id_maszyna_table),
+            expected_ewidencja: String(deviceState.bnpLookup.machine.ewidencja || "").trim(),
+            warehouse_index: document
+              .getElementById("device-bnp-warehouse-index")
+              .value.trim(),
+            item_name: itemName,
+          },
+        });
+        setInfo(response.message || "Kartoteka wykupu BNP została przygotowana.");
+        await loadBnpLookup({ preserveForm: true });
+        setBnpStatus("Kartoteka istnieje na magazynie 27 ze stanem 0.");
+      } catch (error) {
+        setError(error.message);
+        setBnpStatus(error.message, "error");
+      } finally {
+        setButtonBusy(button, false, "Tworzenie…", "Stwórz pozycję ze stanem 0");
+      }
+    });
+
+  document.getElementById("device-bnp-complete-btn")?.addEventListener("click", async () => {
+    setError("");
+    setInfo("");
+    clearBnpFinalResult();
+    const button = document.getElementById("device-bnp-complete-btn");
+    try {
+      if (
+        !deviceState.bnpLookup?.machine ||
+        !deviceState.bnpLookup?.target_item ||
+        !deviceState.bnpLookup?.can_complete
+      ) {
+        throw new Error("Urządzenie lub kartoteka nie są gotowe do finalizacji wykupu.");
+      }
+      if (!document.getElementById("device-bnp-confirm").checked) {
+        throw new Error("Potwierdź dane i zakres operacji wykupu BNP.");
+      }
+      validateBnpIdentifiers();
+      const documentFields = readBnpDocumentFields();
+      setButtonBusy(button, true, "Zapisywanie…", "Zatwierdź wykup BNP");
+      const response = await fetchDeviceJson("/admin/device/bnp-buyout/complete", {
+        method: "POST",
+        timeoutMs: 60000,
+        body: {
+          serial: document.getElementById("device-bnp-serial").value.trim(),
+          machine_table_id: Number(deviceState.bnpLookup.machine.id_maszyna_table),
+          warehouse_item_id: Number(deviceState.bnpLookup.target_item.id_magazyn_table),
+          expected_ewidencja: String(deviceState.bnpLookup.machine.ewidencja || "").trim(),
+          target_ewidencja: document
+            .getElementById("device-bnp-target-ewidencja")
+            .value.trim(),
+          warehouse_index: document
+            .getElementById("device-bnp-warehouse-index")
+            .value.trim(),
+          item_name: documentFields.itemName,
+          external_document: documentFields.externalDocument,
+          document_date: documentFields.documentDate,
+          purchase_price_netto: documentFields.priceNetto,
+        },
+      });
+      const buyout = response.buyout || {};
+      deviceState.bnpLookup.can_complete = false;
+      document.getElementById("device-bnp-confirm").checked = false;
+      document.getElementById("device-bnp-create-catalog-action").hidden = true;
+      document.getElementById("device-bnp-final-result-text").textContent =
+        `${buyout.pz_number || "PZ"} | ${buyout.previous_ewidencja || "KP"} → ` +
+        `${buyout.target_ewidencja || "WKP"} | magazyn 27: ${
+          buyout.warehouse_quantity ?? 1
+        }.`;
+      document.getElementById("device-bnp-final-result").hidden = false;
+      setInfo(response.message || "Wykup BNP został zapisany.");
+      setBnpStatus("Wykup BNP zapisany poprawnie.");
+    } catch (error) {
+      setError(error.message);
+      setBnpStatus(error.message, "error");
+    } finally {
+      setButtonBusy(button, false, "Zapisywanie…", "Zatwierdź wykup BNP");
+      updateBnpCompleteState();
+    }
+  });
+
+  [
+    "device-bnp-target-ewidencja",
+    "device-bnp-warehouse-index",
+    "device-bnp-document",
+    "device-bnp-document-date",
+    "device-bnp-item-name",
+    "device-bnp-price-netto",
+  ].forEach((fieldId) => {
+    document.getElementById(fieldId)?.addEventListener("input", () => {
+      updateBnpGross();
+      updateBnpCompleteState();
+    });
+  });
+  document
+    .getElementById("device-bnp-confirm")
+    ?.addEventListener("change", updateBnpCompleteState);
+}
+
 async function loadCurrentView() {
   setError("");
   const refreshButton = document.getElementById("device-refresh");
@@ -1570,6 +1982,8 @@ async function loadCurrentView() {
       await loadHome();
     } else if (deviceState.view === "intake") {
       await loadIntake();
+    } else if (deviceState.view === "bnp-buyout") {
+      await loadBnpView();
     } else if (deviceState.view === "warehouse") {
       await loadWarehouse();
     } else if (deviceState.view === "audit") {
@@ -1908,6 +2322,7 @@ async function initializeDevicePage() {
   }
 
   bindIntakeEvents();
+  bindBnpEvents();
   bindWarehouseEvents();
   bindHistoryEvents();
   bindIssueEvents();

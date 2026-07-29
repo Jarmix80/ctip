@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – Prototypy Wykupu BNP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/flow/flow.css">
+    <link
+      rel="stylesheet"
+      href="/static/device/bnp_buyout_prototypes.css?v={{ request.app.version }}-bnp-prototypes-1"
+    >
+  </head>
+  <body id="top">
+    <main class="prototype-shell">
+      <header class="prototype-hero">
+        <div>
+          <p class="prototype-kicker">CTIP / URZĄDZENIA / ŚRODOWISKO TESTOWE</p>
+          <h1>Trzy warianty wyglądu Wykupu BNP</h1>
+          <p>
+            Każdy wariant ma większe pola, czytelniejszą typografię oraz dokładny opis skutków
+            przycisków. Makiety nie zapisują danych.
+          </p>
+        </div>
+        <a href="/device/bnp-buyout" class="prototype-back">Wróć do działającego Wykupu BNP</a>
+      </header>
+
+      <aside class="prototype-warning" role="note">
+        <strong>Makieta – brak zapisu</strong>
+        <span>Przyciski są wyłączone. Firebird i PostgreSQL nie są wywoływane.</span>
+      </aside>
+
+      <nav class="prototype-jump" aria-label="Wybór wariantu makiety">
+        <a href="#wariant-etapy">
+          <span>01</span>
+          <strong>Karty etapowe</strong>
+          <small>Najczytelniejszy przebieg całej operacji</small>
+        </a>
+        <a href="#wariant-panel">
+          <span>02</span>
+          <strong>Panel operacyjny</strong>
+          <small>Najwięcej informacji bez przewijania</small>
+        </a>
+        <a href="#wariant-kreator">
+          <span>03</span>
+          <strong>Kreator 3 kroków</strong>
+          <small>Największa ochrona przed pomyłką</small>
+        </a>
+      </nav>
+
+      <section id="wariant-etapy" class="prototype-section">
+        <header class="prototype-section-head">
+          <div>
+            <p>Wariant 01</p>
+            <h2>Karty etapowe</h2>
+            <span>Cały proces jest widoczny na jednej stronie i podzielony na trzy duże części.</span>
+          </div>
+          <span class="prototype-tag recommended">Rekomendowany</span>
+        </header>
+
+        <div class="mock-app cards-app">
+          <header class="mock-topbar">
+            <div>
+              <small>MAGAZYN 27 / URZĄDZENIA WYNAJEM</small>
+              <strong>Wykup BNP</strong>
+            </div>
+            <span class="mock-status">Dokument roboczy</span>
+          </header>
+
+          <div class="cards-content">
+            <section class="step-card complete">
+              <header class="step-card-head">
+                <span class="step-number">1</span>
+                <div>
+                  <small>IDENTYFIKACJA</small>
+                  <h3>Znajdź urządzenie</h3>
+                  <p>Wpisz pełny numer seryjny z dokumentu BNP.</p>
+                </div>
+                <span class="step-state">Znaleziono</span>
+              </header>
+              <div class="search-row">
+                <label>
+                  <span>Numer seryjny</span>
+                  <div class="mock-input strong">3122MA10548</div>
+                </label>
+                <button type="button" class="mock-button search" disabled>Wyszukaj urządzenie</button>
+              </div>
+              <div class="device-summary">
+                <article><span>Klient</span><strong>Ksero-Partner Poznań</strong></article>
+                <article><span>Urządzenie</span><strong>Ricoh IM C3000</strong></article>
+                <article><span>Numer KP</span><strong>KP/5212/E/R/</strong></article>
+                <article><span>Magazyn 27</span><strong class="warning-text">Brak pozycji</strong></article>
+              </div>
+            </section>
+
+            <section class="step-card">
+              <header class="step-card-head">
+                <span class="step-number">2</span>
+                <div>
+                  <small>DANE DOKUMENTU</small>
+                  <h3>Uzupełnij dane wykupu</h3>
+                  <p>Duże pola i podpowiedzi ograniczają ryzyko błędnego zapisu.</p>
+                </div>
+              </header>
+              <div class="field-grid">
+                <label><span>Docelowa ewidencja</span><div class="mock-input strong">WKP/5212/E/R/</div></label>
+                <label><span>Indeks magazynowy</span><div class="mock-input strong">WKP/5212/BNP</div></label>
+                <label><span>Numer dokumentu BNP</span><div class="mock-input placeholder">Wpisz numer dokumentu</div></label>
+                <label><span>Data dokumentu BNP</span><div class="mock-input strong">29.07.2026</div></label>
+                <label class="wide">
+                  <span>Nazwa pozycji z dokumentu</span>
+                  <div class="mock-input strong">Ricoh IM C3000 S/N:3122MA10548</div>
+                </label>
+                <label><span>Cena wykupu netto</span><div class="mock-input placeholder">0,00 zł</div></label>
+                <label><span>Wartość brutto</span><div class="mock-input locked">0,00 zł / VAT 23%</div></label>
+              </div>
+            </section>
+
+            <section class="action-stack">
+              <article class="action-card catalog">
+                <div class="action-icon">0</div>
+                <div>
+                  <small>KROK PRZYGOTOWAWCZY</small>
+                  <h3>Utwórz brakującą kartotekę</h3>
+                  <p>
+                    Powstanie pozycja <strong>WKP/5212/BNP</strong> na magazynie 27 ze stanem
+                    <strong>0 szt.</strong> Bez PZ i bez zmiany KP.
+                  </p>
+                </div>
+                <button type="button" class="mock-button catalog" disabled>
+                  Stwórz pozycję ze stanem 0
+                </button>
+              </article>
+              <article class="action-card final">
+                <div class="action-icon">1</div>
+                <div>
+                  <small>OPERACJA KOŃCOWA</small>
+                  <h3>Zatwierdź wykup BNP</h3>
+                  <p>
+                    System utworzy PZ na <strong>1 szt.</strong>, przyjmie urządzenie na magazyn 27
+                    oraz zmieni <strong>KP</strong> na <strong>WKP</strong>.
+                  </p>
+                </div>
+                <button type="button" class="mock-button final" disabled>Zatwierdź wykup BNP</button>
+              </article>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="wariant-panel" class="prototype-section">
+        <header class="prototype-section-head">
+          <div>
+            <p>Wariant 02</p>
+            <h2>Panel operacyjny</h2>
+            <span>Dokument i akcje są po lewej, a kafelek urządzenia pozostaje widoczny po prawej.</span>
+          </div>
+          <span class="prototype-tag">Duży monitor</span>
+        </header>
+
+        <div class="mock-app split-app">
+          <header class="mock-topbar">
+            <div>
+              <small>WYKUP URZĄDZENIA PO WYNAJMIE</small>
+              <strong>Dokument BNP / nowa operacja</strong>
+            </div>
+            <button type="button" class="mock-button quiet" disabled>Wyczyść formularz</button>
+          </header>
+
+          <div class="split-layout">
+            <aside class="device-panel">
+              <label class="panel-search">
+                <span>Numer seryjny z dokumentu</span>
+                <div class="mock-input strong">3122MA10548</div>
+              </label>
+              <button type="button" class="mock-button search full" disabled>Wyszukaj</button>
+
+              <div class="device-identity">
+                <div class="device-avatar">IM</div>
+                <div><small>URZĄDZENIE</small><h3>Ricoh IM C3000</h3><p>S/N: 3122MA10548</p></div>
+              </div>
+              <dl class="panel-details">
+                <div><dt>Klient</dt><dd>Ksero-Partner Poznań</dd></div>
+                <div><dt>Obecny numer</dt><dd>KP/5212/E/R/</dd></div>
+                <div><dt>Docelowy numer</dt><dd>WKP/5212/E/R/</dd></div>
+                <div><dt>Magazyn 27</dt><dd class="warning-text">Brak kartoteki</dd></div>
+              </dl>
+              <div class="panel-note">
+                <strong>Sprawdzenie zakończone</strong>
+                <span>Urządzenie może przejść do przygotowania kartoteki.</span>
+              </div>
+            </aside>
+
+            <div class="document-panel">
+              <header>
+                <small>DOKUMENT I POZYCJA</small>
+                <h3>Dane wykupu</h3>
+                <p>Wszystkie pola pozostają widoczne razem z podsumowaniem finansowym.</p>
+              </header>
+              <div class="field-grid">
+                <label><span>Numer dokumentu BNP</span><div class="mock-input placeholder">Wpisz numer</div></label>
+                <label><span>Data dokumentu</span><div class="mock-input strong">29.07.2026</div></label>
+                <label class="wide">
+                  <span>Nazwa pozycji</span>
+                  <div class="mock-input strong">Ricoh IM C3000 S/N:3122MA10548</div>
+                </label>
+                <label><span>Indeks magazynowy</span><div class="mock-input strong">WKP/5212/BNP</div></label>
+                <label><span>Ewidencja maszyny</span><div class="mock-input strong">WKP/5212/E/R/</div></label>
+                <label><span>Cena netto</span><div class="mock-input placeholder">0,00 zł</div></label>
+                <label><span>Brutto</span><div class="mock-input locked">0,00 zł</div></label>
+              </div>
+
+              <div class="split-actions">
+                <article class="compact-action catalog">
+                  <div><strong>Najpierw przygotuj magazyn</strong><span>Tworzy tylko kartotekę ze stanem 0.</span></div>
+                  <button type="button" class="mock-button catalog" disabled>Utwórz stan 0</button>
+                </article>
+                <article class="compact-action final">
+                  <div><strong>Na końcu zapisz wykup</strong><span>Tworzy PZ 1 szt. i zmienia KP na WKP.</span></div>
+                  <button type="button" class="mock-button final" disabled>Zapisz Wykup BNP</button>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="wariant-kreator" class="prototype-section">
+        <header class="prototype-section-head">
+          <div>
+            <p>Wariant 03</p>
+            <h2>Kreator 3 kroków</h2>
+            <span>Operator wykonuje jedną grupę czynności naraz i zawsze widzi następny krok.</span>
+          </div>
+          <span class="prototype-tag">Najbezpieczniejszy</span>
+        </header>
+
+        <div class="mock-app wizard-app">
+          <ol class="wizard-steps">
+            <li class="done"><span>1</span><div><strong>Urządzenie</strong><small>Znalezione</small></div></li>
+            <li class="active"><span>2</span><div><strong>Dokument</strong><small>Uzupełnij dane</small></div></li>
+            <li><span>3</span><div><strong>Kontrola i zapis</strong><small>PZ oraz WKP</small></div></li>
+          </ol>
+
+          <div class="wizard-body">
+            <header class="wizard-heading">
+              <div><small>KROK 2 Z 3</small><h3>Uzupełnij dokument BNP</h3><p>Dane urządzenia zostały już sprawdzone.</p></div>
+              <div class="wizard-device"><span>Ricoh IM C3000</span><strong>KP/5212/E/R/</strong></div>
+            </header>
+            <div class="field-grid wizard-fields">
+              <label><span>Numer dokumentu BNP</span><div class="mock-input placeholder">Wpisz numer dokumentu</div></label>
+              <label><span>Data dokumentu</span><div class="mock-input strong">29.07.2026</div></label>
+              <label class="wide">
+                <span>Nazwa pozycji</span>
+                <div class="mock-input strong">Ricoh IM C3000 S/N:3122MA10548</div>
+              </label>
+              <label><span>Cena netto</span><div class="mock-input placeholder">0,00 zł</div></label>
+              <label><span>Wartość brutto</span><div class="mock-input locked">0,00 zł / VAT 23%</div></label>
+            </div>
+
+            <aside class="wizard-explanation">
+              <strong>Co wydarzy się w kroku 3?</strong>
+              <span>
+                Jeżeli kartoteki brakuje, kreator najpierw utworzy stan 0. Dopiero osobne końcowe
+                potwierdzenie utworzy PZ i zmieni KP na WKP.
+              </span>
+            </aside>
+          </div>
+
+          <footer class="wizard-footer">
+            <button type="button" class="mock-button quiet" disabled>Wstecz</button>
+            <div><small>Następny krok</small><strong>Kontrola kartoteki, PZ i zmiany WKP</strong></div>
+            <button type="button" class="mock-button final" disabled>Dalej: kontrola i zapis</button>
+          </footer>
+        </div>
+      </section>
+
+      <footer class="prototype-footer">
+        <a href="#top">Wróć na górę</a>
+        <a href="/device/bnp-buyout">Wróć do działającego Wykupu BNP</a>
+      </footer>
+    </main>
+  </body>
+</html>
