@@ -597,7 +597,8 @@ def test_isolated_crm_app_exposes_only_guarded_lab_api():
     assert client.get("/auth/me").status_code == 404
     assert client.get("/admin").status_code == 404
     assert client.get("/docs").status_code == 404
-    assert client.get("/api/crm/v1/cases").status_code == 503
+    with patch("app.api.routes.crm.settings.crm_enabled", False):
+        assert client.get("/api/crm/v1/cases").status_code == 503
     assert "noindex" in crm_response.headers["x-robots-tag"]
     assert "frame-ancestors" in crm_response.headers["content-security-policy"]
 

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-31T10:32:16+02:00",
+  "timestamp": "2026-07-31T10:36:13+02:00",
   "summary": [
     "Lokalny CHAT_KP public i outbox korzystają z rzeczywistego API katalogu pod adresem http://ctip-bot-api:8082; mock chat_kp-ctip-mock-1 został zatrzymany.",
     "Izolowany kontener ctip-bot-identity-api łączy sieci CHAT_KP i CTIP, nie ma portu hosta, korzysta z ctip_test i jednoznacznej nazwy ctip-prod-mirror-postgres-1.",
@@ -50,12 +50,14 @@
     "Testy HTTP/AJAX przez 192.168.0.9:8074 potwierdziły wymagany telefon, routing app_registration do other oraz product i consultation do sales; sms_out pozostał bez zmian.",
     "Lokalne zmiany PageKP zapisano w commicie 33ea3d8 obejmującym wtyczkę kp-ctip-forms 0.2.1 i dziewięć szablonów integracyjnych; repozytorium PageKP nadal nie ma skonfigurowanego zdalnego origin.",
     "Zmiany formularzy WWW, kolejek CRM i powiadomień użytkowników zapisano w commicie CTIP f7db3df.",
-    "Proces Wykupu BNP wraz z API, interfejsem, dokumentacją i testami zapisano w commicie CTIP 3a87676."
+    "Proces Wykupu BNP wraz z API, interfejsem, dokumentacją i testami zapisano w commicie CTIP 3a87676.",
+    "Commity backupów d5a3043 i f2ab942 scalono bez konfliktów w lokalnym commicie merge 93c10ed.",
+    "Walidacja po scaleniu: pre-commit poprawny, 88 testów CRM/BNP/backupów oraz pełny dostępny zestaw 373 testów przeszły; tests/test_admin_backend.py pozostaje wyłączony z pełnej kolekcji z powodu powtarzalnego segfaultu kompilatora Python 3.12 przed uruchomieniem testów."
   ],
   "context": {
     "repo": "ctip",
     "branch_local": "integration/prod-realign-2026-05-25",
-    "head_local": "3a87676",
+    "head_local": "93c10ed",
     "environment": "Domyslnie lokalne testowe .env.test i baza ctip_test; zasoby 192.168.0.8 oraz 192.168.0.11 sa produkcyjne.",
     "focus": "testowe wdrożenie formularzy PageKP do /crm i powiadomień użytkowników bez uruchamiania komunikacji produkcyjnej",
     "crm_forms": {
