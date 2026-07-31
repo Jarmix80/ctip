@@ -701,14 +701,35 @@ async function submitIntake() {
 
   const externalDocumentInput = document.getElementById("device-external-document");
   const documentDateInput = document.getElementById("device-intake-document-date");
+  const issueDateInput = document.getElementById("device-intake-issue-date");
+  const paymentMethodInput = document.getElementById("device-intake-payment-method");
+  const paymentDueDateInput = document.getElementById("device-intake-payment-due-date");
   const exceptionInput = document.getElementById("device-exception-enabled");
   const exceptionReasonInput = document.getElementById("device-exception-reason");
   const externalDocument = externalDocumentInput.value.trim();
   const documentDate = documentDateInput.value.trim();
+  const issueDate = issueDateInput.value.trim();
+  const paymentMethod = paymentMethodInput.value.trim();
+  const paymentDueDate = paymentDueDateInput.value.trim();
   const allowException = exceptionInput.checked;
   const exceptionReason = exceptionReasonInput.value.trim();
   if (!documentDate) {
     addIntakeIssue(issues, "Podaj datę przyjęcia.", documentDateInput);
+  }
+  if (!issueDate) {
+    addIntakeIssue(issues, "Podaj datę wystawienia.", issueDateInput);
+  }
+  if (!paymentMethod) {
+    addIntakeIssue(issues, "Wybierz formę płatności.", paymentMethodInput);
+  }
+  if (!paymentDueDate) {
+    addIntakeIssue(issues, "Podaj termin płatności.", paymentDueDateInput);
+  } else if (issueDate && paymentDueDate < issueDate) {
+    addIntakeIssue(
+      issues,
+      "Termin płatności nie może być wcześniejszy niż data wystawienia.",
+      paymentDueDateInput
+    );
   }
   const hasExplicitZeroPrice = deviceState.intakeItems.some(
     (item) => String(item.price ?? "").trim() && Number(item.price) === 0
@@ -745,6 +766,9 @@ async function submitIntake() {
     supplier_id: Number(supplier.id_klient),
     external_document: externalDocument || null,
     document_date: documentDate,
+    issue_date: issueDate,
+    payment_method: paymentMethod,
+    payment_due_date: paymentDueDate,
     allow_exception: allowException,
     exception_reason: allowException ? exceptionReason : null,
     ewidencja_prefix: "KP/",
@@ -787,7 +811,7 @@ async function submitIntake() {
     } Synchronizacja arkusza została dodana do kolejki.`;
     resetIntake();
     document.getElementById("device-external-document").value = "";
-    documentDateInput.value = localIsoDate();
+    initializeIntakeDocumentFields({ force: true });
     document.getElementById("device-exception-enabled").checked = false;
     document.getElementById("device-exception-reason").value = "";
     document.getElementById("device-exception-reason-wrap").hidden = true;
@@ -1570,10 +1594,7 @@ async function loadHome() {
 }
 
 async function loadIntake() {
-  const documentDateInput = document.getElementById("device-intake-document-date");
-  if (documentDateInput && !documentDateInput.value) {
-    documentDateInput.value = localIsoDate();
-  }
+  initializeIntakeDocumentFields();
   await Promise.all([
     loadModels(),
     loadSuppliers(),
@@ -1610,6 +1631,38 @@ function localIsoDate() {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function addDaysToIsoDate(isoDate, days) {
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (!isoDate || Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function initializeIntakeDocumentFields({ force = false } = {}) {
+  const documentDateInput = document.getElementById("device-intake-document-date");
+  const issueDateInput = document.getElementById("device-intake-issue-date");
+  const paymentMethodInput = document.getElementById("device-intake-payment-method");
+  const paymentDueDateInput = document.getElementById("device-intake-payment-due-date");
+  if (!documentDateInput || !issueDateInput || !paymentMethodInput || !paymentDueDateInput) {
+    return;
+  }
+  const today = localIsoDate();
+  if (force || !documentDateInput.value) {
+    documentDateInput.value = today;
+  }
+  if (force || !issueDateInput.value) {
+    issueDateInput.value = today;
+  }
+  if (force || !paymentMethodInput.value) {
+    paymentMethodInput.value = "Przelew";
+  }
+  if (force || !paymentDueDateInput.value) {
+    paymentDueDateInput.value = addDaysToIsoDate(issueDateInput.value, 14);
+  }
 }
 
 function updateBnpGross() {
@@ -2138,6 +2191,22 @@ function bindIntakeEvents() {
   });
   document
     .getElementById("device-intake-document-date")
+    ?.addEventListener("input", (event) => {
+      clearInvalidField(event.target);
+    });
+  document.getElementById("device-intake-issue-date")?.addEventListener("input", (event) => {
+    clearInvalidField(event.target);
+    const paymentDueDateInput = document.getElementById("device-intake-payment-due-date");
+    paymentDueDateInput.value = addDaysToIsoDate(event.target.value, 14);
+    clearInvalidField(paymentDueDateInput);
+  });
+  document
+    .getElementById("device-intake-payment-method")
+    ?.addEventListener("change", (event) => {
+      clearInvalidField(event.target);
+    });
+  document
+    .getElementById("device-intake-payment-due-date")
     ?.addEventListener("input", (event) => {
       clearInvalidField(event.target);
     });

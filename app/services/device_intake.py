@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,6 +20,8 @@ DEFAULT_UNIT = "szt."
 DEFAULT_VAT_RATE = "23 %"
 DEFAULT_PLACE = "CTIP"
 DEFAULT_PAYMENT = "Przelew"
+DEFAULT_PAYMENT_DAYS = 14
+SUPPORTED_PAYMENT_METHODS = ("Przelew", "Gotówka", "Pobranie")
 DEFAULT_MACHINE_ODDZIAL_ID = 1
 DEFAULT_MACHINE_FIRMA_ID = 1
 DEFAULT_MACHINE_IDVAT = 0
@@ -105,6 +107,36 @@ def _text(value: Any, max_length: int | None = None) -> str:
 
 def _normalize_device_key(value: str | None) -> str:
     return re.sub(r"[^A-Z0-9]", "", _text(value).upper())
+
+
+def _resolve_intake_document_terms(
+    *,
+    document_date: date | None,
+    issue_date: date | None,
+    payment_due_date: date | None,
+    payment_method: str | None,
+) -> tuple[date, date, date, str]:
+    """Ustala daty i formę płatności nagłówka PZ z bezpiecznymi wartościami domyślnymi."""
+    resolved_document_date = document_date or datetime.now(ZoneInfo("Europe/Warsaw")).date()
+    resolved_issue_date = issue_date or resolved_document_date
+    resolved_payment_due_date = payment_due_date or (
+        resolved_issue_date + timedelta(days=DEFAULT_PAYMENT_DAYS)
+    )
+    resolved_payment_method = _text(payment_method, 30) or DEFAULT_PAYMENT
+    if resolved_payment_method not in SUPPORTED_PAYMENT_METHODS:
+        raise ValueError(
+            "Nieobsługiwana forma płatności. Dozwolone wartości: "
+            + ", ".join(SUPPORTED_PAYMENT_METHODS)
+            + "."
+        )
+    if resolved_payment_due_date < resolved_issue_date:
+        raise ValueError("Termin płatności nie może być wcześniejszy niż data wystawienia.")
+    return (
+        resolved_document_date,
+        resolved_issue_date,
+        resolved_payment_due_date,
+        resolved_payment_method,
+    )
 
 
 def _flag_text(value: Any) -> str:
@@ -1534,6 +1566,9 @@ def create_device_intake_batch(
     supplier_id: int | None,
     external_document: str | None = None,
     document_date: date | None = None,
+    issue_date: date | None = None,
+    payment_method: str | None = DEFAULT_PAYMENT,
+    payment_due_date: date | None = None,
     issued_by: str,
     ewidencja_prefix: str | None = None,
     idempotency_key: str | None = None,
@@ -1593,7 +1628,17 @@ def create_device_intake_batch(
                     f"Wiersz {item['row_no']}: cena zakupu netto musi być większa od zera."
                 )
 
-        resolved_document_date = document_date or datetime.now(ZoneInfo("Europe/Warsaw")).date()
+        (
+            resolved_document_date,
+            resolved_issue_date,
+            resolved_payment_due_date,
+            resolved_payment_method,
+        ) = _resolve_intake_document_terms(
+            document_date=document_date,
+            issue_date=issue_date,
+            payment_due_date=payment_due_date,
+            payment_method=payment_method,
+        )
         document_number = _next_pz_document_number(
             cursor,
             year=resolved_document_date.year,
@@ -1653,10 +1698,10 @@ def create_device_intake_batch(
                 DEVICE_WAREHOUSE_ID,
                 0,
                 external_number,
+                resolved_issue_date,
                 resolved_document_date,
-                resolved_document_date,
-                resolved_document_date,
-                DEFAULT_PAYMENT,
+                resolved_payment_due_date,
+                resolved_payment_method,
                 DEFAULT_PLACE,
                 issued_by_value,
                 Decimal("0"),
@@ -1895,6 +1940,9 @@ def create_device_intake(
     supplier_id: int | None,
     external_document: str | None = None,
     document_date: date | None = None,
+    issue_date: date | None = None,
+    payment_method: str | None = DEFAULT_PAYMENT,
+    payment_due_date: date | None = None,
     issued_by: str,
     purchase_price_netto: Decimal | None = None,
     idempotency_key: str | None = None,
@@ -1915,6 +1963,9 @@ def create_device_intake(
         supplier_id=supplier_id,
         external_document=external_document,
         document_date=document_date,
+        issue_date=issue_date,
+        payment_method=payment_method,
+        payment_due_date=payment_due_date,
         issued_by=issued_by,
         idempotency_key=idempotency_key,
         allow_exception=allow_exception,

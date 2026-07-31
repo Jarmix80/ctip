@@ -579,8 +579,8 @@ def test_device_page_renders_devices_layout():
     client = TestClient(app)
     response = client.get("/device")
     assert response.status_code == 200
-    assert f"/static/device/device.css?v={app.version}-device-v0.6.2" in response.text
-    assert f"/static/device/device.js?v={app.version}-device-v0.6.2" in response.text
+    assert f"/static/device/device.css?v={app.version}-device-v0.6.3" in response.text
+    assert f"/static/device/device.js?v={app.version}-device-v0.6.3" in response.text
     assert "Obsługa urządzeń" in response.text
     assert "device-user-chip" in response.text
     assert "device-refresh" in response.text
@@ -603,6 +603,14 @@ def test_device_page_renders_devices_layout():
     assert "Nowy dokument PZ" in response.text
     assert 'id="device-intake-document-date"' in response.text
     assert "Data przyjęcia *" in response.text
+    assert 'id="device-intake-issue-date"' in response.text
+    assert "Data wystawienia *" in response.text
+    assert 'id="device-intake-payment-method"' in response.text
+    assert '<option value="Przelew" selected>Przelew</option>' in response.text
+    assert '<option value="Gotówka">Gotówka</option>' in response.text
+    assert '<option value="Pobranie">Pobranie</option>' in response.text
+    assert 'id="device-intake-payment-due-date"' in response.text
+    assert "Termin płatności *" in response.text
     assert "+ Dodaj urządzenie" in response.text
     assert "Szukaj na liście: model, serial lub numer KP" in response.text
     assert 'id="device-intake-summary-gross"' in response.text
@@ -625,7 +633,7 @@ def test_device_page_renders_devices_layout():
     assert '<option value="blue">Niebieska</option>' in response.text
     assert '<option value="graphite">Grafitowa</option>' in response.text
     assert '<option value="mint">Miętowa</option>' in response.text
-    assert "/device v0.6.2" in response.text
+    assert "/device v0.6.3" in response.text
     assert "device-warehouse-table" in response.text
     assert "device-warehouse-card" in response.text
     assert "Urządzenie / CTIP" in response.text

@@ -4117,6 +4117,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "supplier_id": 656,
             "external_document": "FV/DEV/001",
             "document_date": "2026-07-14",
+            "issue_date": "2026-07-13",
+            "payment_method": "Gotówka",
+            "payment_due_date": "2026-07-27",
             "allow_exception": False,
             "exception_reason": None,
             "ewidencja_prefix": "KP/",
@@ -4164,6 +4167,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intake_kwargs["kto"], "CTIP/OperatorMS")
         self.assertEqual(intake_kwargs["idempotency_key"], idempotency_key)
         self.assertEqual(intake_kwargs["document_date"], date(2026, 7, 14))
+        self.assertEqual(intake_kwargs["issue_date"], date(2026, 7, 13))
+        self.assertEqual(intake_kwargs["payment_method"], "Gotówka")
+        self.assertEqual(intake_kwargs["payment_due_date"], date(2026, 7, 27))
         self.assertEqual(intake_kwargs["items"][0].purchase_price_netto, Decimal("1200.00"))
 
         async with self.session_factory() as session:
@@ -4286,6 +4292,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     "supplier_id": 656,
                     "external_document": "FV/BATCH/001",
                     "document_date": "2026-07-15",
+                    "issue_date": "2026-07-15",
+                    "payment_method": "Przelew",
+                    "payment_due_date": "2026-07-29",
                     "ewidencja_prefix": "KP/BATCH/",
                 },
             )
@@ -4305,6 +4314,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             intake_mock.call_args.kwargs["document_date"],
             date(2026, 7, 15),
+        )
+        self.assertEqual(intake_mock.call_args.kwargs["issue_date"], date(2026, 7, 15))
+        self.assertEqual(intake_mock.call_args.kwargs["payment_method"], "Przelew")
+        self.assertEqual(
+            intake_mock.call_args.kwargs["payment_due_date"],
+            date(2026, 7, 29),
         )
         self.assertEqual(intake_mock.call_args.kwargs["issued_by"], "OperatorMS")
 

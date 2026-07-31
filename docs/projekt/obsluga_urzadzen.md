@@ -20,7 +20,8 @@ Moduł `/device` prowadzi nowy fizyczny egzemplarz jedną kontrolowaną ścieżk
 - Konto CTIP musi mieć sekcję `device` oraz aktywne powiązanie z użytkownikiem Menadżera Serwisu.
 - Pole wystawiającego PZ pochodzi wyłącznie z tego powiązania; API nie przyjmuje go od klienta.
 - Brak dokumentu zewnętrznego albo cena zakupu `0` wymaga zaznaczenia wyjątku i uzasadnienia mającego co najmniej 10 znaków.
-- Data przyjęcia jest obowiązkowym polem wspólnym dokumentu. Formularz podpowiada bieżący dzień, a wybrana wartość steruje datami nagłówka i pozycji PZ, datą przyjęcia kartoteki `MAGAZYN` oraz rokiem numeracji PZ.
+- Data przyjęcia jest obowiązkowym polem wspólnym dokumentu. Formularz podpowiada bieżący dzień, a wybrana wartość steruje `ZAKUPY.DATA_PRZY_WYDA`, datą pozycji PZ, datą przyjęcia kartoteki `MAGAZYN` oraz rokiem numeracji PZ.
+- Data wystawienia trafia do `ZAKUPY.DATA_WYST`. Forma płatności korzysta z wartości występujących w Menadżerze Serwisu: `Przelew`, `Gotówka` albo `Pobranie`. Termin płatności trafia do `ZAKUPY.DATA_PLAT`, domyślnie wynosi 14 dni od daty wystawienia i pozostaje edytowalny.
 - Klucz UUID operacji jest idempotentny. Po błędzie połączenia dokładnie to samo żądanie zachowuje UUID, natomiast każda zmiana danych formularza automatycznie rozpoczyna nową operację z nowym UUID.
 - Moduł nie tworzy nowych rekordów `SERIAL`. Serial i numer KP są zapisywane w pozycji PZ, osobnej kartotece `MAGAZYN`, rekordzie `MASZYNA` i rejestrze CTIP.
 - Przed zapisem PZ generatory tabel używanych bezpośrednio i przez triggery są porównywane z maksymalnymi identyfikatorami oraz podnoszone wyłącznie w przypadku wykrycia opóźnienia.

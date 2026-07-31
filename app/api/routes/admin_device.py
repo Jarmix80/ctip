@@ -130,6 +130,9 @@ class DeviceIntakeBatchRequest(StrictRequest):
     supplier_id: int = Field(gt=0)
     external_document: str | None = Field(default=None, max_length=30)
     document_date: date | None = None
+    issue_date: date | None = None
+    payment_method: str = Field(default="Przelew", min_length=1, max_length=30)
+    payment_due_date: date | None = None
     allow_exception: bool = False
     exception_reason: str | None = Field(default=None, max_length=1000)
     ewidencja_prefix: str | None = Field(default="KP/", max_length=50)
@@ -146,6 +149,9 @@ class DeviceIntakeRequest(StrictRequest):
     supplier_id: int = Field(gt=0)
     external_document: str | None = Field(default=None, max_length=30)
     document_date: date | None = None
+    issue_date: date | None = None
+    payment_method: str = Field(default="Przelew", min_length=1, max_length=30)
+    payment_due_date: date | None = None
     allow_exception: bool = False
     exception_reason: str | None = Field(default=None, max_length=1000)
     ewidencja_prefix: str | None = Field(default="KP/", max_length=50)
@@ -485,6 +491,9 @@ async def _execute_intake_batch(
                 supplier_id=payload.supplier_id,
                 external_document=payload.external_document,
                 document_date=payload.document_date,
+                issue_date=payload.issue_date,
+                payment_method=payload.payment_method,
+                payment_due_date=payload.payment_due_date,
                 issued_by=firebird_user.login_user,
                 ewidencja_prefix=payload.ewidencja_prefix,
                 idempotency_key=str(payload.idempotency_key),
@@ -534,6 +543,11 @@ async def _execute_intake_batch(
                 "pz_number": result.pz_number,
                 "document_date": (
                     payload.document_date.isoformat() if payload.document_date else None
+                ),
+                "issue_date": payload.issue_date.isoformat() if payload.issue_date else None,
+                "payment_method": payload.payment_method,
+                "payment_due_date": (
+                    payload.payment_due_date.isoformat() if payload.payment_due_date else None
                 ),
                 "supplier_id": result.supplier_id,
                 "item_count": len(result.items),
@@ -1860,6 +1874,9 @@ async def device_intake_create(
         supplier_id=payload.supplier_id,
         external_document=payload.external_document,
         document_date=payload.document_date,
+        issue_date=payload.issue_date,
+        payment_method=payload.payment_method,
+        payment_due_date=payload.payment_due_date,
         allow_exception=payload.allow_exception,
         exception_reason=payload.exception_reason,
         ewidencja_prefix=payload.ewidencja_prefix,

@@ -3,6 +3,8 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.services.device_intake import (
     _ensure_intake_generators,
     _extract_trailing_number,
@@ -11,11 +13,60 @@ from app.services.device_intake import (
     _model_id_from_search_query,
     _normalize_model_name_for_brand,
     _pick_next_from_width_mode,
+    _resolve_intake_document_terms,
     _resolve_next_model_id_from_values,
     _supplier_id_from_search_query,
     search_device_suppliers,
     update_device_machine_counters,
 )
+
+
+def test_resolve_intake_document_terms_defaults_payment_to_fourteen_days() -> None:
+    document_date, issue_date, payment_due_date, payment_method = _resolve_intake_document_terms(
+        document_date=date(2026, 7, 15),
+        issue_date=None,
+        payment_due_date=None,
+        payment_method=None,
+    )
+
+    assert document_date == date(2026, 7, 15)
+    assert issue_date == date(2026, 7, 15)
+    assert payment_due_date == date(2026, 7, 29)
+    assert payment_method == "Przelew"
+
+
+def test_resolve_intake_document_terms_keeps_explicit_values() -> None:
+    result = _resolve_intake_document_terms(
+        document_date=date(2026, 7, 15),
+        issue_date=date(2026, 7, 13),
+        payment_due_date=date(2026, 8, 12),
+        payment_method="Gotówka",
+    )
+
+    assert result == (
+        date(2026, 7, 15),
+        date(2026, 7, 13),
+        date(2026, 8, 12),
+        "Gotówka",
+    )
+
+
+def test_resolve_intake_document_terms_rejects_invalid_payment_data() -> None:
+    with pytest.raises(ValueError, match="Nieobsługiwana forma płatności"):
+        _resolve_intake_document_terms(
+            document_date=date(2026, 7, 15),
+            issue_date=date(2026, 7, 15),
+            payment_due_date=date(2026, 7, 29),
+            payment_method="Kryptowaluta",
+        )
+
+    with pytest.raises(ValueError, match="nie może być wcześniejszy"):
+        _resolve_intake_document_terms(
+            document_date=date(2026, 7, 15),
+            issue_date=date(2026, 7, 15),
+            payment_due_date=date(2026, 7, 14),
+            payment_method="Przelew",
+        )
 
 
 def test_insert_warehouse_unit_uses_selected_document_date() -> None:

@@ -164,6 +164,22 @@
                     <span>Data przyjęcia *</span>
                     <input id="device-intake-document-date" type="date" required>
                   </label>
+                  <label>
+                    <span>Data wystawienia *</span>
+                    <input id="device-intake-issue-date" type="date" required>
+                  </label>
+                  <label>
+                    <span>Forma płatności *</span>
+                    <select id="device-intake-payment-method" required>
+                      <option value="Przelew" selected>Przelew</option>
+                      <option value="Gotówka">Gotówka</option>
+                      <option value="Pobranie">Pobranie</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Termin płatności *</span>
+                    <input id="device-intake-payment-due-date" type="date" required>
+                  </label>
                 </div>
                 <details class="device-details">
                   <summary>Nie ma dostawcy na liście? Dodaj nowego</summary>

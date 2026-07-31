@@ -922,7 +922,7 @@ input[type="checkbox"].device-field-invalid {
 
 .device-intake-addbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 90px 150px auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(80px, 90px) minmax(130px, 150px);
   gap: 12px;
   align-items: end;
 }
@@ -932,6 +932,8 @@ input[type="checkbox"].device-field-invalid {
 }
 
 .device-intake-addbar .flow-action-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
   min-height: 42px;
   white-space: nowrap;
 }
