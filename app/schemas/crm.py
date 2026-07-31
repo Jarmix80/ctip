@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-CrmQueue = Literal["sales", "service_it", "accounting", "contracts", "meters", "other"]
+CrmQueue = Literal["sales", "service_it", "contracts", "other"]
 CrmStatus = Literal["new", "active", "transferred", "done", "archived"]
 CrmPriority = Literal["low", "normal", "high"]
 ChatCaseCategory = Literal[
@@ -155,6 +155,7 @@ class CrmCaseEventResponse(BaseModel):
     title: str
     text: str | None
     actor: str | None
+    payload: dict[str, Any] | None
     created_at: datetime
 
 
@@ -166,6 +167,7 @@ class CrmCaseResponse(BaseModel):
     source_detail: str | None
     source_url: str | None
     queue: CrmQueue
+    category: str
     status: CrmStatus
     priority: CrmPriority
     subject: str

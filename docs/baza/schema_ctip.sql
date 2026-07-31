@@ -524,6 +524,10 @@ CREATE TABLE ctip.admin_user (
     password_hash text NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     is_salesperson boolean DEFAULT false NOT NULL,
+    crm_sales_sms_enabled boolean DEFAULT false NOT NULL,
+    crm_sales_email_enabled boolean DEFAULT false NOT NULL,
+    crm_operations_sms_enabled boolean DEFAULT false NOT NULL,
+    crm_operations_email_enabled boolean DEFAULT false NOT NULL,
     firebird_app_user_id integer,
     firebird_app_user_login text,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -1199,6 +1203,16 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 -- ctip.crm_case.device_refs
 -- Pełna definicja, backfill UUID i ograniczenia są utrzymywane w:
 -- alembic/versions/a6f3c8d2e910_expand_bot_device_disclosure.py
+-- Uproszczenie kolejek CRM i powiadomienia użytkowników (migracja f3a7c9e2d610, 2026-07-30):
+-- ctip.admin_user.crm_sales_sms_enabled
+-- ctip.admin_user.crm_sales_email_enabled
+-- ctip.admin_user.crm_operations_sms_enabled
+-- ctip.admin_user.crm_operations_email_enabled
+-- ctip.crm_case.category
+-- Kolejki crm_case: sales, service_it, contracts, other.
+-- Historyczne meters są mapowane do contracts, a accounting do other.
+-- Pełna definicja, mapowanie danych i ograniczenia są utrzymywane w:
+-- alembic/versions/f3a7c9e2d610_simplify_crm_queues_and_user_notifications.py
 -- Wspólny graf migracji urządzeń, dostaw i umów:
 -- alembic/versions/4e2a9c7d1b60_add_device_inventory_registry.py
 -- alembic/versions/7c91e2f4a6b8_add_workflow_sheet_counters.py

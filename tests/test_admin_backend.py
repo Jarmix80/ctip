@@ -2038,6 +2038,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "internal_ext": "205",
             "role": "operator",
             "is_salesperson": True,
+            "crm_sales_sms_enabled": True,
+            "crm_sales_email_enabled": True,
+            "crm_operations_sms_enabled": False,
+            "crm_operations_email_enabled": True,
             "mobile_phone": "+48600700800",
             "sections": ["operator"],
         }
@@ -2053,6 +2057,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_user["email"], create_payload["email"])
         self.assertEqual(created_user["mobile_phone"], "+48600700800")
         self.assertTrue(created_user["is_salesperson"])
+        self.assertTrue(created_user["crm_sales_sms_enabled"])
+        self.assertTrue(created_user["crm_sales_email_enabled"])
+        self.assertFalse(created_user["crm_operations_sms_enabled"])
+        self.assertTrue(created_user["crm_operations_email_enabled"])
         self.assertEqual(created_user["sections"], ["operator"])
         self.assertTrue(body["password"])
         self.assertTrue(body["sms_queued"])
@@ -2093,6 +2101,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["sessions_active"], 0)
         self.assertEqual(detail["mobile_phone"], "+48600700800")
         self.assertTrue(detail["is_salesperson"])
+        self.assertTrue(detail["crm_sales_sms_enabled"])
+        self.assertTrue(detail["crm_sales_email_enabled"])
+        self.assertFalse(detail["crm_operations_sms_enabled"])
+        self.assertTrue(detail["crm_operations_email_enabled"])
         self.assertEqual(detail["sections"], ["operator"])
 
         update_payload = {
@@ -2102,6 +2114,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "internal_ext": "305",
             "role": "admin",
             "is_salesperson": False,
+            "crm_sales_sms_enabled": False,
+            "crm_sales_email_enabled": True,
+            "crm_operations_sms_enabled": True,
+            "crm_operations_email_enabled": False,
             "mobile_phone": "+48600111222",
             "sections": ["admin", "generator"],
         }
@@ -2115,6 +2131,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["internal_ext"], "305")
         self.assertEqual(updated["role"], "admin")
         self.assertFalse(updated["is_salesperson"])
+        self.assertFalse(updated["crm_sales_sms_enabled"])
+        self.assertTrue(updated["crm_sales_email_enabled"])
+        self.assertTrue(updated["crm_operations_sms_enabled"])
+        self.assertFalse(updated["crm_operations_email_enabled"])
         self.assertEqual(updated["mobile_phone"], "+48600111222")
         self.assertEqual(updated["sections"], ["admin", "generator"])
 
@@ -2122,6 +2142,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             db_user = await session.get(AdminUser, user_id)
             self.assertIsNotNone(db_user)
             self.assertFalse(db_user.is_salesperson)
+            self.assertFalse(db_user.crm_sales_sms_enabled)
+            self.assertTrue(db_user.crm_sales_email_enabled)
+            self.assertTrue(db_user.crm_operations_sms_enabled)
+            self.assertFalse(db_user.crm_operations_email_enabled)
             old_hash = db_user.password_hash
 
         response = await self.client.post(

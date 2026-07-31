@@ -1451,6 +1451,10 @@ document.addEventListener("alpine:init", () => {
       internalExt: "",
       role: "operator",
       isSalesperson: false,
+      crmSalesSmsEnabled: false,
+      crmSalesEmailEnabled: false,
+      crmOperationsSmsEnabled: false,
+      crmOperationsEmailEnabled: false,
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
@@ -1479,6 +1483,10 @@ document.addEventListener("alpine:init", () => {
       internalExt: "",
       role: "operator",
       isSalesperson: false,
+      crmSalesSmsEnabled: false,
+      crmSalesEmailEnabled: false,
+      crmOperationsSmsEnabled: false,
+      crmOperationsEmailEnabled: false,
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
@@ -1612,6 +1620,31 @@ document.addEventListener("alpine:init", () => {
       return email ? `Włączony (${email})` : "Włączony";
     },
 
+    formatCrmNotifications(user) {
+      const groups = [];
+      const sales = [];
+      const operations = [];
+      if (user?.crm_sales_sms_enabled) {
+        sales.push("SMS");
+      }
+      if (user?.crm_sales_email_enabled) {
+        sales.push("e-mail");
+      }
+      if (user?.crm_operations_sms_enabled) {
+        operations.push("SMS");
+      }
+      if (user?.crm_operations_email_enabled) {
+        operations.push("e-mail");
+      }
+      if (sales.length) {
+        groups.push(`Handel: ${sales.join(", ")}`);
+      }
+      if (operations.length) {
+        groups.push(`Pozostałe: ${operations.join(", ")}`);
+      }
+      return groups.length ? groups.join("; ") : "Wyłączone";
+    },
+
     defaultSectionsForRole(role) {
       if (role === "admin") {
         return ["admin", "operator", "generator", "delivery"];
@@ -1704,6 +1737,10 @@ document.addEventListener("alpine:init", () => {
       this.form.internalExt = "";
       this.form.role = "operator";
       this.form.isSalesperson = false;
+      this.form.crmSalesSmsEnabled = false;
+      this.form.crmSalesEmailEnabled = false;
+      this.form.crmOperationsSmsEnabled = false;
+      this.form.crmOperationsEmailEnabled = false;
       this.form.mobilePhone = "";
       this.form.firebirdAppUserId = "";
       this.form.firebirdAppUserLogin = "";
@@ -1865,6 +1902,10 @@ document.addEventListener("alpine:init", () => {
         internal_ext: normalize(source.internalExt) || null,
         role: source.role || "operator",
         is_salesperson: Boolean(source.isSalesperson),
+        crm_sales_sms_enabled: Boolean(source.crmSalesSmsEnabled),
+        crm_sales_email_enabled: Boolean(source.crmSalesEmailEnabled),
+        crm_operations_sms_enabled: Boolean(source.crmOperationsSmsEnabled),
+        crm_operations_email_enabled: Boolean(source.crmOperationsEmailEnabled),
         mobile_phone: mobile || null,
         firebird_app_user_id: this.normalizeMsUserId(source.firebirdAppUserId),
         sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
@@ -2024,6 +2065,12 @@ document.addEventListener("alpine:init", () => {
           this.modalDetail.is_active = data.is_active;
           this.modalEdit.role = data.role;
           this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
+          this.modalEdit.crmSalesSmsEnabled = Boolean(data.crm_sales_sms_enabled);
+          this.modalEdit.crmSalesEmailEnabled = Boolean(data.crm_sales_email_enabled);
+          this.modalEdit.crmOperationsSmsEnabled = Boolean(data.crm_operations_sms_enabled);
+          this.modalEdit.crmOperationsEmailEnabled = Boolean(
+            data.crm_operations_email_enabled,
+          );
           this.modalEdit.sections = this.normalizeSectionsForRole(
             data.sections,
             data.role || this.modalEdit.role,
@@ -2101,6 +2148,10 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.internalExt = "";
       this.modalEdit.role = "operator";
       this.modalEdit.isSalesperson = false;
+      this.modalEdit.crmSalesSmsEnabled = false;
+      this.modalEdit.crmSalesEmailEnabled = false;
+      this.modalEdit.crmOperationsSmsEnabled = false;
+      this.modalEdit.crmOperationsEmailEnabled = false;
       this.modalEdit.mobilePhone = "";
       this.modalEdit.firebirdAppUserId = "";
       this.modalEdit.firebirdAppUserLogin = "";
@@ -2140,6 +2191,12 @@ document.addEventListener("alpine:init", () => {
         this.modalEdit.internalExt = data.internal_ext || "";
         this.modalEdit.role = data.role || "operator";
         this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
+        this.modalEdit.crmSalesSmsEnabled = Boolean(data.crm_sales_sms_enabled);
+        this.modalEdit.crmSalesEmailEnabled = Boolean(data.crm_sales_email_enabled);
+        this.modalEdit.crmOperationsSmsEnabled = Boolean(data.crm_operations_sms_enabled);
+        this.modalEdit.crmOperationsEmailEnabled = Boolean(
+          data.crm_operations_email_enabled,
+        );
         this.modalEdit.mobilePhone = data.mobile_phone || "";
         this.modalEdit.firebirdAppUserId = data.firebird_app_user_id
           ? String(data.firebird_app_user_id)

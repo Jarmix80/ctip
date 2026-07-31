@@ -35,7 +35,7 @@ class CrmCase(Base):
     __tablename__ = "crm_case"
     __table_args__ = (
         CheckConstraint(
-            "queue in ('sales','service_it','accounting','contracts','meters','other')",
+            "queue in ('sales','service_it','contracts','other')",
             name="ck_crm_case_queue",
         ),
         CheckConstraint(
@@ -68,6 +68,7 @@ class CrmCase(Base):
     source_detail: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str | None] = mapped_column(Text)
     queue: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False, default="other")
     status: Mapped[str] = mapped_column(Text, nullable=False, default="new")
     priority: Mapped[str] = mapped_column(Text, nullable=False, default="normal")
     subject: Mapped[str] = mapped_column(Text, nullable=False)

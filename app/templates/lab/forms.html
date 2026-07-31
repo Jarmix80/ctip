@@ -44,9 +44,7 @@
               <option value="contact">Kontakt ogólny</option>
               <option value="product">Produkt, zakup lub wynajem</option>
               <option value="service">Serwis urządzenia lub pomoc IT</option>
-              <option value="meters">Przekazanie liczników</option>
-              <option value="accounting">Księgowość i dokumenty</option>
-              <option value="contracts">Umowy i rozliczenia</option>
+              <option value="contracts">Umowy i liczniki</option>
               <option value="app">Aplikacja Ksero Partner</option>
             </select>
           </label>
@@ -97,7 +95,7 @@
             </div>
           </div>
 
-          <div class="lab-form__section" data-show-for="service,meters">
+          <div class="lab-form__section" data-show-for="service,contracts">
             <h3>Urządzenie</h3>
             <div class="lab-form__grid">
               <label class="lab-field">
@@ -129,7 +127,30 @@
             </div>
           </div>
 
-          <div class="lab-form__section" data-show-for="meters">
+          <div class="lab-form__section" data-show-for="contracts">
+            <h3>Umowy i liczniki</h3>
+            <div class="lab-form__grid">
+              <label class="lab-field">
+                <span>Typ sprawy</span>
+                <select name="contract_case_type">
+                  <option value="contracts">Umowa</option>
+                  <option value="meters">Przekazanie liczników</option>
+                </select>
+              </label>
+              <label class="lab-field">
+                <span>Numer umowy</span>
+                <input name="contract_number" maxlength="100">
+              </label>
+              <label class="lab-field">
+                <span>Rodzaj sprawy</span>
+                <select name="contract_area">
+                  <option value="warunki">Warunki umowy</option>
+                  <option value="aneks">Aneks lub zmiana</option>
+                  <option value="zakonczenie">Zakończenie lub przedłużenie</option>
+                  <option value="grenke">Umowa GRENKE</option>
+                </select>
+              </label>
+            </div>
             <h3>Stany liczników</h3>
             <div class="lab-form__grid lab-form__grid--three">
               <label class="lab-field">
@@ -143,43 +164,6 @@
               <label class="lab-field">
                 <span>Skan</span>
                 <input name="meter_scan" type="number" min="0">
-              </label>
-            </div>
-          </div>
-
-          <div class="lab-form__section" data-show-for="accounting">
-            <h3>Dokument księgowy</h3>
-            <div class="lab-form__grid">
-              <label class="lab-field">
-                <span>Numer faktury lub dokumentu</span>
-                <input name="document_number" maxlength="100">
-              </label>
-              <label class="lab-field">
-                <span>Rodzaj sprawy</span>
-                <select name="accounting_area">
-                  <option value="faktura">Pytanie o fakturę</option>
-                  <option value="platnosc">Płatność lub rozrachunek</option>
-                  <option value="korekta">Korekta dokumentu</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div class="lab-form__section" data-show-for="contracts">
-            <h3>Umowa</h3>
-            <div class="lab-form__grid">
-              <label class="lab-field">
-                <span>Numer umowy</span>
-                <input name="contract_number" maxlength="100">
-              </label>
-              <label class="lab-field">
-                <span>Rodzaj sprawy</span>
-                <select name="contract_area">
-                  <option value="warunki">Warunki umowy</option>
-                  <option value="aneks">Aneks lub zmiana</option>
-                  <option value="zakonczenie">Zakończenie lub przedłużenie</option>
-                  <option value="grenke">Umowa GRENKE</option>
-                </select>
               </label>
             </div>
           </div>

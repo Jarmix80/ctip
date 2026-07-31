@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,10 +54,12 @@ from app.services.crm_cases import (
     serialize_case,
     serialize_chat_case,
 )
+from app.services.crm_notifications import dispatch_new_case_notifications
 
 operator_router = APIRouter(prefix="/api/crm/v1", tags=["crm"])
 lab_router = APIRouter(prefix="/api/crm/v1", tags=["crm-lab"])
 service_router = APIRouter(prefix="/v1", tags=["crm-service"])
+www_router = APIRouter(prefix="/v1", tags=["crm-www"])
 
 
 def _require_crm_enabled() -> None:
@@ -94,6 +98,32 @@ def _service_channel(authorization: str | None = Header(default=None)) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Nieprawidłowe uwierzytelnienie usługi.",
         ) from exc
+
+
+def _www_service_channel(authorization: str | None = Header(default=None)) -> str:
+    """Uwierzytelnia serwerową integrację formularzy WordPress."""
+
+    _require_crm_enabled()
+    configured = (settings.crm_www_token or "").strip()
+    if not configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Integracja formularzy WWW nie ma skonfigurowanego tokenu.",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Brak tokenu integracji formularzy WWW.",
+        )
+    supplied = authorization[7:].strip()
+    if not hmac.compare_digest(supplied, configured):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Nieprawidłowy token integracji formularzy WWW.",
+        )
+    if settings.crm_lab_mode:
+        _require_safe_lab()
+    return "www"
 
 
 def _raise_bad_request(exc: ValueError) -> None:
@@ -153,6 +183,8 @@ async def _manual_create(
             declared_operator=operator,
             force_lab=force_lab,
         )
+        if created:
+            await dispatch_new_case_notifications(session, item)
     except ValueError as exc:
         _raise_bad_request(exc)
     await session.commit()
@@ -322,6 +354,43 @@ async def post_lab_intake(
             declared_operator=None,
             force_lab=True,
         )
+        if created:
+            await dispatch_new_case_notifications(session, item)
+    except ValueError as exc:
+        _raise_bad_request(exc)
+    await session.commit()
+    return CrmCaseCreateResponse(case=serialize_case(item), created=created)
+
+
+@www_router.post(
+    "/form-cases",
+    response_model=CrmCaseCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_www_form_case(
+    payload: CrmCaseCreateRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    channel: str = Depends(_www_service_channel),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> CrmCaseCreateResponse:
+    """Przyjmuje zaufane formularze WWW przez połączenie serwer-serwer."""
+
+    if not idempotency_key or len(idempotency_key.strip()) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Wymagany jest stabilny nagłówek Idempotency-Key.",
+        )
+    try:
+        item, created = await create_case(
+            session,
+            payload,
+            idempotency_key=idempotency_key,
+            service_channel=channel,
+            declared_operator=None,
+            force_lab=settings.crm_lab_mode,
+        )
+        if created:
+            await dispatch_new_case_notifications(session, item)
     except ValueError as exc:
         _raise_bad_request(exc)
     await session.commit()
@@ -537,4 +606,4 @@ async def get_service_case(
     return serialize_chat_case(item)
 
 
-__all__ = ["lab_router", "operator_router", "service_router"]
+__all__ = ["lab_router", "operator_router", "service_router", "www_router"]

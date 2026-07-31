@@ -521,6 +521,8 @@ def test_users_partial_renders_listing():
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
     assert "Handlowiec" in response.text
+    assert "Powiadomienia CRM" in response.text
+    assert "Pozostałe: Serwis, Umowy i liczniki, Inne" in response.text
     assert "Użytkownik MS" in response.text
     assert "+48600900900" in response.text
 
@@ -558,9 +560,10 @@ def test_crm_page_renders_persistent_lab():
     assert 'data-view="inbox"' in response.text
     assert 'data-view="sales"' in response.text
     assert 'data-view="service_it"' in response.text
-    assert 'data-view="accounting"' in response.text
     assert 'data-view="contracts"' in response.text
-    assert 'data-view="meters"' in response.text
+    assert 'data-view="accounting"' not in response.text
+    assert 'data-view="meters"' not in response.text
+    assert "Umowy i liczniki" in response.text
     assert 'data-view="other"' in response.text
     assert 'id="crm-new-case-form"' in response.text
     assert 'id="crm-transfer-dialog"' in response.text
@@ -693,6 +696,20 @@ def test_device_page_renders_devices_layout():
     assert "Reguly procesu" in response.text
     assert "Wnioski operacyjne" in response.text
     assert "PZ urzadzen" in response.text
+    assert "Wykup BNP" in response.text
+    assert "device-bnp-toggle" in response.text
+    assert "device-bnp-lookup-form" in response.text
+    assert "device-bnp-complete-btn" in response.text
+
+
+def test_device_bnp_script_podpowiada_nazwe_z_modelu_i_serialu():
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/static/device/device.js")
+
+    assert response.status_code == 200
+    assert "const buildBnpDefaultItemName =" in response.text
+    assert "serial ? `S/N:${serial}`" in response.text
 
 
 def test_flow_invoice_preview_page_renders_sample_document():

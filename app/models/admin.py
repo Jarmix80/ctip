@@ -42,6 +42,12 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_salesperson: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    crm_sales_sms_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    crm_sales_email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    crm_operations_sms_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    crm_operations_email_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     mobile_phone: Mapped[str | None] = mapped_column(Text, nullable=True)
     firebird_app_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     firebird_app_user_login: Mapped[str | None] = mapped_column(Text, nullable=True)

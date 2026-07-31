@@ -98,3 +98,10 @@
 - Projekcja urządzenia otrzymuje `bot_identity_device.image_url`, synchronizowane z bezpiecznie zweryfikowanego `MODEL.PLIK`.
 - `crm_case.device_refs` zapisuje uporządkowany wybór maksymalnie 20 urządzeń przy zachowaniu zgodności z pojedynczym `device_label`.
 - Pełny numer seryjny w kontrakcie CHAT_KP jest dostępny dopiero po poprawnej weryfikacji SMS; kontrakt wewnętrzny nadal wymaga ważnego i jednorazowego `disclosure_grant`.
+
+## 2026-07-30
+
+- Migracja `f3a7c9e2d610` upraszcza kolejki Centrum Obsługi do `sales`, `service_it`, `contracts` i `other`.
+- Historyczne sprawy `meters` są przenoszone do `contracts` z kategorią `meters`, a `accounting` do `other` z zachowaniem kategorii źródłowej.
+- Tabela `ctip.crm_case` otrzymuje obowiązkową kolumnę `category`, która zachowuje dokładny rodzaj formularza niezależnie od kolejki operacyjnej.
+- Tabela `ctip.admin_user` otrzymuje cztery niezależne flagi powiadomień CRM: SMS/e-mail dla Handlu oraz SMS/e-mail dla pozostałych kolejek.
