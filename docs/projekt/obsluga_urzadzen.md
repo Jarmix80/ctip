@@ -20,7 +20,7 @@ Moduł `/device` prowadzi nowy fizyczny egzemplarz jedną kontrolowaną ścieżk
 - Konto CTIP musi mieć sekcję `device` oraz aktywne powiązanie z użytkownikiem Menadżera Serwisu.
 - Pole wystawiającego PZ pochodzi wyłącznie z tego powiązania; API nie przyjmuje go od klienta.
 - Brak dokumentu zewnętrznego albo cena zakupu `0` wymaga zaznaczenia wyjątku i uzasadnienia mającego co najmniej 10 znaków.
-- Klucz UUID operacji jest idempotentny. Po błędzie połączenia należy ponowić dokładnie to samo żądanie z tym samym UUID.
+- Klucz UUID operacji jest idempotentny. Po błędzie połączenia dokładnie to samo żądanie zachowuje UUID, natomiast każda zmiana danych formularza automatycznie rozpoczyna nową operację z nowym UUID.
 - Moduł nie tworzy nowych rekordów `SERIAL`. Serial i numer KP są zapisywane w pozycji PZ, osobnej kartotece `MAGAZYN`, rekordzie `MASZYNA` i rejestrze CTIP.
 - Przed zapisem PZ generatory tabel używanych bezpośrednio i przez triggery są porównywane z maksymalnymi identyfikatorami oraz podnoszone wyłącznie w przypadku wykrycia opóźnienia.
 - Historyczna ścieżka `arkusz → MAGAZYN/MASZYNA` bez PZ jest zablokowana.

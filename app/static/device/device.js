@@ -8,6 +8,7 @@ const deviceState = {
   suppliers: new Map(),
   intakeItems: [],
   intakeKey: null,
+  intakeRequestSignature: null,
   kp: { prefix: "KP/", nextNumber: 1, width: 4 },
   warehousePage: 1,
   warehousePages: 1,
@@ -518,6 +519,7 @@ function filterIntakeItems() {
 function resetIntake() {
   deviceState.intakeItems = [];
   deviceState.intakeKey = null;
+  deviceState.intakeRequestSignature = null;
   setIntakeItemsMessage("");
   clearIntakeValidation();
   const key = document.getElementById("device-intake-key");
@@ -734,14 +736,7 @@ async function submitIntake() {
     return false;
   }
 
-  if (!deviceState.intakeKey) {
-    deviceState.intakeKey = createUuid();
-  }
-  document.getElementById(
-    "device-intake-key"
-  ).textContent = `UUID operacji: ${deviceState.intakeKey}`;
-  const payload = {
-    idempotency_key: deviceState.intakeKey,
+  const requestPayload = {
     supplier_id: Number(supplier.id_klient),
     external_document: externalDocument || null,
     allow_exception: allowException,
@@ -756,6 +751,21 @@ async function submitIntake() {
       counter_color: item.counterColor === "" ? null : Number(item.counterColor),
       counter_scan: item.counterScan === "" ? null : Number(item.counterScan),
     })),
+  };
+  const requestSignature = JSON.stringify(requestPayload);
+  if (
+    !deviceState.intakeKey ||
+    deviceState.intakeRequestSignature !== requestSignature
+  ) {
+    deviceState.intakeKey = createUuid();
+    deviceState.intakeRequestSignature = requestSignature;
+  }
+  document.getElementById(
+    "device-intake-key"
+  ).textContent = `UUID operacji: ${deviceState.intakeKey}`;
+  const payload = {
+    idempotency_key: deviceState.intakeKey,
+    ...requestPayload,
   };
 
   const button = document.getElementById("device-intake-submit");
