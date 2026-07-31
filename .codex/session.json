@@ -1,19 +1,125 @@
 {
-  "timestamp": "2026-06-18T16:13:20+02:00",
+  "timestamp": "2026-07-31T10:32:16+02:00",
   "summary": [
-    "Aktywna linia lokalna to integration/prod-realign-2026-05-25, HEAD 41b9703c165c0ad83d5c4b61b5c8f08e4e73d2b3.",
-    "Produkcja Windows 192.168.0.8 byla ostatnio wyrownana po hotfixach statusow FLOW; nie laczyc sie z produkcja bez jawnej prosby uzytkownika.",
+    "Lokalny CHAT_KP public i outbox korzystają z rzeczywistego API katalogu pod adresem http://ctip-bot-api:8082; mock chat_kp-ctip-mock-1 został zatrzymany.",
+    "Izolowany kontener ctip-bot-identity-api łączy sieci CHAT_KP i CTIP, nie ma portu hosta, korzysta z ctip_test i jednoznacznej nazwy ctip-prod-mirror-postgres-1.",
+    "Kontrakt /v1 jest zgodny z CHAT_KP 1.0: capabilities, rozpoznanie firmy, SMS, urządzenia maskowane oraz idempotentne sprawy.",
+    "Test end-to-end klientem bibliotecznym CHAT_KP zakończył się poprawnie: unique, SMS verified, 2 urządzenia maskowane, sprawa queued i poprawny ponowny odczyt.",
+    "Brak tokenu zwraca HTTP 401, a token voice użyty dla żądania kanału chat HTTP 403; SMS i komunikacja klientów pozostają zablokowane.",
+    "Pełny dostępny zestaw testów CTIP bez znanego test_admin_backend.py: 343 passed; Ruff, Black, pre-commit, import aplikacji i git diff --check poprawne.",
+    "Kontrakt POST /v1/customers/resolve zwraca opcjonalne company_name wyłącznie dla exact i unique; ambiguous i not_found nie ujawniają nazwy firmy ani customer_ref.",
+    "Laboratoryjne wyzwania SMS używają stałego kodu wyłącznie przy CRM_LAB_MODE=true, PGDATABASE=ctip_test i SMS_TEST_MODE=true; produkcyjny .env nie zawiera konfiguracji kodu testowego.",
+    "Po zmianie zrestartowano wyłącznie kontener ctip-bot-identity-api; test HTTP potwierdził poprawny kod, odrzucenie błędnego kodu i brak jawnego kodu w bazie.",
+    "Migracja CTIP a6f3c8d2e910 dodała losowe device_ref, image_url oraz wielokrotny wybór crm_case.device_refs; przed migracją wykonano zweryfikowany backup ctip_test.",
+    "Synchronizacja read-only mapuje MASZYNA.ID_MODEL do MODEL.ID_MODEL z fallbackiem MARKA+MODEL; producent pochodzi z MODEL.MARKA, a zdjęcie z MODEL.PLIK.",
+    "Aktualna projekcja LAB ma 5795 urządzeń, brak pustych i zduplikowanych device_ref oraz 931 bezpiecznych image_url.",
+    "Test HTTP LAB potwierdził odmowę urządzeń przed SMS i po błędnym kodzie, pełny serial po kodzie poprawnym, utworzenie sprawy dla wielu urządzeń oraz odrzucenie urządzenia innego klienta.",
+    "Dwa historyczne lokalne rekordy CHAT_KP z identyfikatorami mocka case-* zachowano i oznaczono jako delivery_failed; zakończyło to cykliczne odpowiedzi 404 bez usuwania historii.",
+    "Lokalny katalog tożsamości botów łączy się z testowym Firebird 2.5.9 przez alias firebird i bazę /data/BAZAMS_TEST.FDB; nie użyto 192.168.0.8 ani 192.168.0.11.",
+    "Osobny kontener ctip-bot-identity-sync działa co 300 sekund wyłącznie w sieci ctip-prod-mirror_ctip_test_internal, bez wystawionych portów i z FB_ALLOW_WRITES=false.",
+    "Transakcja Firebird używa ISOLATION_LEVEL_READ_COMMITED_RO; kontrolowana próba aktualizacji została odrzucona komunikatem attempted update during read-only transaction.",
+    "Synchronizacja ctip_test zakończyła się statusem completed: 505 kont mobilnych, 4976 kontaktów, 2583 firmy, 5795 urządzeń i 1192 zduplikowane telefony.",
+    "Poprawiono kolejność flush przed dezaktywacją brakujących rekordów; stan urządzeń po kolejnym przebiegu odpowiada Firebird: 5276 aktywnych i 519 nieaktywnych.",
+    "Testy ochrony LAB i katalogu tożsamości: 15 passed; pre-commit, Ruff, Black, import workera i git diff --check zakończone poprawnie.",
+    "Aktywna linia lokalna to integration/prod-realign-2026-05-25, lokalny HEAD 1e72100; nie przesuwano jej z powodu zachowanych zmian uzytkownika w README i dokumentacji Firebird.",
+    "Origin integration/prod-realign-2026-05-25 oraz feature/backup-retention-firebird-optima-2026-07-13 wskazuja f2ab942; produkcja Windows 192.168.0.8 dziala na 05780b8.",
+    "Wdrożono backup Firebird i trzech baz Optima, walidacje odtworzeniowe, lokalna retencje 21 dni oraz retencje Office 365 14 dni.",
+    "Retencja usunela okolo 30,06 GB lokalnie i 99,66 GB w Office 365; koncowy dry-run nie wykazal dalszych kandydatow ani bledow.",
+    "Backupy sa zapisywane w D:\\CTIP\\backups, D:\\Backup_CTIP_MS_optima\\Menadzer_Serwisu\\prod oraz D:\\Backup_CTIP_MS_optima\\Optima; ciepla kopia Firebird pozostaje w D:\\automate\\BAZAMS_kopia.FDB.",
+    "Wylaczono zadania Backup BAZAMS i Optima KP; zadanie Microsoft-Windows-WindowsBackup pozostawiono aktywne.",
+    "Produkcja Windows 192.168.0.8 zostala zweryfikowana z adresu zrodlowego 192.168.0.9; nie laczyc sie z produkcja bez jawnej prosby uzytkownika.",
     "Komunikacja klientow na produkcji zostala przywrocona: BLOCK_CLIENT_COMMUNICATIONS=false.",
     "Formularz 47 zostal odzyskany po blokadzie komunikacji: nowy token, e-mail wyslany, SMS wyslany, status DISPATCHED.",
     "Plan dalszych prac dla /device zostal zapisany jako notatka na pozniej w docs/session_state.md i utrwalony snapshotem sesji 2026-06-18.",
-    "Modul /device jest zaimplementowany jako v1, ale przed pelnym dopuszczeniem produkcyjnym wymaga testu end-to-end Firebird oraz dopracowania punktow z planu."
+    "Modul /device jest zaimplementowany jako v1, ale przed pelnym dopuszczeniem produkcyjnym wymaga testu end-to-end Firebird oraz dopracowania punktow z planu.",
+    "Lokalnie wdrozono osobna operacje Wykup BNP pod istniejacym Przyjeciem PZ; dotychczasowy proces PZ i jego obsluga nie zostaly zmienione.",
+    "Wykup BNP wyszukuje urzadzenie po numerze seryjnym, tworzy brakujaca pozycje magazynu 27 ze stanem zero i finalizuje WKP wraz z PZ po spelnieniu blokad.",
+    "Walidacja Wykupu BNP: pre-commit, Ruff, Black, node --check i git diff --check poprawne; 352 testy dostepnego zestawu przeszly, a lokalny odczyt Firebird oraz wycofana proba INSERT zakonczyly sie poprawnie.",
+    "Pole nazwy pozycji Wykupu BNP otrzymuje edytowalna podpowiedz Producent Model S/N:serial po jednoznacznym wyszukaniu urzadzenia.",
+    "CRM używa czterech kolejek: Handel, Serwis + IT, Umowy i liczniki oraz Inne; dokładny typ wejścia jest zachowywany w crm_case.category.",
+    "Użytkownicy mają niezależne ustawienia SMS/e-mail dla Handlu oraz grupy Pozostałe obejmującej Serwis, Umowy i liczniki oraz Inne.",
+    "Endpoint POST /v1/form-cases wymaga osobnego tokenu serwerowego i stabilnego Idempotency-Key; token nie trafia do przeglądarki.",
+    "Lokalna wtyczka PageKP kp-ctip-forms zastąpiła aktywne formularze Bitrix24/Contact Form 7 na kontakcie, produktach, konfiguratorze, Serwisie i Obsłudze IT oraz udostępnia globalny panel kontaktowy.",
+    "Migracja f3a7c9e2d610 została zastosowana wyłącznie do ctip_test po zweryfikowanym backupie inbox/backups/ctip_test_before_crm_forms_2026-07-30.dump.",
+    "E2E PageKP -> CTIP potwierdził routing product/configurator do sales, meters do contracts i other do other, jednego odbiorcę symulacji, brak nowych rekordów sms_out oraz działający link do sprawy na localhost:8001.",
+    "Walidacja etapu formularzy: pre-commit poprawny, 11 testów CRM, 7 testów bramy LAB, 3 testy UI i test CRUD użytkowników przeszły; PHP 7.4 i JavaScript mają poprawną składnię.",
+    "Wtyczka PageKP kp-ctip-forms 0.2.1 wymaga telefonu w HTML, JavaScript i backendzie, pokazuje natywny checkbox zgody oraz układa tekst zgody na pełnej szerokości.",
+    "Modal produktu jest pojedynczym responsywnym kafelkiem z nazwą urządzenia; historyczne onclick i dodatkowy jQuery CDN zostały usunięte.",
+    "Globalny zielony widget Bitrix został zastąpiony panelem Kontakt/Oddzwonimy, a dwa osadzenia data-b24-form w bazie wiedzy formularzem Bezpłatna konsultacja; powielone formularze w treści strony głównej, oferty i kategorii usunięto.",
+    "Audyt 153 adresów PageKP zakończył się bez błędów i bez aktywnych loaderów lub formularzy Bitrix/CF7; skrypty CF7 są wyłączone.",
+    "Testy HTTP/AJAX przez 192.168.0.9:8074 potwierdziły wymagany telefon, routing app_registration do other oraz product i consultation do sales; sms_out pozostał bez zmian.",
+    "Lokalne zmiany PageKP zapisano w commicie 33ea3d8 obejmującym wtyczkę kp-ctip-forms 0.2.1 i dziewięć szablonów integracyjnych; repozytorium PageKP nadal nie ma skonfigurowanego zdalnego origin.",
+    "Zmiany formularzy WWW, kolejek CRM i powiadomień użytkowników zapisano w commicie CTIP f7db3df.",
+    "Proces Wykupu BNP wraz z API, interfejsem, dokumentacją i testami zapisano w commicie CTIP 3a87676."
   ],
   "context": {
     "repo": "ctip",
     "branch_local": "integration/prod-realign-2026-05-25",
-    "head_local": "41b9703c165c0ad83d5c4b61b5c8f08e4e73d2b3",
+    "head_local": "3a87676",
     "environment": "Domyslnie lokalne testowe .env.test i baza ctip_test; zasoby 192.168.0.8 oraz 192.168.0.11 sa produkcyjne.",
-    "focus": "zachowany plan dalszych prac /device do pozniejszego wdrozenia",
+    "focus": "testowe wdrożenie formularzy PageKP do /crm i powiadomień użytkowników bez uruchamiania komunikacji produkcyjnej",
+    "crm_forms": {
+      "status": "test_e2e_completed",
+      "queues": [
+        "sales",
+        "service_it",
+        "contracts",
+        "other"
+      ],
+      "migration": "f3a7c9e2d610 na lokalnym ctip_test; produkcji nie migrowano.",
+      "pagekp_plugin": "public/wp-content/plugins/kp-ctip-forms/ 0.2.1 w lokalnym repozytorium pagekp; commit 33ea3d8",
+      "api": "POST /v1/form-cases, osobny CRM_WWW_TOKEN i Idempotency-Key",
+      "notifications": "Niezależne SMS/e-mail dla Handlu i Pozostałych; LAB zapisuje wyłącznie zdarzenie notification.",
+      "e2e": "Produkt, konfigurator, liczniki, inne, rejestracja aplikacji, konsultacja i serwis zapisane poprawnie; ponowienie idempotentne; sms_out bez zmian; bezpośredni link do /crm zwraca HTTP 200.",
+      "safety": "ctip_test, CRM_LAB_MODE=true, FB_ALLOW_WRITES=false, SMS_TEST_MODE=true, prywatny kontener ctip-lab-portal-forms bez portu hosta."
+    },
+    "bot_identity_local_sync": {
+      "status": "running_test_read_only",
+      "firebird_engine": "2.5.9",
+      "firebird_host": "firebird",
+      "firebird_database": "/data/BAZAMS_TEST.FDB",
+      "postgres_database": "ctip_test",
+      "worker_container": "ctip-bot-identity-sync",
+      "sync_interval_seconds": 300,
+      "latest_counts": {
+        "accounts": 505,
+        "contacts": 4976,
+        "customers": 2583,
+        "devices": 5795,
+        "active_devices": 5276,
+        "inactive_devices": 519,
+        "duplicate_phones": 1192
+      },
+      "safety": "FB_ALLOW_WRITES=false, Firebird read-only isolation, SMS_TEST_MODE=true, BLOCK_CLIENT_COMMUNICATIONS=true, brak portów workera i wyłącznie wewnętrzna sieć Docker."
+    },
+    "chat_kp_ctip_integration": {
+      "status": "running_test_live_api",
+      "ctip_base_url": "http://ctip-bot-api:8082",
+      "api_container": "ctip-bot-identity-api",
+      "chat_containers": [
+        "chat_kp-public-1",
+        "chat_kp-outbox-1"
+      ],
+      "mock_container": "chat_kp-ctip-mock-1 stopped",
+      "postgres_database": "ctip_test",
+      "retention_days": 360,
+      "company_name_contract": "company_name tylko dla exact i unique; null dla ambiguous i not_found.",
+      "lab_sms_challenge": "Stały kod skonfigurowany wyłącznie w ignorowanym pliku środowiskowym LAB; baza przechowuje tylko hash.",
+      "device_contract": "Po poprawnym SMS /v1 zwraca producer, model, pełny serial, zgodne serial_last4, image_url, location i active; /internal/v1 wymaga ważnego disclosure_grant.",
+      "device_projection": "5795 urządzeń, 5795 unikalnych device_ref i 931 image_url po synchronizacji MASZYNA -> MODEL.PLIK.",
+      "migration": "a6f3c8d2e910 na lokalnym ctip_test; produkcji i bazy CHAT_KP nie migrowano.",
+      "safety": "API bez portu hosta; CHAT_KP bez dostępu do sieci CTIP; SMS_TEST_MODE=true; BLOCK_CLIENT_COMMUNICATIONS=true; osobne tokeny chat i voice.",
+      "e2e": "resolve unique, SMS verified, masked devices, case queued, case fetched"
+    },
+    "backup_retention": {
+      "status": "production_verified",
+      "feature_commit": "f2ab94253e046aa08cc562e8e8f9ce6c41ea3e4f",
+      "production_commit": "05780b848e3c7508099d8c9f9fe0a17ec0dab79b",
+      "local_retention_days": 21,
+      "office365_retention_days": 14,
+      "production_source_ip": "192.168.0.9",
+      "verification": "Uslugi CTIP, Firebird i MSSQL OPTIMA dzialaja; /health i /admin zwracaja HTTP 200; backup PostgreSQL przechodzi pg_restore --list, a backup Firebird pelne odtworzenie testowe."
+    },
     "device_plan": {
       "status": "v1_implemented_needs_operational_validation",
       "summary": "/device ma dashboard PZ, audyt MAGAZYN/SERIAL/MASZYNA/MODEL, synchronizacje AUTO/XXXX i tworzenie PZ batch z SERIAL oraz MASZYNA.",
@@ -27,6 +133,18 @@
         "Wykonac reczny test UI z realnym scenariuszem dostawcy, modelu i 2-3 pozycji."
       ],
       "assumption": "Do wykonania powyzszych punktow /device nie jest traktowany jako w pelni zatwierdzony proces produkcyjny."
+    },
+    "bnp_buyout": {
+      "status": "production_verified",
+      "scope": "Osobne menu Wykup BNP pod istniejacym Przyjeciem PZ; bez zmian dotychczasowego procesu PZ.",
+      "production_commit": "5dd3a9f2d07d7cc60e5e3d5aa8774972b76b6bd7",
+      "endpoints": [
+        "GET /admin/device/bnp-buyout/lookup",
+        "POST /admin/device/bnp-buyout/catalog",
+        "POST /admin/device/bnp-buyout/complete"
+      ],
+      "safety": "Na produkcji wykonano wyłącznie aktualizację kodu i restart CTIP-Web; nie restartowano CollectorService ani CTIP-SMS i nie wykonano zapisu testowego do Firebird.",
+      "validation": "Pre-commit, Ruff, Black i node --check poprawne; 18 testów BNP/UI przeszło. Produkcja zwraca /health 200, interfejs device v0.6.0, komplet endpointów BNP i 404 dla trasy prototypów."
     }
   }
 }
