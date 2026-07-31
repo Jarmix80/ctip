@@ -529,6 +529,23 @@ function resetIntake() {
   renderIntakeItems();
 }
 
+function resetIntakeAddFields() {
+  const modelInput = document.getElementById("device-model-search");
+  const quantityInput = document.getElementById("device-item-quantity");
+  const priceInput = document.getElementById("device-item-price");
+  modelInput.value = "";
+  quantityInput.value = "1";
+  priceInput.value = "";
+  [modelInput, quantityInput, priceInput].forEach(clearInvalidField);
+  modelInput.focus();
+}
+
+function renumberIntakeKp() {
+  deviceState.intakeItems.forEach((item, index) => {
+    item.ewidencja = kpNumber(index);
+  });
+}
+
 async function createSupplier() {
   const button = document.getElementById("device-supplier-create");
   const payload = {
@@ -620,9 +637,7 @@ function addIntakeItems() {
     });
   }
   renderIntakeItems();
-  document
-    .querySelector(`[data-intake-index="${offset}"] [data-item-field="serial"]`)
-    ?.focus();
+  resetIntakeAddFields();
   return quantity;
 }
 
@@ -2174,6 +2189,7 @@ function bindIntakeEvents() {
       return;
     }
     deviceState.intakeItems.splice(Number(button.dataset.itemRemove), 1);
+    renumberIntakeKp();
     renderIntakeItems();
   });
   document

@@ -72,6 +72,10 @@ zachowano wyróżnioną akcję `+ Dodaj urządzenie` oraz wyszukiwanie po modelu
 numerze KP w bieżącej liście. Przyklejone podsumowanie pokazuje liczbę urządzeń, kompletność
 danych oraz wartości netto, VAT i brutto. Podsumowanie jest obliczane lokalnie i nie zmienia
 zasad walidacji ani formatu żądania do istniejącego endpointu przyjęcia PZ.
+Po dodaniu pozycji pola modelu, liczby i ceny w sekcji `02 Urządzenia` są automatycznie
+czyszczone, przy czym liczba wraca do wartości `1`. Usunięcie dowolnego wiersza z listy
+przelicza numery KP wszystkich pozostałych pozycji, zachowując ciągłość od aktualnego numeru
+sugerowanego przez Firebird.
 
 Każdy egzemplarz może opcjonalnie otrzymać liczniki B/W, kolor i skan. Wartości są
 nieujemnymi liczbami całkowitymi. Zapis aktualizuje odpowiednio `MASZYNA.LICZNIK`,

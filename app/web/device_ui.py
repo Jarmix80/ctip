@@ -11,7 +11,7 @@ from app.core.config import settings
 templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["device-ui"])
-DEVICE_UI_VERSION = "0.6.3"
+DEVICE_UI_VERSION = "0.6.4"
 
 
 async def _device_template(request: Request, view: str) -> HTMLResponse:
