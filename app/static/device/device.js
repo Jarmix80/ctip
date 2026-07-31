@@ -204,6 +204,29 @@ async function initializeDevicePage() {
   const intakeResultBox = document.getElementById("device-intake-result");
   const intakeResultHead = document.getElementById("device-intake-result-head");
   const intakeResultList = document.getElementById("device-intake-result-list");
+  const bnpToggleBtn = document.getElementById("device-bnp-toggle");
+  const bnpPanel = document.getElementById("device-bnp-panel");
+  const bnpLookupForm = document.getElementById("device-bnp-lookup-form");
+  const bnpSerialInput = document.getElementById("device-bnp-serial");
+  const bnpLookupBtn = document.getElementById("device-bnp-lookup-btn");
+  const bnpResult = document.getElementById("device-bnp-result");
+  const bnpMachineSummary = document.getElementById("device-bnp-machine-summary");
+  const bnpBlockers = document.getElementById("device-bnp-blockers");
+  const bnpWarnings = document.getElementById("device-bnp-warnings");
+  const bnpWarehouseBody = document.getElementById("device-bnp-warehouse-body");
+  const bnpTargetEwidencjaInput = document.getElementById("device-bnp-target-ewidencja");
+  const bnpWarehouseIndexInput = document.getElementById("device-bnp-warehouse-index");
+  const bnpDocumentInput = document.getElementById("device-bnp-document");
+  const bnpDocumentDateInput = document.getElementById("device-bnp-document-date");
+  const bnpItemNameInput = document.getElementById("device-bnp-item-name");
+  const bnpPriceNettoInput = document.getElementById("device-bnp-price-netto");
+  const bnpPriceBruttoInput = document.getElementById("device-bnp-price-brutto");
+  const bnpCreateCatalogBtn = document.getElementById("device-bnp-create-catalog-btn");
+  const bnpConfirmInput = document.getElementById("device-bnp-confirm");
+  const bnpCompleteBtn = document.getElementById("device-bnp-complete-btn");
+  const bnpStatus = document.getElementById("device-bnp-status");
+  const bnpFinalResult = document.getElementById("device-bnp-final-result");
+  const bnpFinalResultText = document.getElementById("device-bnp-final-result-text");
 
   const requiredElements = [
     ["device-refresh", refreshBtn],
@@ -266,6 +289,29 @@ async function initializeDevicePage() {
     ["device-intake-result", intakeResultBox],
     ["device-intake-result-head", intakeResultHead],
     ["device-intake-result-list", intakeResultList],
+    ["device-bnp-toggle", bnpToggleBtn],
+    ["device-bnp-panel", bnpPanel],
+    ["device-bnp-lookup-form", bnpLookupForm],
+    ["device-bnp-serial", bnpSerialInput],
+    ["device-bnp-lookup-btn", bnpLookupBtn],
+    ["device-bnp-result", bnpResult],
+    ["device-bnp-machine-summary", bnpMachineSummary],
+    ["device-bnp-blockers", bnpBlockers],
+    ["device-bnp-warnings", bnpWarnings],
+    ["device-bnp-warehouse-body", bnpWarehouseBody],
+    ["device-bnp-target-ewidencja", bnpTargetEwidencjaInput],
+    ["device-bnp-warehouse-index", bnpWarehouseIndexInput],
+    ["device-bnp-document", bnpDocumentInput],
+    ["device-bnp-document-date", bnpDocumentDateInput],
+    ["device-bnp-item-name", bnpItemNameInput],
+    ["device-bnp-price-netto", bnpPriceNettoInput],
+    ["device-bnp-price-brutto", bnpPriceBruttoInput],
+    ["device-bnp-create-catalog-btn", bnpCreateCatalogBtn],
+    ["device-bnp-confirm", bnpConfirmInput],
+    ["device-bnp-complete-btn", bnpCompleteBtn],
+    ["device-bnp-status", bnpStatus],
+    ["device-bnp-final-result", bnpFinalResult],
+    ["device-bnp-final-result-text", bnpFinalResultText],
   ];
   const missingElements = requiredElements.filter(([, element]) => !element).map(([id]) => id);
   if (missingElements.length) {
@@ -1084,6 +1130,229 @@ async function initializeDevicePage() {
     }
   };
 
+  let bnpLookup = null;
+
+  const localIsoDate = () => {
+    const current = new Date();
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, "0");
+    const day = String(current.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const setBnpStatus = (message = "", kind = "info") =>
+    setInlineStatus(bnpStatus, message, kind);
+
+  const formatMoney = (value) => {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) {
+      return "—";
+    }
+    return number.toLocaleString("pl-PL", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const renderBnpMessageList = (element, messages) => {
+    const rows = Array.isArray(messages) ? messages.filter(Boolean) : [];
+    element.hidden = rows.length === 0;
+    element.innerHTML = rows.length
+      ? `<ul>${rows.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ul>`
+      : "";
+  };
+
+  const updateBnpGross = () => {
+    const netValue = Number(
+      String(bnpPriceNettoInput.value || "")
+        .trim()
+        .replace(",", ".")
+    );
+    bnpPriceBruttoInput.value =
+      Number.isFinite(netValue) && netValue > 0 ? formatMoney(netValue * 1.23) : "";
+  };
+
+  const updateBnpCompleteState = () => {
+    const requiredFieldsReady = [
+      bnpTargetEwidencjaInput.value,
+      bnpWarehouseIndexInput.value,
+      bnpDocumentInput.value,
+      bnpDocumentDateInput.value,
+      bnpItemNameInput.value,
+      bnpPriceNettoInput.value,
+    ].every((value) => String(value || "").trim());
+    bnpCompleteBtn.disabled = !(
+      bnpLookup?.can_complete &&
+      bnpLookup?.target_item &&
+      bnpConfirmInput.checked &&
+      requiredFieldsReady
+    );
+  };
+
+  const clearBnpFinalResult = () => {
+    bnpFinalResultText.textContent = "";
+    bnpFinalResult.hidden = true;
+  };
+
+  const buildBnpDefaultItemName = (machine, fallbackSerial = "") => {
+    if (!machine) {
+      return "";
+    }
+    const deviceName = [machine.marka, machine.model].filter(Boolean).join(" ").trim();
+    const serial = String(machine.serial || machine.serial2 || fallbackSerial).trim();
+    return [deviceName, serial ? `S/N:${serial}` : ""].filter(Boolean).join(" ");
+  };
+
+  const renderBnpLookup = (lookup, preserved = null) => {
+    bnpLookup = lookup || null;
+    const machine = lookup?.machine || null;
+    const machines = Array.isArray(lookup?.machines) ? lookup.machines : [];
+    if (machine) {
+      const modelLabel = [machine.marka, machine.model].filter(Boolean).join(" ") || "—";
+      const locationLabel =
+        [machine.stoi, machine.adres, machine.miejscowosc].filter(Boolean).join(" / ") || "—";
+      bnpMachineSummary.innerHTML = `
+        <article><span>Klient</span><strong>${escapeHtml(machine.client_name || "—")}</strong></article>
+        <article><span>Urządzenie</span><strong>${escapeHtml(modelLabel)}</strong></article>
+        <article><span>Numer KP</span><strong>${escapeHtml(machine.ewidencja || "—")}</strong></article>
+        <article><span>Lokalizacja</span><strong>${escapeHtml(locationLabel)}</strong></article>
+      `;
+    } else {
+      bnpMachineSummary.innerHTML = `
+        <article>
+          <span>Dopasowanie</span>
+          <strong>${escapeHtml(
+            machines.length
+              ? `Znaleziono ${machines.length} rekordy MASZYNA`
+              : "Nie znaleziono urządzenia"
+          )}</strong>
+        </article>
+      `;
+    }
+
+    renderBnpMessageList(bnpBlockers, lookup?.blockers);
+    renderBnpMessageList(bnpWarnings, lookup?.warnings);
+
+    const warehouseRows = Array.isArray(lookup?.warehouse_rows) ? lookup.warehouse_rows : [];
+    bnpWarehouseBody.innerHTML = warehouseRows.length
+      ? warehouseRows
+          .map(
+            (item) => `
+              <tr>
+                <td>
+                  ${escapeHtml(item.warehouse_name || `Magazyn ${item.id_magazyn || "—"}`)}
+                  ${Number(item.id_magazyn) === 27 ? '<span class="flow-badge ok">Docelowy</span>' : ""}
+                </td>
+                <td>
+                  ID ${escapeHtml(item.id_magazyn_table || "—")}<br>
+                  <strong>${escapeHtml(item.index || "—")}</strong>
+                </td>
+                <td>${escapeHtml(item.name || "—")}</td>
+                <td>${escapeHtml(formatMoney(item.quantity))}</td>
+                <td>${escapeHtml(formatMoney(item.purchase_price))} netto</td>
+              </tr>
+            `
+          )
+          .join("")
+      : "<tr><td colspan='5'>Brak kartotek magazynowych dla tego numeru KP.</td></tr>";
+
+    const targetItem = lookup?.target_item || null;
+    bnpTargetEwidencjaInput.value =
+      preserved?.targetEwidencja || lookup?.suggested_ewidencja || "";
+    bnpWarehouseIndexInput.value =
+      preserved?.warehouseIndex || targetItem?.index || lookup?.suggested_index || "";
+    bnpDocumentInput.value = preserved?.document || "";
+    bnpDocumentDateInput.value = preserved?.documentDate || localIsoDate();
+    bnpItemNameInput.value =
+      preserved?.itemName || buildBnpDefaultItemName(machine, lookup?.serial);
+    bnpPriceNettoInput.value = preserved?.priceNetto || "";
+    bnpConfirmInput.checked = false;
+    bnpCreateCatalogBtn.hidden = !lookup?.can_create_catalog;
+    bnpResult.hidden = false;
+    clearBnpFinalResult();
+    updateBnpGross();
+    updateBnpCompleteState();
+  };
+
+  const loadBnpLookup = async ({ preserveForm = false } = {}) => {
+    const serial = String(bnpSerialInput.value || "").trim();
+    if (!serial) {
+      throw new Error("Podaj numer seryjny z dokumentu BNP.");
+    }
+    const preserved = preserveForm
+      ? {
+          targetEwidencja: bnpTargetEwidencjaInput.value,
+          warehouseIndex: bnpWarehouseIndexInput.value,
+          document: bnpDocumentInput.value,
+          documentDate: bnpDocumentDateInput.value,
+          itemName: bnpItemNameInput.value,
+          priceNetto: bnpPriceNettoInput.value,
+        }
+      : null;
+    const body = await fetchJson(
+      `/admin/device/bnp-buyout/lookup?serial=${encodeURIComponent(serial)}`,
+      {
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        defaultError: "Nie udało się wyszukać urządzenia do wykupu BNP.",
+      }
+    );
+    renderBnpLookup(body.lookup || {}, preserved);
+    return body.lookup || {};
+  };
+
+  const validateBnpIdentifiers = () => {
+    const sourceValue = String(bnpLookup?.machine?.ewidencja || "").trim().toUpperCase();
+    const sourceMatch = sourceValue.match(/^KP\/(\d+)(?:\/.*)?$/);
+    if (!sourceMatch) {
+      throw new Error("Źródłowa ewidencja urządzenia nie ma formatu KP/<numer>/...");
+    }
+    const targetValues = [
+      ["Docelowa ewidencja", bnpTargetEwidencjaInput.value],
+      ["Indeks magazynowy", bnpWarehouseIndexInput.value],
+    ];
+    targetValues.forEach(([label, rawValue]) => {
+      const match = String(rawValue || "")
+        .trim()
+        .toUpperCase()
+        .match(/^WKP\/(\d+)(?:\/.*)?$/);
+      if (!match) {
+        throw new Error(`${label} musi mieć format WKP/<numer>/...`);
+      }
+      if (match[1] !== sourceMatch[1]) {
+        throw new Error(`${label} musi zachować numer KP/${sourceMatch[1]}.`);
+      }
+    });
+  };
+
+  const readBnpDocumentFields = () => {
+    const itemName = String(bnpItemNameInput.value || "").trim();
+    const externalDocument = String(bnpDocumentInput.value || "").trim();
+    const documentDate = String(bnpDocumentDateInput.value || "").trim();
+    const priceNetto = Number(
+      String(bnpPriceNettoInput.value || "")
+        .trim()
+        .replace(",", ".")
+    );
+    if (!itemName) {
+      throw new Error("Podaj nazwę pozycji z dokumentu BNP.");
+    }
+    if (!externalDocument) {
+      throw new Error("Podaj numer dokumentu BNP.");
+    }
+    if (!documentDate) {
+      throw new Error("Podaj datę dokumentu BNP.");
+    }
+    if (!Number.isFinite(priceNetto) || priceNetto <= 0) {
+      throw new Error("Cena netto wykupu musi być większa od 0.");
+    }
+    return {
+      itemName,
+      externalDocument,
+      documentDate,
+      priceNetto: Number(priceNetto.toFixed(4)),
+    };
+  };
+
   const loadData = async () => {
     setError("");
     setBusy(true);
@@ -1133,6 +1402,172 @@ async function initializeDevicePage() {
   refreshBtn.addEventListener("click", () => {
     loadData();
   });
+
+  bnpToggleBtn.addEventListener("click", () => {
+    const willOpen = bnpPanel.hidden;
+    bnpPanel.hidden = !willOpen;
+    bnpToggleBtn.textContent = willOpen ? "Zamknij Wykup BNP" : "Wykup BNP";
+    if (willOpen) {
+      bnpSerialInput.focus();
+    }
+  });
+
+  bnpLookupForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setError("");
+    setInfo("");
+    setBnpStatus("Wyszukiwanie urządzenia i kartotek...", "info");
+    clearBnpFinalResult();
+    try {
+      setActionBusy(bnpLookupBtn, true, "Wyszukiwanie...", "Wyszukaj urządzenie");
+      const lookup = await loadBnpLookup();
+      if (Array.isArray(lookup.blockers) && lookup.blockers.length) {
+        setBnpStatus("Wyszukiwanie zakończone z blokadami wymagającymi wyjaśnienia.", "warn");
+      } else if (lookup.can_create_catalog) {
+        setBnpStatus(
+          "Nie znaleziono kartoteki na magazynie 27. Uzupełnij nazwę i utwórz pozycję ze stanem 0.",
+          "warn"
+        );
+      } else {
+        setBnpStatus("Urządzenie i kartoteka są gotowe do przygotowania wykupu.", "success");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Błąd wyszukiwania urządzenia.";
+      setError(message);
+      setBnpStatus(message, "error");
+    } finally {
+      setActionBusy(bnpLookupBtn, false, "Wyszukiwanie...", "Wyszukaj urządzenie");
+    }
+  });
+
+  bnpCreateCatalogBtn.addEventListener("click", async () => {
+    setError("");
+    setInfo("");
+    clearBnpFinalResult();
+    try {
+      if (!bnpLookup?.machine || !bnpLookup?.can_create_catalog) {
+        throw new Error("Brak jednoznacznego urządzenia gotowego do utworzenia kartoteki.");
+      }
+      validateBnpIdentifiers();
+      const itemName = String(bnpItemNameInput.value || "").trim();
+      if (!itemName) {
+        throw new Error("Podaj nazwę pozycji z dokumentu BNP.");
+      }
+      const payload = {
+        serial: String(bnpSerialInput.value || "").trim(),
+        machine_table_id: Number(bnpLookup.machine.id_maszyna_table),
+        expected_ewidencja: String(bnpLookup.machine.ewidencja || "").trim(),
+        warehouse_index: String(bnpWarehouseIndexInput.value || "").trim(),
+        item_name: itemName,
+      };
+      setActionBusy(
+        bnpCreateCatalogBtn,
+        true,
+        "Tworzenie pozycji...",
+        "Stwórz pozycję ze stanem 0"
+      );
+      setBnpStatus("Tworzenie kartoteki na magazynie 27...", "info");
+      const body = await fetchJson("/admin/device/bnp-buyout/catalog", {
+        method: "POST",
+        extraHeaders: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        timeoutMs: LONG_TIMEOUT_MS,
+        defaultError: "Nie udało się utworzyć kartoteki wykupu BNP.",
+      });
+      setInfo(body.message || "Kartoteka wykupu BNP została przygotowana.");
+      setBnpStatus("Kartoteka istnieje na magazynie 27 ze stanem 0.", "success");
+      await loadBnpLookup({ preserveForm: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Błąd tworzenia kartoteki BNP.";
+      setError(message);
+      setBnpStatus(message, "error");
+    } finally {
+      setActionBusy(
+        bnpCreateCatalogBtn,
+        false,
+        "Tworzenie pozycji...",
+        "Stwórz pozycję ze stanem 0"
+      );
+    }
+  });
+
+  bnpCompleteBtn.addEventListener("click", async () => {
+    setError("");
+    setInfo("");
+    clearBnpFinalResult();
+    try {
+      if (!bnpLookup?.machine || !bnpLookup?.target_item || !bnpLookup?.can_complete) {
+        throw new Error("Urządzenie lub kartoteka nie są gotowe do finalizacji wykupu.");
+      }
+      if (!bnpConfirmInput.checked) {
+        throw new Error("Potwierdź dane i zakres operacji wykupu BNP.");
+      }
+      validateBnpIdentifiers();
+      const documentFields = readBnpDocumentFields();
+      const payload = {
+        serial: String(bnpSerialInput.value || "").trim(),
+        machine_table_id: Number(bnpLookup.machine.id_maszyna_table),
+        warehouse_item_id: Number(bnpLookup.target_item.id_magazyn_table),
+        expected_ewidencja: String(bnpLookup.machine.ewidencja || "").trim(),
+        target_ewidencja: String(bnpTargetEwidencjaInput.value || "").trim(),
+        warehouse_index: String(bnpWarehouseIndexInput.value || "").trim(),
+        item_name: documentFields.itemName,
+        external_document: documentFields.externalDocument,
+        document_date: documentFields.documentDate,
+        purchase_price_netto: documentFields.priceNetto,
+      };
+      setActionBusy(bnpCompleteBtn, true, "Zapisywanie wykupu...", "Zatwierdź wykup BNP");
+      setBnpStatus("Zapisywanie PZ i zmiana KP na WKP...", "info");
+      const body = await fetchJson("/admin/device/bnp-buyout/complete", {
+        method: "POST",
+        extraHeaders: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        timeoutMs: LONG_TIMEOUT_MS,
+        defaultError: "Nie udało się zatwierdzić wykupu BNP.",
+      });
+      const buyout = body.buyout || {};
+      bnpLookup.can_complete = false;
+      if (bnpLookup.target_item) {
+        bnpLookup.target_item.quantity = buyout.warehouse_quantity ?? 1;
+      }
+      bnpCreateCatalogBtn.hidden = true;
+      bnpConfirmInput.checked = false;
+      updateBnpCompleteState();
+      setInfo(body.message || "Wykup BNP został zapisany.");
+      setBnpStatus("Wykup BNP zapisany poprawnie.", "success");
+      bnpFinalResultText.textContent =
+        `${buyout.pz_number || "PZ"} | ${buyout.previous_ewidencja || "KP"} → ` +
+        `${buyout.target_ewidencja || "WKP"} | magazyn 27: ${buyout.warehouse_quantity ?? 1}.`;
+      bnpFinalResult.hidden = false;
+      loadData().catch(() => null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Błąd finalizacji wykupu BNP.";
+      setError(message);
+      setBnpStatus(message, "error");
+    } finally {
+      setActionBusy(bnpCompleteBtn, false, "Zapisywanie wykupu...", "Zatwierdź wykup BNP");
+      updateBnpCompleteState();
+    }
+  });
+
+  [
+    bnpTargetEwidencjaInput,
+    bnpWarehouseIndexInput,
+    bnpDocumentInput,
+    bnpDocumentDateInput,
+    bnpItemNameInput,
+    bnpPriceNettoInput,
+  ].forEach((input) => {
+    input.addEventListener("input", () => {
+      updateBnpGross();
+      updateBnpCompleteState();
+    });
+  });
+  bnpConfirmInput.addEventListener("change", updateBnpCompleteState);
 
   catalogForm.addEventListener("submit", async (event) => {
     event.preventDefault();

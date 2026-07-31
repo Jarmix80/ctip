@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -15,6 +17,11 @@ from app.models import AdminSetting
 from app.services import section_permissions
 from app.services.audit import record_audit
 from app.services.contracts_dashboard import firebird_writes_enabled
+from app.services.device_bnp_buyout import (
+    complete_bnp_buyout,
+    create_bnp_catalog_item,
+    lookup_bnp_buyout,
+)
 from app.services.device_dashboard import load_device_dashboard_payload
 from app.services.device_intake import (
     DeviceIntakeItemInput,
@@ -129,6 +136,31 @@ class DeviceModelCreateRequest(BaseModel):
     kolor: bool = Field(default=False)
     plik: str | None = Field(default=None, max_length=250)
     sync_catalog: bool = Field(default=True)
+
+
+class DeviceBnpCatalogCreateRequest(BaseModel):
+    """Payload utworzenia brakującej kartoteki wykupu BNP."""
+
+    serial: str = Field(min_length=1, max_length=100)
+    machine_table_id: int = Field(gt=0)
+    expected_ewidencja: str = Field(min_length=1, max_length=100)
+    warehouse_index: str = Field(min_length=1, max_length=100)
+    item_name: str = Field(min_length=1, max_length=250)
+
+
+class DeviceBnpBuyoutCompleteRequest(BaseModel):
+    """Payload finalizacji wykupu BNP i utworzenia PZ."""
+
+    serial: str = Field(min_length=1, max_length=100)
+    machine_table_id: int = Field(gt=0)
+    warehouse_item_id: int = Field(gt=0)
+    expected_ewidencja: str = Field(min_length=1, max_length=100)
+    target_ewidencja: str = Field(min_length=1, max_length=100)
+    warehouse_index: str = Field(min_length=1, max_length=100)
+    item_name: str = Field(min_length=1, max_length=250)
+    external_document: str = Field(min_length=1, max_length=30)
+    document_date: date
+    purchase_price_netto: Decimal = Field(gt=0)
 
 
 @router.get("/intake/defaults", summary="Pobierz domyslna numeracje ewidencyjna")
@@ -479,6 +511,212 @@ async def device_catalog_sync(
             "existing": result.existing,
         },
         "rows": result.rows,
+    }
+
+
+@router.get("/bnp-buyout/lookup", summary="Wyszukaj urządzenie do wykupu BNP")
+async def device_bnp_buyout_lookup(
+    serial: str = Query(min_length=1, max_length=100),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca urządzenie, klienta i kartoteki magazynowe dla wykupu BNP."""
+    _, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
+        )
+
+    try:
+        lookup = await asyncio.to_thread(lookup_bnp_buyout, serial=serial)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Błąd wyszukiwania urządzenia do wykupu BNP: {exc}",
+        ) from exc
+    return {"ok": True, "lookup": lookup}
+
+
+@router.post("/bnp-buyout/catalog", summary="Utwórz kartotekę wykupu BNP")
+async def device_bnp_buyout_catalog_create(
+    payload: DeviceBnpCatalogCreateRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Tworzy kartotekę urządzenia na magazynie 27 ze stanem 0."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
+        )
+    enabled, reason = firebird_writes_enabled()
+    if not enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reason or "Zapis do Firebird jest zablokowany.",
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            create_bnp_catalog_item,
+            serial=payload.serial,
+            machine_table_id=payload.machine_table_id,
+            expected_ewidencja=payload.expected_ewidencja,
+            warehouse_index=payload.warehouse_index,
+            item_name=payload.item_name,
+            kto=admin_user.email or "CTIP",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Błąd tworzenia kartoteki wykupu BNP: {exc}",
+        ) from exc
+
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_bnp_catalog_create",
+        client_ip=admin_session.client_ip,
+        payload={
+            "created": result.created,
+            "serial": payload.serial,
+            "machine_table_id": payload.machine_table_id,
+            "warehouse_item_id": result.warehouse_item["id_magazyn_table"],
+            "warehouse_index": result.warehouse_item["index"],
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": (
+            "Utworzono kartotekę wykupu BNP ze stanem 0."
+            if result.created
+            else "Kartoteka wykupu BNP już istnieje."
+        ),
+        "created": result.created,
+        "warehouse_item": result.warehouse_item,
+    }
+
+
+@router.post("/bnp-buyout/complete", summary="Zatwierdź wykup BNP")
+async def device_bnp_buyout_complete(
+    payload: DeviceBnpBuyoutCompleteRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zmienia KP na WKP i tworzy PZ wykupu na magazynie 27."""
+    admin_session, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnien do modulu obslugi urzadzen.",
+        )
+    enabled, reason = firebird_writes_enabled()
+    if not enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reason or "Zapis do Firebird jest zablokowany.",
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            complete_bnp_buyout,
+            serial=payload.serial,
+            machine_table_id=payload.machine_table_id,
+            warehouse_item_id=payload.warehouse_item_id,
+            expected_ewidencja=payload.expected_ewidencja,
+            target_ewidencja=payload.target_ewidencja,
+            warehouse_index=payload.warehouse_index,
+            item_name=payload.item_name,
+            external_document=payload.external_document,
+            document_date=payload.document_date,
+            purchase_price_netto=payload.purchase_price_netto,
+            issued_by=admin_user.email or "CTIP",
+            kto=admin_user.email or "CTIP",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Błąd finalizacji wykupu BNP: {exc}",
+        ) from exc
+
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="device_bnp_buyout_complete",
+        client_ip=admin_session.client_ip,
+        payload={
+            "already_completed": result.already_completed,
+            "serial": payload.serial,
+            "machine_id": result.machine_id,
+            "machine_table_id": result.machine_table_id,
+            "previous_ewidencja": result.previous_ewidencja,
+            "target_ewidencja": result.target_ewidencja,
+            "warehouse_item_id": result.warehouse_item_id,
+            "warehouse_index": result.warehouse_index,
+            "pz_id": result.pz_id,
+            "pz_number": result.pz_number,
+            "zakpozycja_id": result.zakpozycja_id,
+            "external_document": result.external_document,
+            "purchase_price_netto": float(result.purchase_price_netto),
+        },
+    )
+    await session.commit()
+    return {
+        "ok": True,
+        "message": (
+            f"Wykup BNP był już zapisany jako {result.pz_number}."
+            if result.already_completed
+            else f"Zapisano wykup BNP jako {result.pz_number}."
+        ),
+        "buyout": {
+            "already_completed": result.already_completed,
+            "pz_id": result.pz_id,
+            "pz_number": result.pz_number,
+            "zakpozycja_id": result.zakpozycja_id,
+            "warehouse_item_id": result.warehouse_item_id,
+            "warehouse_index": result.warehouse_index,
+            "warehouse_quantity": float(result.warehouse_quantity),
+            "machine_id": result.machine_id,
+            "machine_table_id": result.machine_table_id,
+            "previous_ewidencja": result.previous_ewidencja,
+            "target_ewidencja": result.target_ewidencja,
+            "supplier_id": result.supplier_id,
+            "external_document": result.external_document,
+            "purchase_price_netto": float(result.purchase_price_netto),
+        },
     }
 
 
