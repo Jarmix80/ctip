@@ -700,11 +700,16 @@ async function submitIntake() {
   }
 
   const externalDocumentInput = document.getElementById("device-external-document");
+  const documentDateInput = document.getElementById("device-intake-document-date");
   const exceptionInput = document.getElementById("device-exception-enabled");
   const exceptionReasonInput = document.getElementById("device-exception-reason");
   const externalDocument = externalDocumentInput.value.trim();
+  const documentDate = documentDateInput.value.trim();
   const allowException = exceptionInput.checked;
   const exceptionReason = exceptionReasonInput.value.trim();
+  if (!documentDate) {
+    addIntakeIssue(issues, "Podaj datę przyjęcia.", documentDateInput);
+  }
   const hasExplicitZeroPrice = deviceState.intakeItems.some(
     (item) => String(item.price ?? "").trim() && Number(item.price) === 0
   );
@@ -739,6 +744,7 @@ async function submitIntake() {
   const requestPayload = {
     supplier_id: Number(supplier.id_klient),
     external_document: externalDocument || null,
+    document_date: documentDate,
     allow_exception: allowException,
     exception_reason: allowException ? exceptionReason : null,
     ewidencja_prefix: "KP/",
@@ -781,6 +787,7 @@ async function submitIntake() {
     } Synchronizacja arkusza została dodana do kolejki.`;
     resetIntake();
     document.getElementById("device-external-document").value = "";
+    documentDateInput.value = localIsoDate();
     document.getElementById("device-exception-enabled").checked = false;
     document.getElementById("device-exception-reason").value = "";
     document.getElementById("device-exception-reason-wrap").hidden = true;
@@ -1563,6 +1570,10 @@ async function loadHome() {
 }
 
 async function loadIntake() {
+  const documentDateInput = document.getElementById("device-intake-document-date");
+  if (documentDateInput && !documentDateInput.value) {
+    documentDateInput.value = localIsoDate();
+  }
   await Promise.all([
     loadModels(),
     loadSuppliers(),
@@ -2125,6 +2136,11 @@ function bindIntakeEvents() {
   document.getElementById("device-external-document")?.addEventListener("input", (event) => {
     clearInvalidField(event.target);
   });
+  document
+    .getElementById("device-intake-document-date")
+    ?.addEventListener("input", (event) => {
+      clearInvalidField(event.target);
+    });
   document.getElementById("device-exception-reason")?.addEventListener("input", (event) => {
     clearInvalidField(event.target);
   });

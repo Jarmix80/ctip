@@ -4116,6 +4116,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "purchase_price_netto": "1200.00",
             "supplier_id": 656,
             "external_document": "FV/DEV/001",
+            "document_date": "2026-07-14",
             "allow_exception": False,
             "exception_reason": None,
             "ewidencja_prefix": "KP/",
@@ -4162,6 +4163,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intake_kwargs["issued_by"], "OperatorMS")
         self.assertEqual(intake_kwargs["kto"], "CTIP/OperatorMS")
         self.assertEqual(intake_kwargs["idempotency_key"], idempotency_key)
+        self.assertEqual(intake_kwargs["document_date"], date(2026, 7, 14))
         self.assertEqual(intake_kwargs["items"][0].purchase_price_netto, Decimal("1200.00"))
 
         async with self.session_factory() as session:
@@ -4283,6 +4285,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     ],
                     "supplier_id": 656,
                     "external_document": "FV/BATCH/001",
+                    "document_date": "2026-07-15",
                     "ewidencja_prefix": "KP/BATCH/",
                 },
             )
@@ -4299,6 +4302,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(called_items[0].model_id, 472)
         self.assertEqual(called_items[1].ewidencja, "KP/BATCH/002")
         self.assertEqual(intake_mock.call_args.kwargs["ewidencja_prefix"], "KP/BATCH/")
+        self.assertEqual(
+            intake_mock.call_args.kwargs["document_date"],
+            date(2026, 7, 15),
+        )
         self.assertEqual(intake_mock.call_args.kwargs["issued_by"], "OperatorMS")
 
         async with self.session_factory() as session:

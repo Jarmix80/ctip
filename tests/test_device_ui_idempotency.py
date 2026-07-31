@@ -10,6 +10,14 @@ def test_intake_uuid_is_bound_to_request_payload() -> None:
     assert "const requestSignature = JSON.stringify(requestPayload);" in source
     assert "deviceState.intakeRequestSignature !== requestSignature" in source
     assert "deviceState.intakeRequestSignature = requestSignature;" in source
+    assert "document_date: documentDate" in source
+
+
+def test_intake_initializes_document_date_with_local_day() -> None:
+    source = DEVICE_JS.read_text(encoding="utf-8")
+
+    assert 'document.getElementById("device-intake-document-date")' in source
+    assert "documentDateInput.value = localIsoDate();" in source
 
 
 def test_intake_reset_clears_uuid_and_request_signature() -> None:

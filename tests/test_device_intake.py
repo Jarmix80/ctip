@@ -1,8 +1,12 @@
 """Testy jednostkowe helperow modulu app.services.device_intake."""
 
+from datetime import date
+from decimal import Decimal
+
 from app.services.device_intake import (
     _ensure_intake_generators,
     _extract_trailing_number,
+    _insert_warehouse_unit,
     _is_supplier_marker,
     _model_id_from_search_query,
     _normalize_model_name_for_brand,
@@ -12,6 +16,34 @@ from app.services.device_intake import (
     search_device_suppliers,
     update_device_machine_counters,
 )
+
+
+def test_insert_warehouse_unit_uses_selected_document_date() -> None:
+    class WarehouseCursor:
+        def __init__(self) -> None:
+            self.params = ()
+
+        def execute(self, _sql, params) -> None:
+            self.params = params
+
+        def fetchone(self):
+            return (19001,)
+
+    cursor = WarehouseCursor()
+    document_date = date(2026, 7, 15)
+
+    result = _insert_warehouse_unit(
+        cursor,
+        model_details={"id_model": 460, "marka": "Ricoh", "model": "IM 430"},
+        serial_value="SN-DATE-001",
+        ewidencja_value="KP/DATE/001",
+        purchase_price_net=Decimal("1200.00"),
+        document_date=document_date,
+        marker="CTIP-DEVICE:test-date",
+    )
+
+    assert result == 19001
+    assert cursor.params[8] == document_date
 
 
 def test_model_id_from_search_query_obsluguje_etykiete_datalist() -> None:

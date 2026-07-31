@@ -1238,6 +1238,7 @@ def _insert_warehouse_unit(
     serial_value: str,
     ewidencja_value: str,
     purchase_price_net: Decimal,
+    document_date: date,
     marker: str,
 ) -> int:
     display_name = _text(
@@ -1279,7 +1280,7 @@ def _insert_warehouse_unit(
             display_name,
             DEFAULT_UNIT,
             Decimal("0"),
-            date.today(),
+            document_date,
             _text(model_details["marka"], 50),
             _text(model_details["model"], 50),
             int(model_details["id_model"]),
@@ -1532,6 +1533,7 @@ def create_device_intake_batch(
     items: list[DeviceIntakeItemInput],
     supplier_id: int | None,
     external_document: str | None = None,
+    document_date: date | None = None,
     issued_by: str,
     ewidencja_prefix: str | None = None,
     idempotency_key: str | None = None,
@@ -1539,7 +1541,7 @@ def create_device_intake_batch(
     exception_reason: str | None = None,
     kto: str = "CTIP",
 ) -> DeviceIntakeBatchResult:
-    """Tworzy atomowy PZ z osobną kartoteką MAGAZYN i MASZYNA dla każdego egzemplarza."""
+    """Tworzy atomowy PZ z kartotekami według wskazanej daty przyjęcia."""
     if not items:
         raise ValueError("Lista pozycji przyjęcia jest pusta.")
     if supplier_id is None:
@@ -1591,9 +1593,15 @@ def create_device_intake_batch(
                     f"Wiersz {item['row_no']}: cena zakupu netto musi być większa od zera."
                 )
 
-        today = datetime.now(ZoneInfo("Europe/Warsaw")).date()
-        document_number = _next_pz_document_number(cursor, year=today.year)
-        pz_number = _text(f"PZ / {document_number} / {today.year}", 30)
+        resolved_document_date = document_date or datetime.now(ZoneInfo("Europe/Warsaw")).date()
+        document_number = _next_pz_document_number(
+            cursor,
+            year=resolved_document_date.year,
+        )
+        pz_number = _text(
+            f"PZ / {document_number} / {resolved_document_date.year}",
+            30,
+        )
 
         cursor.execute(
             """
@@ -1645,9 +1653,9 @@ def create_device_intake_batch(
                 DEVICE_WAREHOUSE_ID,
                 0,
                 external_number,
-                today,
-                today,
-                today,
+                resolved_document_date,
+                resolved_document_date,
+                resolved_document_date,
                 DEFAULT_PAYMENT,
                 DEFAULT_PLACE,
                 issued_by_value,
@@ -1713,6 +1721,7 @@ def create_device_intake_batch(
                 serial_value=str(item["serial"]),
                 ewidencja_value=str(item["ewidencja"]),
                 purchase_price_net=price_net,
+                document_date=resolved_document_date,
                 marker=marker,
             )
             warehouse_index = str(item["ewidencja"])
@@ -1776,7 +1785,7 @@ def create_device_intake_batch(
                     warehouse_item_id,
                     "PZ",
                     pz_number,
-                    today,
+                    resolved_document_date,
                     DEVICE_WAREHOUSE_ID,
                     0,
                     ITEM_KIND_TOWAR_INNY,
@@ -1885,6 +1894,7 @@ def create_device_intake(
     ewidencja: str,
     supplier_id: int | None,
     external_document: str | None = None,
+    document_date: date | None = None,
     issued_by: str,
     purchase_price_netto: Decimal | None = None,
     idempotency_key: str | None = None,
@@ -1904,6 +1914,7 @@ def create_device_intake(
         ],
         supplier_id=supplier_id,
         external_document=external_document,
+        document_date=document_date,
         issued_by=issued_by,
         idempotency_key=idempotency_key,
         allow_exception=allow_exception,
