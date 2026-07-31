@@ -144,6 +144,10 @@ async def create_user(
     role: str,
     is_salesperson: bool = False,
     can_withdraw_device_pz: bool = False,
+    crm_sales_sms_enabled: bool = False,
+    crm_sales_email_enabled: bool = False,
+    crm_operations_sms_enabled: bool = False,
+    crm_operations_email_enabled: bool = False,
     password: str | None = None,
     mobile_phone: str | None = None,
     firebird_app_user_id: int | None = None,
@@ -166,6 +170,10 @@ async def create_user(
         is_active=True,
         is_salesperson=bool(is_salesperson),
         can_withdraw_device_pz=bool(can_withdraw_device_pz),
+        crm_sales_sms_enabled=bool(crm_sales_sms_enabled),
+        crm_sales_email_enabled=bool(crm_sales_email_enabled),
+        crm_operations_sms_enabled=bool(crm_operations_sms_enabled),
+        crm_operations_email_enabled=bool(crm_operations_email_enabled),
         mobile_phone=normalized_phone,
         firebird_app_user_id=firebird_app_user_id,
         firebird_app_user_login=(firebird_app_user_login or "").strip() or None,
@@ -186,6 +194,10 @@ async def update_user(
     role: str,
     is_salesperson: bool,
     can_withdraw_device_pz: bool,
+    crm_sales_sms_enabled: bool,
+    crm_sales_email_enabled: bool,
+    crm_operations_sms_enabled: bool,
+    crm_operations_email_enabled: bool,
     mobile_phone: str | None,
     firebird_app_user_id: int | None,
     firebird_app_user_login: str | None,
@@ -203,6 +215,10 @@ async def update_user(
     user.role = role
     user.is_salesperson = bool(is_salesperson)
     user.can_withdraw_device_pz = bool(can_withdraw_device_pz)
+    user.crm_sales_sms_enabled = bool(crm_sales_sms_enabled)
+    user.crm_sales_email_enabled = bool(crm_sales_email_enabled)
+    user.crm_operations_sms_enabled = bool(crm_operations_sms_enabled)
+    user.crm_operations_email_enabled = bool(crm_operations_email_enabled)
     user.mobile_phone = normalized_phone
     user.firebird_app_user_id = firebird_app_user_id
     user.firebird_app_user_login = (firebird_app_user_login or "").strip() or None

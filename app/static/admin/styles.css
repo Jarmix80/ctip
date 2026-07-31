@@ -1416,6 +1416,28 @@ a {
   min-height: 42px;
 }
 
+.users-crm-notifications-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.users-crm-notification-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(31, 63, 105, 0.04);
+}
+
+.users-crm-notification-group strong {
+  font-size: 13px;
+}
+
 .users-table-wrapper {
   border: 1px solid var(--border);
   border-radius: 12px;

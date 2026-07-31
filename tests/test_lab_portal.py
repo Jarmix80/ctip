@@ -95,6 +95,25 @@ def test_lab_portal_rejects_firebird_with_writes_enabled(monkeypatch) -> None:
     assert "bez zapisu" in response.json()["detail"]
 
 
+def test_www_form_endpoint_requires_separate_token(monkeypatch) -> None:
+    _enable_safe_lab(monkeypatch)
+    monkeypatch.setattr(settings, "crm_lab_iframe_secret", None)
+    monkeypatch.setattr(settings, "crm_www_token", "testowy-token-www")
+    client = TestClient(create_lab_portal_app())
+
+    missing = client.post("/v1/form-cases", json={})
+    invalid = client.post(
+        "/v1/form-cases",
+        headers={"Authorization": "Bearer nieprawidlowy-token"},
+        json={},
+    )
+
+    assert missing.status_code == 401
+    assert "Brak tokenu" in missing.json()["detail"]
+    assert invalid.status_code == 401
+    assert "Nieprawidłowy token" in invalid.json()["detail"]
+
+
 def test_signed_iframe_ticket_creates_session(monkeypatch) -> None:
     _enable_safe_lab(monkeypatch)
     secret = "wspoldzielony-sekret-testowy"

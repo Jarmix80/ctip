@@ -522,6 +522,8 @@ def test_users_partial_renders_listing():
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
     assert "Handlowiec" in response.text
+    assert "Powiadomienia CRM" in response.text
+    assert "Pozostałe: Serwis, Umowy i liczniki, Inne" in response.text
     assert "Użytkownik MS" in response.text
     assert "Obsługa dostaw" in response.text
     assert "Obsługa urządzeń" in response.text
@@ -561,9 +563,10 @@ def test_crm_page_renders_persistent_lab():
     assert 'data-view="inbox"' in response.text
     assert 'data-view="sales"' in response.text
     assert 'data-view="service_it"' in response.text
-    assert 'data-view="accounting"' in response.text
     assert 'data-view="contracts"' in response.text
-    assert 'data-view="meters"' in response.text
+    assert 'data-view="accounting"' not in response.text
+    assert 'data-view="meters"' not in response.text
+    assert "Umowy i liczniki" in response.text
     assert 'data-view="other"' in response.text
     assert 'id="crm-new-case-form"' in response.text
     assert 'id="crm-transfer-dialog"' in response.text

@@ -31,22 +31,20 @@ QUEUE_ALIASES = {
     "service_it": "service_it",
     "serwis": "service_it",
     "it": "service_it",
-    "accounting": "accounting",
-    "ksiegowosc": "accounting",
+    "accounting": "other",
+    "ksiegowosc": "other",
     "contracts": "contracts",
     "contracts_settlements": "contracts",
     "umowy": "contracts",
-    "meters": "meters",
-    "liczniki": "meters",
+    "meters": "contracts",
+    "liczniki": "contracts",
     "other": "other",
     "inne": "other",
 }
 CHAT_CATEGORY_BY_QUEUE = {
     "sales": "sales",
     "service_it": "service",
-    "accounting": "accounting",
     "contracts": "contracts_settlements",
-    "meters": "other",
     "other": "other",
 }
 CRM_QUEUE_BY_CHAT_CATEGORY = {
@@ -120,6 +118,7 @@ def _serialize_event(item: CrmCaseEvent) -> CrmCaseEventResponse:
         title=item.title,
         text=item.description,
         actor=item.actor_name,
+        payload=item.payload,
         created_at=item.created_at,
     )
 
@@ -134,6 +133,7 @@ def serialize_case(item: CrmCase) -> CrmCaseResponse:
         source_detail=item.source_detail,
         source_url=item.source_url,
         queue=item.queue,  # type: ignore[arg-type]
+        category=item.category,
         status=item.status,  # type: ignore[arg-type]
         priority=item.priority,  # type: ignore[arg-type]
         subject=item.subject,
@@ -296,6 +296,8 @@ async def create_case(
         raise ValueError("Token voice nie może tworzyć spraw kanału webowego.")
     if service_channel == "chat" and payload.channel in {"voice", "phone"}:
         raise ValueError("Token chat nie może tworzyć spraw kanału głosowego.")
+    if service_channel == "www" and payload.channel not in {"form", "configurator"}:
+        raise ValueError("Token WWW może tworzyć wyłącznie sprawy formularzowe.")
 
     external_ref = (
         payload.external_ref or payload.case_ref or payload.conversation_ref or ""
@@ -483,8 +485,10 @@ async def apply_case_action(
         description = f"Zapisano numer {item.ms_order_ref}. Nie wykonano zapisu w Firebird."
         event_payload = {"firebird_write": False}
     elif payload.action == "meter_update":
-        if item.queue != "meters":
-            raise ValueError("Liczniki można zapisać wyłącznie w kolejce Liczniki.")
+        if item.queue != "contracts" or item.category != "meters":
+            raise ValueError(
+                "Liczniki można zapisać wyłącznie w kategorii Liczniki kolejki Umowy i liczniki."
+            )
         item.status = "done"
         item.terminal_at = now
         title = "Testowy odczyt liczników"

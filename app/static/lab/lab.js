@@ -23,25 +23,11 @@
       subject: "Zgłoszenie serwisowe lub IT",
       detail: "Nowy formularz Centrum Obsługi",
     },
-    meters: {
-      channel: "form",
-      queue: "meters",
-      category: "meters",
-      subject: "Przekazanie liczników",
-      detail: "Nowy formularz Centrum Obsługi",
-    },
-    accounting: {
-      channel: "form",
-      queue: "accounting",
-      category: "accounting",
-      subject: "Sprawa księgowa",
-      detail: "Nowy formularz Centrum Obsługi",
-    },
     contracts: {
       channel: "form",
       queue: "contracts",
       category: "contracts",
-      subject: "Umowa lub rozliczenie",
+      subject: "Umowa lub przekazanie liczników",
       detail: "Nowy formularz Centrum Obsługi",
     },
     app: {
@@ -110,7 +96,7 @@
     },
     accounting_email: {
       channel: "email",
-      queue: "accounting",
+      queue: "other",
       category: "accounting",
       priority: "normal",
       subject: "Prośba o korektę danych na fakturze",
@@ -134,7 +120,7 @@
     },
     meters_form: {
       channel: "form",
-      queue: "meters",
+      queue: "contracts",
       category: "meters",
       priority: "normal",
       subject: "Liczniki B/W, kolor i skan",
@@ -218,8 +204,7 @@
       meter_bw: "Licznik B/W",
       meter_color: "Licznik kolor",
       meter_scan: "Licznik skan",
-      document_number: "Numer dokumentu",
-      accounting_area: "Sprawa księgowa",
+      contract_case_type: "Typ sprawy",
       contract_number: "Numer umowy",
       contract_area: "Sprawa umowna",
       app_area: "Sprawa aplikacji",
@@ -227,9 +212,16 @@
     var relevant = {
       product: ["product_name", "product_intent", "quantity"],
       service: ["serial", "location", "service_area", "error_code"],
-      meters: ["serial", "location", "meter_bw", "meter_color", "meter_scan"],
-      accounting: ["document_number", "accounting_area"],
-      contracts: ["contract_number", "contract_area"],
+      contracts: [
+        "contract_case_type",
+        "contract_number",
+        "contract_area",
+        "serial",
+        "location",
+        "meter_bw",
+        "meter_color",
+        "meter_scan",
+      ],
       app: ["app_area"],
       contact: [],
     };
@@ -299,13 +291,16 @@
       var definition = formDefinitions[type];
       var externalRef = uniqueReference("www-lab-" + type);
       var serial = formValue(data, "serial");
+      var category = type === "contracts"
+        ? formValue(data, "contract_case_type") || "contracts"
+        : definition.category;
       var payload = {
         external_ref: externalRef,
         channel: definition.channel,
         queue: definition.queue,
-        category: definition.category,
+        category: category,
         priority: type === "service" ? "high" : "normal",
-        subject: definition.subject,
+        subject: category === "meters" ? "Przekazanie liczników" : definition.subject,
         message: structuredMessage(data, type),
         company_name: formValue(data, "company_name"),
         contact_name: formValue(data, "contact_name"),

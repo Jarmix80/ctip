@@ -35,7 +35,7 @@ class CrmCase(Base):
     __tablename__ = "crm_case"
     __table_args__ = (
         CheckConstraint(
-            "queue in ('sales','service_it','accounting','contracts','meters','other')",
+            "queue in ('sales','service_it','contracts','other')",
             name="ck_crm_case_queue",
         ),
         CheckConstraint(

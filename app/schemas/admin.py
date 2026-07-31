@@ -496,6 +496,10 @@ class AdminUserSummary(BaseModel):
     role: PanelRole
     is_salesperson: bool = False
     can_withdraw_device_pz: bool = False
+    crm_sales_sms_enabled: bool = False
+    crm_sales_email_enabled: bool = False
+    crm_operations_sms_enabled: bool = False
+    crm_operations_email_enabled: bool = False
     firebird_app_user_id: int | None = None
     firebird_app_user_login: str | None = None
     sections: list[PanelSection] = Field(default_factory=list)
@@ -544,6 +548,10 @@ class AdminUserCreate(BaseModel):
     role: PanelRole = "operator"
     is_salesperson: bool = False
     can_withdraw_device_pz: bool = False
+    crm_sales_sms_enabled: bool = False
+    crm_sales_email_enabled: bool = False
+    crm_operations_sms_enabled: bool = False
+    crm_operations_email_enabled: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
     password: str | None = None
@@ -570,6 +578,10 @@ class AdminUserUpdate(BaseModel):
     role: PanelRole = "operator"
     is_salesperson: bool = False
     can_withdraw_device_pz: bool = False
+    crm_sales_sms_enabled: bool = False
+    crm_sales_email_enabled: bool = False
+    crm_operations_sms_enabled: bool = False
+    crm_operations_email_enabled: bool = False
     firebird_app_user_id: int | None = Field(default=None, ge=1)
     sections: list[PanelSection] | None = None
     mobile_phone: str | None = Field(

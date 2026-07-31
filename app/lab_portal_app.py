@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
-from app.api.routes.crm import lab_router
+from app.api.routes.crm import lab_router, www_router
 from app.core.config import settings
 from app.web.crm_ui import router as crm_ui_router
 
@@ -299,6 +299,7 @@ def create_lab_portal_app() -> FastAPI:
 
     application.mount("/static", StaticFiles(directory="app/static"), name="static")
     application.include_router(lab_router)
+    application.include_router(www_router)
     application.include_router(crm_ui_router)
     return application
 

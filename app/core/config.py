@@ -92,6 +92,10 @@ class Settings(BaseSettings):
         default=60.0,
         alias="CRM_LAB_PROXY_TIMEOUT_SECONDS",
     )
+    crm_www_token: str | None = Field(
+        default=None,
+        alias="CRM_WWW_TOKEN",
+    )
 
     pbx_host: str = Field(default="127.0.0.1", alias="PBX_HOST")
     pbx_port: int = Field(default=5525, alias="PBX_PORT")

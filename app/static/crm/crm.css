@@ -17,7 +17,6 @@
   --crm-sales: #1769e0;
   --crm-service: #ea7a24;
   --crm-it: #6b58d9;
-  --crm-accounting: #16876f;
   --crm-other: #758096;
   --crm-shadow: 0 18px 45px rgba(39, 57, 91, 0.1);
   --crm-radius: 18px;
@@ -199,16 +198,8 @@ button {
   background: var(--crm-it);
 }
 
-.crm-nav-dot.accounting {
-  background: var(--crm-accounting);
-}
-
 .crm-nav-dot.contracts {
   background: #805ad5;
-}
-
-.crm-nav-dot.meters {
-  background: #16876f;
 }
 
 .crm-nav-dot.other {

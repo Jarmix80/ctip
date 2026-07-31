@@ -27,20 +27,10 @@ const CRM_VIEW_CONFIG = {
     lead: "Zgłoszenia techniczne z kontrolowanym przekazaniem do Menadżera Serwisu.",
     breadcrumb: "Centrum Obsługi / Kolejki / Serwis + IT",
   },
-  accounting: {
-    title: "Księgowość",
-    lead: "Dokumenty, rozliczenia, płatności i korekty danych.",
-    breadcrumb: "Centrum Obsługi / Kolejki / Księgowość",
-  },
   contracts: {
-    title: "Umowy",
-    lead: "Pytania dotyczące okresów, dokumentów i warunków umów.",
-    breadcrumb: "Centrum Obsługi / Kolejki / Umowy",
-  },
-  meters: {
-    title: "Liczniki",
-    lead: "Kontrola poprzednich stanów i przygotowanie aktualizacji liczników w MS.",
-    breadcrumb: "Centrum Obsługi / Kolejki / Liczniki",
+    title: "Umowy i liczniki",
+    lead: "Umowy, rozliczenia umowne oraz kontrola i aktualizacja liczników.",
+    breadcrumb: "Centrum Obsługi / Kolejki / Umowy i liczniki",
   },
   other: {
     title: "Inne sprawy",
@@ -62,9 +52,7 @@ const CRM_VIEW_CONFIG = {
 const CRM_DEPARTMENT_LABELS = {
   sales: "Handel",
   service_it: "Serwis + IT",
-  accounting: "Księgowość",
-  contracts: "Umowy",
-  meters: "Liczniki",
+  contracts: "Umowy i liczniki",
   other: "Inne sprawy",
 };
 
@@ -323,7 +311,8 @@ const CRM_DEMO_CASES = [
   },
   {
     id: "KP-20260724-F6T5",
-    department: "accounting",
+    department: "other",
+    category: "accounting",
     source: "web_form",
     status: "active",
     priority: "low",
@@ -431,6 +420,7 @@ const CRM_DEMO_CASES = [
   {
     id: "KP-20260724-J7L6",
     department: "contracts",
+    category: "contracts",
     source: "email",
     status: "new",
     priority: "low",
@@ -548,7 +538,8 @@ const CRM_DEMO_CASES = [
   },
   {
     id: "KP-20260723-N6C1",
-    department: "meters",
+    department: "contracts",
+    category: "meters",
     source: "web_form",
     status: "new",
     priority: "medium",
@@ -649,6 +640,7 @@ function mapApiCase(item) {
     externalRef: item.external_ref,
     conversationRef: item.conversation_ref,
     department: item.queue,
+    category: item.category,
     source: item.source,
     status: item.status,
     priority: item.priority,
@@ -680,6 +672,10 @@ function mapApiCase(item) {
       time: formatDateTime(event.created_at),
     })),
   };
+}
+
+function isMeterCase(caseItem) {
+  return caseItem?.category === "meters";
 }
 
 async function crmApi(path, options = {}) {
@@ -1345,14 +1341,14 @@ function renderArchive() {
         <small>przekazane do MS</small>
       </article>
       <article class="crm-stat-card" style="--stat-tint:#eeeaff;--stat-color:#6654cf">
-        <span>Liczniki</span>
-        <strong>${archivedCases.filter((caseItem) => caseItem.department === "meters").length}</strong>
-        <small>zaktualizowane sprawy</small>
+        <span>Umowy i liczniki</span>
+        <strong>${archivedCases.filter((caseItem) => caseItem.department === "contracts").length}</strong>
+        <small>zakończone sprawy</small>
       </article>
       <article class="crm-stat-card" style="--stat-tint:#edf1f6;--stat-color:#647086">
-        <span>Pozostałe</span>
-        <strong>${archivedCases.filter((caseItem) => !["sales", "service_it", "meters"].includes(caseItem.department)).length}</strong>
-        <small>archiwum działów</small>
+        <span>Inne</span>
+        <strong>${archivedCases.filter((caseItem) => caseItem.department === "other").length}</strong>
+        <small>sprawy pozostałe</small>
       </article>
     </section>
     <article class="crm-panel">
@@ -1556,7 +1552,7 @@ function dispatcherActionsMarkup(caseItem) {
         : ""
     }
     ${
-      caseItem.department === "meters"
+      isMeterCase(caseItem)
         ? `<button class="crm-button success" type="button" data-dispatch-action="meters" data-dispatch-case-id="${escapeHtml(
             caseItem.id
           )}">Zaktualizuj licznik w MS</button>`
@@ -2069,6 +2065,7 @@ async function createDemoCaseFromForm() {
         external_ref: `manual-${Date.now()}-${crypto.randomUUID()}`,
         channel: source === "web_form" ? "form" : source === "web_chat" ? "chat" : "manual",
         queue: department,
+        category: department,
         priority: priority === "medium" ? "normal" : priority,
         company_name: document.getElementById("crm-new-case-company").value.trim(),
         contact_name: document.getElementById("crm-new-case-contact").value.trim(),
@@ -2199,7 +2196,7 @@ async function handleDispatchAction(action, caseId) {
     openMsDialog(caseId);
     return;
   }
-  if (action === "meters" && caseItem.department === "meters") {
+  if (action === "meters" && isMeterCase(caseItem)) {
     openMeterDialog(caseId);
     return;
   }
@@ -2400,7 +2397,7 @@ function bindGlobalEvents() {
   document.getElementById("crm-meter-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const caseItem = activeActionCase();
-    if (!caseItem || caseItem.department !== "meters") {
+    if (!caseItem || !isMeterCase(caseItem)) {
       return;
     }
     const previous = caseItem.previousMeters || {};

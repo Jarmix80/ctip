@@ -149,6 +149,34 @@
           </div>
           <small>Administrator zawsze otrzymuje sekcje podstawowe; Shipping wymaga jawnego zaznaczenia.</small>
         </div>
+        <div class="form-field form-field-wide">
+          <label>Powiadomienia CRM</label>
+          <div class="users-crm-notifications-grid">
+            <div class="users-crm-notification-group">
+              <strong>Handel</strong>
+              <label class="users-section-option">
+                <input type="checkbox" x-model="form.crmSalesSmsEnabled">
+                SMS
+              </label>
+              <label class="users-section-option">
+                <input type="checkbox" x-model="form.crmSalesEmailEnabled">
+                E-mail
+              </label>
+            </div>
+            <div class="users-crm-notification-group">
+              <strong>Pozostałe: Serwis, Umowy i liczniki, Inne</strong>
+              <label class="users-section-option">
+                <input type="checkbox" x-model="form.crmOperationsSmsEnabled">
+                SMS
+              </label>
+              <label class="users-section-option">
+                <input type="checkbox" x-model="form.crmOperationsEmailEnabled">
+                E-mail
+              </label>
+            </div>
+          </div>
+          <small>Powiadomienia są kierowane wyłącznie do aktywnych użytkowników.</small>
+        </div>
       </div>
       <div class="form-actions">
         <button type="submit" :disabled="saving">
@@ -329,6 +357,10 @@
                     <dt>Handlowiec</dt>
                     <dd x-text="modalDetail.is_salesperson ? 'Tak' : 'Nie'"></dd>
                   </div>
+                  <div>
+                    <dt>Powiadomienia CRM</dt>
+                    <dd x-text="formatCrmNotifications(modalDetail)"></dd>
+                  </div>
                 </dl>
               </div>
               <div>
@@ -488,6 +520,34 @@
                     Wycofywanie dokumentów PZ
                   </label>
                   <small>Osobne uprawnienie do operacji wycofania przyjęcia urządzeń.</small>
+                </div>
+                <div class="form-field form-field-wide">
+                  <label>Powiadomienia CRM</label>
+                  <div class="users-crm-notifications-grid">
+                    <div class="users-crm-notification-group">
+                      <strong>Handel</strong>
+                      <label class="users-section-option">
+                        <input type="checkbox" x-model="modalEdit.crmSalesSmsEnabled">
+                        SMS
+                      </label>
+                      <label class="users-section-option">
+                        <input type="checkbox" x-model="modalEdit.crmSalesEmailEnabled">
+                        E-mail
+                      </label>
+                    </div>
+                    <div class="users-crm-notification-group">
+                      <strong>Pozostałe: Serwis, Umowy i liczniki, Inne</strong>
+                      <label class="users-section-option">
+                        <input type="checkbox" x-model="modalEdit.crmOperationsSmsEnabled">
+                        SMS
+                      </label>
+                      <label class="users-section-option">
+                        <input type="checkbox" x-model="modalEdit.crmOperationsEmailEnabled">
+                        E-mail
+                      </label>
+                    </div>
+                  </div>
+                  <small>Powiadomienia są kierowane wyłącznie do aktywnych użytkowników.</small>
                 </div>
               </div>
               <div class="form-actions">
