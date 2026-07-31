@@ -72,3 +72,6 @@
 - Rozszerzono `ctip.device_intake_operation` i `ctip.device_inventory_unit` o trwały stan wycofania, datę, operatora, uzasadnienie i zapis podglądu skutków operacji PZ.
 - Rozszerzono `ctip.admin_user` o osobne uprawnienie `can_withdraw_device_pz`; administrator zachowuje prawo niezależnie od wartości pola.
 - Rozszerzono `ctip.admin_user` o kontrolowaną preferencję `device_theme` (`blue`, `graphite`, `mint`), dzięki czemu kolorystyka modułu `/device` jest przypisana do konta użytkownika.
+
+## 2026-07-31
+- Ograniczono unikalność znormalizowanego serialu i numeru KP w `ctip.device_inventory_unit` do wpisów o statusie `active`. Wycofana historia PZ nie blokuje dzięki temu ponownego przyjęcia tego samego fizycznego urządzenia, a równoległe aktywne duplikaty nadal są blokowane.

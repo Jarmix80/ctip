@@ -890,8 +890,6 @@ CREATE TABLE ctip.device_inventory_unit (
     CONSTRAINT uq_device_inventory_unit_source UNIQUE (source_type, source_row),
     CONSTRAINT uq_device_inventory_unit_zakpozycja UNIQUE (firebird_zakpozycja_id),
     CONSTRAINT uq_device_inventory_unit_machine_table UNIQUE (firebird_machine_table_id),
-    CONSTRAINT uq_device_inventory_unit_serial_normalized UNIQUE (serial_normalized),
-    CONSTRAINT uq_device_inventory_unit_ewidencja_normalized UNIQUE (ewidencja_normalized),
     CONSTRAINT device_inventory_unit_operation_id_fkey FOREIGN KEY (operation_id)
         REFERENCES ctip.device_intake_operation (id) ON DELETE SET NULL,
     CONSTRAINT device_inventory_unit_source_type_check CHECK (
@@ -904,6 +902,13 @@ CREATE TABLE ctip.device_inventory_unit (
 ALTER TABLE ctip.device_inventory_unit OWNER TO postgres;
 ALTER SEQUENCE ctip.device_inventory_unit_id_seq
     OWNED BY ctip.device_inventory_unit.id;
+
+CREATE UNIQUE INDEX uq_device_inventory_unit_serial_normalized
+    ON ctip.device_inventory_unit USING btree (serial_normalized)
+    WHERE status = 'active'::text;
+CREATE UNIQUE INDEX uq_device_inventory_unit_ewidencja_normalized
+    ON ctip.device_inventory_unit USING btree (ewidencja_normalized)
+    WHERE status = 'active'::text;
 
 CREATE SEQUENCE ctip.device_inventory_event_id_seq
     START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;

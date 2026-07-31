@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -399,13 +400,19 @@ class DeviceInventoryUnit(Base):
             "firebird_machine_table_id",
             name="uq_device_inventory_unit_machine_table",
         ),
-        UniqueConstraint(
+        Index(
+            "uq_device_inventory_unit_serial_normalized",
             "serial_normalized",
-            name="uq_device_inventory_unit_serial_normalized",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
         ),
-        UniqueConstraint(
+        Index(
+            "uq_device_inventory_unit_ewidencja_normalized",
             "ewidencja_normalized",
-            name="uq_device_inventory_unit_ewidencja_normalized",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
         ),
     )
 

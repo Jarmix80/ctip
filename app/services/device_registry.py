@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -586,7 +586,12 @@ async def find_unit_by_source_or_identity(
     if not conditions:
         return None
     stmt = (
-        select(DeviceInventoryUnit).where(or_(*conditions)).order_by(DeviceInventoryUnit.id.asc())
+        select(DeviceInventoryUnit)
+        .where(or_(*conditions))
+        .order_by(
+            case((DeviceInventoryUnit.status == "active", 0), else_=1),
+            DeviceInventoryUnit.id.desc(),
+        )
     )
     return (await session.execute(stmt)).scalars().first()
 
