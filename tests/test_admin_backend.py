@@ -54,6 +54,7 @@ from app.models import (
 from app.models.base import Base
 from app.services import admin_ivr_map, section_permissions
 from app.services.admin_users import EmailDeliverySettings
+from app.services.backup_retention import RetentionApplyResult, RetentionPlan
 from app.services.backup_runner import BackupFileInfo, BackupRunResult
 from app.services.contracts_dashboard import (
     FirebirdClientMatch,
@@ -72,20 +73,68 @@ from app.services.device_intake import (
     DeviceIntakeResult,
 )
 from app.services.email_client import EmailSendResult, EmailTestResult
+from app.services.firebird_backup import FirebirdBackupResult
 from app.services.firebird_client import FirebirdTestResult
 from app.services.firebird_ms_users import FirebirdMsUserOption
 from app.services.form_handling_config import default_public_base_url
 from app.services.grenke_launch import GrenkeLaunchResult
 from app.services.office365_backup import (
     Office365ConnectionResult,
-    Office365PruneResult,
     Office365UploadResult,
 )
+from app.services.optima_backup import OptimaBackupResult, OptimaDatabaseBackup
 from app.services.security import hash_password, hash_session_token
 from app.services.settings_store import StoredValue
 from app.services.workflow_machine_binding import WorkflowDeviceBindingItem
 from app.services.workflow_sheet_sync import WorkflowSheetRuntimeConfig
 from log_utils import append_log, daily_log_path
+
+
+def _fake_component_results() -> tuple[FirebirdBackupResult, OptimaBackupResult]:
+    """Buduje kompletne wyniki komponentów bez wykonywania zewnętrznych narzędzi."""
+    firebird = FirebirdBackupResult(
+        backup_path=Path("firebird/ctip_firebird_prod_20260305_080000.fbk"),
+        checksum_path=Path("firebird/ctip_firebird_prod_20260305_080000.fbk.sha256"),
+        manifest_path=Path("firebird/ctip_firebird_prod_20260305_080000_manifest.json"),
+        checksum="fb-checksum",
+        size_bytes=1024,
+        source_path="BAZAMS.FDB",
+        verified=True,
+    )
+    optima_items = [
+        OptimaDatabaseBackup(
+            database_name=database,
+            backup_path=Path(f"optima/ctip_optima_20260305_080000_{database}.bak"),
+            checksum_path=Path(f"optima/ctip_optima_20260305_080000_{database}.bak.sha256"),
+            checksum=f"checksum-{database}",
+            size_bytes=2048,
+        )
+        for database in ("CDN_IT_Partner", "CDN_Ksero_Partner1", "CDN_KNF_Ksero_Partner")
+    ]
+    optima = OptimaBackupResult(
+        database_backups=optima_items,
+        manifest_path=Path("optima/ctip_optima_20260305_080000_manifest.json"),
+        restore_verified_database="CDN_IT_Partner",
+        verified=True,
+    )
+    return firebird, optima
+
+
+def _empty_retention_result(*, dry_run: bool = False) -> tuple[RetentionPlan, RetentionApplyResult]:
+    """Zwraca pusty wynik retencji używany w testach tras API."""
+    now = datetime.now(UTC)
+    return (
+        RetentionPlan(
+            retention_days=14,
+            cutoff_at=now,
+            sets=[],
+            deletion_sets=[],
+            preserved_newest_key=None,
+            unknown_items=[],
+            newer_incomplete_sets=[],
+        ),
+        RetentionApplyResult(dry_run=dry_run),
+    )
 
 
 @compiles(JSONB, "sqlite")  # type: ignore[misc]
@@ -1403,6 +1452,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data["schedule_morning"], "06:00")
             self.assertEqual(data["schedule_evening"], "20:00")
             self.assertEqual(data["retention_local_copies"], 14)
+            self.assertEqual(data["retention_local_days"], 21)
+            self.assertEqual(data["retention_cloud_days"], 14)
             self.assertEqual(data["storage_mode"], "local")
             self.assertEqual(data["local_directory"], "D:\\Backup_CTIP_MS")
             self.assertEqual(data["office_tenant_id"], "tenant-id")
@@ -1417,6 +1468,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "schedule_evening": "21:15",
                 "retention_local_copies": 14,
                 "retention_cloud_copies": 7,
+                "retention_local_days": 21,
+                "retention_cloud_days": 14,
                 "archive_ctip_files": True,
                 "archive_ctip_db": True,
                 "archive_firebird_prod": True,
@@ -1427,6 +1480,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "network_directory": "\\\\NAS\\\\CTIP",
                 "cloud_provider": "office365",
                 "cloud_only_evening": True,
+                "optima_only_evening": True,
                 "office_tenant_id": "tenant-id",
                 "office_client_id": "client-id",
                 "office_site_id": "tenant.sharepoint.com,site-id,web-id",
@@ -1467,6 +1521,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             stored = await settings_store.get_namespace(session, "backup")
             self.assertEqual(stored.get("schedule_morning"), "05:30")
             self.assertEqual(stored.get("network_directory"), "\\\\NAS\\\\CTIP")
+            self.assertEqual(stored.get("retention_local_days"), "21")
+            self.assertEqual(stored.get("retention_cloud_days"), "14")
             self.assertIsNone(stored.get("office_tenant_id"))
             self.assertIsNone(stored.get("office_client_secret"))
             self.assertIsNone(stored.get("office_site_id"))
@@ -1514,6 +1570,46 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         async with self.session_factory() as session:
             stored = await settings_store.get_namespace(session, "backup")
             self.assertIsNone(stored.get("office_drive_id"))
+
+    async def test_backup_retention_defaults_to_dry_run_and_records_audit(self):
+        token, _ = await self._login()
+        empty_result = _empty_retention_result(dry_run=True)
+        with (
+            patch(
+                "app.api.routes.admin_backup.run_local_retention",
+                return_value=empty_result,
+            ),
+            patch(
+                "app.api.routes.admin_backup.run_sharepoint_retention",
+                new=AsyncMock(return_value=empty_result),
+            ),
+        ):
+            response = await self.client.post(
+                "/admin/backup/retention/run",
+                headers={"X-Admin-Session": token},
+                json={},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["dry_run"])
+        self.assertEqual(len(data["scopes"]), 8)
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AdminAuditLog).where(AdminAuditLog.action == "backup_retention_dry_run")
+            )
+            self.assertIsNotNone(result.scalars().first())
+
+    async def test_backup_retention_apply_requires_confirmation(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/backup/retention/run",
+            headers={"X-Admin-Session": token},
+            json={"dry_run": False, "confirm": "nie"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("USUŃ STARE KOPIE", response.json()["detail"])
 
     async def test_backup_run_dry_creates_audit_entry(self):
         token, _ = await self._login()
@@ -1579,6 +1675,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             included_components=["postgresql_ctip"],
             postgres_dump_included=True,
         )
+        fake_firebird, fake_optima = _fake_component_results()
         try:
             with (
                 patch(
@@ -1586,8 +1683,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     return_value=fake_run,
                 ),
                 patch(
-                    "app.api.routes.admin_backup.prune_local_backups",
-                    return_value=0,
+                    "app.api.routes.admin_backup.create_firebird_backup",
+                    return_value=fake_firebird,
+                ),
+                patch(
+                    "app.api.routes.admin_backup.create_optima_backup",
+                    return_value=fake_optima,
+                ),
+                patch(
+                    "app.api.routes.admin_backup.run_local_retention",
+                    return_value=_empty_retention_result(),
                 ),
             ):
                 response = await self.client.post(
@@ -1619,6 +1724,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             included_components=["ctip_files", "postgresql_ctip"],
             postgres_dump_included=True,
         )
+        fake_firebird, fake_optima = _fake_component_results()
 
         async def fake_upload(**kwargs):
             folder = kwargs.get("folder_path")
@@ -1638,21 +1744,24 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     return_value=fake_run,
                 ),
                 patch(
+                    "app.api.routes.admin_backup.create_firebird_backup",
+                    return_value=fake_firebird,
+                ),
+                patch(
+                    "app.api.routes.admin_backup.create_optima_backup",
+                    return_value=fake_optima,
+                ),
+                patch(
                     "app.api.routes.admin_backup.upload_file_to_sharepoint",
                     new=AsyncMock(side_effect=fake_upload),
                 ) as upload_mock,
                 patch(
-                    "app.api.routes.admin_backup.prune_sharepoint_backups",
-                    new=AsyncMock(
-                        return_value=Office365PruneResult(
-                            deleted_archives=0,
-                            deleted_files=0,
-                        )
-                    ),
+                    "app.api.routes.admin_backup.run_sharepoint_retention",
+                    new=AsyncMock(return_value=_empty_retention_result()),
                 ),
                 patch(
-                    "app.api.routes.admin_backup.prune_local_backups",
-                    return_value=0,
+                    "app.api.routes.admin_backup.run_local_retention",
+                    return_value=_empty_retention_result(),
                 ),
             ):
                 response = await self.client.post(
@@ -1672,8 +1781,11 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("do SharePoint", data["message"])
 
         called_folders = [call.kwargs.get("folder_path") for call in upload_mock.await_args_list]
-        self.assertEqual(set(called_folders), {"BackupKP/CTIP"})
-        self.assertEqual(len(called_folders), 2)
+        self.assertEqual(
+            set(called_folders),
+            {"BackupKP/CTIP", "BackupKP/Menadzer_Serwisu/prod", "BackupKP/Optima"},
+        )
+        self.assertEqual(len(called_folders), 12)
 
     async def test_backup_restore_dry_creates_audit_entry(self):
         token, _ = await self._login()

@@ -273,8 +273,9 @@ def create_local_backup(
     compress: bool,
     config: dict[str, Any],
     project_root: Path | None = None,
+    component_manifests: dict[str, list[Path]] | None = None,
 ) -> BackupRunResult:
-    """Tworzy lokalne archiwum, logiczny dump PostgreSQL i sumę kontrolną."""
+    """Tworzy archiwum CTIP, dump PostgreSQL i odwołania do kopii zewnętrznych."""
     root = (project_root or Path.cwd()).resolve()
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -287,6 +288,7 @@ def create_local_backup(
     included_components: list[str] = []
     omitted_components: list[str] = []
     postgres_dump_included = False
+    component_manifests = component_manifests or {}
 
     manifest = {
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -296,11 +298,12 @@ def create_local_backup(
             "archive_ctip_files": bool(config.get("archive_ctip_files", True)),
             "archive_ctip_db": bool(config.get("archive_ctip_db", True)),
             "archive_firebird_prod": bool(config.get("archive_firebird_prod", True)),
-            "archive_firebird_test": bool(config.get("archive_firebird_test", True)),
+            "archive_firebird_test": bool(config.get("archive_firebird_test", False)),
             "archive_optima": bool(config.get("archive_optima", True)),
         },
         "included_components": included_components,
         "omitted_components": omitted_components,
+        "external_component_manifests": {},
         "notes": notes,
     }
 
@@ -331,30 +334,36 @@ def create_local_backup(
                 if postgres_dump_path is not None:
                     archive.add(postgres_dump_path, arcname="postgresql/ctip.dump")
 
-                if bool(config.get("archive_firebird_prod", True)):
-                    fb_prod = Path(settings.fb_database)
-                    if _add_if_exists(archive, fb_prod, "firebird/prod/BAZAMS.FDB", notes):
-                        included_components.append("firebird_prod")
-                    else:
-                        omitted_components.append("firebird_prod")
-
-                if bool(config.get("archive_firebird_test", True)):
-                    fb_test = Path(settings.fb_local_copy_path)
-                    if _add_if_exists(
-                        archive,
-                        fb_test,
-                        "firebird/test/menadzer_serwisu.fdb",
-                        notes,
-                    ):
-                        included_components.append("firebird_test")
-                    else:
-                        omitted_components.append("firebird_test")
-
-                if bool(config.get("archive_optima", True)):
-                    omitted_components.append("optima_sql")
-                    notes.append(
-                        "Archiwizacja SQL Optimy wymaga dumpa SQL Server - pominięto w tym przebiegu."
-                    )
+                external_components = (
+                    ("firebird_prod", "firebird/prod", "archive_firebird_prod", True),
+                    ("firebird_test", "firebird/test", "archive_firebird_test", False),
+                    ("optima_sql", "optima", "archive_optima", True),
+                )
+                manifest_references = manifest["external_component_manifests"]
+                if not isinstance(manifest_references, dict):
+                    raise BackupRunError("Niepoprawna struktura manifestu kopii zapasowej.")
+                for (
+                    component,
+                    archive_directory,
+                    config_key,
+                    default_enabled,
+                ) in external_components:
+                    if not bool(config.get(config_key, default_enabled)):
+                        continue
+                    references = component_manifests.get(component, [])
+                    if not references or any(not path.is_file() for path in references):
+                        omitted_components.append(component)
+                        notes.append(
+                            f"Pominięto komponent {component}: brak zweryfikowanego manifestu."
+                        )
+                        continue
+                    for reference in references:
+                        archive.add(
+                            reference,
+                            arcname=f"external/{archive_directory}/{reference.name}",
+                        )
+                    manifest_references[component] = [reference.name for reference in references]
+                    included_components.append(component)
 
                 manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
                 info = tarfile.TarInfo(name="manifest.json")

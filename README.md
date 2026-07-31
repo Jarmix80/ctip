@@ -8,6 +8,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook wyrownania konfiguracji Windows TEST/PROD do modelu `.env` (backup `D:\backup_temp`, bramki potwierdzen, wdrozenie i rollback): `docs/instal/windows_test_prod_env_runbook_2026-05-22.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
+- Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.
 - Pomocniczy skrypt operatorski (Windows, bez `Read-Host`) do wykonania kroku Google Sheets + mailbox dry-run po wdrozeniu: `inbox/krok9_10_google_sheets_mailbox_noninteractive.ps1`.
 
 ## Dokumentacja operacyjna (poza zakresem CTIP)
@@ -648,7 +649,7 @@ pip install -r requirements.txt
 ```powershell
 .\scripts\windows\backup_prod_databases.ps1 -InstallDir D:\CTIP -GbakPath "C:\Program Files\Firebird\Firebird_2_5\bin\gbak.exe"
 ```
-Skrypt tworzy backup PostgreSQL (`pg_dump` + opcjonalnie `pg_dumpall --globals-only --no-role-passwords`) oraz backup Firebird (`gbak`) do katalogu `D:\CTIP\backups\prod_<timestamp>`.
+Skrypt tworzy backup PostgreSQL (`pg_dump` + opcjonalnie `pg_dumpall --globals-only --no-role-passwords`) oraz backup Firebird (`gbak -b -g`) do katalogu `D:\CTIP\backups\prod_<timestamp>`. Dane logowania Firebird przekazuje przez `ISC_USER` i `ISC_PASSWORD`, bez umieszczania hasła w argumentach procesu.
 Każde narzędzie zapisuje osobne logi STDOUT/STDERR w `D:\CTIP\backups\prod_<timestamp>\_logs`, a skrypt po wykonaniu waliduje istnienie i rozmiar wygenerowanych plików backupu.
 Jeżeli `pg_dumpall --globals-only --no-role-passwords` nie powiedzie się, skrypt domyślnie zgłasza ostrzeżenie i kontynuuje; użyj `-FailOnPgGlobalsError`, aby traktować ten przypadek jako błąd krytyczny.
 4. Co dalej po `pip install -r requirements.txt`:
@@ -713,12 +714,12 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Sekcja `Naprawa KP/xxxx` (`/admin/partials/kp-repair`) udostępnia raport ilości `/V /E /R`, czyszczenie markerów (`/admin/kp-repair/clear`) i retagowanie wg źródeł (`/admin/kp-repair/rebuild`); raporty i rollbacki są zapisywane do `inbox/ewidencja`.
 - Operacje `kp-repair` wykonują zapytania Firebird w wątku roboczym (`asyncio.to_thread`), aby nie blokować event-loop FastAPI i nie zamrażać panelu podczas generowania raportu.
 - UI `Naprawa KP/xxxx` pokazuje pasek postępu (orientacyjny) i licznik czasu operacji; klient ma limit czasu żądania 10 minut, a backend limit wykonania 900 s (HTTP 504 po przekroczeniu).
-- Sekcja Kopie zapasowe (`/admin/partials/backups`) udostępnia konfigurację harmonogramu (`06:00`, `20:00`), retencji i zakresu archiwizacji. Każde żądanie backupu PostgreSQL uruchamia `pg_dump` w formacie niestandardowym, waliduje wynik przez `pg_restore --list` i zapisuje go w archiwum jako `postgresql/ctip.dump`. Widok historii pokazuje status i potwierdzenie (suma kontrolna `.sha256`).
+- Sekcja Kopie zapasowe (`/admin/partials/backups`) udostępnia konfigurację harmonogramu (`06:00`, `20:00`), retencji czasowej (lokalnie 21 dni, Office 365 14 dni) i zakresu archiwizacji. Każde żądanie backupu PostgreSQL uruchamia `pg_dump` w formacie niestandardowym, waliduje wynik przez `pg_restore --list` i zapisuje go w archiwum jako `postgresql/ctip.dump`. Widok historii pokazuje status i potwierdzenie (suma kontrolna `.sha256`).
 - Konfiguracja backupu jest rozdzielona: parametry integracyjne i sekrety (`BACKUP_DEFAULT_LOCAL_DIR`, Office 365, SQL Optima) pochodzą z `.env`, a panel zapisuje tylko harmonogram, retencję i pozostałe ustawienia operacyjne przez `/admin/backup/config`. Pelne wykonanie (`dry_run=false`) jest aktywne automatycznie na hostcie zgodnym z `BACKUP_PRODUCTION_HOST`, a w innych srodowiskach mozna je jawnie wlaczyc lub wylaczyc przez `BACKUP_EXECUTION_ENABLED` (`true`/`false`).
 - Harmonogram zapisany w panelu (`schedule_morning`, `schedule_evening`) jest realizowany automatycznie przez scheduler backendu; dla kazdego slotu wykonywane jest maksymalnie jedno zadanie na dobe.
 - Scheduler backupu mozna globalnie wlaczyc/wylaczyc przez `BACKUP_SCHEDULER_ENABLED` (domyslnie `true`).
-- Wysyłka do SharePoint zapisuje kompletne archiwum i jego sumę kontrolną jeden raz w `BackupKP/CTIP`; duże pliki są przesyłane fragmentowo przez sesję Microsoft Graph. Po poprawnym uploadzie stosowana jest retencja chmurowa, a status `PARTIAL` jawnie sygnalizuje pominięty składnik lub błąd chmury/retencji.
-- Narzędzia backupu można wskazać przez `PG_DUMP_PATH` i `PG_RESTORE_PATH`; limit wykonania ustala `BACKUP_PG_DUMP_TIMEOUT_SECONDS`. Szczegóły próby odtworzenia opisuje `docs/instal/bezpieczenstwo_backup_tls.md`.
+- Wysyłka do SharePoint zapisuje archiwum CTIP w `BackupKP/CTIP`, logiczną kopię Firebird `.fbk` w `BackupKP/Menadzer_Serwisu/prod` i trzy natywne kopie Optimy `.bak` w `BackupKP/Optima`; duże pliki są przesyłane fragmentowo przez sesję Microsoft Graph. Firebird jest weryfikowany próbą odtworzenia `gbak`, a Optima przez `RESTORE VERIFYONLY WITH CHECKSUM` oraz kontrolny restore z `DBCC CHECKDB PHYSICAL_ONLY`. Status `PARTIAL` jawnie sygnalizuje błąd chmury lub retencji, zachowując lokalne artefakty.
+- Narzędzia backupu można wskazać przez `PG_DUMP_PATH`, `PG_RESTORE_PATH`, `FIREBIRD_GBAK_PATH` i `OPTIMA_SQLCMD_PATH`; limity wykonania ustalają odpowiednie zmienne `BACKUP_*_TIMEOUT_SECONDS`. Szczegóły prób odtworzenia opisują `docs/instal/bezpieczenstwo_backup_tls.md` oraz `docs/instal/backup_firebird_optima_retencja.md`.
 - Dla Windows dostępny jest skrypt tworzący lokalną strukturę katalogów backupu: `scripts/windows/create_backup_structure.ps1` (domyślny root: `D:\Backup_CTIP_MS_optima`).
 - Dla SharePoint dostępny jest skrypt konfigurujący czytelny widok biblioteki backupów: `scripts/windows/setup_sharepoint_backup_view.ps1` (grupowanie po folderach i sortowanie malejąco po dacie modyfikacji).
 - Dla SharePoint dostępny jest też skrypt tworzący osobną stronę dashboardu backupów (`SitePages/BackupKP-Dashboard.aspx`) z tabelą linków do widoków: `scripts/windows/create_sharepoint_backup_dashboard.ps1` (układ strony `Article`; ponowne uruchomienie dla istniejącej strony wymaga przełącznika `-OverwritePage`; skrypt automatycznie wykrywa wariant struktury folderów `BackupKP/...` lub bez tego prefiksu i generuje linki z parametrami `id=<folder>` oraz `viewid=<GUID>`, aby otwierać widok od razu w docelowym katalogu).
@@ -879,6 +880,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
 - `GET /admin/backup/config`, `PUT /admin/backup/config` – odczyt konfiguracji modułu kopii zapasowych oraz zapis tylko parametrów operacyjnych (harmonogram, zakres, retencja, tryb składowania); pola integracyjne i sekrety pozostają źródłowane z `.env`.
 - `POST /admin/backup/office365/test` – test połączenia OAuth/Graph do SharePoint (z automatycznym ustaleniem `Drive ID` na podstawie `Site ID`, jeśli `Drive ID` nie jest podany).
+- `POST /admin/backup/retention/run` – podgląd (`dry_run=true`) albo potwierdzone wykonanie czasowej retencji zarządzanych zestawów lokalnych i Office 365; pełny wynik trafia do audytu.
 - `POST /admin/backup/run`, `POST /admin/backup/restore` – inicjacja kopii/przywracania; wykonanie poza produkcją jest blokowane (`403`), dry-run pozostaje dostępny.
 - `GET /sms/templates` – lista szablonów (globalnych i użytkownika).
 - `POST /sms/templates` – dodawanie szablonów (globalny tylko dla administratora).
