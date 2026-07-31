@@ -59,6 +59,33 @@ def _compose_sheet_payload(
     return payload
 
 
+async def _compose_sheet_payload_with_withdrawn_identity(
+    session,
+    unit: DeviceInventoryUnit,
+    queue_item: DeviceSheetOutbox,
+) -> dict[str, Any]:
+    """Dodaje ściśle wskazaną poprzednią tożsamość KP dla ponownego przyjęcia."""
+    payload = _compose_sheet_payload(unit, queue_item)
+    if queue_item.operation_type != "upsert_device":
+        return payload
+    previous_unit = (
+        await session.execute(
+            select(DeviceInventoryUnit)
+            .where(
+                DeviceInventoryUnit.id != unit.id,
+                DeviceInventoryUnit.status == "withdrawn",
+                DeviceInventoryUnit.ewidencja_normalized == unit.ewidencja_normalized,
+            )
+            .order_by(DeviceInventoryUnit.withdrawn_at.desc(), DeviceInventoryUnit.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if previous_unit is not None:
+        payload["allowed_previous_serial"] = previous_unit.serial
+        payload["allowed_previous_source_row"] = previous_unit.source_row
+    return payload
+
+
 def _retry_delay_seconds(attempt_count: int) -> int:
     """Wylicza ograniczone opóźnienie kolejnej próby."""
     exponent = max(0, min(int(attempt_count) - 1, 7))
@@ -181,7 +208,11 @@ async def process_device_sheet_outbox_once(*, limit: int | None = None) -> dict[
                     await session.commit()
                     continue
 
-                payload = _compose_sheet_payload(unit, queue_item)
+                payload = await _compose_sheet_payload_with_withdrawn_identity(
+                    session,
+                    unit,
+                    queue_item,
+                )
                 try:
                     with use_workflow_sheet_runtime_config(config):
                         result = await asyncio.to_thread(

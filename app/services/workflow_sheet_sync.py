@@ -1093,14 +1093,18 @@ def _validate_inventory_row_identity(
     expected_source = _coerce_source_row_text(payload)
     current_source = _row_value(row_values, header_index.get("ms_id_magazyn_table"))
     if current_source and expected_source and current_source != expected_source:
-        raise RuntimeError(
-            "Arkusz zawiera inną wartość MS_ID_MAGAZYN_TABLE dla wskazanego egzemplarza."
-        )
+        allowed_previous_source = str(payload.get("allowed_previous_source_row") or "").strip()
+        if current_source != allowed_previous_source:
+            raise RuntimeError(
+                "Arkusz zawiera inną wartość MS_ID_MAGAZYN_TABLE dla wskazanego egzemplarza."
+            )
 
     expected_serial = _normalize_device_key(payload.get("serial"))
     current_serial = _normalize_device_key(_row_value(row_values, header_index.get("serial")))
     if current_serial and expected_serial and current_serial != expected_serial:
-        raise RuntimeError("Arkusz zawiera inny numer seryjny dla wskazanego egzemplarza.")
+        allowed_previous_serial = _normalize_device_key(payload.get("allowed_previous_serial"))
+        if current_serial != allowed_previous_serial:
+            raise RuntimeError("Arkusz zawiera inny numer seryjny dla wskazanego egzemplarza.")
 
     if settings.ctip_runtime_profile == "test":
         row_environment = _row_value(row_values, header_index.get("ctip_env")).upper()

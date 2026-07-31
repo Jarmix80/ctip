@@ -502,6 +502,64 @@ def test_inventory_upsert_appends_complete_test_row() -> None:
     }
 
 
+def test_inventory_upsert_replaces_only_confirmed_withdrawn_identity() -> None:
+    row = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
+    row[header_index["ms_id_magazyn_table"]] = "12922"
+    worksheet = FakeWorksheet([_headers(), row])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        result = workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="upsert_device",
+            payload={
+                "source_row": 19001,
+                "producer": "Ricoh",
+                "model": "IM C3000",
+                "serial": "SN-NEW-001",
+                "ewidencja": "KP/4066",
+                "price": "1200.0000",
+                "status": "01. Przed zerówką",
+                "notes": "dodana automatem PZ z CTIP",
+                "reservation_status": "brak rezerwacji",
+                "ms_id_maszyna": 7701,
+                "ctip_env": "TEST",
+                "allowed_previous_serial": "T605H900327",
+                "allowed_previous_source_row": 12922,
+            },
+        )
+
+    updated = worksheet.values[1]
+    assert result["action"] == "updated"
+    assert updated[header_index["serial"]] == "SN-NEW-001"
+    assert updated[header_index["ms_id_magazyn_table"]] == "19001"
+
+
+def test_inventory_upsert_rejects_unconfirmed_identity_replacement() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+        pytest.raises(RuntimeError, match="inny numer seryjny"),
+    ):
+        workflow_sheet_sync.sync_device_inventory_to_sheet(
+            operation_type="upsert_device",
+            payload={
+                "source_row": 12922,
+                "serial": "SN-NEW-001",
+                "ewidencja": "KP/4066",
+                "ctip_env": "TEST",
+                "allowed_previous_serial": "INNY-WYCOFANY-SERIAL",
+                "allowed_previous_source_row": 12922,
+            },
+        )
+
+
 def test_inventory_delete_removes_only_matching_device_row() -> None:
     unrelated = _device_row()
     header_index = workflow_sheet_sync._build_header_index(_headers())
