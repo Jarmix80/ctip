@@ -78,10 +78,16 @@ from app.services.contracts_workflow import (
     workflow_business_status_label,
 )
 from app.services.grenke_launch import launch_grenke_prefill
+from app.services.workflow_device_ownership import (
+    MACHINE_MATCH_BOUND_CURRENT_WORKFLOW,
+    snapshot_confirms_current_workflow_binding,
+)
 from app.services.workflow_machine_binding import (
+    WorkflowDeviceOwnershipConflict,
     apply_binding_snapshot,
     bind_devices_to_workflow_client,
     notify_binding_issues_to_admins,
+    validate_workflow_device_ownership,
 )
 from app.services.workflow_sheet_status_cache import (
     load_workflow_sheet_status_cache_lookup,
@@ -608,20 +614,48 @@ def _build_saved_workflow_device_payload(device) -> dict[str, str | int | bool]:
         ).strip(),
         "ms_id_model": str(snapshot.get("ms_id_model") or "").strip(),
         "ms_id_magazyn_table": str(warehouse_id).strip(),
+        "machine_id": _coerce_int(device.firebird_machine_id or snapshot.get("ms_id_maszyna")),
+        "machine_client_id": _coerce_int(device.firebird_client_id or snapshot.get("ms_id_klient")),
+        "machine_client_name": str(snapshot.get("machine_client_name") or "").strip(),
+        "machine_match_state": str(snapshot.get("machine_match_state") or "missing").strip(),
+        "machine_owner_conflict": False,
+        "machine_owner_reason": "",
         "sheet_row": _coerce_int(snapshot.get("sheet_row")),
         "source_type": source_type,
         "selected": True,
     }
 
 
+def _source_machine_owner_conflict(
+    source_device: dict[str, Any],
+    *,
+    saved_device: FormWorkflowDevice | None,
+) -> tuple[bool, str, str]:
+    """Uwzględnia bezpieczne ponowienie wiązania tej samej sprawy workflow."""
+    conflict = bool(source_device.get("machine_owner_conflict"))
+    state = str(source_device.get("machine_match_state") or "missing").strip()
+    reason = str(source_device.get("machine_owner_reason") or "").strip()
+    if not conflict or saved_device is None:
+        return conflict, state, reason
+
+    snapshot = saved_device.snapshot if isinstance(saved_device.snapshot, dict) else {}
+    if snapshot_confirms_current_workflow_binding(
+        snapshot,
+        machine_id=_coerce_int(source_device.get("machine_id")),
+        client_id=_coerce_int(source_device.get("machine_client_id")),
+    ):
+        return False, MACHINE_MATCH_BOUND_CURRENT_WORKFLOW, ""
+    return conflict, state, reason
+
+
 def _build_available_workflow_devices(
-    source_devices: list[dict[str, str]],
+    source_devices: list[dict[str, Any]],
     *,
     saved_devices_by_key: dict[str, Any],
     active_reservations_by_key: dict[str, dict[str, Any]] | None = None,
     workflow_sheet_lookup: dict[str, Any] | None = None,
-) -> list[dict[str, str | int | bool]]:
-    available_devices: list[dict[str, str | int | bool]] = []
+) -> list[dict[str, Any]]:
+    available_devices: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     reservations = active_reservations_by_key or {}
     sheet_lookup = workflow_sheet_lookup or {}
@@ -700,7 +734,28 @@ def _build_available_workflow_devices(
             )
             reservation_filter_value = "Zarezerwowana"
             reservation_badge_class = "danger"
-        locked_by_other = reservation_entry is not None and saved_device is None
+        sheet_reservation_status = str(sheet_entry.get("reservation_status") or "").strip()
+        sheet_reserved = bool(
+            sheet_reservation_status and sheet_reservation_status.casefold() != "brak rezerwacji"
+        )
+        locked_by_reservation = bool(
+            saved_device is None
+            and (reservation_entry is not None or reservation_form_id or sheet_reserved)
+        )
+        machine_owner_conflict, machine_match_state, machine_owner_reason = (
+            _source_machine_owner_conflict(
+                source_device,
+                saved_device=saved_device,
+            )
+        )
+        locked_by_other = locked_by_reservation or machine_owner_conflict
+        locked_reason = machine_owner_reason
+        if not locked_reason and locked_by_reservation:
+            locked_reason = (
+                f"Urządzenie jest zapisane w formularzu {reservation_form_id}."
+                if reservation_form_id
+                else "Urządzenie ma aktywną rezerwację poza bieżącą sprawą workflow."
+            )
 
         next_item = {
             "row": row_number,
@@ -732,15 +787,7 @@ def _build_available_workflow_devices(
             "reservation_initials": reservation_initials,
             "reservation_badge_class": reservation_badge_class,
             "locked_by_other": locked_by_other,
-            "locked_reason": (
-                f"Urzadzenie jest zapisane w formularzu {reservation_form_id}."
-                if locked_by_other and reservation_form_id
-                else (
-                    "Urzadzenie jest zapisane w innej aktywnej sprawie workflow."
-                    if locked_by_other
-                    else ""
-                )
-            ),
+            "locked_reason": locked_reason,
             "description": source_device.get("description") or "",
             "available_quantity": source_device.get("available_quantity") or "",
             "reserved_quantity": source_device.get("reserved_quantity") or "",
@@ -753,6 +800,13 @@ def _build_available_workflow_devices(
             or (
                 str(row_number) if source_type == WORKFLOW_DEVICE_SOURCE_FIREBIRD_WAREHOUSE else ""
             ),
+            "machine_id": source_device.get("machine_id"),
+            "machine_client_id": source_device.get("machine_client_id"),
+            "machine_client_name": source_device.get("machine_client_name") or "",
+            "machine_active": source_device.get("machine_active") or "",
+            "machine_match_state": machine_match_state,
+            "machine_owner_conflict": machine_owner_conflict,
+            "machine_owner_reason": machine_owner_reason,
             "sheet_row": _coerce_int(sheet_entry.get("sheet_row")),
             "source_type": source_type,
             "selected": saved_device is not None,
@@ -2208,6 +2262,40 @@ async def contracts_form_workflow_devices(
             ),
         )
 
+    machine_owner_conflicts: list[dict[str, Any]] = []
+    for selected_item in selected_devices_meta:
+        source_key = str(selected_item.get("source_key") or "").strip()
+        source_device = available_rows.get(source_key)
+        if source_device is None:
+            continue
+        conflict, _, reason = _source_machine_owner_conflict(
+            source_device,
+            saved_device=previous_devices_by_key.get(source_key),
+        )
+        if not conflict:
+            continue
+        machine_owner_conflicts.append(
+            {
+                "source_key": source_key,
+                "machine_id": _coerce_int(source_device.get("machine_id")),
+                "client_id": _coerce_int(source_device.get("machine_client_id")),
+                "client_name": str(source_device.get("machine_client_name") or "").strip(),
+                "reason": reason,
+            }
+        )
+    if machine_owner_conflicts:
+        conflict_labels = "; ".join(
+            f"{conflict['source_key']}: {conflict['reason']}"
+            for conflict in machine_owner_conflicts
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Nie zapisano żadnego urządzenia. Wybrane pozycje nie są dostępne "
+                f"na magazynie Ksero Partner: {conflict_labels}"
+            ),
+        )
+
     active_reservations = await _load_active_workflow_device_reservations(
         session,
         exclude_workflow_case_id=workflow_case.id,
@@ -2338,12 +2426,18 @@ async def contracts_form_workflow_devices(
 
     normalized_status = normalize_workflow_business_status(workflow_case.business_status)
     if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER and workflow_devices:
-        binding_items, _ = await asyncio.to_thread(
-            bind_devices_to_workflow_client,
-            workflow_case=workflow_case,
-            devices=workflow_devices,
-            actor_label=issuer_name,
-        )
+        try:
+            binding_items, _ = await asyncio.to_thread(
+                bind_devices_to_workflow_client,
+                workflow_case=workflow_case,
+                devices=workflow_devices,
+                actor_label=issuer_name,
+            )
+        except WorkflowDeviceOwnershipConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
         binding_items_payload = [item.as_dict() for item in binding_items]
         binding_by_device_id = {item.workflow_device_id: item for item in binding_items}
         for workflow_device in workflow_devices:
@@ -2577,6 +2671,24 @@ async def contracts_form_workflow_status(
         user_id=admin_user.id,
         payload_snapshot=submitted_payload or {},
     )
+    normalized_status = normalize_workflow_business_status(payload.business_status)
+    workflow_devices = await list_form_workflow_devices(
+        session,
+        workflow_case_id=workflow_case.id,
+    )
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER and workflow_devices:
+        try:
+            await asyncio.to_thread(
+                validate_workflow_device_ownership,
+                workflow_case=workflow_case,
+                devices=workflow_devices,
+            )
+        except WorkflowDeviceOwnershipConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+
     workflow_case = await set_form_workflow_business_status(
         session,
         workflow_case=workflow_case,
@@ -2585,7 +2697,6 @@ async def contracts_form_workflow_status(
         signature_deadline_at=payload.signature_deadline_at,
         status_source="manual",
     )
-    normalized_status = normalize_workflow_business_status(payload.business_status)
     if normalized_status in {
         WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
         WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE,
@@ -2599,7 +2710,6 @@ async def contracts_form_workflow_status(
             or datetime.now(UTC) + timedelta(days=RESOURCE_RELEASE_DAYS_AFTER_REJECTION)
         )
     item.updated_at = datetime.now(UTC)
-    workflow_devices = await list_form_workflow_devices(session, workflow_case_id=workflow_case.id)
     response_message_parts = ["Zapisano status sprawy FLOW."]
     binding_items_payload: list[dict[str, Any]] = []
     binding_alert_payload: dict[str, Any] | None = None
@@ -2617,12 +2727,18 @@ async def contracts_form_workflow_status(
             ).strip()
             or admin_user.email
         )
-        binding_items, _ = await asyncio.to_thread(
-            bind_devices_to_workflow_client,
-            workflow_case=workflow_case,
-            devices=workflow_devices,
-            actor_label=issuer_name,
-        )
+        try:
+            binding_items, _ = await asyncio.to_thread(
+                bind_devices_to_workflow_client,
+                workflow_case=workflow_case,
+                devices=workflow_devices,
+                actor_label=issuer_name,
+            )
+        except WorkflowDeviceOwnershipConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
         binding_items_payload = [item.as_dict() for item in binding_items]
         binding_by_device_id = {item.workflow_device_id: item for item in binding_items}
         for workflow_device in workflow_devices:

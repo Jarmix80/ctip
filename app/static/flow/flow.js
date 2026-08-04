@@ -967,6 +967,8 @@ async function initializeFlowPage() {
         item.ewidencja,
         item.status,
         item.reservation_status,
+        item.machine_client_name,
+        item.locked_reason,
       ]
         .join(" ")
         .toLowerCase();
@@ -984,10 +986,14 @@ async function initializeFlowPage() {
     workflowDevicePickerBody.innerHTML = filtered
       .map((item) => {
         const lockedByOther = Boolean(item.locked_by_other);
+        const checkboxDisabled = lockedByOther && !item.selected;
         const reservationLabel = workflowReservationLabel(item);
         const reservationBadgeClass = workflowReservationBadgeClass(item);
         const reservationMeta = item.reservation_form_id
           ? `<div class="flow-subtle">Formularz ${escapeHtml(item.reservation_form_id)}</div>`
+          : "";
+        const ownerMeta = item.machine_owner_conflict
+          ? `<div class="flow-subtle">${escapeHtml(item.locked_reason || "Urządzenie poza magazynem Ksero Partner")}</div>`
           : "";
         const deviceLabel = item.device_label || [item.producer, item.model].filter(Boolean).join(" ");
         return `
@@ -998,7 +1004,7 @@ async function initializeFlowPage() {
                 class="flow-device-picker-select"
                 data-workflow-device-key="${escapeHtml(workflowDeviceKey(item))}"
                 ${item.selected ? "checked" : ""}
-                ${lockedByOther ? "disabled" : ""}
+                ${checkboxDisabled ? "disabled" : ""}
                 title="${escapeHtml(item.locked_reason || "")}"
               >
             </td>
@@ -1010,6 +1016,7 @@ async function initializeFlowPage() {
             <td>
               <span class="flow-badge ${reservationBadgeClass}">${escapeHtml(reservationLabel)}</span>
               ${reservationMeta}
+              ${ownerMeta}
             </td>
             <td>
               <input
@@ -2422,6 +2429,14 @@ async function initializeFlowPage() {
         return;
       }
       const deviceKey = String(target.dataset.workflowDeviceKey || "");
+      const selectedItem = activeWorkflowData.available_devices.find(
+        (item) => workflowDeviceKey(item) === deviceKey,
+      );
+      if (selectedItem?.locked_by_other && target.checked) {
+        target.checked = false;
+        setError(selectedItem.locked_reason || "Urządzenie nie jest dostępne do rezerwacji.");
+        return;
+      }
       activeWorkflowData.available_devices = activeWorkflowData.available_devices.map((item) =>
         workflowDeviceKey(item) === deviceKey ? { ...item, selected: target.checked } : item,
       );

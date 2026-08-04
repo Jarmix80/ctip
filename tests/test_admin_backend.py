@@ -85,7 +85,11 @@ from app.services.office365_backup import (
 from app.services.optima_backup import OptimaBackupResult, OptimaDatabaseBackup
 from app.services.security import hash_password, hash_session_token
 from app.services.settings_store import StoredValue
-from app.services.workflow_machine_binding import WorkflowDeviceBindingItem
+from app.services.workflow_machine_binding import (
+    WorkflowDeviceBindingItem,
+    WorkflowDeviceOwnershipConflict,
+    WorkflowDeviceOwnershipConflictItem,
+)
 from app.services.workflow_sheet_sync import WorkflowSheetRuntimeConfig
 from log_utils import append_log, daily_log_path
 
@@ -5508,6 +5512,112 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn(f"formularz {reserved_form.id}", response.json()["detail"])
 
+    async def test_contracts_form_workflow_devices_rejects_entire_batch_for_foreign_owner(self):
+        token, _ = await self._login_operator()
+        target_form = await self._create_submitted_form_request()
+
+        with patch(
+            "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+            return_value=[
+                {
+                    "row": "21",
+                    "producer": "Ricoh",
+                    "model": "IM 350",
+                    "serial": "SAFE-21",
+                    "ewidencja": "KP/21",
+                    "index": "KP/21",
+                    "name": "Ricoh IM 350",
+                    "status": "Dostepne",
+                    "price": "1900.00",
+                    "price_net": "1544.72",
+                    "price_gross": "1900.00",
+                    "vat_rate": "23",
+                    "reservation": "",
+                    "reservation_status": "brak rezerwacji",
+                    "description": "Ricoh IM 350",
+                    "available_quantity": "1",
+                    "reserved_quantity": "0",
+                    "warehouse_quantity": "1",
+                    "serial_required": "TAK",
+                    "source_type": "firebird_magazyn_28",
+                    "machine_match_state": "warehouse",
+                    "machine_owner_conflict": False,
+                    "machine_id": 701,
+                    "machine_client_id": 656,
+                },
+                {
+                    "row": "22",
+                    "producer": "Ricoh",
+                    "model": "IMC 3000",
+                    "serial": "FOREIGN-22",
+                    "ewidencja": "KP/22",
+                    "index": "KP/22",
+                    "name": "Ricoh IMC 3000",
+                    "status": "Dostepne",
+                    "price": "2500.00",
+                    "price_net": "2032.52",
+                    "price_gross": "2500.00",
+                    "vat_rate": "23",
+                    "reservation": "",
+                    "reservation_status": "brak rezerwacji",
+                    "description": "Ricoh IMC 3000",
+                    "available_quantity": "1",
+                    "reserved_quantity": "0",
+                    "warehouse_quantity": "1",
+                    "serial_required": "TAK",
+                    "source_type": "firebird_magazyn_28",
+                    "machine_match_state": "foreign",
+                    "machine_owner_conflict": True,
+                    "machine_owner_reason": (
+                        "Urządzenie jest przypisane do klienta Inny klient (ID 1001)."
+                    ),
+                    "machine_id": 702,
+                    "machine_client_id": 1001,
+                    "machine_client_name": "Inny klient",
+                },
+            ],
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{target_form.id}/workflow/devices",
+                headers={"X-Admin-Session": token},
+                json={
+                    "devices": [
+                        {"row": 21, "source_type": "firebird_magazyn_28"},
+                        {"row": 22, "source_type": "firebird_magazyn_28"},
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Nie zapisano żadnego urządzenia", response.json()["detail"])
+        self.assertIn("Inny klient (ID 1001)", response.json()["detail"])
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(
+                            FormWorkflowCase.form_request_id == target_form.id
+                        )
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+            if workflow_case is not None:
+                devices = (
+                    (
+                        await session.execute(
+                            select(FormWorkflowDevice).where(
+                                FormWorkflowDevice.workflow_case_id == workflow_case.id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                self.assertEqual(devices, [])
+
     async def test_contracts_form_workflow_client_creates_case_and_client(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request(
@@ -6531,6 +6641,79 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 .one()
             )
             self.assertEqual(device.snapshot.get("ms_binding_status"), "error")
+
+    async def test_contracts_form_workflow_status_rejects_foreign_device_before_change(self):
+        token, _ = await self._login_operator()
+        form = await self._create_submitted_form_request()
+
+        async with self.session_factory() as session:
+            case = FormWorkflowCase(
+                form_request_id=form.id,
+                created_by=2,
+                updated_by=2,
+                stage="PROFORMA_CREATED",
+                business_status="WAITING_SIGNATURE",
+                client_mode="basic_proforma",
+                firebird_client_id=2897,
+                client_payload_snapshot={"company_name": "FLOW TEST"},
+            )
+            session.add(case)
+            await session.flush()
+            session.add(
+                FormWorkflowDevice(
+                    workflow_case_id=case.id,
+                    source_type="firebird_magazyn_28",
+                    source_row=33,
+                    producer="Ricoh",
+                    model="IM 350",
+                    serial="FOREIGN-33",
+                    ewidencja="KP/33",
+                    snapshot={"row": 33, "source_type": "firebird_magazyn_28"},
+                )
+            )
+            await session.commit()
+
+        ownership_error = WorkflowDeviceOwnershipConflict(
+            [
+                WorkflowDeviceOwnershipConflictItem(
+                    workflow_device_id=1,
+                    source_row=33,
+                    machine_id=703,
+                    current_client_id=1001,
+                    current_client_name="Inny klient",
+                    reason="Urządzenie jest przypisane do klienta Inny klient (ID 1001).",
+                )
+            ]
+        )
+        with (
+            patch(
+                "app.api.routes.admin_contracts.validate_workflow_device_ownership",
+                side_effect=ownership_error,
+            ) as validate_mock,
+            patch("app.api.routes.admin_contracts.bind_devices_to_workflow_client") as bind_mock,
+        ):
+            response = await self.client.post(
+                f"/admin/contracts/forms/{form.id}/workflow/status",
+                headers={"X-Admin-Session": token},
+                json={"business_status": "APPROVED_ORDER"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Inny klient (ID 1001)", response.json()["detail"])
+        validate_mock.assert_called_once()
+        bind_mock.assert_not_called()
+
+        async with self.session_factory() as session:
+            workflow_case = (
+                (
+                    await session.execute(
+                        select(FormWorkflowCase).where(FormWorkflowCase.form_request_id == form.id)
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            self.assertEqual(workflow_case.business_status, "WAITING_SIGNATURE")
 
     async def test_contracts_form_workflow_delivery_save_and_delete(self):
         token, _ = await self._login_operator()

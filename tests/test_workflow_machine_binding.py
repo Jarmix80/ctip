@@ -8,7 +8,10 @@ import pytest
 
 from app.services.contracts_dashboard import FirebirdModelMatch
 from app.services.workflow_machine_binding import (
+    WorkflowDeviceOwnershipConflict,
+    WorkflowDeviceSourceContext,
     _create_machine_for_device,
+    _resolve_machine_id_for_device,
     bind_devices_to_workflow_client,
     build_binding_status_payload,
 )
@@ -158,7 +161,7 @@ def test_bind_devices_to_workflow_client_does_not_fail_on_non_kp_ewidencja(monke
             if "FROM MASZYNA" in self.query:
                 return (
                     777,
-                    1001,
+                    656,
                     "ABC/123",
                     "NIE",
                     0,
@@ -170,6 +173,7 @@ def test_bind_devices_to_workflow_client_does_not_fail_on_non_kp_ewidencja(monke
                     "",
                     "",
                     "",
+                    "Ksero Partner",
                 )
             return None
 
@@ -257,6 +261,157 @@ def test_bind_devices_to_workflow_client_does_not_fail_on_non_kp_ewidencja(monke
     assert "AKTYWNA = ?" in update_query
     assert "SYNWP = ?" in update_query
     assert "EWIDENCJA = ?" not in update_query
+    assert "AND ID_KLIENT = ?" in update_query
+    assert update_params[-1] == 656
+
+
+def test_bind_devices_to_workflow_client_blocks_foreign_owner_for_entire_batch(
+    monkeypatch,
+) -> None:
+    class _ConflictCursor:
+        def __init__(self) -> None:
+            self.query = ""
+            self.updates = 0
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            self.query = query
+            if query.strip().upper().startswith("UPDATE MASZYNA SET"):
+                self.updates += 1
+
+        def fetchone(self) -> tuple[object, ...] | None:
+            if "FROM MASZYNA" not in self.query:
+                return None
+            return (
+                778,
+                1001,
+                "KP/778",
+                "TAK",
+                1,
+                "FOREIGN-778",
+                631,
+                "Ricoh",
+                "MPC 6003",
+                "Druk",
+                "Platne",
+                "Platne",
+                "TAK",
+                "Inny klient",
+            )
+
+        def close(self) -> None:
+            return None
+
+    class _ConflictConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = _ConflictCursor()
+            self.committed = False
+            self.rolled_back = False
+
+        def cursor(self) -> _ConflictCursor:
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+        def close(self) -> None:
+            return None
+
+    connection = _ConflictConnection()
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.firebird_writes_enabled",
+        lambda: (True, None),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding._get_firebird_connection",
+        lambda: connection,
+    )
+
+    workflow_case = SimpleNamespace(firebird_client_id=2924, form_request_id=31)
+    devices = [
+        SimpleNamespace(
+            id=1,
+            source_row=778,
+            source_type="firebird_magazyn_28",
+            producer="Ricoh",
+            model="MPC 6003",
+            serial="FOREIGN-778",
+            ewidencja="KP/778",
+            firebird_machine_id=None,
+            snapshot={},
+        ),
+        SimpleNamespace(
+            id=2,
+            source_row=779,
+            source_type="firebird_magazyn_28",
+            producer="Ricoh",
+            model="MPC 6003",
+            serial="SAFE-779",
+            ewidencja="KP/779",
+            firebird_machine_id=None,
+            snapshot={},
+        ),
+    ]
+
+    with pytest.raises(WorkflowDeviceOwnershipConflict, match="Inny klient"):
+        bind_devices_to_workflow_client(
+            workflow_case=workflow_case,
+            devices=devices,
+            actor_label="Operator Test",
+        )
+
+    assert connection.cursor_obj.updates == 0
+    assert connection.committed is False
+    assert connection.rolled_back is True
+
+
+def test_resolve_machine_id_reports_ambiguous_serial_matches() -> None:
+    class _AmbiguousCursor:
+        def __init__(self) -> None:
+            self.query = ""
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            self.query = query
+
+        def fetchall(self) -> list[tuple[object, ...]]:
+            first = (
+                778,
+                656,
+                "KP/778",
+                "TAK",
+                1,
+                "DUPLICATE-778",
+                631,
+                "Ricoh",
+                "MPC 6003",
+                "Druk",
+                "Platne",
+                "Platne",
+                "TAK",
+                "Ksero Partner",
+            )
+            second = (779, 1001, *first[2:])
+            if "SERIAL2" in self.query:
+                return [first, second]
+            return [first]
+
+    machine_ids = _resolve_machine_id_for_device(
+        _AmbiguousCursor(),
+        device=SimpleNamespace(firebird_machine_id=None),
+        snapshot={},
+        source_context=WorkflowDeviceSourceContext(
+            source_type="firebird_magazyn_28",
+            source_row=778,
+            producer="Ricoh",
+            model="MPC 6003",
+            serial="DUPLICATE-778",
+            ewidencja="KP/778",
+        ),
+    )
+
+    assert machine_ids == [778, 779]
 
 
 def test_bind_devices_to_workflow_client_parses_stock_name_and_repairs_machine_fields(

@@ -58,9 +58,11 @@ from app.services.contracts_workflow import (
     set_form_workflow_delivery,
 )
 from app.services.workflow_machine_binding import (
+    WorkflowDeviceOwnershipConflict,
     apply_binding_snapshot,
     bind_devices_to_workflow_client,
     notify_binding_issues_to_admins,
+    validate_workflow_device_ownership,
 )
 
 STATE_PATH = Path("inbox/mailbox/contracts_mailbox_state.json")
@@ -69,6 +71,7 @@ DEFAULT_IMAP_FOLDER = "INBOX"
 UNRESOLVED_REASON_UNSUPPORTED_SUBJECT = "unsupported_subject"
 UNRESOLVED_REASON_UNMATCHED_FORM = "unmatched_form"
 UNRESOLVED_REASON_AMBIGUOUS_MATCH = "ambiguous_match"
+UNRESOLVED_REASON_DEVICE_OWNER_CONFLICT = "device_owner_conflict"
 MAX_WARNING_LOG_ITEMS = 40
 MAX_WARNING_LOG_CHARS = 600
 MAX_EXTRACT_LOG_CHARS = 1200
@@ -891,6 +894,17 @@ async def apply_mail_to_workflow(
         current_business_status=getattr(workflow_case, "business_status", None),
         decision_text=decision_text,
     )
+    workflow_devices = []
+    if new_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        workflow_devices = await list_form_workflow_devices(
+            session,
+            workflow_case_id=workflow_case.id,
+        )
+        await asyncio.to_thread(
+            validate_workflow_device_ownership,
+            workflow_case=workflow_case,
+            devices=workflow_devices,
+        )
 
     if mail_ctx.event_type == MAILBOX_EVENT_DECISION:
         if not status_update_skipped:
@@ -951,9 +965,6 @@ async def apply_mail_to_workflow(
     binding_items_payload: list[dict[str, Any]] = []
     binding_alert_payload: dict[str, Any] | None = None
     if new_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
-        workflow_devices = await list_form_workflow_devices(
-            session, workflow_case_id=workflow_case.id
-        )
         binding_items, _ = await asyncio.to_thread(
             bind_devices_to_workflow_client,
             workflow_case=workflow_case,
@@ -1235,15 +1246,54 @@ async def run_sync(args: argparse.Namespace) -> int:
                             )
 
                 if not args.dry_run:
-                    update_result = await apply_mail_to_workflow(
-                        session,
-                        form_ctx=matched_ctx,
-                        mail_ctx=mail_ctx,
-                        extracted_data=extracted_data,
-                        pdf_text=pdf_result.text if pdf_result else "",
-                        archived_contract_file=archived_contract_file,
-                    )
-                    await session.commit()
+                    try:
+                        update_result = await apply_mail_to_workflow(
+                            session,
+                            form_ctx=matched_ctx,
+                            mail_ctx=mail_ctx,
+                            extracted_data=extracted_data,
+                            pdf_text=pdf_result.text if pdf_result else "",
+                            archived_contract_file=archived_contract_file,
+                        )
+                        await session.commit()
+                    except WorkflowDeviceOwnershipConflict as exc:
+                        await session.rollback()
+                        conflict_files = (
+                            [archived_contract_file]
+                            if isinstance(archived_contract_file, dict)
+                            else []
+                        )
+                        register_unresolved_message(
+                            unresolved_state,
+                            reason=UNRESOLVED_REASON_DEVICE_OWNER_CONFLICT,
+                            message_id=mail_ctx.message_id,
+                            subject=mail_ctx.subject,
+                            sender=mail_ctx.sender,
+                            email_date_utc=mail_ctx.email_date_utc,
+                            application_no=mail_ctx.application_no_raw,
+                            details=str(exc),
+                            saved_files=conflict_files,
+                        )
+                        state_changed = True
+                        warnings.append(
+                            "Nie zatwierdzono sprawy z powodu właściciela urządzenia: " f"{exc}"
+                        )
+                        reports.append(
+                            {
+                                "message_id": mail_ctx.message_id,
+                                "subject": mail_ctx.subject,
+                                "matched": False,
+                                "match_reason": UNRESOLVED_REASON_DEVICE_OWNER_CONFLICT,
+                                "form_id": matched_ctx.form.id,
+                                "application_no": mail_ctx.application_no_raw,
+                                "proforma_no": mail_ctx.proforma_no_raw,
+                                "saved_files_count": len(conflict_files),
+                                "pdf_success": pdf_result.success if pdf_result else None,
+                                "pdf_error": pdf_result.error if pdf_result else None,
+                                "extracted_data": extracted_data,
+                            }
+                        )
+                        continue
                 else:
                     dry_decision_text = " ".join(
                         [

@@ -75,6 +75,11 @@ def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> 
                     ("Ricoh", "IM C300", "TAK"),
                     ("Ricoh", "MP C2503", "TAK"),
                 ]
+            if "FROM MASZYNA" in self.query:
+                return [
+                    (701, "C74P370058", "KP/5001", 656, "TAK", "Ksero Partner"),
+                    (702, "EEA1234567", "WEKP/5002", 1001, "TAK", "Inny klient"),
+                ]
             return [
                 (
                     101,
@@ -157,6 +162,10 @@ def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> 
     assert devices[0]["reservation_status"] == "brak rezerwacji"
     assert devices[0]["purchase_price_net"] == "80.00"
     assert devices[0]["is_color"] is False
+    assert devices[0]["machine_id"] == 701
+    assert devices[0]["machine_client_id"] == 656
+    assert devices[0]["machine_match_state"] == "warehouse"
+    assert devices[0]["machine_owner_conflict"] is False
     assert devices[1]["model"] == "MP C2503"
     assert devices[1]["serial"] == "EEA1234567"
     assert devices[1]["ewidencja"] == "WEKP/5002"
@@ -164,6 +173,12 @@ def test_load_available_devices_from_firebird_warehouse_keeps_pm_s_entries() -> 
     assert devices[1]["available_quantity"] == "1"
     assert devices[1]["reservation_status"] == "czesciowa rezerwacja (1 z 2)"
     assert devices[1]["is_color"] is True
+    assert devices[1]["machine_id"] == 702
+    assert devices[1]["machine_client_id"] == 1001
+    assert devices[1]["machine_client_name"] == "Inny klient"
+    assert devices[1]["machine_match_state"] == "foreign"
+    assert devices[1]["machine_owner_conflict"] is True
+    assert "ID 1001" in devices[1]["machine_owner_reason"]
     assert fake_connection.cursor_obj.closed is True
     assert fake_connection.closed is True
 

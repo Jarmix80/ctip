@@ -21,6 +21,7 @@ from app.services.firebird_runtime import (
 from app.services.firebird_runtime import (
     firebird_connection as _firebird_connection,
 )
+from app.services.workflow_device_ownership import classify_workflow_machine_ownership
 
 
 def normalize_nip(value: str | None) -> str:
@@ -1045,22 +1046,44 @@ def load_available_devices_from_firebird_warehouse(
             )
             cursor.execute(
                 """
-                SELECT ID_MASZYNA, SERIAL, EWIDENCJA
-                FROM MASZYNA
-                WHERE COALESCE(TRIM(SERIAL), '') <> ''
-                   OR COALESCE(TRIM(EWIDENCJA), '') <> ''
+                SELECT
+                    maszyna.ID_MASZYNA,
+                    maszyna.SERIAL,
+                    maszyna.EWIDENCJA,
+                    maszyna.ID_KLIENT,
+                    maszyna.AKTYWNA,
+                    klient.NAZWA
+                FROM MASZYNA maszyna
+                LEFT JOIN KLIENT klient ON klient.ID_KLIENT = maszyna.ID_KLIENT
+                WHERE COALESCE(TRIM(maszyna.SERIAL), '') <> ''
+                   OR COALESCE(TRIM(maszyna.EWIDENCJA), '') <> ''
                 """
             )
-            machine_by_serial: dict[str, list[int]] = {}
-            machine_by_index: dict[str, list[int]] = {}
-            for machine_id, machine_serial, machine_index in cursor.fetchall():
+            machine_by_serial: dict[str, list[dict[str, Any]]] = {}
+            machine_by_index: dict[str, list[dict[str, Any]]] = {}
+            for (
+                machine_id,
+                machine_serial,
+                machine_index,
+                machine_client_id,
+                machine_active,
+                machine_client_name,
+            ) in cursor.fetchall():
                 parsed_machine_id = int(machine_id) if machine_id is not None else 0
                 serial_key = normalize_device_key(str(machine_serial or ""))
                 index_key = normalize_device_key(str(machine_index or ""))
+                candidate = {
+                    "machine_id": parsed_machine_id or None,
+                    "client_id": (
+                        int(machine_client_id) if machine_client_id is not None else None
+                    ),
+                    "client_name": str(machine_client_name or "").strip() or None,
+                    "active": str(machine_active or "").strip() or None,
+                }
                 if serial_key:
-                    machine_by_serial.setdefault(serial_key, []).append(parsed_machine_id)
+                    machine_by_serial.setdefault(serial_key, []).append(candidate)
                 if index_key:
-                    machine_by_index.setdefault(index_key, []).append(parsed_machine_id)
+                    machine_by_index.setdefault(index_key, []).append(candidate)
 
             output: list[dict[str, Any]] = []
             for row in warehouse_rows:
@@ -1113,18 +1136,49 @@ def load_available_devices_from_firebird_warehouse(
                 raw_serial_flag = _truncate_text(str(row[11] or ""), 10) or ""
                 serial_required = "TAK" if serial_value else raw_serial_flag
                 model_id_value = str(int(row[1])) if row[1] is not None else ""
-                machine_candidates = machine_by_serial.get(
-                    normalize_device_key(serial_value),
-                    [],
-                )
-                if not machine_candidates:
-                    machine_candidates = machine_by_index.get(
-                        normalize_device_key(ewidencja_value),
-                        [],
-                    )
-                unique_machine_ids = {
-                    machine_id for machine_id in machine_candidates if machine_id > 0
+                machine_candidates = [
+                    *machine_by_serial.get(normalize_device_key(serial_value), []),
+                    *machine_by_index.get(normalize_device_key(ewidencja_value), []),
+                ]
+                unique_machine_candidates = {
+                    int(candidate["machine_id"]): candidate
+                    for candidate in machine_candidates
+                    if candidate.get("machine_id") is not None
                 }
+                machine_candidate = (
+                    next(iter(unique_machine_candidates.values()))
+                    if len(unique_machine_candidates) == 1
+                    else None
+                )
+                ownership = classify_workflow_machine_ownership(
+                    candidate_count=len(unique_machine_candidates),
+                    machine_id=(
+                        int(machine_candidate["machine_id"])
+                        if machine_candidate and machine_candidate.get("machine_id") is not None
+                        else None
+                    ),
+                    client_id=(
+                        int(machine_candidate["client_id"])
+                        if machine_candidate and machine_candidate.get("client_id") is not None
+                        else None
+                    ),
+                    client_name=(
+                        str(machine_candidate.get("client_name") or "").strip() or None
+                        if machine_candidate
+                        else None
+                    ),
+                    warehouse_client_id=settings.fb_warehouse_client_id,
+                )
+                machine_id_value = (
+                    int(machine_candidate["machine_id"])
+                    if machine_candidate and machine_candidate.get("machine_id") is not None
+                    else None
+                )
+                machine_client_id_value = (
+                    int(machine_candidate["client_id"])
+                    if machine_candidate and machine_candidate.get("client_id") is not None
+                    else None
+                )
 
                 output.append(
                     {
@@ -1158,11 +1212,26 @@ def load_available_devices_from_firebird_warehouse(
                             by_model=model_color_by_model,
                         ),
                         "source_type": "firebird_magazyn_28",
-                        "machine_present": len(unique_machine_ids) == 1,
-                        "machine_id": (
-                            next(iter(unique_machine_ids)) if len(unique_machine_ids) == 1 else None
+                        "machine_present": machine_candidate is not None,
+                        "machine_id": machine_id_value,
+                        "machine_ambiguous": len(unique_machine_candidates) > 1,
+                        "machine_candidates_count": len(unique_machine_candidates),
+                        "machine_client_id": machine_client_id_value,
+                        "machine_client_name": (
+                            str(machine_candidate.get("client_name") or "").strip()
+                            if machine_candidate
+                            else ""
                         ),
-                        "machine_ambiguous": len(unique_machine_ids) > 1,
+                        "machine_active": (
+                            str(machine_candidate.get("active") or "").strip()
+                            if machine_candidate
+                            else ""
+                        ),
+                        "machine_match_state": ownership.state,
+                        "machine_owner_conflict": ownership.conflict,
+                        "machine_owner_reason": ownership.reason,
+                        "ms_id_maszyna": machine_id_value or "",
+                        "ms_id_klient": machine_client_id_value or "",
                     }
                 )
             return output

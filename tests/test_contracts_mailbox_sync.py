@@ -481,6 +481,10 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
 
         return ([_BindingItem()], [])
 
+    def fake_validate_workflow_device_ownership(*, workflow_case, devices):
+        captured["validated_workflow_case_id"] = workflow_case.id
+        captured["validated_device_ids"] = [item.id for item in devices]
+
     async def fake_notify_binding_issues_to_admins(*args, **kwargs):
         raise AssertionError("Alert nie powinien być wysłany dla poprawnego wiązania.")
 
@@ -498,6 +502,11 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     )
     monkeypatch.setattr(module, "set_form_workflow_delivery", fake_set_form_workflow_delivery)
     monkeypatch.setattr(module, "list_form_workflow_devices", fake_list_form_workflow_devices)
+    monkeypatch.setattr(
+        module,
+        "validate_workflow_device_ownership",
+        fake_validate_workflow_device_ownership,
+    )
     monkeypatch.setattr(
         module, "bind_devices_to_workflow_client", fake_bind_devices_to_workflow_client
     )
@@ -521,6 +530,8 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
 
     assert result["new_business_status"] == module.WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
     assert captured["status_source"] == "mailbox"
+    assert captured["validated_workflow_case_id"] == 11
+    assert captured["validated_device_ids"] == [19]
     assert captured["binding_actor_label"] == "Automat skrzynki GRENKE"
     assert captured["binding_device_ids"] == [19]
     assert captured["flushed"] is True
@@ -533,3 +544,87 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     audit_payload = captured["audit_payload"]
     assert audit_payload["binding_items"][0]["workflow_device_id"] == 19
     assert audit_payload["binding_alert"] is None
+
+
+def test_apply_mail_to_workflow_blocks_approval_for_foreign_device(monkeypatch) -> None:
+    module = _load_sync_module()
+    form = SimpleNamespace(id=40, archive_due_at=None)
+    workflow_case = SimpleNamespace(
+        id=12,
+        business_status=module.WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE,
+        delivery_notes="",
+        delivery_time_window=None,
+        delivery_contact_name=None,
+        delivery_contact_phone=None,
+        client_payload_snapshot={},
+        firebird_client_id=2926,
+    )
+    device = SimpleNamespace(
+        id=20,
+        source_row=18411,
+        snapshot={},
+    )
+    form_ctx = module.FormContext(
+        form=form,
+        payload={"company_name": "ACME"},
+        workflow_case=workflow_case,
+        application_no_normalized="173025168",
+    )
+    mail_ctx = module.MailContext(
+        imap_id="101",
+        message_id="<approval-conflict@test>",
+        subject="Zgoda na realizację zamówienia",
+        sender="system@grenke.pl",
+        body_text="Umowa została podpisana.",
+        email_date_utc=datetime(2026, 5, 22, 13, 0, 0, tzinfo=UTC),
+        event_type="approval_for_delivery",
+        application_no_raw="173-025168",
+        application_no_normalized="173025168",
+        attachments=[],
+    )
+    status_called = False
+
+    async def fake_list_form_workflow_devices(*args, **kwargs):
+        return [device]
+
+    async def fake_set_form_workflow_business_status(*args, **kwargs):
+        nonlocal status_called
+        status_called = True
+        return workflow_case
+
+    ownership_error = module.WorkflowDeviceOwnershipConflict(
+        [
+            SimpleNamespace(
+                source_row=18411,
+                reason="Urządzenie jest przypisane do klienta Inny klient (ID 1001).",
+            )
+        ]
+    )
+    monkeypatch.setattr(module, "list_form_workflow_devices", fake_list_form_workflow_devices)
+    monkeypatch.setattr(
+        module,
+        "validate_workflow_device_ownership",
+        lambda **kwargs: (_ for _ in ()).throw(ownership_error),
+    )
+    monkeypatch.setattr(
+        module,
+        "set_form_workflow_business_status",
+        fake_set_form_workflow_business_status,
+    )
+
+    try:
+        asyncio.run(
+            module.apply_mail_to_workflow(
+                SimpleNamespace(),
+                form_ctx=form_ctx,
+                mail_ctx=mail_ctx,
+                extracted_data={"application_no": "173-025168"},
+            )
+        )
+    except module.WorkflowDeviceOwnershipConflict as exc:
+        assert "Inny klient (ID 1001)" in str(exc)
+    else:
+        raise AssertionError("Konflikt właściciela powinien przerwać akceptację mailboxa.")
+
+    assert status_called is False
+    assert workflow_case.business_status == module.WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE

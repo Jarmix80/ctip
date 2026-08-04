@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models import AdminUser, FormWorkflowCase, FormWorkflowDevice, SmsOut
 from app.services import admin_users
 from app.services.contracts_dashboard import (
@@ -21,6 +22,10 @@ from app.services.contracts_dashboard import (
     normalize_device_key,
 )
 from app.services.email_client import send_smtp_message
+from app.services.workflow_device_ownership import (
+    classify_workflow_machine_ownership,
+    snapshot_confirms_current_workflow_binding,
+)
 
 DEFAULT_MACHINE_GROUP = "Druk"
 DEFAULT_MACHINE_SERVICE_KIND = "Platne"
@@ -66,6 +71,47 @@ class WorkflowDeviceBindingItem:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowDeviceOwnershipConflictItem:
+    """Pojedyncze urządzenie z właścicielem innym niż magazyn Ksero Partner."""
+
+    workflow_device_id: int
+    source_row: int | None
+    machine_id: int | None
+    current_client_id: int | None
+    current_client_name: str | None
+    reason: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Zwraca szczegóły konfliktu do odpowiedzi API i audytu."""
+        return {
+            "workflow_device_id": self.workflow_device_id,
+            "source_row": self.source_row,
+            "machine_id": self.machine_id,
+            "current_client_id": self.current_client_id,
+            "current_client_name": self.current_client_name,
+            "reason": self.reason,
+        }
+
+
+class WorkflowDeviceOwnershipConflict(RuntimeError):
+    """Sygnalizuje konflikt właściciela blokujący cały pakiet urządzeń."""
+
+    def __init__(self, conflicts: list[WorkflowDeviceOwnershipConflictItem]) -> None:
+        self.conflicts = conflicts
+        details = "; ".join(f"wiersz {item.source_row or '?'}: {item.reason}" for item in conflicts)
+        super().__init__("Urządzenia nie są dostępne na magazynie Ksero Partner. " + details)
+
+
+class _WorkflowMachineOwnerChanged(RuntimeError):
+    """Wewnętrzny sygnał zmiany właściciela pomiędzy walidacją i zapisem."""
+
+    def __init__(self, *, client_id: int | None, client_name: str | None) -> None:
+        self.client_id = client_id
+        self.client_name = client_name
+        super().__init__("Właściciel urządzenia zmienił się podczas operacji.")
+
+
 @dataclass(slots=True)
 class WorkflowDeviceSourceContext:
     """Znormalizowany kontekst źródłowy urządzenia workflow."""
@@ -79,6 +125,15 @@ class WorkflowDeviceSourceContext:
     raw_name: str | None = None
     warehouse_model_id: int | None = None
     warehouse_index: str | None = None
+
+
+@dataclass(slots=True)
+class _PreparedWorkflowDeviceBinding:
+    device: FormWorkflowDevice
+    snapshot: dict[str, Any]
+    source_context: WorkflowDeviceSourceContext
+    machine_id: int | None
+    expected_client_id: int | None
 
 
 def _truncate_text(value: Any, max_length: int) -> str | None:
@@ -289,84 +344,101 @@ def _fetch_machine_row(cursor, machine_id: int) -> tuple[Any, ...] | None:
     cursor.execute(
         """
         SELECT FIRST 1
-            ID_MASZYNA,
-            ID_KLIENT,
-            EWIDENCJA,
-            AKTYWNA,
-            SYNWP,
-            SERIAL,
-            ID_MODEL,
-            MARKA,
-            MODEL,
-            GRUPA,
-            TYP,
-            RODZAJ_US,
-            KOLOROWA
-        FROM MASZYNA
-        WHERE ID_MASZYNA = ?
+            maszyna.ID_MASZYNA,
+            maszyna.ID_KLIENT,
+            maszyna.EWIDENCJA,
+            maszyna.AKTYWNA,
+            maszyna.SYNWP,
+            maszyna.SERIAL,
+            maszyna.ID_MODEL,
+            maszyna.MARKA,
+            maszyna.MODEL,
+            maszyna.GRUPA,
+            maszyna.TYP,
+            maszyna.RODZAJ_US,
+            maszyna.KOLOROWA,
+            klient.NAZWA
+        FROM MASZYNA maszyna
+        LEFT JOIN KLIENT klient ON klient.ID_KLIENT = maszyna.ID_KLIENT
+        WHERE maszyna.ID_MASZYNA = ?
         """,
         (machine_id,),
     )
     return cursor.fetchone()
 
 
-def _find_machine_row_by_serial(cursor, serial: str | None) -> tuple[Any, ...] | None:
+def _fetch_machine_query_rows(cursor) -> list[tuple[Any, ...]]:
+    fetchall = getattr(cursor, "fetchall", None)
+    if callable(fetchall):
+        return list(fetchall())
+    row = cursor.fetchone()
+    return [row] if row is not None else []
+
+
+def _find_machine_rows_by_serial(cursor, serial: str | None) -> list[tuple[Any, ...]]:
     serial_key = normalize_device_key(serial)
     if not serial_key:
-        return None
+        return []
     cursor.execute(
         """
-        SELECT FIRST 1
-            ID_MASZYNA,
-            ID_KLIENT,
-            EWIDENCJA,
-            AKTYWNA,
-            SYNWP,
-            SERIAL,
-            ID_MODEL,
-            MARKA,
-            MODEL,
-            GRUPA,
-            TYP,
-            RODZAJ_US,
-            KOLOROWA
-        FROM MASZYNA
-        WHERE UPPER(REPLACE(REPLACE(REPLACE(COALESCE(SERIAL, ''), '/', ''), '-', ''), ' ', '')) = ?
-           OR UPPER(REPLACE(REPLACE(REPLACE(COALESCE(SERIAL2, ''), '/', ''), '-', ''), ' ', '')) = ?
-        ORDER BY ID_MASZYNA DESC
+        SELECT FIRST 2
+            maszyna.ID_MASZYNA,
+            maszyna.ID_KLIENT,
+            maszyna.EWIDENCJA,
+            maszyna.AKTYWNA,
+            maszyna.SYNWP,
+            maszyna.SERIAL,
+            maszyna.ID_MODEL,
+            maszyna.MARKA,
+            maszyna.MODEL,
+            maszyna.GRUPA,
+            maszyna.TYP,
+            maszyna.RODZAJ_US,
+            maszyna.KOLOROWA,
+            klient.NAZWA
+        FROM MASZYNA maszyna
+        LEFT JOIN KLIENT klient ON klient.ID_KLIENT = maszyna.ID_KLIENT
+        WHERE UPPER(REPLACE(REPLACE(REPLACE(COALESCE(maszyna.SERIAL, ''), '/', ''), '-', ''), ' ', '')) = ?
+           OR UPPER(REPLACE(REPLACE(REPLACE(COALESCE(maszyna.SERIAL2, ''), '/', ''), '-', ''), ' ', '')) = ?
+        ORDER BY maszyna.ID_MASZYNA DESC
         """,
         (serial_key, serial_key),
     )
-    return cursor.fetchone()
+    return _fetch_machine_query_rows(cursor)
 
 
-def _find_machine_row_by_ewidencja(cursor, ewidencja: str | None) -> tuple[Any, ...] | None:
+def _find_machine_rows_by_ewidencja(
+    cursor,
+    ewidencja: str | None,
+) -> list[tuple[Any, ...]]:
     ewidencja_key = normalize_device_key(ewidencja)
     if not ewidencja_key:
-        return None
+        return []
     cursor.execute(
         """
-        SELECT FIRST 1
-            ID_MASZYNA,
-            ID_KLIENT,
-            EWIDENCJA,
-            AKTYWNA,
-            SYNWP,
-            SERIAL,
-            ID_MODEL,
-            MARKA,
-            MODEL,
-            GRUPA,
-            TYP,
-            RODZAJ_US,
-            KOLOROWA
-        FROM MASZYNA
-        WHERE UPPER(REPLACE(REPLACE(REPLACE(COALESCE(EWIDENCJA, ''), '/', ''), '-', ''), ' ', '')) = ?
-        ORDER BY ID_MASZYNA DESC
+        SELECT FIRST 2
+            maszyna.ID_MASZYNA,
+            maszyna.ID_KLIENT,
+            maszyna.EWIDENCJA,
+            maszyna.AKTYWNA,
+            maszyna.SYNWP,
+            maszyna.SERIAL,
+            maszyna.ID_MODEL,
+            maszyna.MARKA,
+            maszyna.MODEL,
+            maszyna.GRUPA,
+            maszyna.TYP,
+            maszyna.RODZAJ_US,
+            maszyna.KOLOROWA,
+            klient.NAZWA
+        FROM MASZYNA maszyna
+        LEFT JOIN KLIENT klient ON klient.ID_KLIENT = maszyna.ID_KLIENT
+        WHERE UPPER(REPLACE(REPLACE(REPLACE(COALESCE(maszyna.EWIDENCJA, ''), '/', ''), '-', ''), ' ', '')) = ?
+        ORDER BY maszyna.ID_MASZYNA DESC
         """,
         (ewidencja_key,),
     )
-    return cursor.fetchone()
+    return _fetch_machine_query_rows(cursor)
 
 
 def _resolve_model_match_for_device(
@@ -402,29 +474,163 @@ def _resolve_machine_id_for_device(
     device: FormWorkflowDevice,
     snapshot: dict[str, Any],
     source_context: WorkflowDeviceSourceContext,
-) -> int | None:
+) -> list[int]:
     explicit = _coerce_int(snapshot.get("ms_id_maszyna"))
     if explicit is not None and explicit > 0:
-        return explicit
+        return [explicit]
     if device.firebird_machine_id is not None and int(device.firebird_machine_id) > 0:
-        return int(device.firebird_machine_id)
+        return [int(device.firebird_machine_id)]
 
-    machine_row = _find_machine_row_by_serial(cursor, source_context.serial)
-    if machine_row is not None:
-        return _coerce_int(machine_row[0])
+    candidate_rows = _find_machine_rows_by_serial(cursor, source_context.serial)
+    ewidencja_rows = _find_machine_rows_by_ewidencja(cursor, source_context.ewidencja)
+    for machine_row in ewidencja_rows:
+        current_serial = _truncate_text(machine_row[5], 100)
+        if (
+            source_context.serial
+            and current_serial
+            and normalize_device_key(current_serial) != normalize_device_key(source_context.serial)
+        ):
+            continue
+        candidate_rows.append(machine_row)
 
-    machine_row = _find_machine_row_by_ewidencja(cursor, source_context.ewidencja)
-    if machine_row is None:
-        return None
+    return sorted(
+        {
+            machine_id
+            for machine_id in (_coerce_int(row[0]) for row in candidate_rows)
+            if machine_id is not None and machine_id > 0
+        }
+    )
 
-    current_serial = _truncate_text(machine_row[5], 100)
-    if (
-        source_context.serial
-        and current_serial
-        and normalize_device_key(current_serial) != normalize_device_key(source_context.serial)
-    ):
-        return None
-    return _coerce_int(machine_row[0])
+
+def _validate_workflow_device_ownership_with_cursor(
+    cursor,
+    *,
+    workflow_case: FormWorkflowCase,
+    devices: list[FormWorkflowDevice],
+) -> list[_PreparedWorkflowDeviceBinding]:
+    """Sprawdza cały pakiet przed wykonaniem pierwszego zapisu w Firebird."""
+    prepared: list[_PreparedWorkflowDeviceBinding] = []
+    conflicts: list[WorkflowDeviceOwnershipConflictItem] = []
+    target_client_id = _coerce_int(workflow_case.firebird_client_id)
+
+    for device in devices:
+        snapshot = dict(device.snapshot or {})
+        source_context = _resolve_source_context(
+            cursor,
+            device=device,
+            snapshot=snapshot,
+        )
+        machine_ids = _resolve_machine_id_for_device(
+            cursor,
+            device=device,
+            snapshot=snapshot,
+            source_context=source_context,
+        )
+        if len(machine_ids) > 1:
+            ownership = classify_workflow_machine_ownership(
+                candidate_count=len(machine_ids),
+                machine_id=None,
+                client_id=None,
+                client_name=None,
+                warehouse_client_id=settings.fb_warehouse_client_id,
+            )
+            conflicts.append(
+                WorkflowDeviceOwnershipConflictItem(
+                    workflow_device_id=device.id,
+                    source_row=device.source_row,
+                    machine_id=None,
+                    current_client_id=None,
+                    current_client_name=None,
+                    reason=ownership.reason,
+                )
+            )
+            continue
+        machine_id = machine_ids[0] if machine_ids else None
+        if machine_id is None:
+            prepared.append(
+                _PreparedWorkflowDeviceBinding(
+                    device=device,
+                    snapshot=snapshot,
+                    source_context=source_context,
+                    machine_id=None,
+                    expected_client_id=None,
+                )
+            )
+            continue
+
+        current_row = _fetch_machine_row(cursor, machine_id)
+        current_client_id = _coerce_int(current_row[1] if current_row else None)
+        current_client_name = (
+            _truncate_text(current_row[13], 250)
+            if current_row is not None and len(current_row) > 13
+            else None
+        )
+        ownership = classify_workflow_machine_ownership(
+            candidate_count=1 if current_row is not None else 0,
+            machine_id=machine_id if current_row is not None else None,
+            client_id=current_client_id,
+            client_name=current_client_name,
+            warehouse_client_id=settings.fb_warehouse_client_id,
+        )
+        idempotent_binding = bool(
+            current_client_id == target_client_id
+            and snapshot_confirms_current_workflow_binding(
+                snapshot,
+                machine_id=machine_id,
+                client_id=current_client_id,
+            )
+        )
+        if ownership.conflict and not idempotent_binding:
+            conflicts.append(
+                WorkflowDeviceOwnershipConflictItem(
+                    workflow_device_id=device.id,
+                    source_row=device.source_row,
+                    machine_id=machine_id,
+                    current_client_id=current_client_id,
+                    current_client_name=current_client_name,
+                    reason=ownership.reason,
+                )
+            )
+            continue
+
+        prepared.append(
+            _PreparedWorkflowDeviceBinding(
+                device=device,
+                snapshot=snapshot,
+                source_context=source_context,
+                machine_id=machine_id,
+                expected_client_id=current_client_id,
+            )
+        )
+
+    if conflicts:
+        raise WorkflowDeviceOwnershipConflict(conflicts)
+    return prepared
+
+
+def validate_workflow_device_ownership(
+    *,
+    workflow_case: FormWorkflowCase,
+    devices: list[FormWorkflowDevice],
+) -> None:
+    """Weryfikuje właścicieli urządzeń bez wykonywania zapisów w Firebird."""
+    if not devices:
+        return
+    enabled, _ = firebird_writes_enabled()
+    if not enabled:
+        return
+    connection = _get_firebird_connection()
+    cursor = connection.cursor()
+    try:
+        _validate_workflow_device_ownership_with_cursor(
+            cursor,
+            workflow_case=workflow_case,
+            devices=devices,
+        )
+    finally:
+        connection.rollback()
+        cursor.close()
+        connection.close()
 
 
 def _create_machine_for_device(
@@ -555,12 +761,19 @@ def _apply_machine_updates(
     target_ewidencja: str | None,
     target_serial: str | None,
     target_model_match: Any | None,
+    expected_client_id: int | None,
 ) -> tuple[int | None, str | None, bool, bool]:
     row = _fetch_machine_row(cursor, machine_id)
     if row is None:
         raise RuntimeError(f"Nie znaleziono rekordu MASZYNA ID {machine_id}.")
 
     previous_client_id = _coerce_int(row[1])
+    current_client_name = _truncate_text(row[13], 250) if len(row) > 13 else None
+    if previous_client_id != expected_client_id:
+        raise _WorkflowMachineOwnerChanged(
+            client_id=previous_client_id,
+            client_name=current_client_name,
+        )
     previous_ewidencja = _truncate_text(row[2], 100)
     aktywna = row[3]
     synwp = row[4]
@@ -634,11 +847,21 @@ def _apply_machine_updates(
             model_enriched = True
 
     if updates:
-        params.append(machine_id)
+        params.extend((machine_id, expected_client_id))
         cursor.execute(
-            f"UPDATE MASZYNA SET {', '.join(updates)} WHERE ID_MASZYNA = ?",
+            (f"UPDATE MASZYNA SET {', '.join(updates)} " "WHERE ID_MASZYNA = ? AND ID_KLIENT = ?"),
             tuple(params),
         )
+        if getattr(cursor, "rowcount", None) == 0:
+            current_row = _fetch_machine_row(cursor, machine_id)
+            raise _WorkflowMachineOwnerChanged(
+                client_id=_coerce_int(current_row[1] if current_row else None),
+                client_name=(
+                    _truncate_text(current_row[13], 250)
+                    if current_row is not None and len(current_row) > 13
+                    else None
+                ),
+            )
 
     ewidencja_changed = bool(target_ewidencja and previous_ewidencja != target_ewidencja)
     return previous_client_id, previous_ewidencja, ewidencja_changed, model_enriched
@@ -699,24 +922,20 @@ def bind_devices_to_workflow_client(
     global_errors: list[str] = []
 
     try:
-        for device in devices:
-            snapshot = dict(device.snapshot or {})
-            source_context: WorkflowDeviceSourceContext | None = None
+        prepared_devices = _validate_workflow_device_ownership_with_cursor(
+            cursor,
+            workflow_case=workflow_case,
+            devices=devices,
+        )
+        for prepared in prepared_devices:
+            device = prepared.device
+            snapshot = prepared.snapshot
+            source_context = prepared.source_context
             try:
-                source_context = _resolve_source_context(
-                    cursor,
-                    device=device,
-                    snapshot=snapshot,
-                )
                 model_match, model_match_source = _resolve_model_match_for_device(
                     source_context=source_context,
                 )
-                machine_id = _resolve_machine_id_for_device(
-                    cursor,
-                    device=device,
-                    snapshot=snapshot,
-                    source_context=source_context,
-                )
+                machine_id = prepared.machine_id
                 machine_created = False
                 if machine_id is None:
                     machine_id = _create_machine_for_device(
@@ -729,6 +948,9 @@ def bind_devices_to_workflow_client(
                         source_context=source_context,
                     )
                     machine_created = True
+                    expected_client_id = int(workflow_case.firebird_client_id)
+                else:
+                    expected_client_id = prepared.expected_client_id
 
                 current_row = _fetch_machine_row(cursor, machine_id)
                 if current_row is None:
@@ -750,6 +972,7 @@ def bind_devices_to_workflow_client(
                         target_ewidencja=normalized_ewidencja if not ewidencja_error else None,
                         target_serial=source_context.serial,
                         target_model_match=model_match,
+                        expected_client_id=expected_client_id,
                     )
                 )
 
@@ -790,6 +1013,26 @@ def bind_devices_to_workflow_client(
                         ewidencja_changed=changed,
                     )
                 )
+            except _WorkflowMachineOwnerChanged as exc:
+                ownership = classify_workflow_machine_ownership(
+                    candidate_count=1,
+                    machine_id=machine_id,
+                    client_id=exc.client_id,
+                    client_name=exc.client_name,
+                    warehouse_client_id=settings.fb_warehouse_client_id,
+                )
+                raise WorkflowDeviceOwnershipConflict(
+                    [
+                        WorkflowDeviceOwnershipConflictItem(
+                            workflow_device_id=device.id,
+                            source_row=device.source_row,
+                            machine_id=machine_id,
+                            current_client_id=exc.client_id,
+                            current_client_name=exc.client_name,
+                            reason=ownership.reason or str(exc),
+                        )
+                    ]
+                ) from exc
             except Exception as exc:  # noqa: BLE001
                 items.append(
                     WorkflowDeviceBindingItem(
@@ -803,6 +1046,9 @@ def bind_devices_to_workflow_client(
                         serial=source_context.serial if source_context else device.serial,
                     )
                 )
+    except WorkflowDeviceOwnershipConflict:
+        connection.rollback()
+        raise
     except Exception as exc:  # noqa: BLE001
         connection.rollback()
         raise RuntimeError(f"Błąd wiązania urządzeń workflow z klientem: {exc}") from exc
@@ -1026,8 +1272,11 @@ def build_binding_status_payload(devices: list[FormWorkflowDevice]) -> dict[str,
 
 __all__ = [
     "WorkflowDeviceBindingItem",
+    "WorkflowDeviceOwnershipConflict",
+    "WorkflowDeviceOwnershipConflictItem",
     "apply_binding_snapshot",
     "bind_devices_to_workflow_client",
     "build_binding_status_payload",
     "notify_binding_issues_to_admins",
+    "validate_workflow_device_ownership",
 ]

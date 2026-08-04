@@ -122,6 +122,16 @@ spacji otwiera szczegóły urządzenia. Tabela nie ma osobnej kolumny ani przyci
 ## Rezerwacje
 
 - Aktywna rezerwacja FLOW blokuje ręczną zmianę rezerwacji egzemplarza.
+- Nowa rezerwacja FLOW jest dozwolona tylko wtedy, gdy istniejąca kartoteka `MASZYNA`
+  ma `ID_KLIENT` równy `FB_WAREHOUSE_CLIENT_ID`, domyślnie `656`. Brak kartoteki
+  `MASZYNA` nie blokuje wyboru, ponieważ automat może utworzyć ją po zatwierdzeniu umowy.
+- Kartoteka z innym `ID_KLIENT`, pustym `ID_KLIENT` albo wieloznaczne dopasowanie po
+  serialu lub ewidencji blokuje zaznaczenie pozycji w `/flow` i `/genform`. Interfejs
+  pozostawia pozycję widoczną i pokazuje nazwę oraz identyfikator bieżącego klienta.
+- Backend sprawdza właściciela ponownie przed zapisem wyboru i przed statusem
+  `APPROVED_ORDER`, również dla akceptacji odebranej przez mailbox GRENKE. Jeden konflikt
+  odrzuca cały pakiet bez częściowego przepisania urządzeń. Wyjątkiem jest idempotentne
+  ponowienie wiązania już potwierdzonego w snapshotcie tej samej sprawy workflow.
 - Rezerwacja ręczna wymaga klienta/celu, terminu i uzasadnienia mającego co najmniej 10 znaków.
 - Domyślny termin wynosi 14 dni i jest konfigurowany przez `DEVICE_MANUAL_RESERVATION_DEFAULT_DAYS`.
 - Po terminie worker zwalnia rezerwację i zapisuje zdarzenie `reservation_expired`.

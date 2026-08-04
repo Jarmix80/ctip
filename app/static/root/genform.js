@@ -1356,6 +1356,8 @@ function initializeGenForm() {
         item.ewidencja,
         item.status,
         item.reservation_status,
+        item.machine_client_name,
+        item.locked_reason,
       ]
         .join(" ")
         .toLowerCase();
@@ -1375,6 +1377,9 @@ function initializeGenForm() {
         const reservationMeta = item.reservation_form_id
           ? `<span class="genform-subtle">Formularz ${escapeHtml(item.reservation_form_id)}</span>`
           : "";
+        const ownerMeta = item.machine_owner_conflict
+          ? `<span class="genform-subtle">${escapeHtml(item.locked_reason || "Urządzenie poza magazynem Ksero Partner")}</span>`
+          : "";
         return `
           <tr class="${lockedByOther ? "genform-workflow-row-locked" : ""}">
             <td>
@@ -1383,6 +1388,7 @@ function initializeGenForm() {
                 data-workflow-device-key="${escapeHtmlAttribute(key)}"
                 ${item.selected ? "checked" : ""}
                 ${checkboxDisabled ? "disabled" : ""}
+                title="${escapeHtmlAttribute(item.locked_reason || "")}"
               >
             </td>
             <td>${escapeHtml(item.row || "—")}</td>
@@ -1394,6 +1400,7 @@ function initializeGenForm() {
               <div class="genform-reservation-stack">
                 <span class="genform-status ${workflowReservationBadgeClass(item)}">${escapeHtml(reservationLabel)}</span>
                 ${reservationMeta}
+                ${ownerMeta}
               </div>
             </td>
             <td>
@@ -3191,6 +3198,14 @@ function initializeGenForm() {
     }
     if (target.dataset.workflowDeviceKey) {
       const key = String(target.dataset.workflowDeviceKey || "");
+      const selectedItem = activeWorkflowData.available_devices.find(
+        (item) => workflowDeviceKey(item) === key
+      );
+      if (selectedItem?.locked_by_other && target.checked) {
+        target.checked = false;
+        showError(selectedItem.locked_reason || "Urządzenie nie jest dostępne do rezerwacji.");
+        return;
+      }
       activeWorkflowData.available_devices = activeWorkflowData.available_devices.map((item) =>
         workflowDeviceKey(item) === key ? { ...item, selected: target.checked } : item
       );
