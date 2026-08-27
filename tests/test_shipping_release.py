@@ -60,6 +60,9 @@ class ShippingReleaseTests(unittest.TestCase):
             script,
         )
         self.assertIn('[string]$ExpectedAlembicCurrent = "d8f1a2b3c4e5"', script)
+        self.assertIn("$previousErrorActionPreference = $ErrorActionPreference", script)
+        self.assertIn('$ErrorActionPreference = "Continue"', script)
+        self.assertIn("$ErrorActionPreference = $previousErrorActionPreference", script)
         self.assertIn('Stop-Service -Name "CTIP-Web"', script)
         self.assertNotIn('Stop-Service -Name "CollectorService"', script)
         self.assertNotIn('Stop-Service -Name "CTIP-SMS"', script)

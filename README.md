@@ -6,7 +6,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 
 ## Dokumenty wdrożeniowe
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
-- Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, a testy ustawień izolują flagi i odziedziczone środowisko procesu.
+- Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, izoluje środowisko testów i rozlicza polecenia Python według kodu wyjścia zamiast zapisu na stderr.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.

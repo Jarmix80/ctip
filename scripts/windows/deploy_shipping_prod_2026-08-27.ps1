@@ -92,10 +92,13 @@ function Invoke-Python {
         [string]$WorkingDirectory
     )
     Push-Location $WorkingDirectory
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
+        $ErrorActionPreference = "Continue"
         $output = & $PythonExe @Arguments 2>&1
         $exitCode = $LASTEXITCODE
     } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         Pop-Location
     }
     if ($exitCode -ne 0) {
