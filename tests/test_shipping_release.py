@@ -8,6 +8,8 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
+from app.services.section_permissions import default_sections_for_role, normalize_sections
+
 
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
@@ -43,6 +45,34 @@ class ShippingReleaseTests(unittest.TestCase):
         self.assertIn("_assert_clean_target()", migration)
         self.assertIn("Migracja produkcyjna Shipping wymaga pustego celu", migration)
         self.assertIn("CREATE EXTENSION IF NOT EXISTS pg_trgm", migration)
+
+    def test_skrypt_wdrozenia_restartuje_wylacznie_panel_webowy(self) -> None:
+        script = Path("scripts/windows/deploy_shipping_prod_2026-08-27.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('Stop-Service -Name "CTIP-Web"', script)
+        self.assertNotIn('Stop-Service -Name "CollectorService"', script)
+        self.assertNotIn('Stop-Service -Name "CTIP-SMS"', script)
+        self.assertNotIn('Stop-Service -Name "CTIP-FormsPublic"', script)
+        self.assertIn('"-m", "alembic", "upgrade", $ExpectedAlembicHead', script)
+        self.assertIn("New-Item -ItemType Junction", script)
+        self.assertIn("if (-not $Apply)", script)
+
+    def test_shipping_wymaga_jawnego_nadania_sekcji(self) -> None:
+        self.assertNotIn("shipping", default_sections_for_role("admin"))
+        self.assertNotIn("shipping", default_sections_for_role("operator"))
+        self.assertIn(
+            "shipping",
+            normalize_sections(["operator", "shipping"], role="operator"),
+        )
+
+    def test_kazda_operacja_post_ma_blokade_etapu_wdrozenia(self) -> None:
+        routes = Path("app/api/routes/admin_shipping.py").read_text(encoding="utf-8")
+
+        self.assertEqual(routes.count("@router.post"), 13)
+        self.assertEqual(routes.count("_require_catalog_mutations()"), 6)
+        self.assertEqual(routes.count("_require_fulfillment()"), 9)
 
 
 if __name__ == "__main__":
