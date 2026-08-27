@@ -307,9 +307,25 @@ try {
     Invoke-Python -PythonExe $pythonExe -Arguments @(
         "-m", "compileall", "-q", "app"
     ) -WorkingDirectory $CandidateDir | Out-Null
-    Invoke-Python -PythonExe $pythonExe -Arguments @(
-        "-m", "unittest", "tests.test_settings", "tests.test_shipping_release"
-    ) -WorkingDirectory $CandidateDir | Out-Null
+    $validationFlags = @{
+        SHIPPING_ENABLED = $env:SHIPPING_ENABLED
+        SHIPPING_CATALOG_MUTATIONS_ENABLED = $env:SHIPPING_CATALOG_MUTATIONS_ENABLED
+        SHIPPING_FULFILLMENT_ENABLED = $env:SHIPPING_FULFILLMENT_ENABLED
+        DPD_ENABLED = $env:DPD_ENABLED
+    }
+    try {
+        $env:SHIPPING_ENABLED = "false"
+        $env:SHIPPING_CATALOG_MUTATIONS_ENABLED = "false"
+        $env:SHIPPING_FULFILLMENT_ENABLED = "false"
+        $env:DPD_ENABLED = "false"
+        Invoke-Python -PythonExe $pythonExe -Arguments @(
+            "-m", "unittest", "tests.test_settings", "tests.test_shipping_release"
+        ) -WorkingDirectory $CandidateDir | Out-Null
+    } finally {
+        foreach ($name in $validationFlags.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $validationFlags[$name], "Process")
+        }
+    }
 
     $alembicHeads = Invoke-Python -PythonExe $pythonExe -Arguments @(
         "-m", "alembic", "heads"
