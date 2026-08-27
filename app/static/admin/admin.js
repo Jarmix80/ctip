@@ -1647,7 +1647,7 @@ document.addEventListener("alpine:init", () => {
 
     defaultSectionsForRole(role) {
       if (role === "admin") {
-        return ["admin", "operator", "generator", "delivery"];
+        return ["admin", "operator", "generator", "delivery", "shipping"];
       }
       if (role === "serwisant") {
         return ["delivery"];
@@ -1662,7 +1662,7 @@ document.addEventListener("alpine:init", () => {
       const normalized = [];
       input.forEach((item) => {
         const value = String(item || "").trim().toLowerCase();
-        if (!value || !["admin", "operator", "generator", "delivery"].includes(value)) {
+        if (!value || !["admin", "operator", "generator", "delivery", "shipping"].includes(value)) {
           return;
         }
         if (value === "admin" && role !== "admin") {
@@ -1687,6 +1687,7 @@ document.addEventListener("alpine:init", () => {
         operator: "Operator",
         generator: "Generator",
         delivery: "Obsługa dostaw",
+        shipping: "Wysyłki części",
       };
       return normalized.map((item) => labels[item] || item).join(", ");
     },

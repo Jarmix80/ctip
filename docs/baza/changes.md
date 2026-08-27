@@ -1,5 +1,36 @@
 # Zmiany schematu bazy CTIP
 
+## 2026-08-27
+
+- Migracja `e8f901a2b3c4` dodaje do `ctip.shipping_shipment` kolumny `closed_by`, `archive_snapshot` i `archive_search_text` dla niezmiennego Archiwum wysyłek.
+- Backfill ustala operatora zamknięcia z ostatniego zdarzenia `courier_handover` oraz zapisuje istniejące zlecenia, części, ceny, DPD i dokumenty RW/WZ/FV w snapshotach.
+- Dodano indeksy daty i operatora oraz częściowy indeks GIN `idx_shipping_shipment_archive_search_trgm` korzystający z rozszerzenia `pg_trgm`.
+
+## 2026-08-26
+
+- Migracja `d7e8f901a2b3` dodaje do `ctip.shipping_item` kolumny `catalog_price_net` i `price_source`, zachowując `price_net` jako cenę zaakceptowaną dla wysyłki.
+- `price_source` rozróżnia cenę sprzedaży, awaryjną cenę zakupu, cenę zakupu dla umowy oraz ręczną zmianę operatora.
+- `ctip.shipping_shipment` przechowuje identyfikatory i numery utworzonych w Firebird dokumentów RW, WZ i FV.
+
+## 2026-08-25
+
+- Migracja `c6d7e8f901a2` dodaje do `ctip.shipping_item` kolumnę `allow_negative_stock BOOLEAN NOT NULL DEFAULT false`.
+- Pole przechowuje jawną zgodę operatora na czasowe utworzenie ujemnego stanu wyłącznie dla pozycji, która podczas akceptacji miała rzeczywisty stan zerowy.
+
+## 2026-08-24
+
+- Migracja `b5c6d7e8f901` dodaje do `ctip.shipping_case` kolumnę `invoice_required BOOLEAN NOT NULL DEFAULT false`.
+- Pole zapisuje jawną decyzję o skierowaniu wysyłki do wystawienia faktury zamiast automatycznego utworzenia dokumentu RW podczas zamknięcia dnia.
+
+## 2026-08-05
+
+- Migracja `a4b5c6d7e8f9` rozszerza `shipping_address` i `shipping_case` o `location_source`, `location_text_snapshot` oraz `location_fingerprint`, aby blokować użycie adresu po zmianie lokalizacji urządzenia w Menadżerze Serwisu.
+- Dodano indeks `idx_shipping_address_machine_location` do wyszukiwania zweryfikowanego adresu po urządzeniu i bieżącym fingerprintcie lokalizacji.
+- Dodano moduł wysyłek: `shipping_address`, `shipping_case`, `shipping_item`, `shipping_shipment`, `shipping_day_close` i `shipping_event`.
+- Dodano tabelę `shipping_consumable_compatibility` jako lokalny katalog relacji wiele-do-wielu między `MODEL.ID_MODEL` i fizyczną kartoteką `MAGAZYN.ID_MAGAZYN_TABLE`.
+- Katalog przechowuje stan `suggested|confirmed|rejected|stale`, pewność `high|medium|low`, dowody JSON, znaczniki pierwszego/ostatniego wykrycia oraz dane ręcznego przeglądu.
+- Migracja `f1a2b3c4d5e6` adoptuje istniejący lokalny prototyp tabel wysyłkowych bez usuwania danych; wcześniejsze mapowania otrzymują stan `confirmed`.
+
 ## 2025-10-12
 - Dodano moduł administracyjny: tabele `admin_user`, `admin_session`, `admin_setting`, `admin_audit_log` wraz z indeksami i sekwencjami.
 - Ustanowiono uprawnienia `appuser` do nowych tabel i sekwencji.

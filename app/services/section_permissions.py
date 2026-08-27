@@ -10,14 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminSetting, AdminUser
 
-AVAILABLE_SECTIONS = ("admin", "operator", "generator", "delivery")
+AVAILABLE_SECTIONS = ("admin", "operator", "generator", "delivery", "shipping")
 _USER_SECTIONS_PREFIX = "user_sections."
 
 
 def default_sections_for_role(role: str | None) -> list[str]:
     """Zwraca domyślny zestaw sekcji dla wskazanej roli."""
     if role == "admin":
-        return ["admin", "operator", "generator", "delivery"]
+        return ["admin", "operator", "generator", "delivery", "shipping"]
     if role == "serwisant":
         return ["delivery"]
     return ["operator", "generator"]

@@ -42,5 +42,14 @@ from .call_event import CallEvent  # noqa: F401
 from .contact import Contact, ContactDevice  # noqa: F401
 from .crm import CrmCase, CrmCaseEvent  # noqa: F401
 from .ivr_map import IvrMap  # noqa: F401
+from .shipping import (  # noqa: F401
+    ShippingAddress,
+    ShippingCase,
+    ShippingConsumableCompatibility,
+    ShippingDayClose,
+    ShippingEvent,
+    ShippingItem,
+    ShippingShipment,
+)
 from .sms_out import SmsOut  # noqa: F401
 from .sms_template import SmsTemplate  # noqa: F401

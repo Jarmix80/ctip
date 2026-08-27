@@ -14,6 +14,7 @@ function sectionLabel(section) {
     operator: "Panel operatora",
     generator: "Generator formularzy",
     delivery: "Obsługa dostaw",
+    shipping: "Wysyłki części",
   };
   return labels[section] || section;
 }
@@ -24,6 +25,7 @@ function sectionPath(section) {
     operator: "/operator",
     generator: "/genform",
     delivery: "/delivery",
+    shipping: "/shipping",
   };
   return paths[section] || "/choice";
 }

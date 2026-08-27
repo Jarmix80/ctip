@@ -1213,6 +1213,63 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 -- Historyczne meters są mapowane do contracts, a accounting do other.
 -- Pełna definicja, mapowanie danych i ograniczenia są utrzymywane w:
 -- alembic/versions/f3a7c9e2d610_simplify_crm_queues_and_user_notifications.py
+-- Moduł wysyłek i katalog zgodności części (migracja f1a2b3c4d5e6, 2026-08-05):
+-- ctip.shipping_address
+-- ctip.shipping_consumable_compatibility
+-- ctip.shipping_case
+-- ctip.shipping_item
+-- ctip.shipping_shipment
+-- ctip.shipping_day_close
+-- ctip.shipping_event
+-- shipping_consumable_compatibility.status: suggested, confirmed, rejected, stale.
+-- shipping_consumable_compatibility.confidence: high, medium, low albo NULL.
+-- Dowody są przechowywane w kolumnie evidence JSON; ręczna decyzja w reviewed_by,
+-- reviewed_at i review_note. Relacja ma unikalność po firebird_model_id oraz
+-- firebird_warehouse_item_id i nie modyfikuje MAGAZYN.ID_MODEL w Firebird.
+-- Pełna definicja, indeksy, klucze i procedura adopcji prototypu są utrzymywane w:
+-- alembic/versions/f1a2b3c4d5e6_add_shipping_module.py
+-- Ochrona adresu po zmianie lokalizacji urządzenia (migracja a4b5c6d7e8f9, 2026-08-05):
+-- ctip.shipping_address.location_source
+-- ctip.shipping_address.location_text_snapshot
+-- ctip.shipping_address.location_fingerprint
+-- ctip.shipping_case.location_source
+-- ctip.shipping_case.location_text_snapshot
+-- ctip.shipping_case.location_fingerprint
+-- Indeks idx_shipping_address_machine_location obejmuje firebird_machine_id,
+-- location_fingerprint i updated_at. Pełna definicja jest utrzymywana w:
+-- alembic/versions/a4b5c6d7e8f9_add_shipping_location_guard.py
+-- Wybór rozliczenia wysyłki przez fakturę (migracja b5c6d7e8f901, 2026-08-24):
+-- ctip.shipping_case.invoice_required BOOLEAN NOT NULL DEFAULT false
+-- Wartość true wybiera automatyczne utworzenie FV i WZ; false wybiera RW dla umowy
+-- albo WZ dla zlecenia poza umową. Pełna definicja jest utrzymywana w:
+-- alembic/versions/b5c6d7e8f901_add_shipping_invoice_required.py
+-- Jawna zgoda na czasowy ujemny stan (migracja c6d7e8f901a2, 2026-08-25):
+-- ctip.shipping_item.allow_negative_stock BOOLEAN NOT NULL DEFAULT false
+-- Pole jest ustawiane wyłącznie dla pozycji, która podczas akceptacji miała rzeczywisty
+-- stan zerowy, a operator potwierdził oczekiwaną dostawę. Zgoda jest przekazywana do
+-- kontrolowanego zapisu ZPOZYCJA oraz dokumentu RW albo WZ. Pełna definicja jest utrzymywana w:
+-- alembic/versions/c6d7e8f901a2_add_shipping_negative_stock.py
+-- Ceny rozliczeniowe i dokumenty końcowe wysyłki (migracja d7e8f901a2b3, 2026-08-26):
+-- ctip.shipping_item.catalog_price_net NUMERIC(18,4) NOT NULL DEFAULT 0
+-- ctip.shipping_item.price_source TEXT NOT NULL DEFAULT 'sale'
+-- price_source: sale, purchase_fallback, purchase_contract albo manual.
+-- ctip.shipping_shipment.firebird_rw_id / firebird_rw_number
+-- ctip.shipping_shipment.firebird_wz_id / firebird_wz_number
+-- ctip.shipping_shipment.firebird_invoice_id / firebird_invoice_number
+-- Pole shipping_item.price_net przechowuje cenę zaakceptowaną przez operatora.
+-- Pełna definicja i backfill ceny katalogowej są utrzymywane w:
+-- alembic/versions/d7e8f901a2b3_add_shipping_prices_and_documents.py
+-- Archiwum zakończonych wysyłek (migracja e8f901a2b3c4, 2026-08-27):
+-- ctip.shipping_shipment.closed_by INTEGER NULL
+-- ctip.shipping_shipment.archive_snapshot JSON NULL
+-- ctip.shipping_shipment.archive_search_text TEXT NULL
+-- closed_by wskazuje operatora finalizacji, a archive_snapshot przechowuje niezmienny
+-- stan zlecenia, odbiorcy, urządzenia, części, cen, DPD i dokumentów RW/WZ/FV.
+-- Indeksy idx_shipping_shipment_archive_closed i idx_shipping_shipment_archive_operator
+-- obsługują filtry rejestru. Indeks GIN idx_shipping_shipment_archive_search_trgm
+-- korzysta z pg_trgm i przyspiesza wyszukiwanie wielowyrazowe oraz przybliżone.
+-- Pełna definicja i backfill zamkniętych spraw są utrzymywane w:
+-- alembic/versions/e8f901a2b3c4_add_shipping_archive.py
 -- Wspólny graf migracji urządzeń, dostaw i umów:
 -- alembic/versions/4e2a9c7d1b60_add_device_inventory_registry.py
 -- alembic/versions/7c91e2f4a6b8_add_workflow_sheet_counters.py

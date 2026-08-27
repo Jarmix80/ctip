@@ -149,6 +149,53 @@ class Settings(BaseSettings):
     sms_api_username: str | None = Field(default=None, alias="SMS_API_USERNAME")
     sms_api_password: str | None = Field(default=None, alias="SMS_API_PASSWORD")
     sms_test_mode: bool = Field(default=True, alias="SMS_TEST_MODE")
+    dpd_enabled: bool = Field(default=False, alias="DPD_ENABLED")
+    dpd_mode: str | None = Field(default=None, alias="DPD_MODE")
+    dpd_test_mode: bool = Field(default=True, alias="DPD_TEST_MODE")
+    dpd_api_url: str = Field(default="", alias="DPD_API_URL")
+    dpd_login: str | None = Field(default=None, alias="DPD_LOGIN")
+    dpd_password: str | None = Field(default=None, alias="DPD_PASSWORD")
+    dpd_master_fid: str | None = Field(default=None, alias="DPD_MASTER_FID")
+    dpd_payer_fid: str | None = Field(default=None, alias="DPD_PAYER_FID")
+    dpd_generate_packages_path: str = Field(
+        default="/public/shipment/v1/generatePackagesNumbers",
+        alias="DPD_GENERATE_PACKAGES_PATH",
+    )
+    dpd_generate_labels_path: str = Field(
+        default="/public/shipment/v1/generateSpedLabels",
+        alias="DPD_GENERATE_LABELS_PATH",
+    )
+    dpd_timeout_seconds: float = Field(default=20.0, alias="DPD_TIMEOUT_SECONDS")
+    dpd_sender_company: str = Field(default="Ksero-Partner", alias="DPD_SENDER_COMPANY")
+    dpd_sender_contact: str | None = Field(default=None, alias="DPD_SENDER_CONTACT")
+    dpd_sender_street: str | None = Field(default=None, alias="DPD_SENDER_STREET")
+    dpd_sender_postal_code: str | None = Field(default=None, alias="DPD_SENDER_POSTAL_CODE")
+    dpd_sender_city: str | None = Field(default=None, alias="DPD_SENDER_CITY")
+    dpd_sender_phone: str | None = Field(default=None, alias="DPD_SENDER_PHONE")
+    dpd_sender_email: str | None = Field(default=None, alias="DPD_SENDER_EMAIL")
+    shipping_warehouse_id: int = Field(default=1, alias="SHIPPING_WAREHOUSE_ID")
+    shipping_default_weight_kg: float = Field(default=2.0, alias="SHIPPING_DEFAULT_WEIGHT_KG")
+    shipping_weight_presets_raw: str = Field(default="1,2,5,10", alias="SHIPPING_WEIGHT_PRESETS_KG")
+    shipping_courier_cutoff_hour: int = Field(default=14, alias="SHIPPING_COURIER_CUTOFF_HOUR")
+    shipping_courier_cutoff_minute: int = Field(default=30, alias="SHIPPING_COURIER_CUTOFF_MINUTE")
+    shipping_test_firebird_writes: bool = Field(
+        default=False, alias="SHIPPING_TEST_FIREBIRD_WRITES"
+    )
+    shipping_compatibility_web_enabled: bool = Field(
+        default=False, alias="SHIPPING_COMPATIBILITY_WEB_ENABLED"
+    )
+    shipping_compatibility_web_model: str = Field(
+        default="gpt-4.1-mini", alias="SHIPPING_COMPATIBILITY_WEB_MODEL"
+    )
+    shipping_compatibility_web_batch_limit: int = Field(
+        default=20, alias="SHIPPING_COMPATIBILITY_WEB_BATCH_LIMIT"
+    )
+    shipping_compatibility_web_daily_limit: int = Field(
+        default=100, alias="SHIPPING_COMPATIBILITY_WEB_DAILY_LIMIT"
+    )
+    shipping_compatibility_web_timeout_seconds: float = Field(
+        default=60.0, alias="SHIPPING_COMPATIBILITY_WEB_TIMEOUT_SECONDS"
+    )
     openai_api_chat_kp: str | None = Field(default=None, alias="OPENAI_API_CHAT_KP")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
@@ -374,6 +421,14 @@ class Settings(BaseSettings):
         )
 
     @property
+    def dpd_effective_mode(self) -> str:
+        """Zwraca jawny tryb DPD z fallbackiem dla historycznej flagi testowej."""
+        configured = str(self.dpd_mode or "").strip().lower()
+        if configured:
+            return configured
+        return "mock" if self.dpd_test_mode else "production"
+
+    @property
     def is_safe_test_firebird(self) -> bool:
         """Potwierdza lokalną testową bazę Firebird z bezwzględną blokadą zapisu."""
         host = self.fb_host.strip().lower()
@@ -390,6 +445,30 @@ class Settings(BaseSettings):
                 "ctip-prod-mirror-firebird-1",
             }
             and "TEST" in database_name
+        )
+
+    @property
+    def shipping_test_firebird_writes_active(self) -> bool:
+        """Dopuszcza zapis testowych wysyłek wyłącznie do lokalnej kopii Firebird."""
+        host = self.fb_host.strip().lower()
+        database_name = self.fb_database.replace("\\", "/").rsplit("/", maxsplit=1)[-1]
+        return bool(
+            self.shipping_test_firebird_writes
+            and self.pg_database == "ctip_test"
+            and self.fb_mode.strip().lower() == "network"
+            and self.fb_allow_writes
+            and self.dpd_effective_mode in {"mock", "demo"}
+            and self.sms_test_mode
+            and host
+            in {
+                "127.0.0.1",
+                "localhost",
+                "::1",
+                "192.168.0.9",
+                "firebird",
+                "ctip-prod-mirror-firebird-1",
+            }
+            and "TEST" in database_name.upper()
         )
 
     @property

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – wysyłki części</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-consolidated-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-dpd-rest-01"></script>
+  </head>
+  <body>
+    <main class="shipping-shell">
+      <header class="shipping-header">
+        <div>
+          <p class="shipping-kicker">CTIP / LOGISTYKA</p>
+          <h1>Wysyłki części i tonerów</h1>
+          <p>Weryfikacja zlecenia MS, wybór części, katalog zgodności, etykieta DPD i zamknięcie dnia.</p>
+        </div>
+        <div class="shipping-header-actions">
+          <span id="shipping-user" class="shipping-chip">Użytkownik</span>
+          <a href="/shipping/v2" class="shipping-button primary">Nowy wygląd</a>
+          <a href="/choice" class="shipping-button secondary">Wybór sekcji</a>
+          <button id="shipping-refresh" type="button" class="shipping-button secondary">Odśwież</button>
+          <button id="shipping-logout" type="button" class="shipping-button secondary">Wyloguj</button>
+        </div>
+      </header>
+
+      <section id="shipping-alert" class="shipping-alert" hidden></section>
+
+      <nav class="shipping-tabs" aria-label="Sekcje wysyłek">
+        <button type="button" class="shipping-tab active" data-shipping-view="dispatch">Realizacja wysyłek</button>
+        <button type="button" class="shipping-tab" data-shipping-view="catalog">Katalog zgodności</button>
+      </nav>
+
+      <section id="shipping-dispatch-view">
+      <section class="shipping-status-grid">
+        <article><span>DPD</span><strong id="shipping-dpd-status">—</strong><button id="shipping-dpd-demo-test" type="button" class="shipping-button secondary compact" hidden>Test DPD Demo</button></article>
+        <article><span>Magazyn</span><strong id="shipping-warehouse">—</strong></article>
+        <article><span>Kurier</span><strong id="shipping-cutoff">—</strong></article>
+        <article><span>Do obsługi</span><strong id="shipping-count">0</strong></article>
+      </section>
+
+      <section class="shipping-toolbar">
+        <label>
+          <span>Zakres kolejki</span>
+          <select id="shipping-days">
+            <option value="30">Ostatnie 30 dni</option>
+            <option value="90">Ostatnie 90 dni</option>
+            <option value="365">Ostatni rok</option>
+            <option value="3650">Archiwum</option>
+          </select>
+        </label>
+        <label class="shipping-search">
+          <span>Szukaj</span>
+          <input id="shipping-search" type="search" placeholder="Klient, model, numer zlecenia">
+        </label>
+        <label>
+          <span>Sortowanie</span>
+          <select id="shipping-sort">
+            <option value="workflow">Etap pracy (domyślne)</option>
+            <option value="oldest">Najstarsze zlecenia</option>
+            <option value="newest">Najnowsze zlecenia</option>
+            <option value="company">Klient A–Z</option>
+          </select>
+        </label>
+        <button id="shipping-day-close" type="button" class="shipping-button danger">
+          Kurier odebrał paczki — zamknij dzień
+        </button>
+      </section>
+
+      <div class="shipping-workspace">
+        <section class="shipping-card shipping-queue-card">
+          <div class="shipping-card-head">
+            <div><p class="shipping-step">KROK 1</p><h2>Kolejka MS</h2></div>
+            <span id="shipping-loading" class="shipping-muted" hidden>Wczytywanie…</span>
+          </div>
+          <div class="shipping-bulk-panel">
+            <strong id="shipping-selected-count">0 wybranych</strong>
+            <div class="shipping-bulk-buttons">
+              <button id="shipping-generate-selected" type="button" class="shipping-button success compact" disabled>Osobne etykiety</button>
+              <button id="shipping-generate-consolidated" type="button" class="shipping-button primary compact" disabled>Jedna paczka / jedna etykieta</button>
+              <button id="shipping-generate-ready" type="button" class="shipping-button primary compact">Generuj wszystkie gotowe</button>
+              <button id="shipping-print-packing" type="button" class="shipping-button secondary compact" disabled>Drukuj listę części</button>
+              <button id="shipping-print-selected" type="button" class="shipping-button dark compact" disabled>Drukuj etykiety</button>
+              <button id="shipping-clear-selection" type="button" class="shipping-button secondary compact" disabled>Wyczyść wybór</button>
+            </div>
+          </div>
+          <div id="shipping-queue" class="shipping-queue"></div>
+        </section>
+
+        <section id="shipping-detail" class="shipping-card shipping-detail" hidden>
+          <div class="shipping-card-head">
+            <div>
+              <p class="shipping-step">KROK 2</p>
+              <h2 id="shipping-order-title">Zlecenie</h2>
+              <p id="shipping-order-subtitle" class="shipping-muted"></p>
+            </div>
+            <span id="shipping-case-status" class="shipping-badge">Weryfikacja</span>
+          </div>
+
+          <section class="shipping-order-content">
+            <strong>Treść zlecenia</strong>
+            <p id="shipping-order-problem">Brak treści zlecenia.</p>
+          </section>
+
+          <section id="shipping-order-state-warning" class="shipping-order-state-warning" hidden>
+            <strong>Zlecenie zmieniło się w Menadżerze Serwisu</strong>
+            <span id="shipping-order-state-message"></span>
+            <small>Operacje zapisu pozostają zablokowane do czasu uzgodnienia bieżącego stanu.</small>
+          </section>
+
+          <section id="shipping-payment-warning" class="shipping-payment-warning" hidden>
+            <strong>Uwaga: nieopłacone faktury po terminie</strong>
+            <span id="shipping-payment-summary"></span>
+            <div id="shipping-overdue-invoices" class="shipping-overdue-invoices"></div>
+          </section>
+
+          <section id="shipping-consolidation-warning" class="shipping-consolidation-warning" hidden>
+            <strong>Możliwe wspólne pakowanie</strong>
+            <span id="shipping-consolidation-message"></span>
+            <small id="shipping-consolidation-address"></small>
+            <button id="shipping-consolidation-select" type="button" class="shipping-button primary compact">Zaznacz te zlecenia</button>
+          </section>
+
+          <section id="shipping-location-warning" class="shipping-source-note">
+            <strong id="shipping-location-title">Bieżąca lokalizacja urządzenia w MS</strong>
+            <span id="shipping-location">Brak</span>
+            <small id="shipping-order-location">Lokalizacja zapisana na zleceniu: brak</small>
+            <span id="shipping-location-message" class="shipping-location-message"></span>
+          </section>
+
+          <section class="shipping-address-sources">
+            <div class="shipping-section-heading">
+              <div><p class="shipping-step">ADRES ODBIORCY</p><h3>Wybierz źródło adresu</h3></div>
+              <span id="shipping-address-source-label" class="shipping-chip">Wpisano ręcznie</span>
+            </div>
+            <div id="shipping-address-candidates" class="shipping-address-candidates"></div>
+          </section>
+
+          <div class="shipping-form-grid">
+            <label><span>Firma *</span><input id="shipping-company" minlength="2" maxlength="250" required></label>
+            <label>
+              <span>Kontakt z Menadżera Serwisu</span>
+              <select id="shipping-contact-select"></select>
+              <small id="shipping-contact-note" class="shipping-field-note"></small>
+            </label>
+            <label><span>Osoba kontaktowa</span><input id="shipping-contact" maxlength="150"></label>
+            <label class="wide"><span>Ulica i numer *</span><input id="shipping-street" minlength="3" maxlength="250" required></label>
+            <label><span>Kod pocztowy *</span><input id="shipping-postal" maxlength="6" pattern="\d{2}-\d{3}" placeholder="00-000" required></label>
+            <label><span>Miejscowość *</span><input id="shipping-city" minlength="2" maxlength="150" required></label>
+            <label><span>Telefon *</span><input id="shipping-phone" minlength="7" maxlength="30" inputmode="tel" required><small id="shipping-phone-note" class="shipping-field-note"></small></label>
+            <label><span>E-mail</span><input id="shipping-email" type="email" maxlength="250"></label>
+            <input id="shipping-address-source" type="hidden" value="manual">
+            <label>
+              <span>Waga paczki *</span>
+              <select id="shipping-weight"></select>
+            </label>
+          </div>
+          <label class="shipping-check-row">
+            <input id="shipping-save-address" type="checkbox" checked>
+            <span>Zapamiętaj zweryfikowany adres dla tej lokalizacji</span>
+          </label>
+          <label class="shipping-check-row shipping-invoice-row">
+            <input id="shipping-invoice-required" type="checkbox">
+            <span>
+              <strong>Wystaw FV</strong>
+              <small id="shipping-invoice-note">Zaznacz, jeżeli wysyłka ma zostać przekazana do rozliczenia fakturą.</small>
+            </span>
+          </label>
+
+          <div class="shipping-stock-head">
+            <div><p class="shipping-step">KROK 3</p><h3>Wybierz części z magazynu</h3></div>
+            <div class="shipping-stock-tools">
+              <div class="shipping-scope-switch" role="group" aria-label="Zakres wyszukiwania części">
+                <button type="button" class="active" data-stock-scope="model" aria-pressed="true">Części dla modelu</button>
+                <button type="button" data-stock-scope="all" aria-pressed="false">Cały magazyn</button>
+              </div>
+              <input id="shipping-stock-search" type="search" placeholder="Nazwa, indeks lub numer katalogowy">
+            </div>
+          </div>
+          <p id="shipping-stock-scope-note" class="shipping-stock-scope-note"></p>
+          <label class="shipping-check-row shipping-negative-stock-control">
+            <input id="shipping-allow-negative-stock" type="checkbox">
+            <span><strong>Zezwól na część ze stanem zerowym</strong><small>Potwierdzam oczekiwaną dostawę i możliwość czasowego ujemnego stanu po utworzeniu dokumentu magazynowego.</small></span>
+          </label>
+          <div class="shipping-table-wrap">
+            <table class="shipping-table">
+              <thead><tr><th></th><th>Indeks / część</th><th>Dostępne</th><th>Ilość</th><th>Cena netto</th><th>Potwierdź zgodność</th></tr></thead>
+              <tbody id="shipping-stock"></tbody>
+            </table>
+          </div>
+
+          <div class="shipping-actions">
+            <button id="shipping-review" type="button" class="shipping-button primary">
+              Zatwierdź dane i rezerwację
+            </button>
+            <button id="shipping-create" type="button" class="shipping-button success" disabled>
+              Generuj etykietę DPD
+            </button>
+            <button id="shipping-manual" type="button" class="shipping-button secondary" disabled>
+              Wpisz ręczny numer DPD
+            </button>
+            <button id="shipping-close-order" type="button" class="shipping-button danger" disabled>
+              Kurier odebrał tę paczkę — zakończ zlecenie
+            </button>
+            <a id="shipping-label" class="shipping-button dark" href="#" target="_blank" hidden>
+              Otwórz etykietę A4
+            </a>
+          </div>
+          <p id="shipping-feedback" class="shipping-feedback" hidden></p>
+        </section>
+
+        <section id="shipping-empty" class="shipping-card shipping-empty">
+          <strong>Wybierz zlecenie z kolejki</strong>
+          <p>System podpowie adres, kontakt i potwierdzone części zgodne z urządzeniem.</p>
+        </section>
+      </div>
+      </section>
+
+      <section id="shipping-catalog-view" hidden>
+        <section class="shipping-card shipping-catalog-intro">
+          <div>
+            <p class="shipping-step">MAGAZYN GŁÓWNY / ID 1</p>
+            <h2>Katalog zgodności części z modelami</h2>
+            <p class="shipping-muted">Skan tworzy wyłącznie sugestie. Każde przypisanie wymaga potwierdzenia administratora lub operatora.</p>
+          </div>
+          <div class="shipping-header-actions">
+            <button id="shipping-catalog-scan" type="button" class="shipping-button primary">Skanuj nazwy i historię</button>
+            <button id="shipping-catalog-web" type="button" class="shipping-button secondary">Sprawdź wybrane części w WWW</button>
+          </div>
+        </section>
+
+        <section class="shipping-catalog-grid">
+          <article class="shipping-card shipping-catalog-panel">
+            <div class="shipping-card-head">
+              <div><p class="shipping-step">KARTOTEKI</p><h2>Fizyczny stan magazynu</h2></div>
+              <span id="shipping-catalog-stock-count" class="shipping-chip">0</span>
+            </div>
+            <div class="shipping-catalog-toolbar">
+              <input id="shipping-catalog-stock-query" type="search" placeholder="Nazwa, indeks lub numer katalogowy">
+              <label class="shipping-check-row compact">
+                <input id="shipping-catalog-stock-available" type="checkbox">
+                <span>Tylko dostępne</span>
+              </label>
+            </div>
+            <div class="shipping-table-wrap shipping-catalog-table-wrap">
+              <table class="shipping-table">
+                <thead><tr><th></th><th>ID / indeks / nazwa</th><th>Stan</th><th>Mapowania</th><th></th></tr></thead>
+                <tbody id="shipping-catalog-stock"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="shipping-card shipping-catalog-panel">
+            <div class="shipping-card-head">
+              <div><p class="shipping-step">CZĘŚCI I MODELE</p><h2>Sugestie i decyzje</h2></div>
+              <span id="shipping-catalog-mapping-count" class="shipping-chip">0</span>
+            </div>
+            <div class="shipping-catalog-filters">
+              <input id="shipping-catalog-mapping-query" type="search" placeholder="Model, część lub indeks">
+              <select id="shipping-catalog-status">
+                <option value="suggested">Do weryfikacji</option>
+                <option value="confirmed">Potwierdzone</option>
+                <option value="rejected">Odrzucone</option>
+                <option value="stale">Nieaktualne sugestie</option>
+                <option value="">Wszystkie</option>
+              </select>
+              <select id="shipping-catalog-confidence">
+                <option value="">Każda pewność</option>
+                <option value="high">Wysoka</option>
+                <option value="medium">Średnia</option>
+                <option value="low">Niska</option>
+              </select>
+            </div>
+            <div class="shipping-catalog-actions">
+              <button id="shipping-catalog-select-all" type="button" class="shipping-button secondary">Zaznacz wszystkie</button>
+              <button id="shipping-catalog-unselect-all" type="button" class="shipping-button secondary">Odznacz wszystkie</button>
+              <button id="shipping-catalog-confirm" type="button" class="shipping-button success">Potwierdź wybrane</button>
+              <button id="shipping-catalog-reject" type="button" class="shipping-button danger">Odrzuć wybrane</button>
+            </div>
+            <div class="shipping-table-wrap shipping-catalog-table-wrap">
+              <table class="shipping-table">
+                <thead><tr><th>Część</th><th>Powiązane modele</th></tr></thead>
+                <tbody id="shipping-catalog-mappings"></tbody>
+              </table>
+            </div>
+            <div class="shipping-pagination">
+              <button id="shipping-catalog-prev" type="button" class="shipping-button secondary">Poprzednia</button>
+              <span id="shipping-catalog-page">Strona 1</span>
+              <button id="shipping-catalog-next" type="button" class="shipping-button secondary">Następna</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="shipping-manual-mapping" class="shipping-card shipping-manual-mapping" hidden>
+          <div class="shipping-card-head">
+            <div><p class="shipping-step">RĘCZNE MAPOWANIE</p><h2 id="shipping-manual-item-title">Wybrana część</h2></div>
+            <button id="shipping-manual-close" type="button" class="shipping-button secondary">Zamknij</button>
+          </div>
+          <div class="shipping-manual-grid">
+            <label class="shipping-manual-search"><span>Szukaj modeli Firebird</span><input id="shipping-manual-model-query" type="search" placeholder="Marka lub model"></label>
+            <label><span>Notatka</span><input id="shipping-manual-note" maxlength="500" placeholder="Opcjonalne uzasadnienie"></label>
+            <button id="shipping-manual-save" type="button" class="shipping-button success">Potwierdź wybrane modele</button>
+          </div>
+          <p id="shipping-manual-selected" class="shipping-manual-selected">Nie wybrano nowych modeli.</p>
+          <div id="shipping-manual-models" class="shipping-model-picker"></div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

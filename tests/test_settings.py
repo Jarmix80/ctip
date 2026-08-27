@@ -31,6 +31,15 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(cfg.database_url.startswith("postgresql+psycopg://"))
         self.assertIn("@127.0.0.1:5432/ctip_test", cfg.database_url)
 
+    def test_tryb_dpd_ma_fallback_i_jawne_pierwszenstwo(self) -> None:
+        mock = Settings(_env_file=None, DPD_MODE=None, DPD_TEST_MODE=True)
+        production = Settings(_env_file=None, DPD_MODE=None, DPD_TEST_MODE=False)
+        demo = Settings(_env_file=None, DPD_MODE="demo", DPD_TEST_MODE=False)
+
+        self.assertEqual(mock.dpd_effective_mode, "mock")
+        self.assertEqual(production.dpd_effective_mode, "production")
+        self.assertEqual(demo.dpd_effective_mode, "demo")
+
     def test_backup_execution_active_respects_explicit_true(self) -> None:
         cfg = Settings(
             BACKUP_EXECUTION_ENABLED=True,
