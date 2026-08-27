@@ -195,10 +195,12 @@ $InstallDir = (Resolve-Path $InstallDir).Path
 $envPath = Join-Path $InstallDir ".env"
 $pythonExe = Join-Path $InstallDir ".venv\Scripts\python.exe"
 $backupScript = Join-Path $InstallDir "scripts\windows\backup_prod_databases.ps1"
+$reportDirectory = Join-Path $InstallDir "docs\raport"
 $serviceNames = @("CollectorService", "CTIP-Web", "CTIP-SMS", "CTIP-FormsPublic")
 
 if (-not (Test-Path $pythonExe)) { Fail "Brak produkcyjnego .venv: $pythonExe" }
 if (-not (Test-Path $backupScript)) { Fail "Brak skryptu backupu: $backupScript" }
+if (-not (Test-Path $reportDirectory)) { Fail "Brak lokalnego katalogu statycznego: $reportDirectory" }
 
 Set-Location $InstallDir
 Import-DotEnv -Path $envPath
@@ -266,7 +268,7 @@ if (Test-Path $CandidateDir) {
 if (-not $Apply) {
     Write-Log "Dry-run zakonczony. Kod, bazy i uslugi nie zostaly zmienione."
     Write-Host "Zakres release: $($changedPaths.Count) plikow"
-    Write-Host "Uruchomienie: .\scripts\windows\deploy_shipping_prod_2026-08-27.ps1 -ReleaseCommit $ReleaseCommit -Apply"
+    Write-Host "Uruchomienie: & '$($MyInvocation.MyCommand.Path)' -ReleaseCommit $ReleaseCommit -Apply"
     exit 0
 }
 
@@ -281,6 +283,8 @@ try {
 
     Write-Log "Tworze odseparowany worktree kandydata"
     Invoke-Git -Arguments @("worktree", "add", "--detach", $CandidateDir, $ReleaseCommit)
+    $candidateReportDirectory = Join-Path $CandidateDir "docs\raport"
+    New-Item -ItemType Junction -Path $candidateReportDirectory -Target $reportDirectory | Out-Null
 
     Write-Log "Synchronizuje zaleznosci wspolnego .venv"
     Invoke-Python -PythonExe $pythonExe -Arguments @(
@@ -389,7 +393,7 @@ try {
     Stop-Candidate -Process $candidateProcess
     if ((Test-Path $CandidateDir) -and -not $KeepCandidate) {
         Set-Location $InstallDir
-        & git worktree remove $CandidateDir
+        & git worktree remove --force $CandidateDir
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Nie udalo sie usunac worktree kandydata: $CandidateDir"
         }

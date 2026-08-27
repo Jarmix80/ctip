@@ -89,12 +89,16 @@ SMS_TEST_MODE=false
 
 ## Dry-run na serwerze
 
-Uruchom PowerShell jako Administrator:
+Commit bazowy nie zawiera jeszcze dedykowanego skryptu. Uruchom PowerShell jako Administrator, pobierz release i wyodrębnij wyłącznie podpisany treścią Git skrypt do nieśledzonego katalogu `inbox`:
 
 ```powershell
 cd D:\CTIP
 $ReleaseCommit = "<PELNY_SHA_RELEASE>"
-.\scripts\windows\deploy_shipping_prod_2026-08-27.ps1 -ReleaseCommit $ReleaseCommit
+git fetch origin release/shipping-prod-2026-08-27
+if ((git rev-parse "FETCH_HEAD^{commit}").Trim() -ne $ReleaseCommit) { throw "Niezgodny commit release" }
+git show "$ReleaseCommit`:scripts/windows/deploy_shipping_prod_2026-08-27.ps1" |
+  Set-Content -Encoding utf8 .\inbox\deploy_shipping_prod_2026-08-27.ps1
+.\inbox\deploy_shipping_prod_2026-08-27.ps1 -ReleaseCommit $ReleaseCommit
 ```
 
 Dry-run wykonuje wyłącznie kontrole: uprawnienia, konfigurację, stan usług, health-checki, czystość repozytorium, bazowy commit, pochodzenie release i dozwolony zakres plików. Nie wykonuje backupu, migracji, checkoutu ani restartu.
@@ -104,7 +108,7 @@ Dry-run wykonuje wyłącznie kontrole: uprawnienia, konfigurację, stan usług, 
 Po poprawnym dry-run:
 
 ```powershell
-.\scripts\windows\deploy_shipping_prod_2026-08-27.ps1 `
+.\inbox\deploy_shipping_prod_2026-08-27.ps1 `
   -ReleaseCommit $ReleaseCommit `
   -Apply `
   -GbakPath "C:\Program Files\Firebird\Firebird_2_5\bin\gbak.exe"
