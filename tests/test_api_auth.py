@@ -9,19 +9,23 @@ from app.services import section_permissions
 
 
 class AuthDependencyTests(unittest.IsolatedAsyncioTestCase):
-    def test_admin_default_includes_every_available_section(self):
+    def test_admin_default_excludes_shipping(self):
         self.assertEqual(
             section_permissions.default_sections_for_role("admin"),
-            list(section_permissions.AVAILABLE_SECTIONS),
+            list(section_permissions.DEFAULT_ADMIN_SECTIONS),
+        )
+        self.assertNotIn(
+            "shipping",
+            section_permissions.default_sections_for_role("admin"),
         )
 
-    def test_admin_legacy_section_selection_is_expanded(self):
+    def test_admin_legacy_section_selection_excludes_shipping(self):
         self.assertEqual(
             section_permissions.deserialize_sections(
                 '["admin","operator","generator"]',
                 role="admin",
             ),
-            list(section_permissions.AVAILABLE_SECTIONS),
+            list(section_permissions.DEFAULT_ADMIN_SECTIONS),
         )
 
     async def test_operator_dependency_rejects_wrong_role(self):

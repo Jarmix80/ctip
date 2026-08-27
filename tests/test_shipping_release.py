@@ -20,7 +20,7 @@ class ShippingReleaseTests(unittest.TestCase):
         self.assertEqual(scripts.get_heads(), ["f9a0b1c2d3e4"])
         revision = scripts.get_revision("f9a0b1c2d3e4")
         self.assertIsNotNone(revision)
-        self.assertEqual(revision.down_revision, "8a4d1f7c2b90")
+        self.assertEqual(revision.down_revision, "d8f1a2b3c4e5")
 
     def test_release_nie_zawiera_prototypowych_migracji_shipping(self) -> None:
         versions = Path("alembic/versions")
@@ -51,6 +51,15 @@ class ShippingReleaseTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn(
+            '[string]$ReleaseBranch = "release/shipping-prod-current-2026-08-27"',
+            script,
+        )
+        self.assertIn(
+            '[string]$ExpectedCurrentCommit = "e17ad41c2651039d8b00464ddc6dc86a5549b240"',
+            script,
+        )
+        self.assertIn('[string]$ExpectedAlembicCurrent = "d8f1a2b3c4e5"', script)
         self.assertIn('Stop-Service -Name "CTIP-Web"', script)
         self.assertNotIn('Stop-Service -Name "CollectorService"', script)
         self.assertNotIn('Stop-Service -Name "CTIP-SMS"', script)
@@ -62,6 +71,14 @@ class ShippingReleaseTests(unittest.TestCase):
     def test_shipping_wymaga_jawnego_nadania_sekcji(self) -> None:
         self.assertNotIn("shipping", default_sections_for_role("admin"))
         self.assertNotIn("shipping", default_sections_for_role("operator"))
+        self.assertNotIn(
+            "shipping",
+            normalize_sections(["admin", "operator"], role="admin"),
+        )
+        self.assertIn(
+            "shipping",
+            normalize_sections(["admin", "shipping"], role="admin"),
+        )
         self.assertIn(
             "shipping",
             normalize_sections(["operator", "shipping"], role="operator"),

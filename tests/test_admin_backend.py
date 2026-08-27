@@ -445,7 +445,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["role"], "admin")
         self.assertFalse(data["is_salesperson"])
         self.assertIn("mobile_phone", data)
-        self.assertEqual(data["sections"], list(section_permissions.AVAILABLE_SECTIONS))
+        self.assertEqual(data["sections"], list(section_permissions.DEFAULT_ADMIN_SECTIONS))
 
     async def test_login_is_blocked_after_failure_limit(self):
         with (
@@ -2258,7 +2258,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["role"], "admin")
         self.assertFalse(updated["is_salesperson"])
         self.assertEqual(updated["mobile_phone"], "+48600111222")
-        self.assertEqual(updated["sections"], list(section_permissions.AVAILABLE_SECTIONS))
+        self.assertEqual(updated["sections"], list(section_permissions.DEFAULT_ADMIN_SECTIONS))
 
         async with self.session_factory() as session:
             db_user = await session.get(AdminUser, user_id)

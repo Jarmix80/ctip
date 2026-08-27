@@ -2,7 +2,7 @@
 
 ## 2026-08-27
 
-- Migracja produkcyjna `f9a0b1c2d3e4` tworzy od zera finalny, addytywny schemat modułu Shipping po rewizji `8a4d1f7c2b90`.
+- Migracja produkcyjna `f9a0b1c2d3e4` tworzy od zera finalny, addytywny schemat modułu Shipping po rewizji `d8f1a2b3c4e5` używanej przez bieżące wydanie produkcyjne.
 - Dodano tabele `shipping_address`, `shipping_consumable_compatibility`, `shipping_case`, `shipping_item`, `shipping_day_close`, `shipping_shipment` i `shipping_event` wraz z kluczami obcymi, ograniczeniami idempotencji i indeksami operacyjnymi.
 - Katalog zgodności przechowuje relacje wiele-do-wielu między `MODEL.ID_MODEL` i `MAGAZYN.ID_MAGAZYN_TABLE`, niezależne stany decyzji, poziom pewności, dowody JSON i historię przeglądu.
 - Sprawa wysyłkowa przechowuje snapshot adresu oraz lokalizacji, decyzję o FV, zaakceptowane ceny, zgodę na kontrolowany stan ujemny i identyfikatory dokumentów RW, WZ oraz FV utworzonych w Firebirdzie.

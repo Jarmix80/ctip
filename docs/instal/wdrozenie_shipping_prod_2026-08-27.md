@@ -2,7 +2,7 @@
 
 ## Cel i zakres
 
-Procedura wdraża wyłącznie moduł `/shipping`, katalog zgodności części, integrację DPD, dokumenty RW/WZ/FV i Archiwum. Release bazuje na produkcyjnym commicie `05780b848e3c7508099d8c9f9fe0a17ec0dab79b` i zawiera jedną migrację `f9a0b1c2d3e4` po rewizji `8a4d1f7c2b90`.
+Procedura wdraża wyłącznie moduł `/shipping`, katalog zgodności części, integrację DPD, dokumenty RW/WZ/FV i Archiwum. Release bazuje na produkcyjnym commicie `e17ad41c2651039d8b00464ddc6dc86a5549b240` i zawiera jedną migrację `f9a0b1c2d3e4` po rewizji `d8f1a2b3c4e5`.
 
 Wdrożenie jest etapowe. Pierwsza faza udostępnia Marcinowi kolejkę oraz katalog, ale blokuje akceptację zleceń, DPD i zapisy do Menadżera Serwisu. Dopiero po kontroli danych wykonywany jest jeden jawnie wybrany pilot produkcyjny.
 
@@ -23,11 +23,11 @@ Skrypt wdrożeniowy restartuje wyłącznie usługę `CTIP-Web`. Usługi `Collect
 
 Wszystkie warunki muszą być spełnione jednocześnie:
 
-- release jest opublikowany na gałęzi `release/shipping-prod-2026-08-27` w GitHub;
+- release jest opublikowany na gałęzi `release/shipping-prod-current-2026-08-27` w GitHub;
 - lokalne i CI testy release zakończyły się powodzeniem;
-- `git rev-parse HEAD` na serwerze wskazuje dokładnie `05780b848e3c7508099d8c9f9fe0a17ec0dab79b`;
+- `git rev-parse HEAD` na serwerze wskazuje dokładnie `e17ad41c2651039d8b00464ddc6dc86a5549b240`;
 - `git status --porcelain --untracked-files=no` jest pusty;
-- `alembic current` wskazuje `8a4d1f7c2b90`;
+- `alembic current` wskazuje `d8f1a2b3c4e5`;
 - nie istnieją produkcyjne tabele `ctip.shipping_*`;
 - wszystkie cztery usługi Windows mają stan `Running`;
 - `http://127.0.0.1:8000/health` i `http://127.0.0.1:8100/health` zwracają HTTP `200`;
@@ -43,7 +43,7 @@ Na stacji roboczej, po zatwierdzeniu testów:
 ```bash
 git -C .codex/shipping-prod-release-worktree status --short
 git -C .codex/shipping-prod-release-worktree log -1 --oneline
-git -C .codex/shipping-prod-release-worktree push -u origin release/shipping-prod-2026-08-27
+git -C .codex/shipping-prod-current-worktree push -u origin release/shipping-prod-current-2026-08-27
 git -C .codex/shipping-prod-release-worktree rev-parse HEAD
 ```
 
@@ -94,7 +94,7 @@ Commit bazowy nie zawiera jeszcze dedykowanego skryptu. Uruchom PowerShell jako 
 ```powershell
 cd D:\CTIP
 $ReleaseCommit = "<PELNY_SHA_RELEASE>"
-git fetch origin release/shipping-prod-2026-08-27
+git fetch origin release/shipping-prod-current-2026-08-27
 if ((git rev-parse "FETCH_HEAD^{commit}").Trim() -ne $ReleaseCommit) { throw "Niezgodny commit release" }
 git show "$ReleaseCommit`:scripts/windows/deploy_shipping_prod_2026-08-27.ps1" |
   Set-Content -Encoding utf8 .\inbox\deploy_shipping_prod_2026-08-27.ps1
@@ -120,14 +120,14 @@ Skrypt wykonuje kolejno:
 2. osobny worktree kandydata w `D:\CTIP_shipping_candidate`;
 3. synchronizację zależności istniejącego `.venv`;
 4. kompilację kodu oraz lekkie testy ustawień i grafu migracji;
-5. kontrolę `alembic current=8a4d1f7c2b90` i `alembic heads=f9a0b1c2d3e4`;
+5. kontrolę `alembic current=d8f1a2b3c4e5` i `alembic heads=f9a0b1c2d3e4`;
 6. addytywną migrację do `f9a0b1c2d3e4`;
 7. uruchomienie kandydata na `127.0.0.1:8002` z wyłączonymi schedulerami, katalogiem, realizacją i DPD;
 8. health-check kandydata, działającej produkcji i publicznych formularzy;
 9. zatrzymanie wyłącznie `CTIP-Web`, checkout dokładnego SHA release i ponowne uruchomienie `CTIP-Web`;
 10. końcowe health-checki i kontrolę, że pozostałe usługi nadal działają.
 
-Jeżeli cutover nie przejdzie health-checku, skrypt przywraca kod `05780b848e3c7508099d8c9f9fe0a17ec0dab79b` i ponownie uruchamia wyłącznie `CTIP-Web`. Addytywne, puste tabele Shipping pozostają w PostgreSQL.
+Jeżeli cutover nie przejdzie health-checku, skrypt przywraca kod `e17ad41c2651039d8b00464ddc6dc86a5549b240` i ponownie uruchamia wyłącznie `CTIP-Web`. Addytywne, puste tabele Shipping pozostają w PostgreSQL.
 
 ## Kontrola po wdrożeniu
 
@@ -243,7 +243,7 @@ Ustaw `SHIPPING_ENABLED=false` i zrestartuj wyłącznie `CTIP-Web`. Pozostałe m
 ```powershell
 cd D:\CTIP
 Stop-Service CTIP-Web -Force
-git checkout --detach 05780b848e3c7508099d8c9f9fe0a17ec0dab79b
+git checkout --detach e17ad41c2651039d8b00464ddc6dc86a5549b240
 Start-Service CTIP-Web
 Invoke-WebRequest http://127.0.0.1:8000/health -UseBasicParsing
 Get-Service CollectorService,CTIP-Web,CTIP-SMS,CTIP-FormsPublic

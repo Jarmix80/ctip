@@ -1,7 +1,7 @@
 """Dodanie produkcyjnego modułu realizacji wysyłek części.
 
 Revision ID: f9a0b1c2d3e4
-Revises: 8a4d1f7c2b90
+Revises: d8f1a2b3c4e5
 Create Date: 2026-08-27
 """
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f9a0b1c2d3e4"
-down_revision: str | Sequence[str] | None = "8a4d1f7c2b90"
+down_revision: str | Sequence[str] | None = "d8f1a2b3c4e5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -1624,9 +1624,6 @@ document.addEventListener("alpine:init", () => {
 
     normalizeSectionsForRole(sections, role) {
       const defaults = this.defaultSectionsForRole(role);
-      if (role === "admin") {
-        return defaults;
-      }
       const input = Array.isArray(sections) ? sections : defaults;
       const seen = new Set();
       const normalized = [];
@@ -1649,6 +1646,9 @@ document.addEventListener("alpine:init", () => {
         seen.add(value);
         normalized.push(value);
       });
+      if (role === "admin") {
+        return normalized.includes("shipping") ? [...defaults, "shipping"] : defaults;
+      }
       if (!normalized.length) {
         return defaults;
       }

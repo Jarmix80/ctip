@@ -11,22 +11,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AdminSetting, AdminUser
 
 AVAILABLE_SECTIONS = ("admin", "operator", "generator", "delivery", "device", "shipping")
+DEFAULT_ADMIN_SECTIONS = ("admin", "operator", "generator", "delivery", "device")
 _USER_SECTIONS_PREFIX = "user_sections."
 
 
 def default_sections_for_role(role: str | None) -> list[str]:
     """Zwraca domyślny zestaw sekcji dla wskazanej roli."""
     if role == "admin":
-        return list(AVAILABLE_SECTIONS)
+        return list(DEFAULT_ADMIN_SECTIONS)
     if role == "serwisant":
         return ["delivery"]
     return ["operator", "generator"]
 
 
 def normalize_sections(sections: Iterable[str] | None, *, role: str | None) -> list[str]:
-    """Normalizuje listę sekcji, zawsze nadając administratorowi pełny dostęp."""
-    if role == "admin":
-        return default_sections_for_role(role)
+    """Normalizuje sekcje, a Shipping pozostawia jako jawne uprawnienie."""
     if sections is None:
         return default_sections_for_role(role)
 
@@ -43,6 +42,9 @@ def normalize_sections(sections: Iterable[str] | None, *, role: str | None) -> l
         seen.add(value)
         normalized.append(value)
 
+    if role == "admin":
+        defaults = default_sections_for_role(role)
+        return [*defaults, "shipping"] if "shipping" in normalized else defaults
     if not normalized:
         return default_sections_for_role(role)
     return normalized
