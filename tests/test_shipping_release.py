@@ -71,6 +71,12 @@ class ShippingReleaseTests(unittest.TestCase):
         self.assertIn('$_.Name -ne ".gitkeep"', script)
         self.assertIn("Remove-Item -Path $candidateReportDirectory", script)
         self.assertIn("New-Item -ItemType Junction", script)
+        self.assertIn("$removeJunctionCommand", script)
+        self.assertIn("& cmd.exe /d /c $removeJunctionCommand", script)
+        self.assertLess(
+            script.index("& cmd.exe /d /c $removeJunctionCommand"),
+            script.index("git worktree remove --force"),
+        )
         self.assertIn("if (-not $Apply)", script)
 
     def test_shipping_wymaga_jawnego_nadania_sekcji(self) -> None:

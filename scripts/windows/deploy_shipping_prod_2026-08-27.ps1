@@ -419,6 +419,18 @@ try {
     throw $failure
 } finally {
     Stop-Candidate -Process $candidateProcess
+    $candidateReportDirectory = Join-Path $CandidateDir "docs\raport"
+    if (Test-Path $candidateReportDirectory) {
+        $candidateReportItem = Get-Item -Path $candidateReportDirectory -Force
+        $isJunction = ($candidateReportItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+        if ($isJunction) {
+            $removeJunctionCommand = 'rmdir "' + $candidateReportDirectory + '"'
+            & cmd.exe /d /c $removeJunctionCommand
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Nie udalo sie odlaczyc junction raportu kandydata."
+            }
+        }
+    }
     if ((Test-Path $CandidateDir) -and -not $KeepCandidate) {
         Set-Location $InstallDir
         & git worktree remove --force $CandidateDir
