@@ -286,6 +286,16 @@ try {
     Write-Log "Tworze odseparowany worktree kandydata"
     Invoke-Git -Arguments @("worktree", "add", "--detach", $CandidateDir, $ReleaseCommit)
     $candidateReportDirectory = Join-Path $CandidateDir "docs\raport"
+    if (Test-Path $candidateReportDirectory) {
+        $unexpectedReportFiles = @(
+            Get-ChildItem -Path $candidateReportDirectory -Force |
+                Where-Object { $_.Name -ne ".gitkeep" }
+        )
+        if ($unexpectedReportFiles.Count -gt 0) {
+            Fail "Katalog raportu kandydata zawiera nieoczekiwane pliki."
+        }
+        Remove-Item -Path $candidateReportDirectory -Recurse -Force
+    }
     New-Item -ItemType Junction -Path $candidateReportDirectory -Target $reportDirectory | Out-Null
 
     Write-Log "Synchronizuje zaleznosci wspolnego .venv"

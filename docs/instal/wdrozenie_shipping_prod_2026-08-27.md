@@ -117,7 +117,7 @@ Po poprawnym dry-run:
 Skrypt wykonuje kolejno:
 
 1. pełny i zweryfikowany backup PostgreSQL oraz Firebird przez `backup_prod_databases.ps1`;
-2. osobny worktree kandydata w `D:\CTIP_shipping_candidate`;
+2. osobny worktree kandydata w `D:\CTIP_shipping_candidate`; śledzony pusty `docs\raport\.gitkeep` jest usuwany dopiero po kontroli zawartości, a katalog zastępuje junction do produkcyjnego raportu;
 3. synchronizację zależności istniejącego `.venv`;
 4. kompilację kodu oraz lekkie testy ustawień i grafu migracji;
 5. kontrolę `alembic current=d8f1a2b3c4e5` i `alembic heads=f9a0b1c2d3e4`;

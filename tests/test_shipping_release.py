@@ -65,6 +65,8 @@ class ShippingReleaseTests(unittest.TestCase):
         self.assertNotIn('Stop-Service -Name "CTIP-SMS"', script)
         self.assertNotIn('Stop-Service -Name "CTIP-FormsPublic"', script)
         self.assertIn('"-m", "alembic", "upgrade", $ExpectedAlembicHead', script)
+        self.assertIn('$_.Name -ne ".gitkeep"', script)
+        self.assertIn("Remove-Item -Path $candidateReportDirectory", script)
         self.assertIn("New-Item -ItemType Junction", script)
         self.assertIn("if (-not $Apply)", script)
 
