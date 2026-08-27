@@ -119,7 +119,7 @@ Skrypt wykonuje kolejno:
 1. pełny i zweryfikowany backup PostgreSQL oraz Firebird przez `backup_prod_databases.ps1`;
 2. osobny worktree kandydata w `D:\CTIP_shipping_candidate`; śledzony pusty `docs\raport\.gitkeep` jest usuwany dopiero po kontroli zawartości, katalog zastępuje junction do produkcyjnego raportu, a cleanup odłącza junction przed usunięciem worktree, aby nie naruszyć celu;
 3. synchronizację zależności istniejącego `.venv`;
-4. kompilację kodu oraz lekkie testy ustawień i grafu migracji; na czas samych testów flagi Shipping są izolowane do wartości domyślnych, a następnie przywracane do konfiguracji etapu pierwszego;
+4. kompilację kodu oraz lekkie testy ustawień i grafu migracji; testy wartości domyślnych czyszczą odziedziczone zmienne procesu, a skrypt dodatkowo izoluje flagi Shipping i przywraca je do konfiguracji etapu pierwszego;
 5. kontrolę `alembic current=d8f1a2b3c4e5` i `alembic heads=f9a0b1c2d3e4`;
 6. addytywną migrację do `f9a0b1c2d3e4`;
 7. uruchomienie kandydata na `127.0.0.1:8002` z wyłączonymi schedulerami, katalogiem, realizacją i DPD;
