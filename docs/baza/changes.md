@@ -1,5 +1,14 @@
 # Zmiany schematu bazy CTIP
 
+## 2026-08-27
+
+- Migracja produkcyjna `f9a0b1c2d3e4` tworzy od zera finalny, addytywny schemat modułu Shipping po rewizji `8a4d1f7c2b90`.
+- Dodano tabele `shipping_address`, `shipping_consumable_compatibility`, `shipping_case`, `shipping_item`, `shipping_day_close`, `shipping_shipment` i `shipping_event` wraz z kluczami obcymi, ograniczeniami idempotencji i indeksami operacyjnymi.
+- Katalog zgodności przechowuje relacje wiele-do-wielu między `MODEL.ID_MODEL` i `MAGAZYN.ID_MAGAZYN_TABLE`, niezależne stany decyzji, poziom pewności, dowody JSON i historię przeglądu.
+- Sprawa wysyłkowa przechowuje snapshot adresu oraz lokalizacji, decyzję o FV, zaakceptowane ceny, zgodę na kontrolowany stan ujemny i identyfikatory dokumentów RW, WZ oraz FV utworzonych w Firebirdzie.
+- Archiwum zapisuje operatora zamknięcia, niezmienny snapshot procesu i znormalizowaną treść wyszukiwarki. Indeks GIN korzysta z rozszerzenia `pg_trgm`.
+- Migracja wymaga pustego celu dla tabel Shipping i przerywa działanie po wykryciu lokalnego prototypu. Dane testowe, sugestie i mapowania z `ctip_test` nie są przenoszone na produkcję.
+
 ## 2025-10-12
 - Dodano moduł administracyjny: tabele `admin_user`, `admin_session`, `admin_setting`, `admin_audit_log` wraz z indeksami i sekwencjami.
 - Ustanowiono uprawnienia `appuser` do nowych tabel i sekwencji.

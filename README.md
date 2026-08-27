@@ -5,6 +5,7 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
+- Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.
@@ -26,6 +27,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/web/flow_ui.py` + `app/templates/flow/` + `app/static/flow/` – widok `/flow` z bocznym menu dla sekcji „Obsługa umów”, „Obsługa urządzeń” i „Harmonogram dowozów”, nagłówkiem użytkownika, podglądem danych formularza z kopiowaniem pojedynczych pól, osobnym modalem workflow do prowadzenia sprawy klienta i wyboru urządzeń po stronie CTIP oraz stronami wizualizacji proformy `/flow/proforma-wizualizacja` i `/flow/proforma-wizualizacja1`.
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + `app/services/device_dashboard.py` + `app/services/device_intake.py` – wydzielony widok `/device` dla procesu urzadzen: audyt przyjec `PZ` na magazyn `28`, kontrola powiazan `MAGAZYN` / `SERIAL` / `MASZYNA`, lista problemow danych, audyt tabeli `MODEL` oraz automatyzacja kartoteki `AUTO/XXXX` i przyjecia `PZ` (single + batch) z automatycznym utworzeniem wpisu `MASZYNA`.
+- `app/web/shipping_ui.py` + `app/templates/shipping/` + `app/static/shipping/` + `app/api/routes/admin_shipping.py` + `app/services/shipping_*` – moduł `/shipping` do katalogu zgodności części, realizacji wysyłek DPD, dokumentów RW/WZ/FV i przeszukiwalnego Archiwum; operacje są chronione niezależnymi flagami etapowego wdrożenia.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
 - `app/services/grenke_launch.py` – integracja API-only do przycisku `Wniosek GRENKE` w `/genform`: budowa `calculationKey`, prefill kalkulacji (`setSession.php`, `calculate.php`, `saveCalculation.php`) i fallback URL `partial` z query kodowanym pod parser `decodeURI` po stronie GRENKE (bez formatu `+` dla spacji); w trybie pełnym usługa uzupełnia dane dostawcy (`provider*`) na podstawie sprzedawcy z zapisanej proformy Firebird, zapisuje pole `rate` jako listę opcji (`kwartalna`, `miesieczna`) kompatybilną z frontendem GRENKE, ustawia opłatę początkową `0%`, odczytuje limity `default/min/maxMonths` po `setSession.php` i wybiera najwyższy poprawny okres leasingu w granicach tych limitów.
 - `app/services/workflow_machine_binding.py` – automat dla statusu `APPROVED_ORDER`: wiązanie urządzeń workflow z klientem w `MASZYNA.ID_KLIENT` (główna operacja), wymuszenie `AKTYWNA=TAK` i `SYNWP=1`, próba normalizacji `MASZYNA.EWIDENCJA` do `KP/<numer>/GRENKE/<reszta>` (brak poprawnego formatu nie blokuje powiązania klienta), tworzenie nowych rekordów `MASZYNA` z mapowaniem danych z tabeli `MODEL` (`ID_MODEL`, `MARKA`, `MODEL`, `GRUPA`, `RODZAJ`, `KOLOROWA`, `TYP`, `RODZAJ_US`) oraz synchronizacja tych pól dla istniejących kart; dla źródła `firebird_magazyn_28` automat dociąga bieżący rekord `MAGAZYN`, parsuje techniczne `NAZWA` (`S/N`, `nr.wew`) i normalizuje warianty modeli Ricoh (`IMC` -> `IM C`, `MPC` -> `MP C`) zanim dopasuje `MODEL`; status zwracany do `/genform` pokazuje też licznik `powiązane/wszystkie` i skrót pierwszych błędów z identyfikatorem urządzenia (`producent`, `model`, `serial` albo `ewidencja`).
@@ -457,6 +459,19 @@ Akcja synchronizacji urzadzenia w `/contracts` wykorzystuje arkusz `Urzadzenia` 
 | `LOGIN_FAILURE_WINDOW_MINUTES` | `15` | Długość okna blokady logowania po przekroczeniu limitu. |
 | `PANEL_ALLOWED_NETWORKS` | `127.0.0.0/8,::1/128,192.168.0.0/24` | Sieci dopuszczone do bezpośredniego dostępu do aplikacji, w tym portu `8000`. |
 
+### Zmienne środowiskowe modułu Shipping
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `SHIPPING_ENABLED` | `false` | Udostępnia strony i API Shipping. Wyłączenie zwraca `503` bez wpływu na inne moduły. |
+| `SHIPPING_CATALOG_MUTATIONS_ENABLED` | `false` | Zezwala na skan, ręczne mapowanie oraz zatwierdzanie katalogu; blokada zwraca `423`. |
+| `SHIPPING_FULFILLMENT_ENABLED` | `false` | Zezwala na akceptację zleceń, etykiety, DPD i finalizację dokumentów MS; blokada zwraca `423`. |
+| `SHIPPING_WAREHOUSE_ID` | `1` | Identyfikator magazynu głównego części w Firebirdzie. |
+| `DPD_ENABLED` | `false` | Włącza klienta DPD; podczas fazy odczytowej musi pozostać `false`. |
+| `DPD_MODE` | `production` | Tryb adaptera: `mock`, `demo` albo `production`. |
+| `SHIPPING_TEST_FIREBIRD_WRITES` | `false` | Wyjątek wyłącznie dla izolowanej bazy `ctip_test` i Firebirda testowego; na produkcji zawsze `false`. |
+
+Pełna lista ustawień DPD, nadawcy, wag, godziny granicznej i opcjonalnego wzbogacania WWW znajduje się w `.env.example` oraz `docs/projekt/wysylki_dpd.md`. Sekcja `shipping` nie jest przyznawana automatycznie żadnej roli; administrator nadaje ją jawnie wskazanym aktywnym kontom.
+
 Logowanie do `/auth/login` i `/admin/auth/login` ustawia obecnie dwa transporty tej samej sesji:
 - bezpieczniejsze ciasteczko `HttpOnly` dla przeglądarki,
 - dotychczasowy token JSON zachowany dla zgodności z istniejącym frontendem i testami (`X-Admin-Session`).
@@ -526,6 +541,8 @@ Rekomenduje się uruchomienie obu procesów pod nadzorem `systemd` lub innego me
 
 ## Aktualizacja produkcji na Windows Server (PowerShell)
 Środowisko produkcyjne dla tego projektu działa na Windows Server.
+
+Wdrożenie Shipping korzysta z dedykowanego skryptu `scripts/windows/deploy_shipping_prod_2026-08-27.ps1` i runbooka `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`. Procedura restartuje wyłącznie `CTIP-Web`; usługi `CollectorService`, `CTIP-SMS` i `CTIP-FormsPublic` muszą pozostać uruchomione.
 
 1. Aktualizacja kodu:
 ```powershell
@@ -884,9 +901,11 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).
+- `docs/instal/wdrozenie_shipping_prod_2026-08-27.md` – etapowe wdrożenie Shipping na Windows Server, backupy, kontrola migracji, faza odczytowa, pilot, nadanie uprawnień i rollback kodu.
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu), `panel_admin_ui.md` (plan interfejsu administratora), `dziennik_2026-02-26.md` (podsumowanie wdrozen z 26 lutego 2026), `dziennik_2026-03-05.md` (podsumowanie prac SharePoint/backup z 5 marca 2026) oraz `dziennik_2026-04-09.md` (domkniecie etapu publicznych formularzy, automatu MS i zmian panelu administratora).
+- `docs/projekt/wysylki_dpd.md` – kontrakt procesu Shipping, katalogu zgodności, integracji DPD, dokumentów Firebird, zabezpieczeń i drukowania.
 - `docs/raport` – statyczny raport CPC (HTML + CSV) udostępniany bez logowania pod `http://127.0.0.1:8000/raport`; serwer FastAPI montuje katalog bez prawa zapisu, dzięki czemu pełni rolę tylko-do-odczytu.
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.

@@ -51,6 +51,13 @@ class DatabaseSchemaTest(unittest.TestCase):
             "ivr_map",
             "contact",
             "contact_device",
+            "shipping_address",
+            "shipping_consumable_compatibility",
+            "shipping_case",
+            "shipping_item",
+            "shipping_shipment",
+            "shipping_day_close",
+            "shipping_event",
         }
         rows = self._fetchall(
             "SELECT table_name FROM information_schema.tables " "WHERE table_schema='ctip'"
@@ -81,6 +88,117 @@ class DatabaseSchemaTest(unittest.TestCase):
         self.assertFalse(
             missing, f"Tabela sms_template nie ma kolumn: {', '.join(sorted(missing))}"
         )
+
+    def test_shipping_compatibility_columns(self) -> None:
+        expected_columns = {
+            "firebird_model_id",
+            "firebird_warehouse_item_id",
+            "status",
+            "confidence",
+            "evidence",
+            "source_hash",
+            "first_seen_at",
+            "last_seen_at",
+            "reviewed_by",
+            "reviewed_at",
+            "review_note",
+            "updated_at",
+        }
+        rows = self._fetchall(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='shipping_consumable_compatibility'"
+        )
+        present = {row[0] for row in rows}
+        missing = expected_columns - present
+        self.assertFalse(
+            missing,
+            "Tabela shipping_consumable_compatibility nie ma kolumn: " + ", ".join(sorted(missing)),
+        )
+
+    def test_shipping_location_guard_columns(self) -> None:
+        expected_columns = {
+            "location_source",
+            "location_text_snapshot",
+            "location_fingerprint",
+        }
+        for table_name in ("shipping_address", "shipping_case"):
+            rows = self._fetchall(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='ctip' AND table_name=%s",
+                table_name,
+            )
+            present = {row[0] for row in rows}
+            missing = expected_columns - present
+            self.assertFalse(
+                missing,
+                f"Tabela {table_name} nie ma kolumn: {', '.join(sorted(missing))}",
+            )
+
+    def test_shipping_case_invoice_required_column(self) -> None:
+        rows = self._fetchall(
+            "SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='shipping_case' "
+            "AND column_name='invoice_required'"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][1], "NO")
+        self.assertIn(str(rows[0][2]).lower(), {"false", "false::boolean"})
+
+    def test_shipping_item_negative_stock_column(self) -> None:
+        rows = self._fetchall(
+            "SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='shipping_item' "
+            "AND column_name='allow_negative_stock'"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][1], "NO")
+        self.assertIn(str(rows[0][2]).lower(), {"false", "false::boolean"})
+
+    def test_shipping_item_price_snapshot_columns(self) -> None:
+        rows = self._fetchall(
+            "SELECT column_name, is_nullable FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='shipping_item' "
+            "AND column_name IN ('catalog_price_net', 'price_source')"
+        )
+        present = {row[0]: row[1] for row in rows}
+        self.assertEqual(present, {"catalog_price_net": "NO", "price_source": "NO"})
+
+    def test_shipping_shipment_firebird_document_columns(self) -> None:
+        expected_columns = {
+            "firebird_rw_id",
+            "firebird_rw_number",
+            "firebird_wz_id",
+            "firebird_wz_number",
+            "firebird_invoice_id",
+            "firebird_invoice_number",
+        }
+        rows = self._fetchall(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='shipping_shipment'"
+        )
+        present = {row[0] for row in rows}
+        self.assertFalse(expected_columns - present)
+
+    def test_shipping_archive_columns_and_indexes(self) -> None:
+        expected_columns = {
+            "closed_by",
+            "archive_snapshot",
+            "archive_search_text",
+        }
+        rows = self._fetchall(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='ctip' AND table_name='shipping_shipment'"
+        )
+        present = {row[0] for row in rows}
+        self.assertFalse(expected_columns - present)
+        index_rows = self._fetchall(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE schemaname='ctip' AND tablename='shipping_shipment'"
+        )
+        indexes = {row[0] for row in index_rows}
+        self.assertIn("idx_shipping_shipment_archive_closed", indexes)
+        self.assertIn("idx_shipping_shipment_archive_operator", indexes)
+        self.assertIn("idx_shipping_shipment_archive_search_trgm", indexes)
 
     def test_contact_number_unique(self) -> None:
         rows = self._fetchall(

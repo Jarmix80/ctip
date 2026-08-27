@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminSetting, AdminUser
 
-AVAILABLE_SECTIONS = ("admin", "operator", "generator")
+AVAILABLE_SECTIONS = ("admin", "operator", "generator", "shipping")
 _USER_SECTIONS_PREFIX = "user_sections."
 
 

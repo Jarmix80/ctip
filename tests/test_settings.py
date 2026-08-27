@@ -24,12 +24,24 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(cfg.sms_test_mode)
         self.assertEqual(cfg.sms_api_url, "")
         self.assertFalse(cfg.block_client_communications)
+        self.assertFalse(cfg.shipping_enabled)
+        self.assertFalse(cfg.shipping_catalog_mutations_enabled)
+        self.assertFalse(cfg.shipping_fulfillment_enabled)
 
     def test_database_url_uses_psycopg_async_driver(self) -> None:
         cfg = Settings(_env_file=None)
 
         self.assertTrue(cfg.database_url.startswith("postgresql+psycopg://"))
         self.assertIn("@127.0.0.1:5432/ctip_test", cfg.database_url)
+
+    def test_tryb_dpd_ma_fallback_i_jawne_pierwszenstwo(self) -> None:
+        mock = Settings(_env_file=None, DPD_MODE=None, DPD_TEST_MODE=True)
+        production = Settings(_env_file=None, DPD_MODE=None, DPD_TEST_MODE=False)
+        demo = Settings(_env_file=None, DPD_MODE="demo", DPD_TEST_MODE=False)
+
+        self.assertEqual(mock.dpd_effective_mode, "mock")
+        self.assertEqual(production.dpd_effective_mode, "production")
+        self.assertEqual(demo.dpd_effective_mode, "demo")
 
     def test_backup_execution_active_respects_explicit_true(self) -> None:
         cfg = Settings(

@@ -17,6 +17,7 @@ from app.api.routes import (
     admin_google_sheets,
     admin_kp_repair,
     admin_mm,
+    admin_shipping,
     admin_sms,
     admin_status,
     admin_users,
@@ -45,6 +46,7 @@ api_router.include_router(admin_kp_repair.router)
 api_router.include_router(admin_mm.router)
 api_router.include_router(admin_status.router)
 api_router.include_router(admin_sms.router)
+api_router.include_router(admin_shipping.router)
 api_router.include_router(admin_users.router)
 api_router.include_router(health.router)
 api_router.include_router(operator_auth.router)

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – prototypy modułu wysyłek</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/shipping/shipping-prototypes.css?v={{ request.app.version }}">
+    <script defer src="/static/shipping/shipping-prototypes.js?v={{ request.app.version }}"></script>
+  </head>
+  <body>
+    <header class="prototype-lab-header">
+      <div class="prototype-lab-title">
+        <span class="prototype-lab-mark">CTIP</span>
+        <div>
+          <p>LABORATORIUM INTERFEJSU</p>
+          <h1>Siedem kierunków dla modułu wysyłek</h1>
+        </div>
+      </div>
+      <div class="prototype-lab-actions">
+        <span class="prototype-warning"><span></span> Makiety bez zapisu danych</span>
+        <a href="/shipping">Wróć do działającego modułu</a>
+      </div>
+    </header>
+
+    <section class="prototype-picker" aria-labelledby="prototype-picker-title">
+      <div class="prototype-picker-copy">
+        <p>WYBIERZ WARIANT</p>
+        <h2 id="prototype-picker-title">Porównaj układ, gęstość i hierarchię informacji</h2>
+        <span>W każdej makiecie pozostaje lewa lista zleceń. Warianty 06 i 07 łączą wybrane układy z ciemną kolorystyką 03.</span>
+      </div>
+      <div class="prototype-picker-grid" role="group" aria-label="Wariant interfejsu">
+        <button class="prototype-choice is-active" type="button" data-prototype-target="1" aria-pressed="true">
+          <span class="prototype-choice-number">01</span>
+          <strong>Operacyjny</strong>
+          <small>Najczytelniejszy podział pracy</small>
+        </button>
+        <button class="prototype-choice" type="button" data-prototype-target="2" aria-pressed="false">
+          <span class="prototype-choice-number">02</span>
+          <strong>Etapowy</strong>
+          <small>Prowadzenie krok po kroku</small>
+        </button>
+        <button class="prototype-choice" type="button" data-prototype-target="3" aria-pressed="false">
+          <span class="prototype-choice-number">03</span>
+          <strong>Dyspozytornia</strong>
+          <small>Gęsty widok stanowiska pracy</small>
+        </button>
+        <button class="prototype-choice" type="button" data-prototype-target="4" aria-pressed="false">
+          <span class="prototype-choice-number">04</span>
+          <strong>Dokumentowy</strong>
+          <small>Spokojny układ z pełnym audytem</small>
+        </button>
+        <button class="prototype-choice" type="button" data-prototype-target="5" aria-pressed="false">
+          <span class="prototype-choice-number">05</span>
+          <strong>Minimalny</strong>
+          <small>Mniej elementów, większy fokus</small>
+        </button>
+        <button class="prototype-choice hybrid-choice" type="button" data-prototype-target="6" aria-pressed="false">
+          <span class="prototype-choice-number">06</span>
+          <strong>Hybryda operacyjna</strong>
+          <small>Układ 01 · kolory 03</small>
+        </button>
+        <button class="prototype-choice hybrid-choice" type="button" data-prototype-target="7" aria-pressed="false">
+          <span class="prototype-choice-number">07</span>
+          <strong>Hybryda dokumentowa</strong>
+          <small>Układ 04 · kolory 03</small>
+        </button>
+      </div>
+    </section>
+
+    <main class="prototype-stage">
+      <section class="prototype-frame prototype-one is-active" data-prototype="1" aria-label="Wariant pierwszy – operacyjny">
+        <div class="p1-shell">
+          <header class="p1-header">
+            <div class="p1-brand">
+              <span>KP</span>
+              <div><strong>Wysyłki części</strong><small>Centrum operacyjne</small></div>
+            </div>
+            <nav class="demo-tabs" aria-label="Sekcje wariantu operacyjnego">
+              <button class="is-active" type="button" data-demo-view="dispatch"><span>01</span> Realizacja wysyłek <b>12</b></button>
+              <button type="button" data-demo-view="catalog"><span>02</span> Katalog zgodności <b>38</b></button>
+              <button type="button" data-demo-view="archive"><span>03</span> Archiwum</button>
+            </nav>
+            <div class="p1-user"><span>MK</span><div><strong>Marcin</strong><small>Operator</small></div></div>
+          </header>
+
+          <section class="demo-pane is-active" data-demo-pane="dispatch">
+            <div class="p1-metrics">
+              <article><span class="metric-dot green"></span><div><small>DPD</small><strong>Połączono</strong></div></article>
+              <article><span class="metric-icon">▣</span><div><small>Do obsługi</small><strong>12 zleceń</strong></div></article>
+              <article><span class="metric-icon">✓</span><div><small>Gotowe do nadania</small><strong>5 paczek</strong></div></article>
+              <article><span class="metric-icon">◷</span><div><small>Odbiór kuriera</small><strong>15:30 · za 2 h</strong></div></article>
+              <button type="button" data-demo-action>Zamknij dzień</button>
+            </div>
+            <div class="p1-workspace">
+              <aside class="order-rail p1-rail">
+                <div class="rail-heading">
+                  <div><small>KOLEJKA MS</small><h2>Zlecenia</h2></div><span>12</span>
+                </div>
+                <label class="mock-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Szukaj zlecenia lub klienta"></label>
+                <div class="rail-filter-row"><button class="is-active" type="button">Wszystkie</button><button type="button">Pilne 2</button><button type="button">Gotowe 5</button></div>
+                <div class="order-list">
+                  <article class="order-row is-selected">
+                    <div class="order-row-top"><strong>#18361/2026</strong><span class="source mobile">Aplikacja</span></div>
+                    <h3>Biuro Projektowe Alfa</h3><p>Ricoh IM C3000 · III piętro</p>
+                    <footer><span class="state review">Do weryfikacji</span><time>10:42</time></footer>
+                  </article>
+                  <article class="order-row warning">
+                    <div class="order-row-top"><strong>#18358/2026</strong><span class="source manual">Ręczne</span></div>
+                    <h3>Przychodnia Nova</h3><p>Ricoh MP C3503 · Rejestracja</p>
+                    <div class="row-alert">Nieopłacona FV · 18 dni</div>
+                    <footer><span class="state ready">Gotowe</span><time>09:17</time></footer>
+                  </article>
+                  <article class="order-row">
+                    <div class="order-row-top"><strong>#18355/2026</strong><span class="source mobile">Aplikacja</span></div>
+                    <h3>Kancelaria Północ</h3><p>Kyocera M3645idn · Sekretariat</p>
+                    <footer><span class="state label">Etykieta gotowa</span><time>Wczoraj</time></footer>
+                  </article>
+                  <article class="order-row">
+                    <div class="order-row-top"><strong>#18349/2026</strong><span class="source manual">Ręczne</span></div>
+                    <h3>Hotel Nad Rzeką</h3><p>Konica Minolta C250i · Recepcja</p>
+                    <footer><span class="state invoice">Do wystawienia FV</span><time>Wczoraj</time></footer>
+                  </article>
+                </div>
+              </aside>
+
+              <section class="p1-main">
+                <div class="detail-title-row">
+                  <div><small>ZLECENIE #18361/2026</small><h2>Biuro Projektowe Alfa</h2><p>Ricoh IM C3000 · nr seryjny 3829A</p></div>
+                  <span class="state review">Do weryfikacji</span>
+                </div>
+                <article class="problem-card"><span>Treść zlecenia</span><strong>Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.</strong></article>
+                <section class="p1-section">
+                  <div class="section-title"><span>1</span><div><small>ODBIORCA</small><h3>Adres i osoba kontaktowa</h3></div><button type="button" data-demo-action>Zmień dane</button></div>
+                  <div class="address-choice is-active"><span>✓</span><div><strong>Lokalizacja urządzenia w MS</strong><p>Biuro Projektowe Alfa, ul. Jasna 18, 80-001 Gdańsk</p><small>Anna Nowak · 500 600 700 · anna@example.pl</small></div><em>Wybrano</em></div>
+                </section>
+                <section class="p1-section">
+                  <div class="section-title"><span>2</span><div><small>KOMPLETACJA</small><h3>Części dla Ricoh IM C3000</h3></div><button type="button" data-demo-action>Cały magazyn</button></div>
+                  <div class="stock-search"><span>⌕</span><p>toner imc 3000</p><kbd>⌘ K</kbd></div>
+                  <div class="stock-card selected"><span class="mock-check">✓</span><div><strong>842255 · Toner czarny Ricoh IM C3000</strong><small>Potwierdzona zgodność z modelem · magazyn główny</small></div><span class="stock-count">12 szt.</span><span class="stock-qty">−&nbsp;&nbsp; 1 &nbsp;&nbsp;+</span></div>
+                  <div class="stock-card"><span class="mock-check"></span><div><strong>D0BK2200 · Zespół bębna czarny</strong><small>Potwierdzona zgodność z modelem · magazyn główny</small></div><span class="stock-count">3 szt.</span><span class="stock-qty">−&nbsp;&nbsp; 0 &nbsp;&nbsp;+</span></div>
+                </section>
+                <footer class="p1-actionbar"><div><small>DO PACZKI</small><strong>1 pozycja · 1 szt. · 2 kg</strong></div><label><span class="mock-toggle"></span> Wystaw FV</label><button type="button" data-demo-action>Zatwierdź i przygotuj etykietę <span>→</span></button></footer>
+              </section>
+
+              <aside class="p1-context">
+                <section><small>POSTĘP ZLECENIA</small><div class="progress-ring"><strong>50%</strong><span>2 z 4</span></div><ol><li class="done">Dane zlecenia</li><li class="active">Adres i kontakt</li><li>Kompletacja części</li><li>Etykieta DPD</li></ol></section>
+                <section><small>LOKALIZACJA</small><strong>III piętro, sekretariat</strong><p>Zgodna z bieżącą kartą urządzenia w MS.</p><span class="context-ok">✓ Dane aktualne</span></section>
+                <section><small>POWIĄZANE</small><p>Brak innych paczek pod ten sam adres.</p></section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="demo-pane" data-demo-pane="catalog">
+            <div class="p1-section-hero"><div><small>MAGAZYN GŁÓWNY · ID 1</small><h2>Katalog zgodności</h2><p>Jedna część może obsługiwać wiele modeli urządzeń.</p></div><button type="button" data-demo-action>Skanuj nazwy i historię</button></div>
+            <div class="catalog-layout p1-catalog">
+              <aside><label class="mock-search"><span>⌕</span><input aria-label="Szukaj części" value="toner mpc 3503"></label><button class="is-active" type="button"><span>Wszystkie kartoteki</span><b>515</b></button><button type="button"><span>Do weryfikacji</span><b>38</b></button><button type="button"><span>Potwierdzone</span><b>246</b></button><button type="button"><span>Bez mapowania</span><b>91</b></button></aside>
+              <section class="catalog-table-card">
+                <header><div><small>WYNIKI WYSZUKIWANIA</small><h3>Części i powiązane modele</h3></div><div><button type="button" data-demo-action>Zaznacz wszystkie</button><button type="button" data-demo-action>Odznacz</button></div></header>
+                <div class="mock-table catalog-table">
+                  <div class="mock-tr mock-th"><span></span><span>Część</span><span>Kompatybilne modele</span><span>Status</span></div>
+                  <div class="mock-tr"><span class="mock-check">✓</span><span><strong>841817</strong><small>Toner yellow MP C3003/3503</small></span><span><i>MP C3003</i><i>MP C3503</i><i>MP C4503</i><em>+2</em></span><span class="state ready">Potwierdzone</span></div>
+                  <div class="mock-tr"><span class="mock-check"></span><span><strong>841819</strong><small>Toner cyan MPC 3503</small></span><span><i>MP C3003</i><i>MP C3503</i></span><span class="state review">Do weryfikacji</span></div>
+                  <div class="mock-tr"><span class="mock-check"></span><span><strong>D1862202</strong><small>Zespół bębna kolor</small></span><span><i>MP C3003</i><i>MP C3503</i><i>MP C5503</i></span><span class="state ready">Potwierdzone</span></div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="demo-pane" data-demo-pane="archive">
+            <div class="p1-section-hero"><div><small>HISTORIA OPERACJI</small><h2>Archiwum wysyłek</h2><p>Pełny ślad: operator, części, przesyłka, RW lub decyzja FV.</p></div><button type="button" data-demo-action>Eksportuj zestawienie</button></div>
+            <div class="archive-filters"><label class="mock-search"><span>⌕</span><input aria-label="Szukaj archiwum" placeholder="Zlecenie, klient, RW, numer DPD"></label><button type="button">Sierpień 2026⌄</button><button type="button">Wszyscy operatorzy⌄</button><button type="button">Wszystkie dokumenty⌄</button></div>
+            <div class="archive-summary"><article><small>Wysłane w tym miesiącu</small><strong>146</strong><span>+12% względem lipca</span></article><article><small>Dokumenty RW</small><strong>119</strong><span>81,5% wysyłek</span></article><article><small>Do faktury</small><strong>27</strong><span>18,5% wysyłek</span></article><article><small>Średni czas obsługi</small><strong>18 min</strong><span>od otwarcia do etykiety</span></article></div>
+            <section class="archive-table-card">
+              <div class="archive-table-head"><span>Zlecenie / klient</span><span>Obsługiwał</span><span>Części w paczce</span><span>Dokument</span><span>Przesyłka</span><span>Wysłano</span></div>
+              <article><span><strong>#18294/2026</strong><small>Przychodnia Nova</small></span><span><strong>Marcin K.</strong><small>Kompletacja i nadanie</small></span><span><strong>2 pozycje · 3 szt.</strong><small>842255 Toner BK + bęben</small></span><span><b class="doc rw">RW</b><strong>RW 3421/2026</strong></span><span><strong>0000419238</strong><small>DPD · doręczono</small></span><span><strong>24.08.2026</strong><small>14:18</small></span></article>
+              <article><span><strong>#18281/2026</strong><small>Hotel Nad Rzeką</small></span><span><strong>Anna P.</strong><small>Kompletacja i nadanie</small></span><span><strong>1 pozycja · 1 szt.</strong><small>TN-626Y Toner yellow</small></span><span><b class="doc fv">FV</b><strong>Do wystawienia</strong></span><span><strong>0000419187</strong><small>DPD · w doręczeniu</small></span><span><strong>23.08.2026</strong><small>12:06</small></span></article>
+              <article><span><strong>#18277/2026</strong><small>Kancelaria Północ</small></span><span><strong>Marcin K.</strong><small>Kompletacja i nadanie</small></span><span><strong>1 pozycja · 2 szt.</strong><small>TK-3160 Toner black</small></span><span><b class="doc rw">RW</b><strong>RW 3404/2026</strong></span><span><strong>0000419102</strong><small>DPD · doręczono</small></span><span><strong>22.08.2026</strong><small>15:31</small></span></article>
+            </section>
+          </section>
+        </div>
+      </section>
+
+      <section class="prototype-frame prototype-two" data-prototype="2" aria-label="Wariant drugi – etapowy" hidden>
+        <div class="p2-shell">
+          <header class="p2-header">
+            <a class="p2-logo" href="#" aria-label="Ksero Partner"><span>KP</span><strong>Logistyka</strong></a>
+            <nav class="demo-tabs" aria-label="Sekcje wariantu etapowego"><button class="is-active" type="button" data-demo-view="dispatch">Realizacja <b>12</b></button><button type="button" data-demo-view="catalog">Katalog zgodności</button><button type="button" data-demo-view="archive">Archiwum</button></nav>
+            <div class="p2-header-actions"><button type="button" data-demo-action>↻</button><span>MK</span></div>
+          </header>
+          <section class="demo-pane is-active" data-demo-pane="dispatch">
+            <div class="p2-page-title"><div><span>Wtorek, 25 sierpnia</span><h2>Dzień dobry, Marcin</h2><p>Masz 12 zleceń do obsługi i 5 paczek gotowych do nadania.</p></div><button type="button" data-demo-action>Podsumowanie dnia <span>→</span></button></div>
+            <div class="p2-flow"><span class="done"><b>✓</b><small>Nowe</small><strong>7</strong></span><i></i><span class="active"><b>2</b><small>Weryfikacja</small><strong>3</strong></span><i></i><span><b>3</b><small>Kompletacja</small><strong>2</strong></span><i></i><span><b>4</b><small>Etykieta</small><strong>5</strong></span><i></i><span><b>5</b><small>Odbiór</small><strong>0</strong></span></div>
+            <div class="p2-workspace">
+              <aside class="order-rail p2-rail">
+                <div class="rail-heading"><div><small>TWOJA KOLEJKA</small><h2>Zlecenia</h2></div><button type="button" data-demo-action>☷</button></div>
+                <label class="mock-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Szukaj"></label>
+                <div class="p2-queue-groups"><p><span>DO WERYFIKACJI</span><b>3</b></p>
+                  <article class="order-row is-selected"><div class="order-row-top"><strong>#18361/2026</strong><span class="source mobile">● App</span></div><h3>Biuro Projektowe Alfa</h3><p>Ricoh IM C3000</p><footer><span>III piętro, sekretariat</span><time>10:42</time></footer></article>
+                  <article class="order-row warning"><div class="order-row-top"><strong>#18358/2026</strong><span class="source manual">● MS</span></div><h3>Przychodnia Nova</h3><p>Ricoh MP C3503</p><footer><span class="debt">FV po terminie</span><time>09:17</time></footer></article>
+                  <p><span>GOTOWE DO ETYKIETY</span><b>5</b></p>
+                  <article class="order-row"><div class="order-row-top"><strong>#18355/2026</strong><span class="source mobile">● App</span></div><h3>Kancelaria Północ</h3><p>Kyocera M3645idn</p><footer><span class="ready-text">Dane potwierdzone</span><time>Wczoraj</time></footer></article>
+                </div>
+              </aside>
+              <section class="p2-detail">
+                <header><div><span>ZLECENIE #18361/2026</span><h2>Weryfikacja odbiorcy</h2><p>Biuro Projektowe Alfa · Ricoh IM C3000</p></div><button type="button" data-demo-action>•••</button></header>
+                <article class="p2-problem"><span>WIADOMOŚĆ OD KLIENTA</span><p>„Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.”</p></article>
+                <div class="p2-step-card completed"><span class="step-marker">✓</span><div><small>KROK 1</small><h3>Dane zlecenia</h3><p>Firma i urządzenie zostały rozpoznane.</p></div><strong>Gotowe</strong></div>
+                <div class="p2-step-card open"><span class="step-marker">2</span><div class="p2-step-content"><small>KROK 2</small><h3>Adres i kontakt</h3><p>Potwierdź źródło danych do etykiety.</p><div class="p2-address"><span>✓</span><div><strong>Lokalizacja urządzenia w MS</strong><p>ul. Jasna 18, 80-001 Gdańsk</p><small>Anna Nowak · 500 600 700</small></div><em>Najlepsze źródło</em></div><div class="p2-fields"><label>Osoba kontaktowa<strong>Anna Nowak</strong></label><label>Telefon<strong>500 600 700</strong></label><label>E-mail<strong>anna@example.pl</strong></label></div></div></div>
+                <div class="p2-step-card"><span class="step-marker">3</span><div><small>KROK 3</small><h3>Wybór części</h3><p>2 pasujące pozycje dostępne w magazynie.</p></div><span>Rozwiń ↓</span></div>
+                <div class="p2-step-card"><span class="step-marker">4</span><div><small>KROK 4</small><h3>Etykieta i wydruk</h3><p>Dostępne po zatwierdzeniu kompletacji.</p></div><span>Zablokowane</span></div>
+                <footer><button type="button" data-demo-action>Wróć</button><div><small>Następnie: wybór części</small><button type="button" data-demo-action>Potwierdź odbiorcę <span>→</span></button></div></footer>
+              </section>
+            </div>
+          </section>
+          <section class="demo-pane" data-demo-pane="catalog">
+            <div class="p2-subpage"><header><span>KROK 1 Z 2</span><h2>Wybierz część do sprawdzenia</h2><p>Najpierw znajdź kartotekę, potem zweryfikuj wszystkie kompatybilne modele.</p></header><div class="p2-catalog-flow"><aside><label class="mock-search"><span>⌕</span><input aria-label="Szukaj w katalogu" value="toner mpc 3503"></label><article class="selected"><strong>841817</strong><span>Toner yellow MP C3003/3503</span><small>5 modeli · 18 szt.</small></article><article><strong>841819</strong><span>Toner cyan MPC 3503</span><small>2 modele · 7 szt.</small></article><article><strong>D1862202</strong><span>Zespół bębna kolor</span><small>3 modele · 4 szt.</small></article></aside><section><div class="section-title"><span>2</span><div><small>POWIĄZANIA</small><h3>Wybierz kompatybilne modele</h3></div></div><div class="model-grid"><article class="selected"><span class="mock-check">✓</span><strong>Ricoh MP C3003</strong><small>Potwierdzone wcześniej</small></article><article class="selected"><span class="mock-check">✓</span><strong>Ricoh MP C3503</strong><small>Potwierdzone wcześniej</small></article><article><span class="mock-check"></span><strong>Ricoh MP C4503</strong><small>Sugestia z historii</small></article><article><span class="mock-check"></span><strong>Ricoh MP C5503</strong><small>Sugestia z nazwy</small></article></div><footer><span>2 z 4 modeli wybrane</span><button type="button" data-demo-action>Zapisz powiązania</button></footer></section></div></div>
+          </section>
+          <section class="demo-pane" data-demo-pane="archive">
+            <div class="p2-subpage p2-archive"><header><span>HISTORIA REALIZACJI</span><h2>Znajdź zakończoną wysyłkę</h2><p>Każda przesyłka zachowuje pełną ścieżkę realizacji i dokumenty.</p></header><label class="p2-big-search"><span>⌕</span><input aria-label="Szukaj wysyłki" placeholder="Wpisz numer zlecenia, klienta, RW lub DPD"><kbd>Enter</kbd></label><div class="p2-archive-layout"><aside><strong>Filtry</strong><label>Okres<span>Sierpień 2026⌄</span></label><label>Operator<span>Wszyscy⌄</span></label><label>Dokument<span>RW i FV⌄</span></label><button type="button" data-demo-action>Wyczyść filtry</button></aside><section><article><time>24 SIE<br><small>14:18</small></time><div><small>#18294/2026</small><h3>Przychodnia Nova</h3><p>2 pozycje · 3 szt. · DPD 0000419238</p></div><span><b>Marcin K.</b><small>Operator</small></span><span class="doc rw">RW 3421/2026</span><button type="button" data-demo-action>Podgląd →</button></article><article><time>23 SIE<br><small>12:06</small></time><div><small>#18281/2026</small><h3>Hotel Nad Rzeką</h3><p>1 pozycja · 1 szt. · DPD 0000419187</p></div><span><b>Anna P.</b><small>Operator</small></span><span class="doc fv">Do FV</span><button type="button" data-demo-action>Podgląd →</button></article><article><time>22 SIE<br><small>15:31</small></time><div><small>#18277/2026</small><h3>Kancelaria Północ</h3><p>1 pozycja · 2 szt. · DPD 0000419102</p></div><span><b>Marcin K.</b><small>Operator</small></span><span class="doc rw">RW 3404/2026</span><button type="button" data-demo-action>Podgląd →</button></article></section></div></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="prototype-frame prototype-three" data-prototype="3" aria-label="Wariant trzeci – dyspozytornia" hidden>
+        <div class="p3-shell">
+          <aside class="p3-appbar"><div class="p3-logo">KP</div><button class="is-active" type="button"><span>⇧</span><small>Wysyłki</small></button><button type="button"><span>□</span><small>Dokumenty</small></button><button type="button"><span>◫</span><small>Raporty</small></button><div class="p3-spacer"></div><button type="button"><span>?</span><small>Pomoc</small></button><span class="p3-avatar">MK</span></aside>
+          <div class="p3-app">
+            <header class="p3-header"><div><span>CTIP / MAGAZYN GŁÓWNY</span><h2>Stanowisko wysyłek</h2></div><nav class="demo-tabs" aria-label="Sekcje wariantu dyspozytorskiego"><button class="is-active" type="button" data-demo-view="dispatch">Realizacja <b>12</b></button><button type="button" data-demo-view="catalog">Katalog <b>38</b></button><button type="button" data-demo-view="archive">Archiwum</button></nav><div class="p3-clock"><small>ODBIÓR DPD</small><strong>02:14:36</strong></div></header>
+            <section class="demo-pane is-active" data-demo-pane="dispatch">
+              <div class="p3-statusbar"><span><i class="green"></i> DPD online</span><span><i class="green"></i> Magazyn dostępny</span><span><i class="amber"></i> 2 zaległe FV</span><span><i class="blue"></i> 5 etykiet gotowych</span><button type="button" data-demo-action>Odśwież dane ↻</button></div>
+              <div class="p3-workspace">
+                <aside class="order-rail p3-rail"><div class="rail-heading"><div><small>KOLEJKA</small><h2>12 zleceń</h2></div><button type="button" data-demo-action>☰</button></div><label class="mock-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Szukaj w kolejce"></label><div class="p3-filter"><button class="is-active" type="button">W toku 7</button><button type="button">Gotowe 5</button></div><div class="order-list"><article class="order-row is-selected"><div class="order-row-top"><strong>18361/2026</strong><span class="source mobile">APP</span></div><h3>Biuro Projektowe Alfa</h3><p>RICOH IM C3000</p><footer><span class="state review">WERYFIKACJA</span><time>10:42</time></footer></article><article class="order-row warning"><div class="order-row-top"><strong>18358/2026</strong><span class="source manual">MS</span></div><h3>Przychodnia Nova</h3><p>RICOH MP C3503</p><footer><span class="state debt">FV +18 DNI</span><time>09:17</time></footer></article><article class="order-row"><div class="order-row-top"><strong>18355/2026</strong><span class="source mobile">APP</span></div><h3>Kancelaria Północ</h3><p>KYOCERA M3645IDN</p><footer><span class="state label">ETYKIETA</span><time>08:51</time></footer></article><article class="order-row"><div class="order-row-top"><strong>18349/2026</strong><span class="source manual">MS</span></div><h3>Hotel Nad Rzeką</h3><p>KONICA MINOLTA C250I</p><footer><span class="state invoice">DO FV</span><time>08:32</time></footer></article></div></aside>
+                <section class="p3-detail"><header><div><span>ZLECENIE 18361/2026</span><h2>BIURO PROJEKTOWE ALFA</h2><p>Ricoh IM C3000 · S/N 3829A · III piętro, sekretariat</p></div><span class="state review">DO WERYFIKACJI</span></header><div class="p3-alert"><strong>TREŚĆ ZLECENIA</strong><p>Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.</p></div><div class="p3-grid"><section><header><span>01</span><div><small>ADRES ODBIORCY</small><h3>Dane przesyłki</h3></div><b>AKTUALNE</b></header><div class="p3-address"><small>ŹRÓDŁO: LOKALIZACJA MS</small><strong>Biuro Projektowe Alfa</strong><p>ul. Jasna 18 · 80-001 Gdańsk</p><p>Anna Nowak · 500 600 700</p></div><div class="p3-inline-fields"><span><small>WAGA</small><strong>2,0 kg⌄</strong></span><span><small>ROZLICZENIE</small><strong>Umowa · RW</strong></span></div></section><section><header><span>02</span><div><small>KOMPLETACJA</small><h3>Części dla modelu</h3></div><button type="button" data-demo-action>CAŁY MAGAZYN</button></header><label class="mock-search"><span>⌕</span><input aria-label="Szukaj części" value="toner imc 3000"></label><div class="p3-stock-row selected"><span class="mock-check">✓</span><div><strong>842255</strong><p>TONER BLACK RICOH IM C3000</p></div><span><small>STAN</small><b>12</b></span><span><small>ILOŚĆ</small><b>− 1 +</b></span></div><div class="p3-stock-row"><span class="mock-check"></span><div><strong>D0BK2200</strong><p>ZESPÓŁ BĘBNA CZARNY</p></div><span><small>STAN</small><b>3</b></span><span><small>ILOŚĆ</small><b>− 0 +</b></span></div></section></div><footer><div><span><small>WYBRANO</small><strong>1 pozycja / 1 szt.</strong></span><span><small>DOKUMENT</small><strong>RW po odbiorze</strong></span></div><button type="button" data-demo-action>ZATWIERDŹ I GENERUJ ETYKIETĘ →</button></footer></section>
+              </div>
+            </section>
+            <section class="demo-pane" data-demo-pane="catalog"><div class="p3-console-page"><header><div><span>KATALOG / MAPOWANIA</span><h2>ZGODNOŚĆ CZĘŚCI I MODELI</h2></div><button type="button" data-demo-action>URUCHOM SKAN</button></header><div class="p3-console-stats"><span><small>KARTOTEKI</small><strong>515</strong></span><span><small>POTWIERDZONE</small><strong>246</strong></span><span><small>DO WERYFIKACJI</small><strong>38</strong></span><span><small>BEZ MAPOWANIA</small><strong>91</strong></span></div><label class="p3-command-search"><span>QUERY</span><input aria-label="Wyszukaj część lub model" value="toner mpc 3503"><kbd>ENTER</kbd></label><div class="p3-console-table"><header><span>SEL</span><span>ID / CZĘŚĆ</span><span>MODELE</span><span>DOWÓD</span><span>STATUS</span></header><article><span class="mock-check">✓</span><span><b>841817</b><small>TONER YELLOW MPC 3003/3503</small></span><span><i>MP C3003</i><i>MP C3503</i><i>+3</i></span><span>NAZWA + HISTORIA</span><span class="state ready">POTWIERDZONE</span></article><article><span class="mock-check"></span><span><b>841819</b><small>TONER CYAN MPC 3503</small></span><span><i>MP C3003</i><i>MP C3503</i></span><span>PEŁNY MODEL</span><span class="state review">DO WERYFIKACJI</span></article><article><span class="mock-check"></span><span><b>D1862202</b><small>ZESPÓŁ BĘBNA KOLOR</small></span><span><i>MP C3003</i><i>MP C3503</i><i>MP C5503</i></span><span>HISTORIA ×12</span><span class="state ready">POTWIERDZONE</span></article></div></div></section>
+            <section class="demo-pane" data-demo-pane="archive"><div class="p3-console-page"><header><div><span>ARCHIWUM / AUDYT</span><h2>ZAKOŃCZONE WYSYŁKI</h2></div><button type="button" data-demo-action>EKSPORT CSV</button></header><div class="p3-archive-query"><label><small>OKRES</small><span>01.08–25.08.2026⌄</span></label><label><small>OPERATOR</small><span>WSZYSCY⌄</span></label><label class="mock-search"><span>⌕</span><input aria-label="Szukaj archiwum" placeholder="ZLECENIE / RW / DPD"></label></div><div class="p3-console-table archive"><header><span>DATA</span><span>ZLECENIE / KLIENT</span><span>OPERATOR</span><span>KOMPLETACJA</span><span>DOKUMENT</span><span>DPD</span></header><article><span>24.08<br><small>14:18</small></span><span><b>18294/2026</b><small>PRZYCHODNIA NOVA</small></span><span>MARCIN K.</span><span><b>2 POZ. / 3 SZT.</b><small>842255 + D0BK2200</small></span><span class="doc rw">RW 3421/26</span><span><b>0000419238</b><small>DORĘCZONO</small></span></article><article><span>23.08<br><small>12:06</small></span><span><b>18281/2026</b><small>HOTEL NAD RZEKĄ</small></span><span>ANNA P.</span><span><b>1 POZ. / 1 SZT.</b><small>TN-626Y</small></span><span class="doc fv">DO FV</span><span><b>0000419187</b><small>W DRODZE</small></span></article><article><span>22.08<br><small>15:31</small></span><span><b>18277/2026</b><small>KANCELARIA PÓŁNOC</small></span><span>MARCIN K.</span><span><b>1 POZ. / 2 SZT.</b><small>TK-3160</small></span><span class="doc rw">RW 3404/26</span><span><b>0000419102</b><small>DORĘCZONO</small></span></article></div></div></section>
+          </div>
+        </div>
+      </section>
+
+      <section class="prototype-frame prototype-four" data-prototype="4" aria-label="Wariant czwarty – dokumentowy" hidden>
+        <div class="p4-shell">
+          <header class="p4-header"><div class="p4-brand"><span>K</span><div><small>Ksero Partner · CTIP</small><strong>Wysyłki i dokumenty</strong></div></div><nav class="demo-tabs" aria-label="Sekcje wariantu dokumentowego"><button class="is-active" type="button" data-demo-view="dispatch">Realizacja wysyłek</button><button type="button" data-demo-view="catalog">Katalog zgodności</button><button type="button" data-demo-view="archive">Archiwum</button></nav><div class="p4-user">Marcin K. <span>MK</span></div></header>
+          <section class="demo-pane is-active" data-demo-pane="dispatch"><div class="p4-toolbar"><div><span><i></i> System gotowy</span><span>12 zleceń w kolejce</span><span>5 etykiet do wydruku</span></div><button type="button" data-demo-action>Dzisiejsze podsumowanie</button></div><div class="p4-workspace"><aside class="order-rail p4-rail"><div class="rail-heading"><div><small>25 SIERPNIA 2026</small><h2>Zlecenia</h2></div><span>12</span></div><label class="mock-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Szukaj"></label><div class="p4-day"><span>DO WERYFIKACJI</span><i></i></div><article class="order-row is-selected"><strong>18361/2026</strong><span class="source mobile">Z aplikacji</span><h3>Biuro Projektowe Alfa</h3><p>Ricoh IM C3000</p><footer><span>III piętro, sekretariat</span><time>10:42</time></footer></article><article class="order-row warning"><strong>18358/2026</strong><span class="source manual">Wpisane w MS</span><h3>Przychodnia Nova</h3><p>Ricoh MP C3503</p><footer><span class="debt">Nieopłacona faktura</span><time>09:17</time></footer></article><div class="p4-day"><span>GOTOWE</span><i></i></div><article class="order-row"><strong>18355/2026</strong><span class="source mobile">Z aplikacji</span><h3>Kancelaria Północ</h3><p>Kyocera M3645idn</p><footer><span class="ready-text">Etykieta gotowa</span><time>08:51</time></footer></article></aside><section class="p4-document"><header><div><small>KARTA REALIZACJI WYSYŁKI</small><h1>Zlecenie nr 18361/2026</h1></div><span class="p4-stamp">DO WERYFIKACJI</span></header><div class="p4-meta"><span><small>KLIENT</small><strong>Biuro Projektowe Alfa</strong></span><span><small>URZĄDZENIE</small><strong>Ricoh IM C3000</strong></span><span><small>ŹRÓDŁO</small><strong>Aplikacja mobilna</strong></span><span><small>RODZAJ</small><strong>Umowa</strong></span></div><blockquote><small>TREŚĆ ZLECENIA</small>Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.</blockquote><section class="p4-doc-section"><header><span>I</span><h2>Odbiorca przesyłki</h2><button type="button" data-demo-action>Edytuj</button></header><div class="p4-address"><div><small>FIRMA I ADRES</small><strong>Biuro Projektowe Alfa</strong><p>ul. Jasna 18<br>80-001 Gdańsk</p></div><div><small>KONTAKT</small><strong>Anna Nowak</strong><p>500 600 700<br>anna@example.pl</p></div><span><small>ŹRÓDŁO DANYCH</small><strong>Lokalizacja urządzenia w MS</strong><em>✓ Aktualna</em></span></div></section><section class="p4-doc-section"><header><span>II</span><h2>Specyfikacja zawartości paczki</h2><button type="button" data-demo-action>Dodaj część</button></header><table><thead><tr><th>Lp.</th><th>Indeks</th><th>Nazwa części</th><th>Zgodność</th><th>Ilość</th></tr></thead><tbody><tr><td>1.</td><td>842255</td><td><strong>Toner czarny Ricoh IM C3000</strong></td><td><span class="ready-text">Potwierdzona</span></td><td><strong>1 szt.</strong></td></tr></tbody></table></section><div class="p4-declaration"><label><span class="mock-check"></span><p><strong>Rozliczenie przez fakturę</strong><small>Domyślnie po odbiorze zostanie utworzony dokument RW.</small></p></label><span><small>WAGA PACZKI</small><strong>2,0 kg⌄</strong></span></div><footer><p>Po zatwierdzeniu dane zostaną zablokowane do czasu wygenerowania etykiety.</p><button type="button" data-demo-action>Zatwierdź kartę realizacji</button></footer></section><aside class="p4-notes"><section><small>HISTORIA SPRAWY</small><ol><li class="active"><time>10:42</time><div><strong>Otwarto zlecenie</strong><span>Marcin K.</span></div></li><li><time>—</time><div><strong>Weryfikacja danych</strong><span>Oczekuje</span></div></li><li><time>—</time><div><strong>Etykieta DPD</strong><span>Oczekuje</span></div></li><li><time>—</time><div><strong>Dokument RW / FV</strong><span>Oczekuje</span></div></li></ol></section><section><small>UWAGI OPERACYJNE</small><p>Brak innych gotowych przesyłek do tego samego klienta i adresu.</p></section></aside></div></section>
+          <section class="demo-pane" data-demo-pane="catalog"><div class="p4-library"><header><div><small>KARTOTEKA TECHNICZNA</small><h1>Katalog zgodności części</h1><p>Rejestr zweryfikowanych relacji między kartotekami magazynowymi i modelami.</p></div><button type="button" data-demo-action>Nowe mapowanie</button></header><div class="p4-index"><aside><label class="mock-search"><span>⌕</span><input aria-label="Szukaj katalogu" value="toner mpc 3503"></label><small>INDEKS KATALOGU</small><button class="is-active" type="button">Wszystkie <b>515</b></button><button type="button">Potwierdzone <b>246</b></button><button type="button">Do weryfikacji <b>38</b></button><button type="button">Bez relacji <b>91</b></button></aside><section><div class="p4-catalog-card"><header><div><span>KARTA CZĘŚCI NR 841817</span><h2>Toner yellow MP C3003/3503</h2></div><span class="p4-stamp green">POTWIERDZONE</span></header><div><small>KOMPATYBILNE MODELE</small><p><span>Ricoh MP C3003</span><span>Ricoh MP C3503</span><span>Ricoh MP C4503</span><span>Ricoh MP C5503</span><span>Ricoh MP C6003</span></p></div><footer><span><small>STAN</small><strong>18 szt.</strong></span><span><small>DOWÓD</small><strong>Nazwa + historia użycia</strong></span><span><small>OSTATNIA DECYZJA</small><strong>Marcin K. · 12.08.2026</strong></span><button type="button" data-demo-action>Otwórz kartę</button></footer></div><div class="p4-catalog-card"><header><div><span>KARTA CZĘŚCI NR 841819</span><h2>Toner cyan MPC 3503</h2></div><span class="p4-stamp">DO WERYFIKACJI</span></header><div><small>SUGEROWANE MODELE</small><p><span>Ricoh MP C3003</span><span>Ricoh MP C3503</span></p></div><footer><span><small>STAN</small><strong>7 szt.</strong></span><span><small>DOWÓD</small><strong>Pełne oznaczenie modelu</strong></span><span><small>PEWNOŚĆ</small><strong>Średnia</strong></span><button type="button" data-demo-action>Zweryfikuj</button></footer></div></section></div></div></section>
+          <section class="demo-pane" data-demo-pane="archive"><div class="p4-library p4-register"><header><div><small>REJESTR WYSYŁEK</small><h1>Archiwum dokumentów</h1><p>Zakończone zlecenia wraz z kompletnym śladem odpowiedzialności.</p></div><button type="button" data-demo-action>Drukuj rejestr</button></header><div class="p4-register-filters"><label class="mock-search"><span>⌕</span><input aria-label="Szukaj w rejestrze" placeholder="Numer zlecenia, klient, RW lub przesyłka"></label><span>Sierpień 2026⌄</span><span>Wszyscy operatorzy⌄</span></div><section class="p4-ledger"><header><span>Data</span><span>Zlecenie i odbiorca</span><span>Osoba odpowiedzialna</span><span>Zawartość paczki</span><span>Dokumenty</span></header><article><time><b>24</b> sierpnia<small>14:18</small></time><span><strong>18294/2026</strong><small>Przychodnia Nova<br>Ricoh MP C3503</small></span><span><strong>Marcin K.</strong><small>Weryfikacja, kompletacja<br>i nadanie</small></span><span><strong>2 pozycje · 3 szt.</strong><small>842255 Toner BK<br>D0BK2200 Zespół bębna</small></span><span><b class="doc rw">RW 3421/2026</b><small>DPD 0000419238<br>Doręczono</small></span></article><article><time><b>23</b> sierpnia<small>12:06</small></time><span><strong>18281/2026</strong><small>Hotel Nad Rzeką<br>Konica Minolta C250i</small></span><span><strong>Anna P.</strong><small>Weryfikacja, kompletacja<br>i nadanie</small></span><span><strong>1 pozycja · 1 szt.</strong><small>TN-626Y Toner yellow</small></span><span><b class="doc fv">Do wystawienia FV</b><small>DPD 0000419187<br>W doręczeniu</small></span></article><article><time><b>22</b> sierpnia<small>15:31</small></time><span><strong>18277/2026</strong><small>Kancelaria Północ<br>Kyocera M3645idn</small></span><span><strong>Marcin K.</strong><small>Weryfikacja, kompletacja<br>i nadanie</small></span><span><strong>1 pozycja · 2 szt.</strong><small>TK-3160 Toner black</small></span><span><b class="doc rw">RW 3404/2026</b><small>DPD 0000419102<br>Doręczono</small></span></article></section></div></section>
+        </div>
+      </section>
+
+      <section class="prototype-frame prototype-five" data-prototype="5" aria-label="Wariant piąty – minimalistyczny" hidden>
+        <div class="p5-shell">
+          <header class="p5-header"><div class="p5-logo"><span>kp</span><strong>wysyłki</strong></div><nav class="demo-tabs" aria-label="Sekcje wariantu minimalistycznego"><button class="is-active" type="button" data-demo-view="dispatch">Realizacja <b>12</b></button><button type="button" data-demo-view="catalog">Katalog</button><button type="button" data-demo-view="archive">Archiwum</button></nav><div class="p5-user"><button type="button" data-demo-action>Pomoc</button><span>MK</span></div></header>
+          <section class="demo-pane is-active" data-demo-pane="dispatch"><div class="p5-summary"><p><span class="live-dot"></span> Wszystkie systemy działają</p><div><span><strong>12</strong> do obsługi</span><span><strong>5</strong> gotowych etykiet</span><span><strong>15:30</strong> odbiór DPD</span></div><button type="button" data-demo-action>Zakończ dzień</button></div><div class="p5-workspace"><aside class="order-rail p5-rail"><div class="rail-heading"><h2>Zlecenia</h2><span>12</span></div><label class="mock-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Szukaj"></label><div class="p5-rail-tabs"><button class="is-active" type="button">Aktywne</button><button type="button">Gotowe</button></div><article class="order-row is-selected"><div class="order-row-top"><strong>18361/2026</strong><span class="source mobile">Aplikacja</span></div><h3>Biuro Projektowe Alfa</h3><p>Ricoh IM C3000</p><footer><span>Do weryfikacji</span><time>10:42</time></footer></article><article class="order-row warning"><div class="order-row-top"><strong>18358/2026</strong><span class="source manual">MS</span></div><h3>Przychodnia Nova</h3><p>Ricoh MP C3503</p><footer><span class="debt">FV po terminie</span><time>09:17</time></footer></article><article class="order-row"><div class="order-row-top"><strong>18355/2026</strong><span class="source mobile">Aplikacja</span></div><h3>Kancelaria Północ</h3><p>Kyocera M3645idn</p><footer><span class="ready-text">Gotowe</span><time>08:51</time></footer></article></aside><section class="p5-detail"><header><div><small>18361/2026 · APLIKACJA MOBILNA</small><h1>Biuro Projektowe Alfa</h1><p>Ricoh IM C3000 · III piętro, sekretariat</p></div><button type="button" data-demo-action>•••</button></header><article class="p5-message"><span>Treść zlecenia</span><p>Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.</p></article><div class="p5-cards"><section class="done"><span>✓</span><div><small>ODBIORCA</small><h2>Biuro Projektowe Alfa</h2><p>ul. Jasna 18, 80-001 Gdańsk · Anna Nowak · 500 600 700</p></div><button type="button" data-demo-action>Zmień</button></section><section class="open"><span>2</span><div><small>CZĘŚCI DO PACZKI</small><h2>Wybierz z magazynu</h2><div class="p5-scope"><button class="is-active" type="button">Dla Ricoh IM C3000</button><button type="button">Cały magazyn</button></div><label class="mock-search"><span>⌕</span><input aria-label="Szukaj części" value="toner imc 3000"></label><article class="p5-part selected"><span class="mock-check">✓</span><div><strong>Toner czarny Ricoh IM C3000</strong><small>842255 · dostępne 12 szt.</small></div><b>− &nbsp;1&nbsp; +</b></article><article class="p5-part"><span class="mock-check"></span><div><strong>Zespół bębna czarny</strong><small>D0BK2200 · dostępne 3 szt.</small></div><b>− &nbsp;0&nbsp; +</b></article></div></section><section><span>3</span><div><small>ETYKIETA</small><h2>Gotowa po zatwierdzeniu</h2><p>DPD · paczka 2 kg · dokument RW</p></div></section></div><footer><label><span class="mock-toggle"></span> Wystaw FV</label><button type="button" data-demo-action>Gotowe — przygotuj etykietę <span>→</span></button></footer></section></div></section>
+          <section class="demo-pane" data-demo-pane="catalog"><div class="p5-page"><header><small>KATALOG ZGODNOŚCI</small><h1>Znajdź część. Przypisz modele.</h1><p>Prosty widok relacji wiele-do-wielu bez zbędnych danych technicznych.</p></header><label class="p5-hero-search"><span>⌕</span><input aria-label="Szukaj w katalogu" value="toner mpc 3503"><button type="button" data-demo-action>Szukaj</button></label><div class="p5-catalog-layout"><aside><span>Wyniki <b>3</b></span><article class="selected"><strong>841817</strong><p>Toner yellow MP C3003/3503</p><small>18 szt. · 5 modeli</small></article><article><strong>841819</strong><p>Toner cyan MPC 3503</p><small>7 szt. · 2 modele</small></article><article><strong>D1862202</strong><p>Zespół bębna kolor</p><small>4 szt. · 3 modele</small></article></aside><section><div><small>WYBRANA CZĘŚĆ</small><h2>Toner yellow MP C3003/3503</h2><p>841817 · magazyn główny · 18 szt.</p></div><span class="ready-text">Potwierdzona</span><h3>Kompatybilne modele</h3><div class="p5-models"><label><span class="mock-check">✓</span><strong>Ricoh MP C3003</strong></label><label><span class="mock-check">✓</span><strong>Ricoh MP C3503</strong></label><label><span class="mock-check">✓</span><strong>Ricoh MP C4503</strong></label><label><span class="mock-check">✓</span><strong>Ricoh MP C5503</strong></label><label><span class="mock-check">✓</span><strong>Ricoh MP C6003</strong></label><button type="button" data-demo-action>+ Dodaj kolejny model</button></div><footer><span>Ostatnio zmienił Marcin K. · 12.08.2026</span><button type="button" data-demo-action>Zapisz zmiany</button></footer></section></div></div></section>
+          <section class="demo-pane" data-demo-pane="archive"><div class="p5-page p5-archive"><header><small>ARCHIWUM WYSYŁEK</small><h1>Wszystko, co zostało wysłane</h1><p>Jedno wyszukiwanie po zleceniu, kliencie, części, RW lub numerze DPD.</p></header><label class="p5-hero-search"><span>⌕</span><input aria-label="Szukaj w archiwum" placeholder="Czego szukasz?"><button type="button" data-demo-action>Szukaj</button></label><div class="p5-filter-chips"><button class="is-active" type="button">Sierpień 2026</button><button type="button">Wszyscy operatorzy</button><button type="button">RW i FV</button><span>146 wyników</span></div><section class="p5-archive-list"><article><time><b>24</b><span>SIE</span><small>14:18</small></time><div><small>ZLECENIE 18294/2026</small><h2>Przychodnia Nova</h2><p>842255 Toner BK + D0BK2200 Zespół bębna · 3 szt.</p></div><span><small>OBSŁUGIWAŁ</small><strong>Marcin K.</strong></span><span><b class="doc rw">RW 3421/2026</b><small>DPD 0000419238</small></span><button type="button" data-demo-action>→</button></article><article><time><b>23</b><span>SIE</span><small>12:06</small></time><div><small>ZLECENIE 18281/2026</small><h2>Hotel Nad Rzeką</h2><p>TN-626Y Toner yellow · 1 szt.</p></div><span><small>OBSŁUGIWAŁA</small><strong>Anna P.</strong></span><span><b class="doc fv">Do wystawienia FV</b><small>DPD 0000419187</small></span><button type="button" data-demo-action>→</button></article><article><time><b>22</b><span>SIE</span><small>15:31</small></time><div><small>ZLECENIE 18277/2026</small><h2>Kancelaria Północ</h2><p>TK-3160 Toner black · 2 szt.</p></div><span><small>OBSŁUGIWAŁ</small><strong>Marcin K.</strong></span><span><b class="doc rw">RW 3404/2026</b><small>DPD 0000419102</small></span><button type="button" data-demo-action>→</button></article></section></div></section>
+        </div>
+      </section>
+
+      <section class="prototype-frame prototype-six" data-prototype="6" aria-label="Wariant szósty – hybryda operacyjna" hidden>
+        <div class="hybrid-shell h6-shell">
+          <header class="hybrid-header">
+            <div class="hybrid-brand"><span>KP</span><div><small>CTIP / LOGISTYKA</small><strong>Centrum wysyłek</strong></div></div>
+            <nav class="demo-tabs" aria-label="Sekcje hybrydy operacyjnej"><button class="is-active" type="button" data-demo-view="dispatch">Realizacja <b>12</b></button><button type="button" data-demo-view="catalog">Katalog <b>38</b></button><button type="button" data-demo-view="archive">Archiwum</button></nav>
+            <div class="hybrid-user"><button type="button" data-demo-action>Odśwież ↻</button><span>MK</span><div><strong>Marcin K.</strong><small>Operator wysyłek</small></div></div>
+          </header>
+
+          <section class="demo-pane is-active" data-demo-pane="dispatch">
+            <div class="hybrid-statusbar"><span><i class="online"></i><small>DPD</small><strong>Połączono</strong></span><span><i>▣</i><small>Do obsługi</small><strong>12 zleceń</strong></span><span><i>✓</i><small>Gotowe</small><strong>5 etykiet</strong></span><span><i>◷</i><small>Kurier</small><strong>15:30 · za 2 h</strong></span><button type="button" data-demo-action>Kurier odebrał paczki</button></div>
+            <div class="h6-workspace">
+              <aside class="hybrid-rail">
+                <div class="hybrid-rail-title"><div><small>KOLEJKA MS</small><h2>Zlecenia</h2></div><span>12</span></div>
+                <label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Klient, numer lub model"></label>
+                <div class="hybrid-filters"><button class="is-active" type="button">W toku <b>7</b></button><button type="button">Gotowe <b>5</b></button><button type="button">Pilne <b>2</b></button></div>
+                <div class="hybrid-orders">
+                  <article class="selected"><header><strong>18361/2026</strong><span class="source mobile">APP</span></header><h3>Biuro Projektowe Alfa</h3><p>Ricoh IM C3000 · III piętro</p><footer><span class="state review">Do weryfikacji</span><time>10:42</time></footer></article>
+                  <article class="warning"><header><strong>18358/2026</strong><span class="source manual">MS</span></header><h3>Przychodnia Nova</h3><p>Ricoh MP C3503 · Rejestracja</p><span class="hybrid-debt">Nieopłacona FV · 18 dni</span><footer><span class="state ready">Gotowe</span><time>09:17</time></footer></article>
+                  <article><header><strong>18355/2026</strong><span class="source mobile">APP</span></header><h3>Kancelaria Północ</h3><p>Kyocera M3645idn · Sekretariat</p><footer><span class="state label">Etykieta gotowa</span><time>08:51</time></footer></article>
+                  <article><header><strong>18349/2026</strong><span class="source manual">MS</span></header><h3>Hotel Nad Rzeką</h3><p>Konica Minolta C250i · Recepcja</p><footer><span class="state invoice">Do FV</span><time>08:32</time></footer></article>
+                </div>
+              </aside>
+
+              <main class="h6-main">
+                <header class="hybrid-case-header"><div><small>ZLECENIE 18361/2026 · APLIKACJA MOBILNA</small><h1>Biuro Projektowe Alfa</h1><p>Ricoh IM C3000 · S/N 3829A · III piętro, sekretariat</p></div><span class="state review">Do weryfikacji</span></header>
+                <article class="hybrid-message"><strong>Treść zlecenia</strong><p>Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.</p></article>
+                <section class="hybrid-section h6-address"><header><span>01</span><div><small>ODBIORCA</small><h2>Adres i osoba kontaktowa</h2></div><b>✓ DANE AKTUALNE</b><button type="button" data-demo-action>Zmień</button></header><div class="hybrid-address-card"><span>✓</span><div><small>ŹRÓDŁO: LOKALIZACJA URZĄDZENIA W MS</small><strong>Biuro Projektowe Alfa</strong><p>ul. Jasna 18, 80-001 Gdańsk</p></div><div><small>OSOBA KONTAKTOWA</small><strong>Anna Nowak</strong><p>500 600 700 · anna@example.pl</p></div></div></section>
+                <section class="hybrid-section h6-parts"><header><span>02</span><div><small>KOMPLETACJA</small><h2>Części dla Ricoh IM C3000</h2></div><div class="hybrid-scope"><button class="is-active" type="button">Dla modelu</button><button type="button">Cały magazyn</button></div></header><label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj części" value="toner imc 3000"><kbd>ENTER</kbd></label><div class="hybrid-part selected"><span class="mock-check">✓</span><div><strong>842255 · Toner czarny Ricoh IM C3000</strong><small>Potwierdzona zgodność · magazyn główny</small></div><span><small>DOSTĘPNE</small><b>12 szt.</b></span><strong>− &nbsp; 1 &nbsp; +</strong></div><div class="hybrid-part"><span class="mock-check"></span><div><strong>D0BK2200 · Zespół bębna czarny</strong><small>Potwierdzona zgodność · magazyn główny</small></div><span><small>DOSTĘPNE</small><b>3 szt.</b></span><strong>− &nbsp; 0 &nbsp; +</strong></div></section>
+                <footer class="h6-actionbar"><div><small>ZAWARTOŚĆ PACZKI</small><strong>1 pozycja · 1 szt. · 2,0 kg</strong></div><label><span class="mock-toggle"></span> Wystaw FV</label><button type="button" data-demo-action>Zatwierdź i generuj etykietę <span>→</span></button></footer>
+              </main>
+
+              <aside class="h6-context">
+                <section><small>POSTĘP</small><strong>2 z 4 kroków</strong><div class="hybrid-progress"><i style="width: 50%"></i></div><ol><li class="done"><span>✓</span>Dane zlecenia</li><li class="active"><span>2</span>Adres i kontakt</li><li><span>3</span>Kompletacja</li><li><span>4</span>Etykieta DPD</li></ol></section>
+                <section><small>LOKALIZACJA MS</small><strong>III piętro, sekretariat</strong><p>Fingerprint zgodny z zaakceptowanym adresem.</p><em>✓ Aktualna</em></section>
+                <section><small>WSPÓLNE PAKOWANIE</small><p>Brak innych przesyłek do tego adresu.</p></section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="demo-pane" data-demo-pane="catalog">
+            <div class="hybrid-page"><header><div><small>MAGAZYN GŁÓWNY · KATALOG</small><h1>Zgodność części i modeli</h1><p>Czytelna tabela robocza z relacjami wiele-do-wielu.</p></div><button type="button" data-demo-action>Uruchom skan</button></header><div class="hybrid-catalog-stats"><span><small>KARTOTEKI</small><strong>515</strong></span><span><small>POTWIERDZONE</small><strong>246</strong></span><span><small>DO WERYFIKACJI</small><strong>38</strong></span><span><small>BEZ MAPOWANIA</small><strong>91</strong></span></div><div class="hybrid-catalog-layout"><aside><label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj części" value="toner mpc 3503"></label><button class="is-active" type="button">Wszystkie części <b>515</b></button><button type="button">Do weryfikacji <b>38</b></button><button type="button">Potwierdzone <b>246</b></button><button type="button">Bez mapowania <b>91</b></button></aside><section class="hybrid-table"><header><span></span><span>Część</span><span>Kompatybilne modele</span><span>Dowód</span><span>Status</span></header><article><span class="mock-check">✓</span><span><strong>841817</strong><small>Toner yellow MP C3003/3503</small></span><span><i>MP C3003</i><i>MP C3503</i><i>+3</i></span><span>Nazwa + historia</span><span class="state ready">Potwierdzone</span></article><article><span class="mock-check"></span><span><strong>841819</strong><small>Toner cyan MPC 3503</small></span><span><i>MP C3003</i><i>MP C3503</i></span><span>Pełny model</span><span class="state review">Do weryfikacji</span></article><article><span class="mock-check"></span><span><strong>D1862202</strong><small>Zespół bębna kolor</small></span><span><i>MP C3003</i><i>MP C3503</i><i>MP C5503</i></span><span>Historia ×12</span><span class="state ready">Potwierdzone</span></article></section></div></div>
+          </section>
+
+          <section class="demo-pane" data-demo-pane="archive">
+            <div class="hybrid-page"><header><div><small>ARCHIWUM · PEŁNY AUDYT</small><h1>Zakończone wysyłki</h1><p>Operator, części, dokumenty RW/FV oraz status DPD w jednym wierszu.</p></div><button type="button" data-demo-action>Eksportuj zestawienie</button></header><div class="hybrid-archive-filters"><label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj w archiwum" placeholder="Zlecenie, klient, część, RW lub DPD"></label><button type="button">Sierpień 2026⌄</button><button type="button">Wszyscy operatorzy⌄</button></div><section class="hybrid-table archive"><header><span>Data</span><span>Zlecenie / klient</span><span>Operator</span><span>Zawartość paczki</span><span>RW / FV i DPD</span></header><article><span><strong>24.08.2026</strong><small>14:18</small></span><span><strong>18294/2026</strong><small>Przychodnia Nova</small></span><span><strong>Marcin K.</strong><small>Kompletacja i nadanie</small></span><span><strong>2 pozycje · 3 szt.</strong><small>842255 + D0BK2200</small></span><span><b class="doc rw">RW 3421/2026</b><small>DPD 0000419238 · doręczono</small></span></article><article><span><strong>23.08.2026</strong><small>12:06</small></span><span><strong>18281/2026</strong><small>Hotel Nad Rzeką</small></span><span><strong>Anna P.</strong><small>Kompletacja i nadanie</small></span><span><strong>1 pozycja · 1 szt.</strong><small>TN-626Y Toner yellow</small></span><span><b class="doc fv">Do wystawienia FV</b><small>DPD 0000419187 · w drodze</small></span></article><article><span><strong>22.08.2026</strong><small>15:31</small></span><span><strong>18277/2026</strong><small>Kancelaria Północ</small></span><span><strong>Marcin K.</strong><small>Kompletacja i nadanie</small></span><span><strong>1 pozycja · 2 szt.</strong><small>TK-3160 Toner black</small></span><span><b class="doc rw">RW 3404/2026</b><small>DPD 0000419102 · doręczono</small></span></article></section></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="prototype-frame prototype-seven" data-prototype="7" aria-label="Wariant siódmy – hybryda dokumentowa" hidden>
+        <div class="hybrid-shell h7-shell">
+          <header class="hybrid-header h7-header">
+            <div class="hybrid-brand"><span>KP</span><div><small>CTIP / REJESTR OPERACYJNY</small><strong>Wysyłki i dokumenty</strong></div></div>
+            <nav class="demo-tabs" aria-label="Sekcje hybrydy dokumentowej"><button class="is-active" type="button" data-demo-view="dispatch">Realizacja <b>12</b></button><button type="button" data-demo-view="catalog">Katalog <b>38</b></button><button type="button" data-demo-view="archive">Archiwum</button></nav>
+            <div class="hybrid-user"><button type="button" data-demo-action>Podsumowanie dnia</button><span>MK</span></div>
+          </header>
+
+          <section class="demo-pane is-active" data-demo-pane="dispatch">
+            <div class="h7-infobar"><span><i></i> System gotowy</span><span>12 zleceń w kolejce</span><span>5 etykiet do wydruku</span><strong>Odbiór DPD 15:30</strong></div>
+            <div class="h7-workspace">
+              <aside class="hybrid-rail h7-rail">
+                <div class="hybrid-rail-title"><div><small>25 SIERPNIA 2026</small><h2>Zlecenia</h2></div><span>12</span></div>
+                <label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj zlecenia" placeholder="Szukaj"></label>
+                <div class="h7-group"><span>DO WERYFIKACJI</span><i></i></div>
+                <div class="hybrid-orders"><article class="selected"><header><strong>18361/2026</strong><span class="source mobile">Z aplikacji</span></header><h3>Biuro Projektowe Alfa</h3><p>Ricoh IM C3000</p><footer><span>III piętro, sekretariat</span><time>10:42</time></footer></article><article class="warning"><header><strong>18358/2026</strong><span class="source manual">Wpisane w MS</span></header><h3>Przychodnia Nova</h3><p>Ricoh MP C3503</p><span class="hybrid-debt">Nieopłacona faktura</span><footer><span class="state ready">Gotowe</span><time>09:17</time></footer></article></div>
+                <div class="h7-group"><span>GOTOWE DO NADANIA</span><i></i></div>
+                <div class="hybrid-orders"><article><header><strong>18355/2026</strong><span class="source mobile">Z aplikacji</span></header><h3>Kancelaria Północ</h3><p>Kyocera M3645idn</p><footer><span class="state label">Etykieta gotowa</span><time>08:51</time></footer></article></div>
+              </aside>
+
+              <main class="h7-document">
+                <header><div><small>KARTA REALIZACJI WYSYŁKI</small><h1>Zlecenie nr 18361/2026</h1><p>Biuro Projektowe Alfa · Ricoh IM C3000</p></div><span class="h7-stamp">DO WERYFIKACJI</span></header>
+                <div class="h7-meta"><span><small>ŹRÓDŁO</small><strong>Aplikacja mobilna</strong></span><span><small>LOKALIZACJA</small><strong>III piętro, sekretariat</strong></span><span><small>ROZLICZENIE</small><strong>Umowa · RW</strong></span><span><small>WAGA</small><strong>2,0 kg</strong></span></div>
+                <blockquote><small>TREŚĆ ZLECENIA</small><p>Proszę o pilną wysyłkę czarnego tonera. Urządzenie stoi na trzecim piętrze w sekretariacie.</p></blockquote>
+                <section class="h7-doc-section"><header><span>I</span><h2>Odbiorca przesyłki</h2><b>✓ DANE AKTUALNE</b><button type="button" data-demo-action>Edytuj</button></header><div class="h7-address"><div><small>FIRMA I ADRES</small><strong>Biuro Projektowe Alfa</strong><p>ul. Jasna 18<br>80-001 Gdańsk</p></div><div><small>KONTAKT</small><strong>Anna Nowak</strong><p>500 600 700<br>anna@example.pl</p></div><div><small>ŹRÓDŁO DANYCH</small><strong>Lokalizacja urządzenia w MS</strong><em>Fingerprint zgodny</em></div></div></section>
+                <section class="h7-doc-section"><header><span>II</span><h2>Specyfikacja zawartości paczki</h2><button type="button" data-demo-action>Dodaj część</button></header><div class="h7-parts-head"><span>Lp.</span><span>Indeks i nazwa części</span><span>Zgodność</span><span>Stan</span><span>Ilość</span></div><div class="h7-part-row"><span>1.</span><span><strong>842255</strong><small>Toner czarny Ricoh IM C3000</small></span><span class="state ready">Potwierdzona</span><span>12 szt.</span><strong>− &nbsp; 1 &nbsp; +</strong></div></section>
+                <div class="h7-decision"><label><span class="mock-toggle"></span><div><strong>Wystaw fakturę</strong><small>Domyślnie po odbiorze zostanie utworzony dokument RW.</small></div></label><span><small>ZAWARTOŚĆ</small><strong>1 pozycja · 1 szt.</strong></span></div>
+                <footer><p>Po zatwierdzeniu karta zachowa operatora, części i zaakceptowane źródło adresu.</p><button type="button" data-demo-action>Zatwierdź kartę i generuj etykietę <span>→</span></button></footer>
+              </main>
+
+              <aside class="h7-audit">
+                <section><small>HISTORIA SPRAWY</small><ol><li class="active"><time>10:42</time><div><strong>Otwarto zlecenie</strong><span>Marcin K.</span></div></li><li><time>—</time><div><strong>Weryfikacja danych</strong><span>Oczekuje</span></div></li><li><time>—</time><div><strong>Kompletacja części</strong><span>Oczekuje</span></div></li><li><time>—</time><div><strong>Etykieta DPD</strong><span>Oczekuje</span></div></li><li><time>—</time><div><strong>Dokument RW / FV</strong><span>Oczekuje</span></div></li></ol></section>
+                <section><small>UWAGI OPERACYJNE</small><p>Brak innych gotowych przesyłek do tego samego klienta i adresu.</p></section>
+                <section><small>ODPOWIEDZIALNOŚĆ</small><strong>Marcin K.</strong><p>Operator prowadzący bieżącą realizację.</p></section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="demo-pane" data-demo-pane="catalog">
+            <div class="hybrid-page h7-page"><header><div><small>KARTOTEKA TECHNICZNA</small><h1>Katalog zgodności części</h1><p>Dokumentowy rejestr relacji między częścią i wszystkimi obsługiwanymi modelami.</p></div><button type="button" data-demo-action>Nowe mapowanie</button></header><div class="h7-register-layout"><aside><label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj w katalogu" value="toner mpc 3503"></label><small>INDEKS KATALOGU</small><button class="is-active" type="button">Wszystkie <b>515</b></button><button type="button">Potwierdzone <b>246</b></button><button type="button">Do weryfikacji <b>38</b></button></aside><section><article class="h7-record"><header><div><small>KARTA CZĘŚCI NR 841817</small><h2>Toner yellow MP C3003/3503</h2></div><span class="h7-stamp green">POTWIERDZONE</span></header><div><small>KOMPATYBILNE MODELE</small><p><span>Ricoh MP C3003</span><span>Ricoh MP C3503</span><span>Ricoh MP C4503</span><span>Ricoh MP C5503</span><span>Ricoh MP C6003</span></p></div><footer><span><small>STAN</small><strong>18 szt.</strong></span><span><small>DOWÓD</small><strong>Nazwa + historia</strong></span><span><small>DECYZJA</small><strong>Marcin K. · 12.08.2026</strong></span><button type="button" data-demo-action>Otwórz kartę</button></footer></article><article class="h7-record"><header><div><small>KARTA CZĘŚCI NR 841819</small><h2>Toner cyan MPC 3503</h2></div><span class="h7-stamp">DO WERYFIKACJI</span></header><div><small>SUGEROWANE MODELE</small><p><span>Ricoh MP C3003</span><span>Ricoh MP C3503</span></p></div><footer><span><small>STAN</small><strong>7 szt.</strong></span><span><small>DOWÓD</small><strong>Pełny model</strong></span><span><small>PEWNOŚĆ</small><strong>Średnia</strong></span><button type="button" data-demo-action>Zweryfikuj</button></footer></article></section></div></div>
+          </section>
+
+          <section class="demo-pane" data-demo-pane="archive">
+            <div class="hybrid-page h7-page"><header><div><small>REJESTR WYSYŁEK</small><h1>Archiwum dokumentów</h1><p>Zakończone zlecenia z kompletnym śladem odpowiedzialności.</p></div><button type="button" data-demo-action>Drukuj rejestr</button></header><div class="hybrid-archive-filters"><label class="hybrid-search"><span>⌕</span><input aria-label="Szukaj w rejestrze" placeholder="Zlecenie, klient, RW lub DPD"></label><button type="button">Sierpień 2026⌄</button><button type="button">Wszyscy operatorzy⌄</button></div><section class="h7-ledger"><header><span>Data</span><span>Zlecenie i odbiorca</span><span>Odpowiedzialny</span><span>Zawartość paczki</span><span>Dokumenty</span></header><article><time><b>24</b><span>SIE</span><small>14:18</small></time><span><strong>18294/2026</strong><small>Przychodnia Nova<br>Ricoh MP C3503</small></span><span><strong>Marcin K.</strong><small>Weryfikacja, kompletacja<br>i nadanie</small></span><span><strong>2 pozycje · 3 szt.</strong><small>842255 Toner BK<br>D0BK2200 Zespół bębna</small></span><span><b class="doc rw">RW 3421/2026</b><small>DPD 0000419238<br>Doręczono</small></span></article><article><time><b>23</b><span>SIE</span><small>12:06</small></time><span><strong>18281/2026</strong><small>Hotel Nad Rzeką<br>Konica Minolta C250i</small></span><span><strong>Anna P.</strong><small>Weryfikacja, kompletacja<br>i nadanie</small></span><span><strong>1 pozycja · 1 szt.</strong><small>TN-626Y Toner yellow</small></span><span><b class="doc fv">Do wystawienia FV</b><small>DPD 0000419187<br>W doręczeniu</small></span></article><article><time><b>22</b><span>SIE</span><small>15:31</small></time><span><strong>18277/2026</strong><small>Kancelaria Północ<br>Kyocera M3645idn</small></span><span><strong>Marcin K.</strong><small>Weryfikacja, kompletacja<br>i nadanie</small></span><span><strong>1 pozycja · 2 szt.</strong><small>TK-3160 Toner black</small></span><span><b class="doc rw">RW 3404/2026</b><small>DPD 0000419102<br>Doręczono</small></span></article></section></div>
+          </section>
+        </div>
+      </section>
+
+      <div id="prototype-toast" class="prototype-toast" role="status" aria-live="polite" hidden>To tylko makieta — ta akcja nie zapisuje danych.</div>
+    </main>
+
+    <footer class="prototype-lab-footer">
+      <div><strong>Porównaj przede wszystkim warianty 06 i 07.</strong><span>Oba łączą układy 01/04 z kolorystyką 03 i pozostają niefunkcjonalne.</span></div>
+      <a href="#prototype-picker-title">Wróć do wyboru ↑</a>
+    </footer>
+  </body>
+</html>

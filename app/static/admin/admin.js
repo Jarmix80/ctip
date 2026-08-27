@@ -1639,7 +1639,7 @@ document.addEventListener("alpine:init", () => {
       const normalized = [];
       input.forEach((item) => {
         const value = String(item || "").trim().toLowerCase();
-        if (!value || !["admin", "operator", "generator"].includes(value)) {
+        if (!value || !["admin", "operator", "generator", "shipping"].includes(value)) {
           return;
         }
         if (value === "admin" && role !== "admin") {
@@ -1663,6 +1663,7 @@ document.addEventListener("alpine:init", () => {
         admin: "Admin",
         operator: "Operator",
         generator: "Generator",
+        shipping: "Wysyłki części",
       };
       return normalized.map((item) => labels[item] || item).join(", ");
     },
