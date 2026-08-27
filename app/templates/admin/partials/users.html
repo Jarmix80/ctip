@@ -142,6 +142,10 @@
               <input type="checkbox" value="device" x-model="form.sections" :disabled="form.role === 'admin'">
               Obsługa urządzeń
             </label>
+            <label class="users-section-option">
+              <input type="checkbox" value="shipping" x-model="form.sections">
+              Sekcja Wysyłki części
+            </label>
           </div>
           <small>Administrator zawsze otrzymuje dostęp do wszystkich sekcji.</small>
         </div>
@@ -467,6 +471,10 @@
                     <label class="users-section-option">
                       <input type="checkbox" value="device" x-model="modalEdit.sections" :disabled="modalEdit.role === 'admin'">
                       Obsługa urządzeń
+                    </label>
+                    <label class="users-section-option">
+                      <input type="checkbox" value="shipping" x-model="modalEdit.sections">
+                      Sekcja Wysyłki części
                     </label>
                   </div>
                   <small>Administrator zawsze otrzymuje dostęp do wszystkich sekcji.</small>

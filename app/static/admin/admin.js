@@ -1634,7 +1634,9 @@ document.addEventListener("alpine:init", () => {
         const value = String(item || "").trim().toLowerCase();
         if (
           !value ||
-          !["admin", "operator", "generator", "delivery", "device"].includes(value)
+          !["admin", "operator", "generator", "delivery", "device", "shipping"].includes(
+            value,
+          )
         ) {
           return;
         }
@@ -1661,6 +1663,7 @@ document.addEventListener("alpine:init", () => {
         generator: "Generator",
         delivery: "Obsługa dostaw",
         device: "Obsługa urządzeń",
+        shipping: "Wysyłki części",
       };
       return normalized.map((item) => labels[item] || item).join(", ");
     },

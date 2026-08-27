@@ -31,6 +31,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(cfg.ctip_runtime_profile, "test")
         self.assertEqual(cfg.outbound_delivery_mode, "disabled")
         self.assertTrue(cfg.test_network_isolation_required)
+        self.assertFalse(cfg.shipping_enabled)
+        self.assertFalse(cfg.shipping_catalog_mutations_enabled)
+        self.assertFalse(cfg.shipping_fulfillment_enabled)
 
     def test_resolver_prefers_test_file_without_explicit_override(self) -> None:
         with TemporaryDirectory() as directory:
@@ -70,6 +73,15 @@ class SettingsTests(unittest.TestCase):
 
         self.assertTrue(cfg.database_url.startswith("postgresql+psycopg://"))
         self.assertIn("@127.0.0.1:5432/ctip_test", cfg.database_url)
+
+    def test_tryb_dpd_ma_fallback_i_jawne_pierwszenstwo(self) -> None:
+        mock = Settings(_env_file=None, DPD_MODE=None, DPD_TEST_MODE=True)
+        production = Settings(_env_file=None, DPD_MODE=None, DPD_TEST_MODE=False)
+        demo = Settings(_env_file=None, DPD_MODE="demo", DPD_TEST_MODE=False)
+
+        self.assertEqual(mock.dpd_effective_mode, "mock")
+        self.assertEqual(production.dpd_effective_mode, "production")
+        self.assertEqual(demo.dpd_effective_mode, "demo")
 
     def test_backup_execution_active_respects_explicit_true(self) -> None:
         cfg = Settings(
