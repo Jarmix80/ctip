@@ -25,6 +25,15 @@ def test_public_forms_app_does_not_expose_admin_panel():
     assert response.status_code == 404
 
 
+def test_public_forms_app_does_not_expose_api_documentation():
+    app = create_public_forms_app()
+    client = TestClient(app)
+
+    assert client.get("/openapi.json").status_code == 404
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+
+
 def test_public_forms_app_rejects_untrusted_host():
     app = create_public_forms_app()
     client = TestClient(app)

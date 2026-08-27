@@ -299,7 +299,7 @@ async def public_form_submit(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> HTMLResponse:
     """Przyjmuje dane klienta i zapisuje je jako zaszyfrowany payload."""
-    item = await form_generator.get_form_by_token(session, token)
+    item = await form_generator.get_form_by_token(session, token, for_update=True)
     if item is None:
         return templates.TemplateResponse(
             "public/form_invalid.html",

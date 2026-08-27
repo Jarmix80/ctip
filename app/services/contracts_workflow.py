@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import FormRequest, FormWorkflowCase, FormWorkflowDevice
@@ -439,7 +440,7 @@ async def get_or_create_form_workflow_case(
     user_id: int | None,
     payload_snapshot: dict[str, Any] | None = None,
 ) -> FormWorkflowCase:
-    """Pobiera lub tworzy sprawę workflow dla formularza."""
+    """Pobiera lub tworzy sprawę workflow odpornie na równoległe żądania."""
     existing = await get_form_workflow_case(session, form_request_id=form.id)
     if existing is not None:
         if payload_snapshot and not existing.client_payload_snapshot:
@@ -456,8 +457,19 @@ async def get_or_create_form_workflow_case(
         business_status=WORKFLOW_BUSINESS_STATUS_DRAFT,
         client_payload_snapshot=payload_snapshot,
     )
-    session.add(workflow_case)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(workflow_case)
+            await session.flush()
+    except IntegrityError:
+        existing = await get_form_workflow_case(session, form_request_id=form.id)
+        if existing is None:
+            raise
+        if payload_snapshot and not existing.client_payload_snapshot:
+            existing.client_payload_snapshot = payload_snapshot
+            existing.updated_at = datetime.now(UTC)
+            existing.updated_by = user_id
+        return existing
     return workflow_case
 
 

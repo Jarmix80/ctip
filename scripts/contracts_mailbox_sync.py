@@ -1025,6 +1025,33 @@ async def apply_mail_to_workflow(
     }
 
 
+async def _apply_mail_to_workflow_transactionally(
+    session: AsyncSession,
+    *,
+    form_ctx: FormContext,
+    mail_ctx: MailContext,
+    extracted_data: dict[str, Any] | None,
+    pdf_text: str,
+    archived_contract_file: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Izoluje aktualizację jednej wiadomości w savepoincie sesji mailboxa."""
+    try:
+        async with session.begin_nested():
+            result = await apply_mail_to_workflow(
+                session,
+                form_ctx=form_ctx,
+                mail_ctx=mail_ctx,
+                extracted_data=extracted_data,
+                pdf_text=pdf_text,
+                archived_contract_file=archived_contract_file,
+            )
+    except WorkflowDeviceOwnershipConflict:
+        await session.commit()
+        raise
+    await session.commit()
+    return result
+
+
 async def run_sync(args: argparse.Namespace) -> int:
     """Uruchamia pełną synchronizację mailbox -> FLOW."""
     if not settings.mailbox_imap_host or not settings.mailbox_email_address:
@@ -1246,8 +1273,9 @@ async def run_sync(args: argparse.Namespace) -> int:
                             )
 
                 if not args.dry_run:
+                    matched_form_id = int(matched_ctx.form.id)
                     try:
-                        update_result = await apply_mail_to_workflow(
+                        update_result = await _apply_mail_to_workflow_transactionally(
                             session,
                             form_ctx=matched_ctx,
                             mail_ctx=mail_ctx,
@@ -1255,9 +1283,8 @@ async def run_sync(args: argparse.Namespace) -> int:
                             pdf_text=pdf_result.text if pdf_result else "",
                             archived_contract_file=archived_contract_file,
                         )
-                        await session.commit()
                     except WorkflowDeviceOwnershipConflict as exc:
-                        await session.rollback()
+                        form_contexts = await load_form_contexts(session)
                         conflict_files = (
                             [archived_contract_file]
                             if isinstance(archived_contract_file, dict)
@@ -1284,7 +1311,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                                 "subject": mail_ctx.subject,
                                 "matched": False,
                                 "match_reason": UNRESOLVED_REASON_DEVICE_OWNER_CONFLICT,
-                                "form_id": matched_ctx.form.id,
+                                "form_id": matched_form_id,
                                 "application_no": mail_ctx.application_no_raw,
                                 "proforma_no": mail_ctx.proforma_no_raw,
                                 "saved_files_count": len(conflict_files),

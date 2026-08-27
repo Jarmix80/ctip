@@ -233,6 +233,8 @@ python scripts/contracts_mailbox_sync.py --limit 30 --fail-on-warnings
 
 Domyślnie ostrzeżenia nie oznaczają błędu procesu (skrypt kończy się kodem `0`), żeby scheduler i panel admina nie raportowały `error` tylko przez niedopasowane wiadomości. Logowanie OCR i listy ostrzeżeń jest automatycznie skracane, aby nie zalewać audytu bardzo długim `stdout_tail`.
 
+Każda aktualizacja wiadomości działa we własnym savepoincie. Konflikt właściciela urządzenia wycofuje wyłącznie bieżącą wiadomość, a nie całą sesję ORM; po konflikcie lista formularzy jest odświeżana. Zapobiega to wygaszeniu obiektów sesji i błędowi `MissingGreenlet` w kolejnych przebiegach schedulera.
+
 Wyzwolenie synchronizacji z poziomu panelu/API (wymaga sesji admin/operator i sekcji `generator`):
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/contracts/workflow/mailbox-sync \
@@ -488,6 +490,8 @@ Logowanie do `/auth/login` i `/admin/auth/login` ustawia obecnie dwa transporty 
 W bazie jest przechowywany wyłącznie skrót SHA-256 tokenu. Nieudane logowania podlegają limitowi, a historyczne trasy `/calls`, `/contacts` i `/sms/*` nie są publikowane; ich zabezpieczone odpowiedniki działają pod `/operator/api/*`.
 
 Warstwa HTTP dodaje teraz również podstawowe nagłówki bezpieczeństwa (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`) oraz `Cache-Control: no-store` dla paneli i endpointów logowania.
+
+Publiczna aplikacja formularzy nie publikuje `/docs`, `/redoc` ani `/openapi.json`. Zatwierdzenie formularza blokuje rekord tokenu przez `SELECT ... FOR UPDATE`, a tworzenie sprawy workflow dodatkowo obsługuje konflikt unikalności w savepoincie. Powtórny lub równoległy `POST` nie tworzy drugiej sprawy i nie kończy się błędem `500`.
 
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.

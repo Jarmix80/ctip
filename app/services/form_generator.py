@@ -682,13 +682,20 @@ async def create_form_request(
     return form, form_url, notifications
 
 
-async def get_form_by_token(session: AsyncSession, token: str) -> FormRequest | None:
-    """Wyszukuje formularz po hashu tokenu i aktualizuje status wygasania."""
+async def get_form_by_token(
+    session: AsyncSession,
+    token: str,
+    *,
+    for_update: bool = False,
+) -> FormRequest | None:
+    """Wyszukuje formularz po tokenie i opcjonalnie blokuje rekord do zapisu."""
     token_value = (token or "").strip()
     if not token_value:
         return None
 
     stmt = select(FormRequest).where(FormRequest.token_hash == _hash_token(token_value))
+    if for_update:
+        stmt = stmt.with_for_update()
     form = (await session.execute(stmt)).scalar_one_or_none()
     if form is None:
         return None

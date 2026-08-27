@@ -628,3 +628,52 @@ def test_apply_mail_to_workflow_blocks_approval_for_foreign_device(monkeypatch) 
 
     assert status_called is False
     assert workflow_case.business_status == module.WORKFLOW_BUSINESS_STATUS_WAITING_SIGNATURE
+
+
+def test_transactional_mailbox_update_keeps_session_after_ownership_conflict(monkeypatch) -> None:
+    module = _load_sync_module()
+    ownership_error = module.WorkflowDeviceOwnershipConflict(
+        [SimpleNamespace(source_row=18411, reason="Urządzenie ma innego właściciela.")]
+    )
+    calls = {"commit": 0, "savepoint": 0}
+
+    class _Savepoint:
+        async def __aenter__(self):
+            calls["savepoint"] += 1
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    class _FakeSession:
+        def begin_nested(self):
+            return _Savepoint()
+
+        async def commit(self) -> None:
+            calls["commit"] += 1
+
+        async def rollback(self) -> None:
+            raise AssertionError("Konflikt nie może wycofywać całej sesji mailboxa.")
+
+    async def fake_apply_mail_to_workflow(*args, **kwargs):
+        raise ownership_error
+
+    monkeypatch.setattr(module, "apply_mail_to_workflow", fake_apply_mail_to_workflow)
+
+    try:
+        asyncio.run(
+            module._apply_mail_to_workflow_transactionally(
+                _FakeSession(),
+                form_ctx=SimpleNamespace(),
+                mail_ctx=SimpleNamespace(),
+                extracted_data=None,
+                pdf_text="",
+                archived_contract_file=None,
+            )
+        )
+    except module.WorkflowDeviceOwnershipConflict:
+        pass
+    else:
+        raise AssertionError("Konflikt właściciela powinien zostać przekazany do pętli mailboxa.")
+
+    assert calls == {"commit": 1, "savepoint": 1}

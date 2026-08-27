@@ -17,6 +17,9 @@ def create_public_forms_app() -> FastAPI:
     app = FastAPI(
         title=f"{settings.app_title} Public Forms",
         version=settings.app_version,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     app.add_middleware(
