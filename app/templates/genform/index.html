@@ -96,12 +96,13 @@
             <button type="button" class="genform-side-menu-item" data-archive-scope="unfilled">Formularze niewypełnione <span id="genform-count-unfilled">0</span></button>
             <button type="button" class="genform-side-menu-item" data-archive-scope="ksero_partner">Umowy Ksero-Partner <span id="genform-count-ksero-partner">0</span></button>
             <button type="button" class="genform-side-menu-item" data-archive-scope="closed_other">Odrzucone inne <span id="genform-count-closed-other">0</span></button>
+            <button id="genform-mailbox-history-menu" type="button" class="genform-side-menu-item">Wiadomości historyczne <span id="genform-count-mailbox-history">0</span></button>
           </nav>
           <div class="genform-table-column">
             <p id="genform-mailbox-sync-note" class="genform-build-info genform-mailbox-sync-note">
               Synchronizacja e-mail GRENKE: brak danych o ostatnim przebiegu.
             </p>
-            <div class="genform-table-wrap">
+            <div id="genform-forms-table-wrap" class="genform-table-wrap">
               <table class="genform-table">
                 <thead>
                   <tr>
@@ -120,7 +121,57 @@
                 </tbody>
               </table>
             </div>
-          </div>
+            <section id="genform-mailbox-history-view" class="genform-mailbox-history-view" hidden>
+              <form id="genform-mailbox-history-filters" class="genform-mailbox-history-filters">
+                <label>
+                  Szukaj
+                  <input id="genform-mailbox-history-search" type="search" placeholder="numer wniosku, temat, nadawca, treść…">
+                </label>
+                <label>
+                  Od
+                  <input id="genform-mailbox-history-date-from" type="date">
+                </label>
+                <label>
+                  Do
+                  <input id="genform-mailbox-history-date-to" type="date">
+                </label>
+                <label>
+                  Typ wiadomości
+                  <select id="genform-mailbox-history-event-type">
+                    <option value="">Wszystkie</option>
+                    <option value="decision_for_signature">Decyzja</option>
+                    <option value="approval_for_delivery">Zgoda na realizację</option>
+                  </select>
+                </label>
+                <label>
+                  Załączniki
+                  <select id="genform-mailbox-history-attachments">
+                    <option value="">Wszystkie</option>
+                    <option value="1">Tylko z załącznikami</option>
+                    <option value="0">Bez załączników</option>
+                  </select>
+                </label>
+                <button type="submit" class="genform-btn-primary">Filtruj</button>
+              </form>
+              <p id="genform-mailbox-history-summary" class="genform-build-info">Brak danych archiwum.</p>
+              <div class="genform-table-wrap">
+                <table class="genform-table">
+                  <thead>
+                    <tr>
+                      <th>Wniosek</th>
+                      <th>Ostatnia wiadomość</th>
+                      <th>Temat</th>
+                      <th>Wiadomości</th>
+                      <th>Akcje</th>
+                    </tr>
+                  </thead>
+                  <tbody id="genform-mailbox-history-body">
+                    <tr><td colspan="5">Brak wiadomości historycznych.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            </div>
         </div>
       </section>
 
@@ -177,6 +228,19 @@
               </div>
             </div>
           </section>
+        </div>
+      </section>
+
+      <section id="genform-mailbox-history-modal" class="genform-modal" hidden>
+        <div class="genform-modal-card genform-mailbox-history-modal-card" role="dialog" aria-modal="true" aria-labelledby="genform-mailbox-history-title">
+          <header class="genform-modal-header">
+            <div>
+              <h2 id="genform-mailbox-history-title">Wiadomości historyczne</h2>
+              <p id="genform-mailbox-history-subtitle" class="genform-detail-status-text">Zamknięta sprawa archiwalna.</p>
+            </div>
+            <button id="genform-mailbox-history-close" type="button" class="genform-btn-secondary">Zamknij</button>
+          </header>
+          <div id="genform-mailbox-history-detail" class="genform-mailbox-history-detail"></div>
         </div>
       </section>
 

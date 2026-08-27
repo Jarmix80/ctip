@@ -21,7 +21,7 @@ def parse_mailbox_sync_summary(value: str) -> dict[str, int] | None:
     counts = [int(item) for item in re.findall(r"\d+", summary_line)]
     if len(counts) < 8:
         return None
-    return {
+    summary = {
         "analysed": counts[0],
         "updated": counts[1],
         "skipped_state": counts[2],
@@ -31,6 +31,9 @@ def parse_mailbox_sync_summary(value: str) -> dict[str, int] | None:
         "ambiguous_matches": counts[6],
         "unresolved_open": counts[7],
     }
+    if len(counts) >= 9:
+        summary["manual_hold"] = counts[8]
+    return summary
 
 
 def run_mailbox_sync_subprocess(

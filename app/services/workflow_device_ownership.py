@@ -11,6 +11,8 @@ MACHINE_MATCH_FOREIGN = "foreign"
 MACHINE_MATCH_INVALID_OWNER = "invalid_owner"
 MACHINE_MATCH_AMBIGUOUS = "ambiguous"
 MACHINE_MATCH_BOUND_CURRENT_WORKFLOW = "bound_current_workflow"
+MACHINE_MATCH_TARGET = "target"
+MACHINE_BATCH_MIXED_HOLD = "mixed_hold"
 
 
 def _coerce_int(value: Any) -> int | None:
@@ -31,6 +33,18 @@ class WorkflowMachineOwnership:
     reason: str
 
 
+def classify_workflow_ownership_batch(states: set[str]) -> str:
+    """Klasyfikuje pakiet bezpieczny do zapisu lub wymagający ręcznej kontroli."""
+    normalized = {str(state or "").strip() for state in states if str(state or "").strip()}
+    if MACHINE_MATCH_TARGET in normalized and MACHINE_MATCH_WAREHOUSE in normalized:
+        return MACHINE_BATCH_MIXED_HOLD
+    if normalized == {MACHINE_MATCH_TARGET}:
+        return MACHINE_MATCH_TARGET
+    if normalized == {MACHINE_MATCH_WAREHOUSE}:
+        return MACHINE_MATCH_WAREHOUSE
+    return "standard"
+
+
 def classify_workflow_machine_ownership(
     *,
     candidate_count: int,
@@ -38,6 +52,7 @@ def classify_workflow_machine_ownership(
     client_id: int | None,
     client_name: str | None,
     warehouse_client_id: int,
+    target_client_id: int | None = None,
 ) -> WorkflowMachineOwnership:
     """Klasyfikuje dostępność według właściciela zapisanego w Firebird."""
     if candidate_count <= 0:
@@ -69,6 +84,12 @@ def classify_workflow_machine_ownership(
             state=MACHINE_MATCH_WAREHOUSE,
             conflict=False,
             reason="",
+        )
+    if target_client_id is not None and client_id == target_client_id:
+        return WorkflowMachineOwnership(
+            state=MACHINE_MATCH_TARGET,
+            conflict=False,
+            reason="Urządzenie jest już przypisane do klienta docelowego.",
         )
 
     client_label = str(client_name or "").strip()
@@ -104,12 +125,15 @@ def snapshot_confirms_current_workflow_binding(
 
 __all__ = [
     "MACHINE_MATCH_AMBIGUOUS",
+    "MACHINE_BATCH_MIXED_HOLD",
     "MACHINE_MATCH_BOUND_CURRENT_WORKFLOW",
     "MACHINE_MATCH_FOREIGN",
     "MACHINE_MATCH_INVALID_OWNER",
     "MACHINE_MATCH_MISSING",
+    "MACHINE_MATCH_TARGET",
     "MACHINE_MATCH_WAREHOUSE",
     "WorkflowMachineOwnership",
+    "classify_workflow_ownership_batch",
     "classify_workflow_machine_ownership",
     "snapshot_confirms_current_workflow_binding",
 ]

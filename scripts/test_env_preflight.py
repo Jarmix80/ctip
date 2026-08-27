@@ -102,6 +102,8 @@ def collect_issues(*, check_network: bool = False) -> list[str]:
         issues.append("Integracja mailbox musi być całkowicie wyłączona.")
     if settings.contracts_mailbox_scheduler_enabled:
         issues.append("Scheduler mailbox musi być wyłączony.")
+    if settings.contracts_mailbox_processing_enabled:
+        issues.append("Przetwarzanie mailboxa musi być wyłączone.")
     google_sheets_active = any(
         (
             settings.google_sheets_enabled,

@@ -14,13 +14,17 @@ from app.services.section_permissions import default_sections_for_role, normaliz
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
-    def test_shipping_jest_jedynym_headem_alembic(self) -> None:
+    def test_rejestr_mailboxa_jest_jedynym_headem_alembic(self) -> None:
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["f9a0b1c2d3e4"])
-        revision = scripts.get_revision("f9a0b1c2d3e4")
+        self.assertEqual(scripts.get_heads(), ["a7c4e2f9b1d3"])
+        revision = scripts.get_revision("a7c4e2f9b1d3")
         self.assertIsNotNone(revision)
-        self.assertEqual(revision.down_revision, "d8f1a2b3c4e5")
+        self.assertEqual(revision.down_revision, "f9a0b1c2d3e4")
+
+        shipping_revision = scripts.get_revision("f9a0b1c2d3e4")
+        self.assertIsNotNone(shipping_revision)
+        self.assertEqual(shipping_revision.down_revision, "d8f1a2b3c4e5")
 
     def test_release_nie_zawiera_prototypowych_migracji_shipping(self) -> None:
         versions = Path("alembic/versions")

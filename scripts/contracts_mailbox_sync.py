@@ -45,6 +45,19 @@ from app.services.contracts_mailbox import (
     normalize_proforma_number,
     score_form_match,
 )
+from app.services.contracts_mailbox_ledger import (
+    MAILBOX_STATUS_ERROR,
+    MAILBOX_STATUS_HISTORICAL_ARCHIVED,
+    MAILBOX_STATUS_IGNORED,
+    MAILBOX_STATUS_LINKED_FORM,
+    MAILBOX_STATUS_MANUAL_HOLD,
+    MAILBOX_TERMINAL_STATUSES,
+    finalize_mailbox_message,
+    get_mailbox_message,
+    get_or_create_history_case,
+    mailbox_ledger_counts,
+    register_mailbox_message,
+)
 from app.services.contracts_workflow import (
     WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
     WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED,
@@ -58,10 +71,12 @@ from app.services.contracts_workflow import (
     set_form_workflow_delivery,
 )
 from app.services.workflow_machine_binding import (
+    WorkflowDeviceMixedOwnershipHold,
     WorkflowDeviceOwnershipConflict,
     apply_binding_snapshot,
     bind_devices_to_workflow_client,
     notify_binding_issues_to_admins,
+    validate_no_active_workflow_device_duplicates,
     validate_workflow_device_ownership,
 )
 
@@ -104,7 +119,7 @@ class MailContext:
     sender: str
     body_text: str
     email_date_utc: datetime
-    event_type: str
+    event_type: str | None
     application_no_raw: str | None
     application_no_normalized: str | None
     attachments: list[tuple[str, str, bytes]]
@@ -146,6 +161,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Maksymalna liczba najnowszych wiadomości do analizy (domyślnie: 30).",
+    )
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Analizuj cały folder IMAP i przygotuj historyczny rejestr wiadomości.",
+    )
+    parser.add_argument(
+        "--apply-backfill",
+        action="store_true",
+        help="Zapisz wynik backfillu; bez tej flagi --backfill działa tylko jako podgląd.",
     )
     parser.add_argument(
         "--folder",
@@ -606,14 +631,19 @@ def try_extract_text_from_pdf(
     )
 
 
-async def load_form_contexts(session: AsyncSession) -> list[FormContext]:
-    """Wczytuje formularze SUBMITTED i ich kontekst workflow."""
+async def load_form_contexts(
+    session: AsyncSession,
+    *,
+    include_all: bool = False,
+) -> list[FormContext]:
+    """Wczytuje formularze i ich kontekst dopasowania do wiadomości."""
+    query = select(FormRequest)
+    if not include_all:
+        query = query.where(FormRequest.status == "SUBMITTED")
     forms = list(
         (
             await session.execute(
-                select(FormRequest)
-                .where(FormRequest.status == "SUBMITTED")
-                .order_by(desc(FormRequest.submitted_at), desc(FormRequest.id))
+                query.order_by(desc(FormRequest.submitted_at), desc(FormRequest.id))
             )
         )
         .scalars()
@@ -639,9 +669,9 @@ async def load_form_contexts(session: AsyncSession) -> list[FormContext]:
         try:
             payload, _ = form_generator.decode_submitted_payload(form)
         except RuntimeError:
-            continue
+            payload = {}
         if not isinstance(payload, dict):
-            continue
+            payload = {}
 
         workflow_case = case_by_form_id.get(form.id)
         application_no_normalized = None
@@ -691,6 +721,9 @@ def pick_best_form_context(*, mail_ctx: MailContext, contexts: list[FormContext]
         if len(exact_proforma) > 1:
             return MatchDecision(context=None, reason="ambiguous_proforma")
 
+    if mail_ctx.application_no_normalized:
+        return MatchDecision(context=None, reason="application_not_found", score=0)
+
     scored: list[tuple[int, FormContext]] = []
     for ctx in contexts:
         score = score_form_match(mail_ctx.body_text, ctx.payload)
@@ -705,6 +738,32 @@ def pick_best_form_context(*, mail_ctx: MailContext, contexts: list[FormContext]
     if len(scored) > 1 and scored[1][0] == best_score:
         return MatchDecision(context=None, reason="ambiguous_score", score=best_score)
     return MatchDecision(context=best_ctx, reason="score_match", score=best_score)
+
+
+def pick_exact_form_context(*, mail_ctx: MailContext, contexts: list[FormContext]) -> MatchDecision:
+    """Dopasowuje korespondencję pomocniczą wyłącznie po stabilnym numerze."""
+    exact_contexts = contexts
+    if mail_ctx.application_no_normalized:
+        exact = [
+            ctx
+            for ctx in exact_contexts
+            if ctx.application_no_normalized == mail_ctx.application_no_normalized
+        ]
+        if len(exact) == 1:
+            return MatchDecision(context=exact[0], reason="exact_application", score=100)
+        if len(exact) > 1:
+            return MatchDecision(context=None, reason="ambiguous_application")
+    if mail_ctx.proforma_no_normalized:
+        exact = [
+            ctx
+            for ctx in exact_contexts
+            if ctx.proforma_no_normalized == mail_ctx.proforma_no_normalized
+        ]
+        if len(exact) == 1:
+            return MatchDecision(context=exact[0], reason="exact_proforma", score=95)
+        if len(exact) > 1:
+            return MatchDecision(context=None, reason="ambiguous_proforma")
+    return MatchDecision(context=None, reason="no_exact_reference")
 
 
 def find_encrypted_contract_pdf(
@@ -723,14 +782,11 @@ def find_encrypted_contract_pdf(
     return None
 
 
-def build_mail_context(imap_id: str, msg: Message) -> MailContext | None:
-    """Buduje kontekst przetwarzania wiadomości (temat lub treść)."""
+def build_mail_context(imap_id: str, msg: Message) -> MailContext:
+    """Buduje kontekst każdej wiadomości, również korespondencji pomocniczej."""
     subject = decode_mime_text(msg.get("Subject"))
     body_text = extract_message_body_text(msg)
     event_type = classify_mail_payload(subject=subject, body=body_text)
-    if event_type is None:
-        return None
-
     app_from_subject = extract_application_number(subject)
     app_from_body = extract_application_number(body_text)
     app_ref = app_from_subject or app_from_body
@@ -900,6 +956,11 @@ async def apply_mail_to_workflow(
             session,
             workflow_case_id=workflow_case.id,
         )
+        await validate_no_active_workflow_device_duplicates(
+            session,
+            workflow_case=workflow_case,
+            devices=workflow_devices,
+        )
         await asyncio.to_thread(
             validate_workflow_device_ownership,
             workflow_case=workflow_case,
@@ -1021,6 +1082,7 @@ async def apply_mail_to_workflow(
         "status_update_skipped": status_update_skipped,
         "email_date_utc": mail_ctx.email_date_utc.isoformat(),
         "saved_files_count": len(saved_files),
+        "saved_files": saved_files,
         "archived_contract_file": archived_contract_file,
     }
 
@@ -1052,15 +1114,46 @@ async def _apply_mail_to_workflow_transactionally(
     return result
 
 
+def _classify_auxiliary_message(mail_ctx: MailContext) -> str:
+    """Nadaje czytelną kategorię wiadomości niezmieniającej statusu biznesowego."""
+    normalized = html_to_text(f"{mail_ctx.subject} {mail_ctx.body_text}").lower()
+    if "faktur" in normalized and ("prowiz" in normalized or "commission" in normalized):
+        return "invoice_commission"
+    if "dostarcz" in normalized or "delivery" in normalized:
+        return "delivery_confirmation"
+    return "correspondence"
+
+
+def _attachment_manifest_with_contract(
+    saved_files: list[dict[str, Any]],
+    archived_contract_file: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Łączy manifest zwykłych załączników i pliku umowy bez duplikowania wpisów."""
+    manifest = list(saved_files)
+    if archived_contract_file:
+        contract_path = str(archived_contract_file.get("path") or "")
+        if contract_path and not any(
+            str(item.get("path") or "") == contract_path for item in manifest
+        ):
+            manifest.append(archived_contract_file)
+    return manifest
+
+
 async def run_sync(args: argparse.Namespace) -> int:
     """Uruchamia pełną synchronizację mailbox -> FLOW."""
     if not settings.mailbox_imap_host or not settings.mailbox_email_address:
         print("[ERR] Brak konfiguracji MAILBOX_* w środowisku.")
         return 2
+    backfill = bool(getattr(args, "backfill", False))
+    apply_backfill = bool(getattr(args, "apply_backfill", False))
+    if apply_backfill and not backfill:
+        print("[ERR] Flaga --apply-backfill wymaga jednocześnie --backfill.")
+        return 2
+    dry_run = bool(args.dry_run or (backfill and not apply_backfill))
+    if not backfill and not settings.contracts_mailbox_processing_enabled:
+        print("[INFO] Przetwarzanie mailboxa jest wyłączone przez konfigurację.")
+        return 0
 
-    processed_state, unresolved_state = _load_state(STATE_PATH)
-    processed_now: set[str] = set()
-    state_changed = False
     analysed = 0
     updated = 0
     skipped = 0
@@ -1069,11 +1162,21 @@ async def run_sync(args: argparse.Namespace) -> int:
     ambiguous_matches = 0
     warnings: list[str] = []
     reports: list[dict[str, Any]] = []
+    planned_counts = {
+        MAILBOX_STATUS_LINKED_FORM: 0,
+        MAILBOX_STATUS_HISTORICAL_ARCHIVED: 0,
+        MAILBOX_STATUS_IGNORED: 0,
+        MAILBOX_STATUS_MANUAL_HOLD: 0,
+        MAILBOX_STATUS_ERROR: 0,
+    }
+    legacy_processed_ids: set[str] = set()
+    if backfill:
+        legacy_processed_ids, _ = _load_state(STATE_PATH)
 
     async with AsyncSessionLocal() as session:
-        form_contexts = await load_form_contexts(session)
+        form_contexts = await load_form_contexts(session, include_all=True)
         if not form_contexts:
-            print("[WARN] Brak formularzy SUBMITTED do powiązania.")
+            print("[WARN] Brak formularzy do powiązania.")
 
         with imaplib.IMAP4_SSL(
             settings.mailbox_imap_host,
@@ -1092,7 +1195,8 @@ async def run_sync(args: argparse.Namespace) -> int:
                 return 4
 
             ids = data[0].split()
-            for raw_id in ids[-max(1, int(args.limit)) :]:
+            selected_ids = ids if backfill else ids[-max(1, int(args.limit)) :]
+            for raw_id in selected_ids:
                 imap_id = raw_id.decode(errors="ignore")
                 fetch_status, full_data = client.fetch(raw_id, "(BODY.PEEK[])")
                 if fetch_status != "OK":
@@ -1108,54 +1212,31 @@ async def run_sync(args: argparse.Namespace) -> int:
 
                 msg = message_from_bytes(raw_email)
                 message_id = decode_mime_text(msg.get("Message-Id")) or f"imap:{imap_id}"
-                if not args.reprocess and message_id in processed_state:
+                existing_message = await get_mailbox_message(session, message_id=message_id)
+                if (
+                    not args.reprocess
+                    and existing_message is not None
+                    and existing_message.processing_status in MAILBOX_TERMINAL_STATUSES
+                ):
                     skipped += 1
                     continue
 
                 mail_ctx = build_mail_context(imap_id, msg)
-                if mail_ctx is None:
-                    unknown_subjects += 1
-                    subject = decode_mime_text(msg.get("Subject"))
-                    sender = decode_mime_text(msg.get("From"))
-                    email_date_utc = parse_email_date(msg.get("Date"))
-                    register_unresolved_message(
-                        unresolved_state,
-                        reason=UNRESOLVED_REASON_UNSUPPORTED_SUBJECT,
-                        message_id=message_id,
-                        subject=subject,
-                        sender=sender,
-                        email_date_utc=email_date_utc,
-                        application_no=None,
-                        details="Brak zgodnego wzorca tematu lub treści.",
-                        saved_files=[],
-                    )
-                    state_changed = True
-                    warnings.append(
-                        f"Nierozpoznany temat wiadomości: {subject} (message_id={message_id})."
-                    )
-                    reports.append(
-                        {
-                            "message_id": message_id,
-                            "subject": subject,
-                            "matched": False,
-                            "match_reason": UNRESOLVED_REASON_UNSUPPORTED_SUBJECT,
-                            "saved_files_count": 0,
-                            "pdf_success": None,
-                            "pdf_error": None,
-                            "extracted_data": None,
-                        }
-                    )
-                    continue
-
                 analysed += 1
-                match_decision = pick_best_form_context(mail_ctx=mail_ctx, contexts=form_contexts)
+                if mail_ctx.event_type is None:
+                    unknown_subjects += 1
+                match_decision = (
+                    pick_best_form_context(mail_ctx=mail_ctx, contexts=form_contexts)
+                    if mail_ctx.event_type is not None
+                    else pick_exact_form_context(mail_ctx=mail_ctx, contexts=form_contexts)
+                )
                 matched_ctx = match_decision.context
                 body_extracted = extract_data_from_contract_text(mail_ctx.body_text)
                 extracted_data: dict[str, Any] | None = {"from_body": body_extracted}
                 pdf_result: PdfExtractionResult | None = None
 
                 encrypted_pdf = find_encrypted_contract_pdf(mail_ctx.attachments)
-                if encrypted_pdf is not None:
+                if encrypted_pdf is not None and mail_ctx.event_type is not None:
                     _, pdf_bytes = encrypted_pdf
                     if matched_ctx is not None:
                         candidates = build_pdf_password_candidates(matched_ctx.payload)
@@ -1163,7 +1244,7 @@ async def run_sync(args: argparse.Namespace) -> int:
                             pdf_bytes,
                             password_candidates=candidates,
                         )
-                    else:
+                    elif not mail_ctx.application_no_normalized:
                         for candidate_ctx in form_contexts:
                             candidates = build_pdf_password_candidates(candidate_ctx.payload)
                             probe_result = try_extract_text_from_pdf(
@@ -1179,67 +1260,24 @@ async def run_sync(args: argparse.Namespace) -> int:
                                 pdf_bytes,
                                 password_candidates=[],
                             )
+                    else:
+                        pdf_result = try_extract_text_from_pdf(
+                            pdf_bytes,
+                            password_candidates=[],
+                        )
 
                     if pdf_result.success and pdf_result.text.strip():
                         extracted_data["from_pdf"] = extract_data_from_contract_text(
                             pdf_result.text
                         )
 
-                if matched_ctx is None:
-                    unresolved_reason = UNRESOLVED_REASON_UNMATCHED_FORM
-                    if match_decision.reason in {
-                        "ambiguous_application",
-                        "ambiguous_proforma",
-                        "ambiguous_score",
-                    }:
-                        unresolved_reason = UNRESOLVED_REASON_AMBIGUOUS_MATCH
-                        ambiguous_matches += 1
-                    else:
-                        unmatched_forms += 1
-
-                    unresolved_saved_files: list[dict[str, Any]] = []
-                    if not args.dry_run:
-                        unresolved_saved_files = persist_mail_attachments(
-                            scope="unresolved",
-                            mail_ctx=mail_ctx,
-                        )
-
-                    register_unresolved_message(
-                        unresolved_state,
-                        reason=unresolved_reason,
-                        message_id=mail_ctx.message_id,
-                        subject=mail_ctx.subject,
-                        sender=mail_ctx.sender,
-                        email_date_utc=mail_ctx.email_date_utc,
-                        application_no=mail_ctx.application_no_raw,
-                        details=(
-                            f"match_reason={match_decision.reason}; score={match_decision.score}; "
-                            f"proforma_no={mail_ctx.proforma_no_raw}"
-                        ),
-                        saved_files=unresolved_saved_files,
-                    )
-                    state_changed = True
-                    warnings.append(
-                        f"Brak dopasowania formularza dla wiadomości: {mail_ctx.subject} "
-                        f"(message_id={mail_ctx.message_id}, reason={match_decision.reason})."
-                    )
-                    reports.append(
-                        {
-                            "message_id": mail_ctx.message_id,
-                            "subject": mail_ctx.subject,
-                            "matched": False,
-                            "match_reason": unresolved_reason,
-                            "proforma_no": mail_ctx.proforma_no_raw,
-                            "saved_files_count": len(unresolved_saved_files),
-                            "pdf_success": pdf_result.success if pdf_result else None,
-                            "pdf_error": pdf_result.error if pdf_result else None,
-                            "extracted_data": extracted_data,
-                        }
-                    )
-                    continue
-
                 archived_contract_file: dict[str, Any] | None = None
-                if not args.dry_run and matched_ctx is not None and encrypted_pdf is not None:
+                workflow_event = bool(
+                    matched_ctx is not None
+                    and mail_ctx.event_type is not None
+                    and str(matched_ctx.form.status or "") == "SUBMITTED"
+                )
+                if not dry_run and workflow_event and encrypted_pdf is not None:
                     encrypted_pdf_name, _ = encrypted_pdf
                     if (
                         pdf_result is not None
@@ -1272,121 +1310,400 @@ async def run_sync(args: argparse.Namespace) -> int:
                                 f"dla formularza {matched_ctx.form.id}: {exc}"
                             )
 
-                if not args.dry_run:
-                    matched_form_id = int(matched_ctx.form.id)
-                    try:
-                        update_result = await _apply_mail_to_workflow_transactionally(
+                ledger_item = None
+                if not dry_run:
+                    ledger_item = await register_mailbox_message(
+                        session,
+                        message_id=mail_ctx.message_id,
+                        mailbox_folder=str(args.folder or DEFAULT_IMAP_FOLDER),
+                        imap_id=mail_ctx.imap_id,
+                        subject=mail_ctx.subject,
+                        sender=mail_ctx.sender,
+                        body_text=mail_ctx.body_text,
+                        received_at=mail_ctx.email_date_utc,
+                        application_no_raw=mail_ctx.application_no_raw,
+                        application_no_normalized=mail_ctx.application_no_normalized,
+                        proforma_no_raw=mail_ctx.proforma_no_raw,
+                        proforma_no_normalized=mail_ctx.proforma_no_normalized,
+                    )
+
+                ambiguous_reason = match_decision.reason in {
+                    "ambiguous_application",
+                    "ambiguous_proforma",
+                    "ambiguous_score",
+                }
+                if ambiguous_reason:
+                    ambiguous_matches += 1
+                    warnings.append(
+                        f"Wiadomość {mail_ctx.message_id} wymaga ręcznego wyboru formularza."
+                    )
+                    if not dry_run and ledger_item is not None:
+                        saved_files = persist_mail_attachments(
+                            scope="manual_hold", mail_ctx=mail_ctx
+                        )
+                        await finalize_mailbox_message(
                             session,
-                            form_ctx=matched_ctx,
+                            item=ledger_item,
+                            processing_status=MAILBOX_STATUS_MANUAL_HOLD,
+                            classification="ambiguous_form_match",
+                            event_type=mail_ctx.event_type,
+                            details=f"match_reason={match_decision.reason}",
+                            attachment_manifest=saved_files,
+                        )
+                        await session.commit()
+                    planned_counts[MAILBOX_STATUS_MANUAL_HOLD] += 1
+                    updated += 1
+                    reports.append(
+                        {
+                            "message_id": mail_ctx.message_id,
+                            "subject": mail_ctx.subject,
+                            "matched": False,
+                            "match_reason": "manual_hold",
+                        }
+                    )
+                    continue
+
+                if (
+                    backfill
+                    and mail_ctx.message_id in legacy_processed_ids
+                    and matched_ctx is not None
+                ):
+                    saved_files = []
+                    if not dry_run:
+                        saved_files = persist_mail_attachments(
+                            scope=f"form_{matched_ctx.form.id}", mail_ctx=mail_ctx
+                        )
+                        if ledger_item is not None:
+                            await finalize_mailbox_message(
+                                session,
+                                item=ledger_item,
+                                processing_status=MAILBOX_STATUS_LINKED_FORM,
+                                classification="legacy_processed_import",
+                                event_type=mail_ctx.event_type,
+                                details=(
+                                    "Import z dotychczasowego stanu JSON bez ponownej zmiany "
+                                    "statusu biznesowego."
+                                ),
+                                attachment_manifest=saved_files,
+                                form_request_id=int(matched_ctx.form.id),
+                            )
+                            await session.commit()
+                    planned_counts[MAILBOX_STATUS_LINKED_FORM] += 1
+                    updated += 1
+                    reports.append(
+                        {
+                            "message_id": mail_ctx.message_id,
+                            "subject": mail_ctx.subject,
+                            "matched": True,
+                            "match_reason": "legacy_processed_import",
+                            "form_id": int(matched_ctx.form.id),
+                            "saved_files_count": len(saved_files),
+                        }
+                    )
+                    continue
+
+                if workflow_event and matched_ctx is not None:
+                    matched_form_id = int(matched_ctx.form.id)
+                    if dry_run:
+                        if mail_ctx.event_type == MAILBOX_EVENT_APPROVAL:
+                            dry_devices = await list_form_workflow_devices(
+                                session,
+                                workflow_case_id=matched_ctx.workflow_case.id,
+                            )
+                            try:
+                                await validate_no_active_workflow_device_duplicates(
+                                    session,
+                                    workflow_case=matched_ctx.workflow_case,
+                                    devices=dry_devices,
+                                )
+                                await asyncio.to_thread(
+                                    validate_workflow_device_ownership,
+                                    workflow_case=matched_ctx.workflow_case,
+                                    devices=dry_devices,
+                                )
+                            except WorkflowDeviceMixedOwnershipHold as exc:
+                                planned_counts[MAILBOX_STATUS_MANUAL_HOLD] += 1
+                                updated += 1
+                                warnings.append(str(exc))
+                                reports.append(
+                                    {
+                                        "message_id": mail_ctx.message_id,
+                                        "subject": mail_ctx.subject,
+                                        "matched": True,
+                                        "match_reason": "manual_hold_mixed_ownership",
+                                        "form_id": matched_form_id,
+                                    }
+                                )
+                                continue
+                            except WorkflowDeviceOwnershipConflict as exc:
+                                planned_counts[MAILBOX_STATUS_MANUAL_HOLD] += 1
+                                updated += 1
+                                warnings.append(str(exc))
+                                reports.append(
+                                    {
+                                        "message_id": mail_ctx.message_id,
+                                        "subject": mail_ctx.subject,
+                                        "matched": True,
+                                        "match_reason": "manual_hold_owner_conflict",
+                                        "form_id": matched_form_id,
+                                    }
+                                )
+                                continue
+                        dry_decision_text = " ".join(
+                            [
+                                mail_ctx.subject,
+                                mail_ctx.body_text,
+                                pdf_result.text if pdf_result else "",
+                            ]
+                        )
+                        dry_status, _, dry_status_update_skipped = resolve_mailbox_business_status(
                             mail_ctx=mail_ctx,
-                            extracted_data=extracted_data,
-                            pdf_text=pdf_result.text if pdf_result else "",
-                            archived_contract_file=archived_contract_file,
+                            current_business_status=(
+                                matched_ctx.workflow_case.business_status
+                                if matched_ctx.workflow_case is not None
+                                else None
+                            ),
+                            decision_text=dry_decision_text,
                         )
-                    except WorkflowDeviceOwnershipConflict as exc:
-                        form_contexts = await load_form_contexts(session)
-                        conflict_files = (
-                            [archived_contract_file]
-                            if isinstance(archived_contract_file, dict)
-                            else []
+                        update_result = {
+                            "form_id": matched_form_id,
+                            "workflow_case_id": (
+                                matched_ctx.workflow_case.id if matched_ctx.workflow_case else None
+                            ),
+                            "new_business_status": dry_status,
+                            "status_update_skipped": dry_status_update_skipped,
+                            "email_date_utc": mail_ctx.email_date_utc.isoformat(),
+                            "saved_files_count": len(mail_ctx.attachments),
+                            "saved_files": [],
+                            "archived_contract_file": None,
+                        }
+                    else:
+                        try:
+                            update_result = await _apply_mail_to_workflow_transactionally(
+                                session,
+                                form_ctx=matched_ctx,
+                                mail_ctx=mail_ctx,
+                                extracted_data=extracted_data,
+                                pdf_text=pdf_result.text if pdf_result else "",
+                                archived_contract_file=archived_contract_file,
+                            )
+                        except WorkflowDeviceMixedOwnershipHold as exc:
+                            conflict_files = _attachment_manifest_with_contract(
+                                [], archived_contract_file
+                            )
+                            if ledger_item is not None:
+                                await finalize_mailbox_message(
+                                    session,
+                                    item=ledger_item,
+                                    processing_status=MAILBOX_STATUS_MANUAL_HOLD,
+                                    classification="mixed_device_ownership",
+                                    event_type=mail_ctx.event_type,
+                                    details=str(exc),
+                                    attachment_manifest=conflict_files,
+                                    form_request_id=matched_form_id,
+                                )
+                                await session.commit()
+                            planned_counts[MAILBOX_STATUS_MANUAL_HOLD] += 1
+                            updated += 1
+                            warnings.append(str(exc))
+                            reports.append(
+                                {
+                                    "message_id": mail_ctx.message_id,
+                                    "subject": mail_ctx.subject,
+                                    "matched": True,
+                                    "match_reason": "manual_hold_mixed_ownership",
+                                    "form_id": matched_form_id,
+                                }
+                            )
+                            form_contexts = await load_form_contexts(session, include_all=True)
+                            continue
+                        except WorkflowDeviceOwnershipConflict as exc:
+                            if ledger_item is not None:
+                                await finalize_mailbox_message(
+                                    session,
+                                    item=ledger_item,
+                                    processing_status=MAILBOX_STATUS_MANUAL_HOLD,
+                                    classification="device_ownership_conflict",
+                                    event_type=mail_ctx.event_type,
+                                    details=str(exc),
+                                    attachment_manifest=_attachment_manifest_with_contract(
+                                        [], archived_contract_file
+                                    ),
+                                    form_request_id=matched_form_id,
+                                )
+                                await session.commit()
+                            planned_counts[MAILBOX_STATUS_MANUAL_HOLD] += 1
+                            updated += 1
+                            warnings.append(str(exc))
+                            reports.append(
+                                {
+                                    "message_id": mail_ctx.message_id,
+                                    "subject": mail_ctx.subject,
+                                    "matched": True,
+                                    "match_reason": "manual_hold_owner_conflict",
+                                    "form_id": matched_form_id,
+                                }
+                            )
+                            form_contexts = await load_form_contexts(session, include_all=True)
+                            continue
+
+                        if ledger_item is not None:
+                            await finalize_mailbox_message(
+                                session,
+                                item=ledger_item,
+                                processing_status=MAILBOX_STATUS_LINKED_FORM,
+                                classification="workflow_event",
+                                event_type=mail_ctx.event_type,
+                                details=f"match_reason={match_decision.reason}",
+                                attachment_manifest=_attachment_manifest_with_contract(
+                                    list(update_result.get("saved_files") or []),
+                                    archived_contract_file,
+                                ),
+                                form_request_id=matched_form_id,
+                            )
+                            await session.commit()
+                    planned_counts[MAILBOX_STATUS_LINKED_FORM] += 1
+                    updated += 1
+                    reports.append(
+                        {
+                            "message_id": mail_ctx.message_id,
+                            "subject": mail_ctx.subject,
+                            "matched": True,
+                            "match_reason": match_decision.reason,
+                            "form_id": update_result["form_id"],
+                            "workflow_case_id": update_result["workflow_case_id"],
+                            "new_business_status": update_result["new_business_status"],
+                            "status_update_skipped": update_result.get("status_update_skipped"),
+                            "application_no": mail_ctx.application_no_raw,
+                            "proforma_no": mail_ctx.proforma_no_raw,
+                            "email_date_utc": update_result["email_date_utc"],
+                            "saved_files_count": update_result.get("saved_files_count"),
+                            "archived_contract_file": update_result.get("archived_contract_file"),
+                            "pdf_success": pdf_result.success if pdf_result else None,
+                            "pdf_method": pdf_result.method if pdf_result else None,
+                            "pdf_password_used": pdf_result.password_used if pdf_result else None,
+                            "pdf_error": pdf_result.error if pdf_result else None,
+                            "extracted_data": extracted_data,
+                        }
+                    )
+                    continue
+
+                if matched_ctx is not None:
+                    saved_files = []
+                    if not dry_run:
+                        saved_files = persist_mail_attachments(
+                            scope=f"form_{matched_ctx.form.id}", mail_ctx=mail_ctx
                         )
-                        register_unresolved_message(
-                            unresolved_state,
-                            reason=UNRESOLVED_REASON_DEVICE_OWNER_CONFLICT,
-                            message_id=mail_ctx.message_id,
+                        if ledger_item is not None:
+                            await finalize_mailbox_message(
+                                session,
+                                item=ledger_item,
+                                processing_status=MAILBOX_STATUS_LINKED_FORM,
+                                classification=_classify_auxiliary_message(mail_ctx),
+                                event_type=mail_ctx.event_type,
+                                details=(
+                                    "Korespondencja przypięta bez zmiany statusu biznesowego; "
+                                    f"match_reason={match_decision.reason}"
+                                ),
+                                attachment_manifest=saved_files,
+                                form_request_id=int(matched_ctx.form.id),
+                            )
+                            await session.commit()
+                    planned_counts[MAILBOX_STATUS_LINKED_FORM] += 1
+                    updated += 1
+                    reports.append(
+                        {
+                            "message_id": mail_ctx.message_id,
+                            "subject": mail_ctx.subject,
+                            "matched": True,
+                            "match_reason": "auxiliary_form_message",
+                            "form_id": int(matched_ctx.form.id),
+                            "saved_files_count": len(saved_files),
+                        }
+                    )
+                    continue
+
+                if mail_ctx.application_no_normalized and mail_ctx.application_no_raw:
+                    unmatched_forms += 1
+                    saved_files = []
+                    history_case_id = None
+                    if not dry_run:
+                        saved_files = persist_mail_attachments(
+                            scope=f"history_{mail_ctx.application_no_normalized}",
+                            mail_ctx=mail_ctx,
+                        )
+                        history_case = await get_or_create_history_case(
+                            session,
+                            application_no_raw=mail_ctx.application_no_raw,
+                            application_no_normalized=mail_ctx.application_no_normalized,
                             subject=mail_ctx.subject,
-                            sender=mail_ctx.sender,
-                            email_date_utc=mail_ctx.email_date_utc,
-                            application_no=mail_ctx.application_no_raw,
-                            details=str(exc),
-                            saved_files=conflict_files,
                         )
-                        state_changed = True
-                        warnings.append(
-                            "Nie zatwierdzono sprawy z powodu właściciela urządzenia: " f"{exc}"
-                        )
-                        reports.append(
-                            {
-                                "message_id": mail_ctx.message_id,
-                                "subject": mail_ctx.subject,
-                                "matched": False,
-                                "match_reason": UNRESOLVED_REASON_DEVICE_OWNER_CONFLICT,
-                                "form_id": matched_form_id,
-                                "application_no": mail_ctx.application_no_raw,
-                                "proforma_no": mail_ctx.proforma_no_raw,
-                                "saved_files_count": len(conflict_files),
-                                "pdf_success": pdf_result.success if pdf_result else None,
-                                "pdf_error": pdf_result.error if pdf_result else None,
-                                "extracted_data": extracted_data,
-                            }
-                        )
-                        continue
-                else:
-                    dry_decision_text = " ".join(
-                        [
-                            mail_ctx.subject,
-                            mail_ctx.body_text,
-                            pdf_result.text if pdf_result else "",
-                        ]
+                        history_case_id = history_case.id
+                        if ledger_item is not None:
+                            await finalize_mailbox_message(
+                                session,
+                                item=ledger_item,
+                                processing_status=MAILBOX_STATUS_HISTORICAL_ARCHIVED,
+                                classification="historical_application",
+                                event_type=mail_ctx.event_type,
+                                details=f"Brak formularza; match_reason={match_decision.reason}",
+                                attachment_manifest=saved_files,
+                                history_case_id=history_case.id,
+                            )
+                            await session.commit()
+                    planned_counts[MAILBOX_STATUS_HISTORICAL_ARCHIVED] += 1
+                    updated += 1
+                    reports.append(
+                        {
+                            "message_id": mail_ctx.message_id,
+                            "subject": mail_ctx.subject,
+                            "matched": False,
+                            "match_reason": "historical_archived",
+                            "history_case_id": history_case_id,
+                            "saved_files_count": len(saved_files),
+                        }
                     )
-                    dry_status, _, dry_status_update_skipped = resolve_mailbox_business_status(
-                        mail_ctx=mail_ctx,
-                        current_business_status=(
-                            matched_ctx.workflow_case.business_status
-                            if matched_ctx.workflow_case is not None
-                            else None
-                        ),
-                        decision_text=dry_decision_text,
-                    )
-                    update_result = {
-                        "form_id": matched_ctx.form.id,
-                        "workflow_case_id": (
-                            matched_ctx.workflow_case.id if matched_ctx.workflow_case else None
-                        ),
-                        "new_business_status": dry_status,
-                        "status_update_skipped": dry_status_update_skipped,
-                        "email_date_utc": mail_ctx.email_date_utc.isoformat(),
-                        "saved_files_count": len(mail_ctx.attachments),
-                        "archived_contract_file": archived_contract_file,
-                    }
+                    continue
 
+                if not dry_run and ledger_item is not None:
+                    await finalize_mailbox_message(
+                        session,
+                        item=ledger_item,
+                        processing_status=MAILBOX_STATUS_IGNORED,
+                        classification="unrelated_without_application",
+                        event_type=mail_ctx.event_type,
+                        details="Brak numeru wniosku i stabilnego dopasowania do formularza.",
+                    )
+                    await session.commit()
+                planned_counts[MAILBOX_STATUS_IGNORED] += 1
                 updated += 1
-                processed_now.add(mail_ctx.message_id)
-                if mail_ctx.message_id in unresolved_state:
-                    unresolved_state.pop(mail_ctx.message_id, None)
-                    state_changed = True
-
                 reports.append(
                     {
                         "message_id": mail_ctx.message_id,
                         "subject": mail_ctx.subject,
-                        "matched": True,
-                        "match_reason": match_decision.reason,
-                        "form_id": update_result["form_id"],
-                        "workflow_case_id": update_result["workflow_case_id"],
-                        "new_business_status": update_result["new_business_status"],
-                        "status_update_skipped": update_result.get("status_update_skipped"),
-                        "application_no": mail_ctx.application_no_raw,
-                        "proforma_no": mail_ctx.proforma_no_raw,
-                        "email_date_utc": update_result["email_date_utc"],
-                        "saved_files_count": update_result.get("saved_files_count"),
-                        "archived_contract_file": update_result.get("archived_contract_file"),
-                        "pdf_success": pdf_result.success if pdf_result else None,
-                        "pdf_method": pdf_result.method if pdf_result else None,
-                        "pdf_password_used": pdf_result.password_used if pdf_result else None,
-                        "pdf_error": pdf_result.error if pdf_result else None,
-                        "extracted_data": extracted_data,
+                        "matched": False,
+                        "match_reason": "ignored",
                     }
                 )
 
-    if not args.dry_run and (processed_now or state_changed):
-        _save_state(STATE_PATH, processed_state.union(processed_now), unresolved_state)
+        ledger_counts = planned_counts if dry_run else await mailbox_ledger_counts(session)
+
+    unresolved_open = int(ledger_counts.get("unresolved_open", 0))
+    manual_hold_count = int(ledger_counts.get(MAILBOX_STATUS_MANUAL_HOLD, 0))
 
     print(
         f"[INFO] Analizowane: {analysed}, zaktualizowane: {updated}, "
         f"pominięte (stan): {skipped}, ostrzeżenia: {len(warnings)}, "
         f"nierozpoznane: {unknown_subjects}, niedopasowane: {unmatched_forms}, "
-        f"wieloznaczne: {ambiguous_matches}, otwarte wyjątki: {len(unresolved_state)}"
+        f"wieloznaczne: {ambiguous_matches}, otwarte wyjątki: {unresolved_open}, "
+        f"wstrzymane ręcznie: {manual_hold_count}"
+    )
+    print(
+        "[INFO] Rejestr mailboxa: "
+        f"linked_form={ledger_counts.get(MAILBOX_STATUS_LINKED_FORM, 0)}, "
+        f"historical_archived={ledger_counts.get(MAILBOX_STATUS_HISTORICAL_ARCHIVED, 0)}, "
+        f"ignored={ledger_counts.get(MAILBOX_STATUS_IGNORED, 0)}, "
+        f"manual_hold={manual_hold_count}, error={ledger_counts.get(MAILBOX_STATUS_ERROR, 0)}"
     )
     for item in reports:
         print("-" * 80)

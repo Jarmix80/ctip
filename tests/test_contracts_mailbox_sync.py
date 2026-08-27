@@ -449,6 +449,9 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
         captured["workflow_case_id"] = kwargs["workflow_case_id"]
         return [device]
 
+    async def fake_validate_no_active_workflow_device_duplicates(*args, **kwargs):
+        captured["active_duplicate_check"] = True
+
     def fake_bind_devices_to_workflow_client(*, workflow_case, devices, actor_label):
         captured["binding_actor_label"] = actor_label
         captured["binding_device_ids"] = [item.id for item in devices]
@@ -504,6 +507,11 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     monkeypatch.setattr(module, "list_form_workflow_devices", fake_list_form_workflow_devices)
     monkeypatch.setattr(
         module,
+        "validate_no_active_workflow_device_duplicates",
+        fake_validate_no_active_workflow_device_duplicates,
+    )
+    monkeypatch.setattr(
+        module,
         "validate_workflow_device_ownership",
         fake_validate_workflow_device_ownership,
     )
@@ -531,6 +539,7 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     assert result["new_business_status"] == module.WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
     assert captured["status_source"] == "mailbox"
     assert captured["validated_workflow_case_id"] == 11
+    assert captured["active_duplicate_check"] is True
     assert captured["validated_device_ids"] == [19]
     assert captured["binding_actor_label"] == "Automat skrzynki GRENKE"
     assert captured["binding_device_ids"] == [19]
@@ -592,6 +601,9 @@ def test_apply_mail_to_workflow_blocks_approval_for_foreign_device(monkeypatch) 
         status_called = True
         return workflow_case
 
+    async def fake_validate_no_active_workflow_device_duplicates(*args, **kwargs):
+        return None
+
     ownership_error = module.WorkflowDeviceOwnershipConflict(
         [
             SimpleNamespace(
@@ -601,6 +613,11 @@ def test_apply_mail_to_workflow_blocks_approval_for_foreign_device(monkeypatch) 
         ]
     )
     monkeypatch.setattr(module, "list_form_workflow_devices", fake_list_form_workflow_devices)
+    monkeypatch.setattr(
+        module,
+        "validate_no_active_workflow_device_duplicates",
+        fake_validate_no_active_workflow_device_duplicates,
+    )
     monkeypatch.setattr(
         module,
         "validate_workflow_device_ownership",

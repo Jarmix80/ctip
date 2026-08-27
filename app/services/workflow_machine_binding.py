@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models import AdminUser, FormWorkflowCase, FormWorkflowDevice, SmsOut
+from app.models import AdminUser, FormRequest, FormWorkflowCase, FormWorkflowDevice, SmsOut
 from app.services import admin_users
 from app.services.contracts_dashboard import (
     extract_stock_device_identity,
@@ -23,7 +23,12 @@ from app.services.contracts_dashboard import (
 )
 from app.services.email_client import send_smtp_message
 from app.services.workflow_device_ownership import (
+    MACHINE_BATCH_MIXED_HOLD,
+    MACHINE_MATCH_MISSING,
+    MACHINE_MATCH_TARGET,
+    MACHINE_MATCH_WAREHOUSE,
     classify_workflow_machine_ownership,
+    classify_workflow_ownership_batch,
     snapshot_confirms_current_workflow_binding,
 )
 
@@ -103,6 +108,19 @@ class WorkflowDeviceOwnershipConflict(RuntimeError):
         super().__init__("Urządzenia nie są dostępne na magazynie Ksero Partner. " + details)
 
 
+class WorkflowDeviceMixedOwnershipHold(WorkflowDeviceOwnershipConflict):
+    """Wstrzymuje mieszany pakiet urządzeń bez wykonywania zapisów w MS."""
+
+    def __init__(self, conflicts: list[WorkflowDeviceOwnershipConflictItem]) -> None:
+        self.conflicts = conflicts
+        details = "; ".join(f"wiersz {item.source_row or '?'}: {item.reason}" for item in conflicts)
+        RuntimeError.__init__(
+            self,
+            "Pakiet zawiera jednocześnie urządzenia magazynowe i już przypisane "
+            "do klienta docelowego. Sprawę pozostawiono do ręcznego wyjaśnienia. " + details,
+        )
+
+
 class _WorkflowMachineOwnerChanged(RuntimeError):
     """Wewnętrzny sygnał zmiany właściciela pomiędzy walidacją i zapisem."""
 
@@ -134,6 +152,7 @@ class _PreparedWorkflowDeviceBinding:
     source_context: WorkflowDeviceSourceContext
     machine_id: int | None
     expected_client_id: int | None
+    ownership_state: str
 
 
 def _truncate_text(value: Any, max_length: int) -> str | None:
@@ -554,6 +573,7 @@ def _validate_workflow_device_ownership_with_cursor(
                     source_context=source_context,
                     machine_id=None,
                     expected_client_id=None,
+                    ownership_state=MACHINE_MATCH_MISSING,
                 )
             )
             continue
@@ -571,6 +591,7 @@ def _validate_workflow_device_ownership_with_cursor(
             client_id=current_client_id,
             client_name=current_client_name,
             warehouse_client_id=settings.fb_warehouse_client_id,
+            target_client_id=target_client_id,
         )
         idempotent_binding = bool(
             current_client_id == target_client_id
@@ -600,12 +621,96 @@ def _validate_workflow_device_ownership_with_cursor(
                 source_context=source_context,
                 machine_id=machine_id,
                 expected_client_id=current_client_id,
+                ownership_state=ownership.state,
             )
         )
 
     if conflicts:
         raise WorkflowDeviceOwnershipConflict(conflicts)
+    ownership_states = {item.ownership_state for item in prepared}
+    if classify_workflow_ownership_batch(ownership_states) == MACHINE_BATCH_MIXED_HOLD:
+        mixed_items = [
+            WorkflowDeviceOwnershipConflictItem(
+                workflow_device_id=item.device.id,
+                source_row=item.device.source_row,
+                machine_id=item.machine_id,
+                current_client_id=item.expected_client_id,
+                current_client_name=None,
+                reason=(
+                    "urządzenie jest już u klienta docelowego"
+                    if item.ownership_state == MACHINE_MATCH_TARGET
+                    else "urządzenie pozostaje na magazynie"
+                ),
+            )
+            for item in prepared
+            if item.ownership_state in {MACHINE_MATCH_TARGET, MACHINE_MATCH_WAREHOUSE}
+        ]
+        raise WorkflowDeviceMixedOwnershipHold(mixed_items)
     return prepared
+
+
+async def validate_no_active_workflow_device_duplicates(
+    session: AsyncSession,
+    *,
+    workflow_case: FormWorkflowCase,
+    devices: list[FormWorkflowDevice],
+) -> None:
+    """Blokuje urządzenie użyte równolegle w innej aktywnej sprawie FLOW."""
+    if not devices:
+        return
+    rows = (
+        await session.execute(
+            select(FormWorkflowDevice, FormWorkflowCase)
+            .join(FormWorkflowCase, FormWorkflowCase.id == FormWorkflowDevice.workflow_case_id)
+            .join(FormRequest, FormRequest.id == FormWorkflowCase.form_request_id)
+            .where(
+                FormWorkflowCase.id != workflow_case.id,
+                FormRequest.status == "SUBMITTED",
+                FormRequest.archive_bucket.is_(None),
+            )
+        )
+    ).all()
+    selected_keys = {
+        (str(device.source_type or ""), int(device.source_row))
+        for device in devices
+        if device.source_row is not None
+    }
+    selected_serials = {
+        normalize_device_key(device.serial)
+        for device in devices
+        if normalize_device_key(device.serial)
+    }
+    selected_indexes = {
+        normalize_device_key(device.ewidencja)
+        for device in devices
+        if normalize_device_key(device.ewidencja)
+    }
+    conflicts: list[WorkflowDeviceOwnershipConflictItem] = []
+    for other_device, other_case in rows:
+        other_key = (
+            str(other_device.source_type or ""),
+            int(other_device.source_row) if other_device.source_row is not None else None,
+        )
+        serial_key = normalize_device_key(other_device.serial)
+        index_key = normalize_device_key(other_device.ewidencja)
+        if not (
+            other_key in selected_keys
+            or (serial_key and serial_key in selected_serials)
+            or (index_key and index_key in selected_indexes)
+        ):
+            continue
+        conflicts.append(
+            WorkflowDeviceOwnershipConflictItem(
+                workflow_device_id=other_device.id,
+                source_row=other_device.source_row,
+                machine_id=other_device.firebird_machine_id,
+                current_client_id=other_device.firebird_client_id,
+                current_client_name=None,
+                reason=f"urządzenie jest używane w aktywnej sprawie FLOW {other_case.id}",
+            )
+        )
+    if conflicts:
+        raise WorkflowDeviceOwnershipConflict(conflicts)
 
 
 def validate_workflow_device_ownership(
@@ -932,6 +1037,48 @@ def bind_devices_to_workflow_client(
             snapshot = prepared.snapshot
             source_context = prepared.source_context
             try:
+                if prepared.ownership_state == MACHINE_MATCH_TARGET and prepared.machine_id:
+                    current_row = _fetch_machine_row(cursor, prepared.machine_id)
+                    items.append(
+                        WorkflowDeviceBindingItem(
+                            workflow_device_id=device.id,
+                            source_row=device.source_row,
+                            source_type=device.source_type,
+                            ok=True,
+                            message=(
+                                "Urządzenie było już przypisane do klienta docelowego; "
+                                "nie wykonano zapisu właściciela w MS."
+                            ),
+                            producer=(
+                                _truncate_text(current_row[7], 100)
+                                if current_row
+                                else device.producer
+                            ),
+                            model=(
+                                _truncate_text(current_row[8], 100) if current_row else device.model
+                            ),
+                            serial=(
+                                _truncate_text(current_row[5], 100)
+                                if current_row
+                                else device.serial
+                            ),
+                            machine_id=prepared.machine_id,
+                            previous_client_id=prepared.expected_client_id,
+                            current_client_id=prepared.expected_client_id,
+                            previous_ewidencja=(
+                                _truncate_text(current_row[2], 100)
+                                if current_row
+                                else device.ewidencja
+                            ),
+                            current_ewidencja=(
+                                _truncate_text(current_row[2], 100)
+                                if current_row
+                                else device.ewidencja
+                            ),
+                            ewidencja_changed=False,
+                        )
+                    )
+                    continue
                 model_match, model_match_source = _resolve_model_match_for_device(
                     source_context=source_context,
                 )
@@ -1274,9 +1421,11 @@ __all__ = [
     "WorkflowDeviceBindingItem",
     "WorkflowDeviceOwnershipConflict",
     "WorkflowDeviceOwnershipConflictItem",
+    "WorkflowDeviceMixedOwnershipHold",
     "apply_binding_snapshot",
     "bind_devices_to_workflow_client",
     "build_binding_status_payload",
     "notify_binding_issues_to_admins",
+    "validate_no_active_workflow_device_duplicates",
     "validate_workflow_device_ownership",
 ]

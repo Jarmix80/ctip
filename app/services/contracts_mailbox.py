@@ -32,6 +32,9 @@ _APPROVAL_HINT_PATTERNS = (
 )
 
 _APP_NO_PATTERN = re.compile(r"\b(\d{3})\s*[-_/]\s*(\d{4,7})\b")
+_COMPACT_APP_NO_PATTERN = re.compile(
+    r"(?i)\b(?:wnio(?:sek|sku|sku\s+nr)|application|aplikacj[ai])\D{0,16}(\d{3})(\d{4,7})\b"
+)
 _PROFORMA_NO_PATTERN = re.compile(
     r"(?is)\b(?:faktura\s*)?proforma(?:\s*(?:nr|numer|no|#)\s*[:.]?)?\s*"
     r"(\d[\d\s]*/\s*proforma\s*/\s*\d[\d\s]*)"
@@ -123,18 +126,26 @@ def extract_application_number(text: str) -> ParsedApplicationNumber | None:
     """Wyciąga numer wniosku z tekstu i zwraca formę surową oraz znormalizowaną."""
     match = _APP_NO_PATTERN.search(text or "")
     if match is None:
+        match = _COMPACT_APP_NO_PATTERN.search(text or "")
+    if match is None:
         return None
     raw = f"{match.group(1)}-{match.group(2)}"
-    normalized = f"{match.group(1)}{match.group(2)}"
+    normalized = normalize_application_number(raw)
+    if normalized is None:
+        return None
     return ParsedApplicationNumber(raw=raw, normalized=normalized)
 
 
 def normalize_application_number(value: str | None) -> str | None:
-    """Normalizuje numer wniosku do postaci samych cyfr."""
+    """Normalizuje numer wniosku, usuwając techniczne zero z części kolejnej."""
     if value is None:
         return None
     digits = re.sub(r"\D+", "", str(value))
-    return digits or None
+    if len(digits) < 7:
+        return digits or None
+    prefix = digits[:3]
+    suffix = digits[3:].lstrip("0") or "0"
+    return f"{prefix}{suffix}"
 
 
 def normalize_proforma_number(value: str | None) -> str | None:
@@ -261,8 +272,9 @@ def score_form_match(body_text: str, payload: dict[str, Any]) -> int:
     if company_name and company_name in normalized_body:
         score += 10
 
-    company_nip = normalize_application_number(str(payload.get("company_nip") or ""))
-    if company_nip and company_nip in normalize_application_number(normalized_body or ""):
+    company_nip = _normalize_nip(str(payload.get("company_nip") or ""))
+    body_digits = re.sub(r"\D+", "", str(body_text or ""))
+    if company_nip and company_nip in body_digits:
         score += 8
 
     representatives = payload.get("representatives")

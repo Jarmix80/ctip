@@ -287,6 +287,23 @@ function initializeGenForm() {
   const summarySubtitle = document.getElementById("genform-summary-subtitle");
   const summaryContent = document.getElementById("genform-summary-content");
   const archiveMenuItems = document.querySelectorAll("[data-archive-scope]");
+  const mailboxHistoryMenu = document.getElementById("genform-mailbox-history-menu");
+  const mailboxHistoryCount = document.getElementById("genform-count-mailbox-history");
+  const formsTableWrap = document.getElementById("genform-forms-table-wrap");
+  const mailboxHistoryView = document.getElementById("genform-mailbox-history-view");
+  const mailboxHistoryFilters = document.getElementById("genform-mailbox-history-filters");
+  const mailboxHistorySearch = document.getElementById("genform-mailbox-history-search");
+  const mailboxHistoryDateFrom = document.getElementById("genform-mailbox-history-date-from");
+  const mailboxHistoryDateTo = document.getElementById("genform-mailbox-history-date-to");
+  const mailboxHistoryEventType = document.getElementById("genform-mailbox-history-event-type");
+  const mailboxHistoryAttachments = document.getElementById("genform-mailbox-history-attachments");
+  const mailboxHistorySummary = document.getElementById("genform-mailbox-history-summary");
+  const mailboxHistoryBody = document.getElementById("genform-mailbox-history-body");
+  const mailboxHistoryModal = document.getElementById("genform-mailbox-history-modal");
+  const mailboxHistoryClose = document.getElementById("genform-mailbox-history-close");
+  const mailboxHistoryTitle = document.getElementById("genform-mailbox-history-title");
+  const mailboxHistorySubtitle = document.getElementById("genform-mailbox-history-subtitle");
+  const mailboxHistoryDetail = document.getElementById("genform-mailbox-history-detail");
   const proformaModal = document.getElementById("genform-proforma-modal");
   const proformaCloseBtn = document.getElementById("genform-proforma-close");
   const proformaSubtitle = document.getElementById("genform-proforma-subtitle");
@@ -316,6 +333,7 @@ function initializeGenForm() {
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
   let activeArchiveScope = "active";
+  let mailboxHistoryActive = false;
   let proformaPdfDownloadBusy = false;
   setDefaultExpiresOn();
 
@@ -1260,6 +1278,7 @@ function initializeGenForm() {
     const proformaValue = workflow.proforma_number
       ? escapeHtml(workflow.proforma_number)
       : '<span class="genform-status warning">Brak</span>';
+    const mailboxMessages = Array.isArray(data.mailbox_messages) ? data.mailbox_messages : [];
     workflowSummary.innerHTML = `
       <article class="genform-detail-summary-card">
         <dt>Dane firmy</dt>
@@ -1298,6 +1317,16 @@ function initializeGenForm() {
       <article class="genform-detail-summary-card">
         <dt>Menadżer Serwisu</dt>
         <dd><span class="genform-status ${bindingClass}">${escapeHtml(bindingText)}</span></dd>
+      </article>
+      <article class="genform-detail-summary-card">
+        <dt>Korespondencja GRENKE</dt>
+        <dd>
+          ${
+            mailboxMessages.length
+              ? `<details><summary>${mailboxMessages.length} wiadomości</summary>${renderMailboxHistoryMessages(mailboxMessages)}</details>`
+              : "Brak przypiętych wiadomości."
+          }
+        </dd>
       </article>
     `;
   }
@@ -2394,11 +2423,210 @@ function initializeGenForm() {
     return user;
   }
 
+  function mailboxEventLabel(eventType, classification) {
+    const mapped = {
+      decision_for_signature: "Decyzja GRENKE",
+      approval_for_delivery: "Zgoda na realizację",
+      invoice_commission: "Faktura prowizyjna",
+      delivery_confirmation: "Potwierdzenie dostarczenia",
+      correspondence: "Korespondencja",
+      historical_application: "Wiadomość historyczna",
+    };
+    return mapped[eventType] || mapped[classification] || classification || "Korespondencja";
+  }
+
+  function setMailboxHistoryView(active) {
+    mailboxHistoryActive = Boolean(active);
+    if (formsTableWrap) {
+      formsTableWrap.hidden = mailboxHistoryActive;
+    }
+    if (mailboxSyncNote) {
+      mailboxSyncNote.hidden = mailboxHistoryActive;
+    }
+    if (mailboxHistoryView) {
+      mailboxHistoryView.hidden = !mailboxHistoryActive;
+    }
+    mailboxHistoryMenu?.classList.toggle("is-active", mailboxHistoryActive);
+    archiveMenuItems.forEach((button) => {
+      const scope = button.getAttribute("data-archive-scope") || "active";
+      button.classList.toggle("is-active", !mailboxHistoryActive && scope === activeArchiveScope);
+    });
+  }
+
+  function buildMailboxHistoryQuery() {
+    const params = new URLSearchParams({ limit: "200", offset: "0" });
+    const values = {
+      q: mailboxHistorySearch?.value?.trim() || "",
+      date_from: mailboxHistoryDateFrom?.value || "",
+      date_to: mailboxHistoryDateTo?.value || "",
+      event_type: mailboxHistoryEventType?.value || "",
+    };
+    Object.entries(values).forEach(([key, value]) => {
+      if (value) {
+        params.set(key, value);
+      }
+    });
+    if (mailboxHistoryAttachments?.value === "1") {
+      params.set("has_attachments", "true");
+    } else if (mailboxHistoryAttachments?.value === "0") {
+      params.set("has_attachments", "false");
+    }
+    return params;
+  }
+
+  function renderMailboxHistory(items) {
+    if (!mailboxHistoryBody) {
+      return;
+    }
+    if (!Array.isArray(items) || !items.length) {
+      mailboxHistoryBody.innerHTML = "<tr><td colspan='5'>Brak wiadomości spełniających kryteria.</td></tr>";
+      return;
+    }
+    mailboxHistoryBody.innerHTML = items
+      .map(
+        (item) => `<tr>
+          <td><strong>${escapeHtml(item.application_no || "—")}</strong></td>
+          <td>${escapeHtml(formatDate(item.last_message_at))}</td>
+          <td>${escapeHtml(item.title || "—")}</td>
+          <td>${escapeHtml(item.message_count || 0)}</td>
+          <td><button type="button" class="genform-row-action" data-mailbox-history-id="${Number(item.id)}">Wyświetl</button></td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  async function loadMailboxHistory(showInfo = false) {
+    if (!token) {
+      showLogin("Brak aktywnej sesji.");
+      return;
+    }
+    clearMessages();
+    setMailboxHistoryView(true);
+    setBusy(refreshBtn, true, "Odświeżanie…", "Odśwież listę");
+    try {
+      const response = await fetch(
+        `/admin/contracts/mailbox/history?${buildMailboxHistoryQuery().toString()}`,
+        { headers: headers(false) }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się pobrać archiwum wiadomości.");
+      }
+      renderMailboxHistory(data.items || []);
+      if (mailboxHistoryCount) {
+        mailboxHistoryCount.textContent = String(Number(data.total || 0));
+      }
+      if (mailboxHistorySummary) {
+        const ledger = data.ledger || {};
+        mailboxHistorySummary.textContent =
+          `Sprawy historyczne: ${Number(data.total || 0)} · ` +
+          `wiadomości historyczne: ${Number(ledger.historical_archived || 0)} · ` +
+          `do wyjaśnienia: ${Number(ledger.manual_hold || 0)}`;
+      }
+      if (showInfo) {
+        showSuccess("Archiwum wiadomości zostało odświeżone.");
+      }
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd pobierania archiwum wiadomości.");
+    } finally {
+      setBusy(refreshBtn, false, "Odświeżanie…", "Odśwież listę");
+    }
+  }
+
+  function renderMailboxHistoryMessages(messages) {
+    if (!Array.isArray(messages) || !messages.length) {
+      return "<p>Brak wiadomości w tej sprawie.</p>";
+    }
+    return `<div class="genform-mailbox-message-list">${messages
+      .map((message) => {
+        const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+        return `<article class="genform-mailbox-message">
+          <header>
+            <div>
+              <strong>${escapeHtml(message.subject || "Bez tematu")}</strong>
+              <div class="genform-subtle">${escapeHtml(message.sender || "—")}</div>
+            </div>
+            <div>
+              <span class="genform-status info">${escapeHtml(mailboxEventLabel(message.event_type, message.classification))}</span>
+              <div class="genform-subtle">${escapeHtml(formatDate(message.received_at))}</div>
+            </div>
+          </header>
+          <pre>${escapeHtml(message.body_text || "Brak treści tekstowej.")}</pre>
+          ${
+            attachments.length
+              ? `<div class="genform-mailbox-attachments">${attachments
+                  .map(
+                    (attachment) => `<button type="button" class="genform-row-action" data-mailbox-message-id="${Number(message.id)}" data-mailbox-attachment-index="${Number(attachment.index)}">Pobierz: ${escapeHtml(attachment.file_name || "załącznik")}</button>`
+                  )
+                  .join("")}</div>`
+              : ""
+          }
+        </article>`;
+      })
+      .join("")}</div>`;
+  }
+
+  async function openMailboxHistoryCase(historyCaseId) {
+    clearMessages();
+    try {
+      const response = await fetch(`/admin/contracts/mailbox/history/${historyCaseId}`, {
+        headers: headers(false),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Nie udało się pobrać sprawy historycznej.");
+      }
+      if (mailboxHistoryTitle) {
+        mailboxHistoryTitle.textContent = `Wniosek ${data.application_no || "—"}`;
+      }
+      if (mailboxHistorySubtitle) {
+        mailboxHistorySubtitle.textContent =
+          `${Number(data.message_count || 0)} wiadomości · ostatnia: ${formatDate(data.last_message_at)}`;
+      }
+      if (mailboxHistoryDetail) {
+        mailboxHistoryDetail.innerHTML = renderMailboxHistoryMessages(data.messages || []);
+      }
+      if (mailboxHistoryModal) {
+        mailboxHistoryModal.hidden = false;
+      }
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd pobierania sprawy historycznej.");
+    }
+  }
+
+  async function downloadMailboxAttachment(messageId, attachmentIndex) {
+    try {
+      const response = await fetch(
+        `/admin/contracts/mailbox/messages/${messageId}/attachments/${attachmentIndex}`,
+        { headers: headers(false) }
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Nie udało się pobrać załącznika.");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const fileNameMatch = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+      const fileName = fileNameMatch ? decodeURIComponent(fileNameMatch[1].replace(/\"/g, "")) : "zalacznik";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Błąd pobierania załącznika.");
+    }
+  }
+
   async function loadItems(showInfo = false) {
     if (!token) {
       showLogin("Brak aktywnej sesji.");
       return;
     }
+    setMailboxHistoryView(false);
     clearMessages();
     setBusy(refreshBtn, true, "Odświeżanie…", "Odśwież listę");
     try {
@@ -2997,7 +3225,13 @@ function initializeGenForm() {
 
   loginForm?.addEventListener("submit", handleLogin);
   createForm?.addEventListener("submit", handleGenerate);
-  refreshBtn?.addEventListener("click", () => loadItems(true));
+  refreshBtn?.addEventListener("click", () => {
+    if (mailboxHistoryActive) {
+      loadMailboxHistory(true);
+    } else {
+      loadItems(true);
+    }
+  });
   logoutBtn?.addEventListener("click", handleLogout);
   copyLinkBtn?.addEventListener("click", handleCopyLink);
   passwordToggleBtn?.addEventListener("click", togglePasswordVisibility);
@@ -3005,6 +3239,46 @@ function initializeGenForm() {
   workflowCloseBtn?.addEventListener("click", closeWorkflowModal);
   statusCloseBtn?.addEventListener("click", closeStatusModal);
   summaryCloseBtn?.addEventListener("click", closeSummaryModal);
+  mailboxHistoryClose?.addEventListener("click", () => {
+    if (mailboxHistoryModal) {
+      mailboxHistoryModal.hidden = true;
+    }
+  });
+  mailboxHistoryMenu?.addEventListener("click", () => loadMailboxHistory(false));
+  mailboxHistoryFilters?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadMailboxHistory(false);
+  });
+  mailboxHistoryBody?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-mailbox-history-id]")
+      : null;
+    if (target instanceof HTMLElement) {
+      openMailboxHistoryCase(Number(target.dataset.mailboxHistoryId));
+    }
+  });
+  mailboxHistoryDetail?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-mailbox-message-id][data-mailbox-attachment-index]")
+      : null;
+    if (target instanceof HTMLElement) {
+      downloadMailboxAttachment(
+        Number(target.dataset.mailboxMessageId),
+        Number(target.dataset.mailboxAttachmentIndex)
+      );
+    }
+  });
+  workflowSummary?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-mailbox-message-id][data-mailbox-attachment-index]")
+      : null;
+    if (target instanceof HTMLElement) {
+      downloadMailboxAttachment(
+        Number(target.dataset.mailboxMessageId),
+        Number(target.dataset.mailboxAttachmentIndex)
+      );
+    }
+  });
   proformaCloseBtn?.addEventListener("click", closeProformaModal);
   proformaPdfLink?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -3165,6 +3439,7 @@ function initializeGenForm() {
   archiveMenuItems.forEach((button) => {
     button.addEventListener("click", () => {
       activeArchiveScope = button.getAttribute("data-archive-scope") || "active";
+      setMailboxHistoryView(false);
       loadItems(false);
     });
   });

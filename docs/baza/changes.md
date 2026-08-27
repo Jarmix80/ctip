@@ -1,5 +1,12 @@
 # Zmiany schematu bazy CTIP
 
+## 2026-08-28
+
+- Migracja `a7c4e2f9b1d3` dodaje trwały, idempotentny rejestr `ctip.contracts_mailbox_message` oparty na unikalnym `Message-ID`.
+- Dodano tabelę `ctip.contracts_mailbox_history_case`, która grupuje korespondencję historyczną po kanonicznym numerze wniosku bez tworzenia sztucznych rekordów `form_request`.
+- Rejestr przechowuje pełną treść tekstową, klasyfikację, stan końcowy, powiązanie z formularzem lub sprawą historyczną oraz manifest załączników. API nie zwraca lokalnych ścieżek plików.
+- Kontrolowane stany wiadomości to `pending`, `linked_form`, `historical_archived`, `ignored`, `manual_hold` i `error`; stany końcowe nie są ponawiane przez scheduler.
+
 ## 2026-08-27
 
 - Migracja produkcyjna `f9a0b1c2d3e4` tworzy od zera finalny, addytywny schemat modułu Shipping po rewizji `d8f1a2b3c4e5` używanej przez bieżące wydanie produkcyjne.

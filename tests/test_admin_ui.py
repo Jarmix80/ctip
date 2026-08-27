@@ -984,6 +984,9 @@ def test_genform_page_renders_layout():
     assert "genform-status-save" in response.text
     assert "genform-summary-modal" in response.text
     assert "Formularze w toku" in response.text
+    assert "Wiadomości historyczne" in response.text
+    assert "genform-mailbox-history-filters" in response.text
+    assert "genform-mailbox-history-modal" in response.text
     assert "genform-proforma-modal" in response.text
     assert "genform-proforma-summary" in response.text
     assert "genform-proforma-create" in response.text
@@ -1006,6 +1009,8 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert "workflow/grenke-launch" in content
     assert "function openGrenkeLaunchWindow()" in content
     assert "Status GRENKE" in content
+    assert "function loadMailboxHistory(showInfo = false)" in content
+    assert "/admin/contracts/mailbox/history" in content
     assert '{ label: "Ważny do"' not in content
     assert 'label: "E-mail firmowy"' in content
     assert 'label: "Telefon reprezentanta"' in content

@@ -64,8 +64,22 @@ def test_extract_application_number_and_normalization() -> None:
     parsed = extract_application_number("Decyzja do wniosku 173-025167")
     assert parsed is not None
     assert parsed.raw == "173-025167"
-    assert parsed.normalized == "173025167"
-    assert normalize_application_number(parsed.raw) == "173025167"
+    assert parsed.normalized == "17325167"
+    assert normalize_application_number(parsed.raw) == "17325167"
+
+
+def test_application_number_variants_have_one_canonical_value() -> None:
+    assert normalize_application_number("173-025234") == "17325234"
+    assert normalize_application_number("173-25234") == "17325234"
+
+
+def test_extract_compact_application_number_only_with_context() -> None:
+    parsed = extract_application_number("Aktualizacja do wniosku nr 17325474")
+
+    assert parsed is not None
+    assert parsed.raw == "173-25474"
+    assert parsed.normalized == "17325474"
+    assert extract_application_number("Telefon 17325474") is None
 
 
 def test_extract_proforma_number_and_normalization() -> None:

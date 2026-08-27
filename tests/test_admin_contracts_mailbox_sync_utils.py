@@ -34,6 +34,18 @@ class ContractsMailboxSyncUtilsTests(unittest.TestCase):
         self.assertEqual(summary["ambiguous_matches"], 1)
         self.assertEqual(summary["unresolved_open"], 4)
 
+    def test_parse_mailbox_sync_summary_extracts_manual_hold(self) -> None:
+        output = (
+            "[INFO] Analizowane: 172, zaktualizowane: 172, pominięte (stan): 0, "
+            "ostrzeżenia: 1, nierozpoznane: 40, niedopasowane: 51, "
+            "wieloznaczne: 0, otwarte wyjątki: 0, wstrzymane ręcznie: 1\n"
+        )
+
+        summary = parse_mailbox_sync_summary(output)
+
+        assert summary is not None
+        self.assertEqual(summary["manual_hold"], 1)
+
     def test_parse_mailbox_sync_summary_returns_none_when_line_is_missing(self) -> None:
         output = "[INFO] Brak danych do przetworzenia\n"
         summary = parse_mailbox_sync_summary(output)

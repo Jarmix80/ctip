@@ -1340,6 +1340,77 @@ CREATE TABLE ctip.shipping_event (
 CREATE INDEX idx_shipping_event_case_created
     ON ctip.shipping_event USING btree (shipping_case_id, created_at DESC);
 
+CREATE TABLE ctip.contracts_mailbox_history_case (
+    id serial PRIMARY KEY,
+    application_no_raw text NOT NULL,
+    application_no_normalized text NOT NULL UNIQUE,
+    title text NOT NULL,
+    status text DEFAULT 'historical_closed'::text NOT NULL,
+    source text DEFAULT 'mailbox_backfill'::text NOT NULL,
+    message_count integer DEFAULT 0 NOT NULL,
+    first_message_at timestamp with time zone,
+    last_message_at timestamp with time zone,
+    case_metadata json,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    archived_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT contracts_mailbox_history_case_status_check CHECK (status = 'historical_closed'::text)
+);
+
+CREATE INDEX idx_contracts_mailbox_history_case_archived
+    ON ctip.contracts_mailbox_history_case USING btree (archived_at, id);
+
+CREATE TABLE ctip.contracts_mailbox_message (
+    id serial PRIMARY KEY,
+    message_id text NOT NULL UNIQUE,
+    mailbox_folder text DEFAULT 'INBOX'::text NOT NULL,
+    imap_id text,
+    processing_status text DEFAULT 'pending'::text NOT NULL,
+    classification text,
+    event_type text,
+    application_no_raw text,
+    application_no_normalized text,
+    proforma_no_raw text,
+    proforma_no_normalized text,
+    subject text DEFAULT ''::text NOT NULL,
+    sender text DEFAULT ''::text NOT NULL,
+    body_text text DEFAULT ''::text NOT NULL,
+    received_at timestamp with time zone NOT NULL,
+    form_request_id integer REFERENCES ctip.form_request(id) ON DELETE SET NULL,
+    history_case_id integer REFERENCES ctip.contracts_mailbox_history_case(id) ON DELETE CASCADE,
+    attachment_manifest json DEFAULT '[]'::json NOT NULL,
+    details text,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    first_seen_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    processed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT contracts_mailbox_message_status_check CHECK (
+        processing_status = ANY (ARRAY[
+            'pending'::text,
+            'linked_form'::text,
+            'historical_archived'::text,
+            'ignored'::text,
+            'manual_hold'::text,
+            'error'::text
+        ])
+    ),
+    CONSTRAINT contracts_mailbox_message_single_target_check CHECK (
+        form_request_id IS NULL OR history_case_id IS NULL
+    )
+);
+
+CREATE INDEX idx_contracts_mailbox_message_status_received
+    ON ctip.contracts_mailbox_message USING btree (processing_status, received_at);
+CREATE INDEX idx_contracts_mailbox_message_application
+    ON ctip.contracts_mailbox_message USING btree (application_no_normalized);
+CREATE INDEX idx_contracts_mailbox_message_form
+    ON ctip.contracts_mailbox_message USING btree (form_request_id, received_at);
+CREATE INDEX idx_contracts_mailbox_message_history_case
+    ON ctip.contracts_mailbox_message USING btree (history_case_id, received_at);
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_user TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_session TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.admin_setting TO appuser;
@@ -1363,6 +1434,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.shipping_item TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.shipping_day_close TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.shipping_shipment TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.shipping_event TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.contracts_mailbox_history_case TO appuser;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.contracts_mailbox_message TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_user_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_session_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.admin_audit_log_id_seq TO appuser;
@@ -1378,6 +1451,8 @@ GRANT ALL ON SEQUENCE ctip.device_manual_reservation_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_sheet_outbox_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_audit_run_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_audit_item_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.contracts_mailbox_history_case_id_seq TO appuser;
+GRANT ALL ON SEQUENCE ctip.contracts_mailbox_message_id_seq TO appuser;
 
 
 --

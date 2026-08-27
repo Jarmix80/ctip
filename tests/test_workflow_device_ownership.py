@@ -1,12 +1,15 @@
 """Testy klasyfikacji właściciela urządzenia magazynowego."""
 
 from app.services.workflow_device_ownership import (
+    MACHINE_BATCH_MIXED_HOLD,
     MACHINE_MATCH_AMBIGUOUS,
     MACHINE_MATCH_FOREIGN,
     MACHINE_MATCH_INVALID_OWNER,
     MACHINE_MATCH_MISSING,
+    MACHINE_MATCH_TARGET,
     MACHINE_MATCH_WAREHOUSE,
     classify_workflow_machine_ownership,
+    classify_workflow_ownership_batch,
     snapshot_confirms_current_workflow_binding,
 )
 
@@ -50,6 +53,28 @@ def test_foreign_machine_is_blocked_with_owner_label() -> None:
     assert ownership.conflict is True
     assert "Inny klient (ID 1001)" in ownership.reason
     assert "ID_KLIENT=656" in ownership.reason
+
+
+def test_target_machine_is_safe_without_previous_snapshot() -> None:
+    ownership = classify_workflow_machine_ownership(
+        candidate_count=1,
+        machine_id=704,
+        client_id=2897,
+        client_name="Klient docelowy",
+        warehouse_client_id=656,
+        target_client_id=2897,
+    )
+
+    assert ownership.state == MACHINE_MATCH_TARGET
+    assert ownership.conflict is False
+
+
+def test_mixed_target_and_warehouse_batch_requires_manual_hold() -> None:
+    assert (
+        classify_workflow_ownership_batch({MACHINE_MATCH_TARGET, MACHINE_MATCH_WAREHOUSE})
+        == MACHINE_BATCH_MIXED_HOLD
+    )
+    assert classify_workflow_ownership_batch({MACHINE_MATCH_TARGET}) == MACHINE_MATCH_TARGET
 
 
 def test_machine_without_client_is_blocked() -> None:

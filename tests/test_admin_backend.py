@@ -38,6 +38,8 @@ from app.models import (
     CallEvent,
     Contact,
     ContactDevice,
+    ContractsMailboxHistoryCase,
+    ContractsMailboxMessage,
     DeviceAuditItem,
     DeviceAuditRun,
     DeviceIntakeOperation,
@@ -171,6 +173,8 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     FormRequest.__table__,
                     FormWorkflowCase.__table__,
                     FormWorkflowDevice.__table__,
+                    ContractsMailboxHistoryCase.__table__,
+                    ContractsMailboxMessage.__table__,
                     WorkflowSheetStatusCache.__table__,
                     DeviceAuditRun.__table__,
                     DeviceAuditItem.__table__,
@@ -5085,6 +5089,73 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(warehouse_row["selected"])
         self.assertTrue(any(item["label"] == "NIP" for item in body["client_preview"]))
         self.assertEqual(body["sales_packet"]["devices"][0]["price_gross"], "1900.00")
+
+    async def test_contracts_mailbox_history_search_and_detail_hide_server_path(self):
+        token, _ = await self._login_operator()
+        now = datetime(2026, 8, 1, 10, 0, tzinfo=UTC)
+        async with self.session_factory() as session:
+            history_case = ContractsMailboxHistoryCase(
+                application_no_raw="173-25234",
+                application_no_normalized="17325234",
+                title="Decyzja do wniosku 173-25234",
+                status="historical_closed",
+                source="mailbox_backfill",
+                message_count=1,
+                first_message_at=now,
+                last_message_at=now,
+                archived_at=now,
+            )
+            session.add(history_case)
+            await session.flush()
+            message = ContractsMailboxMessage(
+                message_id="<history-25234@test>",
+                mailbox_folder="INBOX",
+                processing_status="historical_archived",
+                classification="historical_application",
+                event_type="decision_for_signature",
+                application_no_raw="173-25234",
+                application_no_normalized="17325234",
+                subject="Decyzja do wniosku 173-25234",
+                sender="robot@example.com",
+                body_text="Pełna treść decyzji historycznej.",
+                received_at=now,
+                history_case_id=history_case.id,
+                attachment_manifest=[
+                    {
+                        "original_name": "umowa.pdf",
+                        "content_type": "application/pdf",
+                        "size_bytes": 100,
+                        "path": "/etc/passwd",
+                    }
+                ],
+            )
+            session.add(message)
+            await session.commit()
+            history_case_id = history_case.id
+            message_id = message.id
+
+        response = await self.client.get(
+            "/admin/contracts/mailbox/history?q=173-025234",
+            headers={"X-Admin-Session": token},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total"], 1)
+        response = await self.client.get(
+            f"/admin/contracts/mailbox/history/{history_case_id}",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["messages"][0]["body_text"], "Pełna treść decyzji historycznej.")
+        self.assertNotIn("path", body["messages"][0]["attachments"][0])
+        self.assertNotIn("/etc/passwd", str(body))
+
+        response = await self.client.get(
+            f"/admin/contracts/mailbox/messages/{message_id}/attachments/0",
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 404)
 
     async def test_contracts_form_workflow_detail_marks_device_reserved_by_other_form(self):
         token, _ = await self._login_operator()

@@ -8,6 +8,7 @@ import pytest
 
 from app.services.contracts_dashboard import FirebirdModelMatch
 from app.services.workflow_machine_binding import (
+    WorkflowDeviceMixedOwnershipHold,
     WorkflowDeviceOwnershipConflict,
     WorkflowDeviceSourceContext,
     _create_machine_for_device,
@@ -364,6 +365,184 @@ def test_bind_devices_to_workflow_client_blocks_foreign_owner_for_entire_batch(
 
     assert connection.cursor_obj.updates == 0
     assert connection.committed is False
+    assert connection.rolled_back is True
+
+
+def test_bind_target_device_records_success_without_firebird_update(monkeypatch) -> None:
+    class _TargetCursor:
+        def __init__(self) -> None:
+            self.query = ""
+            self.updates = 0
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            self.query = query
+            if query.strip().upper().startswith("UPDATE MASZYNA SET"):
+                self.updates += 1
+
+        def fetchone(self) -> tuple[object, ...] | None:
+            if "FROM MASZYNA" not in self.query:
+                return None
+            return (
+                777,
+                2924,
+                "KP/777/GRENKE",
+                "TAK",
+                1,
+                "TARGET-777",
+                631,
+                "Ricoh",
+                "IM C300",
+                "Druk",
+                "Platne",
+                "Platne",
+                "TAK",
+                "Klient docelowy",
+            )
+
+        def close(self) -> None:
+            return None
+
+    class _TargetConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = _TargetCursor()
+            self.committed = False
+
+        def cursor(self) -> _TargetCursor:
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    connection = _TargetConnection()
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.firebird_writes_enabled",
+        lambda: (True, None),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding._get_firebird_connection",
+        lambda: connection,
+    )
+    workflow_case = SimpleNamespace(firebird_client_id=2924, form_request_id=59)
+    device = SimpleNamespace(
+        id=1,
+        source_row=777,
+        source_type="google_sheet",
+        producer="Ricoh",
+        model="IM C300",
+        serial="TARGET-777",
+        ewidencja="KP/777/GRENKE",
+        firebird_machine_id=777,
+        snapshot={},
+    )
+
+    items, errors = bind_devices_to_workflow_client(
+        workflow_case=workflow_case,
+        devices=[device],
+        actor_label="Automat skrzynki GRENKE",
+    )
+
+    assert errors == []
+    assert items[0].ok is True
+    assert items[0].current_client_id == 2924
+    assert "nie wykonano zapisu właściciela" in items[0].message
+    assert connection.cursor_obj.updates == 0
+    assert connection.committed is True
+
+
+def test_bind_mixed_target_and_warehouse_batch_stops_before_update(monkeypatch) -> None:
+    class _MixedCursor:
+        def __init__(self) -> None:
+            self.query = ""
+            self.params: tuple[object, ...] = ()
+            self.updates = 0
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            self.query = query
+            self.params = params
+            if query.strip().upper().startswith("UPDATE MASZYNA SET"):
+                self.updates += 1
+
+        def fetchone(self) -> tuple[object, ...] | None:
+            if "FROM MASZYNA" not in self.query:
+                return None
+            machine_id = int(self.params[0])
+            client_id = 2924 if machine_id == 777 else 656
+            return (
+                machine_id,
+                client_id,
+                f"KP/{machine_id}",
+                "TAK",
+                1,
+                f"SERIAL-{machine_id}",
+                631,
+                "Ricoh",
+                "IM C300",
+                "Druk",
+                "Platne",
+                "Platne",
+                "TAK",
+                "Klient docelowy" if client_id == 2924 else "Ksero Partner",
+            )
+
+        def close(self) -> None:
+            return None
+
+    class _MixedConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = _MixedCursor()
+            self.rolled_back = False
+
+        def cursor(self) -> _MixedCursor:
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            raise AssertionError("Pakiet mieszany nie może zostać zatwierdzony.")
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+        def close(self) -> None:
+            return None
+
+    connection = _MixedConnection()
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.firebird_writes_enabled",
+        lambda: (True, None),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding._get_firebird_connection",
+        lambda: connection,
+    )
+    workflow_case = SimpleNamespace(firebird_client_id=2924, form_request_id=60)
+    devices = [
+        SimpleNamespace(
+            id=machine_id,
+            source_row=machine_id,
+            source_type="google_sheet",
+            producer="Ricoh",
+            model="IM C300",
+            serial=f"SERIAL-{machine_id}",
+            ewidencja=f"KP/{machine_id}",
+            firebird_machine_id=machine_id,
+            snapshot={},
+        )
+        for machine_id in (777, 778)
+    ]
+
+    with pytest.raises(WorkflowDeviceMixedOwnershipHold, match="ręcznego wyjaśnienia"):
+        bind_devices_to_workflow_client(
+            workflow_case=workflow_case,
+            devices=devices,
+            actor_label="Automat skrzynki GRENKE",
+        )
+
+    assert connection.cursor_obj.updates == 0
     assert connection.rolled_back is True
 
 

@@ -157,6 +157,13 @@ async def _run_mailbox_audit_cleanup() -> dict[str, int] | None:
 async def contracts_mailbox_scheduler_tick() -> dict[str, Any]:
     """Wykonuje pojedynczy przebieg automatycznej synchronizacji mailboxa."""
     started_at = datetime.now(UTC)
+    if not settings.contracts_mailbox_processing_enabled:
+        return {
+            "result": "skipped",
+            "reason": "mailbox_processing_disabled",
+            "started_at": started_at.isoformat(),
+            "finished_at": datetime.now(UTC).isoformat(),
+        }
     if not settings.mailbox_imap_host or not settings.mailbox_email_address:
         payload = {
             "result": "skipped",

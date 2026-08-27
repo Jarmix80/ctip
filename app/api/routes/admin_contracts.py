@@ -10,14 +10,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_admin_session_context, get_db_session
+from app.core.config import settings
 from app.models import (
     AdminAuditLog,
     AdminUser,
+    ContractsMailboxMessage,
     DeviceInventoryUnit,
     DeviceManualReservation,
     FormRequest,
@@ -37,6 +40,12 @@ from app.services.contracts_dashboard import (
     load_firebird_runtime_config,
     normalize_nip,
     use_firebird_runtime_config,
+)
+from app.services.contracts_mailbox_ledger import (
+    get_history_case_detail,
+    list_form_mailbox_messages,
+    list_history_cases,
+    mailbox_ledger_counts,
 )
 from app.services.contracts_mailbox_sync_runtime import (
     parse_mailbox_sync_summary,
@@ -105,6 +114,53 @@ from app.services.workflow_sheet_sync import (
 )
 
 router = APIRouter(prefix="/admin/contracts", tags=["admin-contracts"])
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+async def _require_contracts_mailbox_access(
+    admin_context: Any,
+    session: AsyncSession,
+) -> AdminUser:
+    """Wymaga roli operatorskiej i dostępu do modułu generatora umów."""
+    _, admin_user = admin_context
+    if admin_user.role not in {"admin", "operator"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operacja wymaga roli administratora lub operatora.",
+        )
+    if not await section_permissions.user_has_section(session, admin_user, "generator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Konto nie ma uprawnień do modułu obsługi umów.",
+        )
+    return admin_user
+
+
+def _resolve_mailbox_attachment_path(raw_path: str) -> Path | None:
+    """Akceptuje wyłącznie pliki z kontrolowanych katalogów archiwum mailboxa."""
+    candidate = Path(str(raw_path or "").strip()).expanduser()
+    if not candidate.is_absolute():
+        candidate = REPO_ROOT / candidate
+    try:
+        resolved_candidate = candidate.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+
+    allowed_roots = [(REPO_ROOT / "inbox" / "mailbox" / "contracts").resolve()]
+    configured_root = str(settings.contracts_mailbox_archive_root or "").strip()
+    if configured_root:
+        archive_root = Path(configured_root).expanduser()
+        if not archive_root.is_absolute():
+            archive_root = REPO_ROOT / archive_root
+        allowed_roots.append(archive_root.resolve())
+
+    for allowed_root in allowed_roots:
+        try:
+            resolved_candidate.relative_to(allowed_root)
+        except ValueError:
+            continue
+        return resolved_candidate if resolved_candidate.is_file() else None
+    return None
 
 
 def _to_iso(value: datetime | None) -> str | None:
@@ -1123,6 +1179,132 @@ async def _resolve_proforma_recipient_client_id(
     )
 
 
+@router.get("/mailbox/history", summary="Archiwum historycznych wiadomości GRENKE")
+async def contracts_mailbox_history_list(
+    q: str | None = Query(default=None, max_length=200),
+    date_from: date | None = Query(default=None),  # noqa: B008
+    date_to: date | None = Query(default=None),  # noqa: B008
+    event_type: str | None = Query(default=None, max_length=64),
+    has_attachments: bool | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict[str, Any]:
+    """Wyszukuje zamknięte sprawy bez tworzenia sztucznych formularzy."""
+    await _require_contracts_mailbox_access(admin_context, session)
+    payload = await list_history_cases(
+        session,
+        query=q,
+        date_from=date_from,
+        date_to=date_to,
+        event_type=event_type,
+        has_attachments=has_attachments,
+        limit=limit,
+        offset=offset,
+    )
+    payload["ledger"] = await mailbox_ledger_counts(session)
+    return payload
+
+
+@router.get(
+    "/mailbox/history/{history_case_id}",
+    summary="Szczegóły historycznej korespondencji GRENKE",
+)
+async def contracts_mailbox_history_detail(
+    history_case_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict[str, Any]:
+    """Zwraca pełne, tekstowe treści wiadomości i metadane załączników."""
+    await _require_contracts_mailbox_access(admin_context, session)
+    payload = await get_history_case_detail(session, history_case_id=history_case_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Historyczna sprawa mailboxa nie istnieje.",
+        )
+    return payload
+
+
+@router.get(
+    "/forms/{form_id}/mailbox-messages",
+    summary="Wiadomości mailboxa przypięte do formularza",
+)
+async def contracts_form_mailbox_messages(
+    form_id: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict[str, Any]:
+    """Zwraca korespondencję formularza, również bez zmiany jego statusu."""
+    await _require_contracts_mailbox_access(admin_context, session)
+    form = await session.get(FormRequest, form_id)
+    if form is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Formularz nie istnieje.",
+        )
+    return {
+        "form_request_id": form_id,
+        "messages": await list_form_mailbox_messages(session, form_request_id=form_id),
+    }
+
+
+@router.get(
+    "/mailbox/messages/{mailbox_message_id}/attachments/{attachment_index}",
+    summary="Pobierz załącznik wiadomości mailboxa",
+)
+async def contracts_mailbox_attachment_download(
+    mailbox_message_id: int,
+    attachment_index: int,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> FileResponse:
+    """Pobiera załącznik po kontroli uprawnień i katalogu źródłowego."""
+    admin_user = await _require_contracts_mailbox_access(admin_context, session)
+    message = await session.get(ContractsMailboxMessage, mailbox_message_id)
+    manifest = message.attachment_manifest if message is not None else None
+    if not isinstance(manifest, list) or attachment_index < 0 or attachment_index >= len(manifest):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Załącznik wiadomości nie istnieje.",
+        )
+    attachment = manifest[attachment_index]
+    if not isinstance(attachment, dict):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Załącznik wiadomości nie istnieje.",
+        )
+    file_path = _resolve_mailbox_attachment_path(str(attachment.get("path") or ""))
+    if file_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plik załącznika jest niedostępny lub znajduje się poza archiwum.",
+        )
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="contracts_mailbox_attachment_download",
+        client_ip="admin-contracts",
+        payload={
+            "mailbox_message_id": mailbox_message_id,
+            "attachment_index": attachment_index,
+            "file_name": file_path.name,
+        },
+    )
+    await session.commit()
+    return FileResponse(
+        path=file_path,
+        media_type=str(attachment.get("content_type") or "application/octet-stream"),
+        filename=str(
+            attachment.get("original_name")
+            or attachment.get("file_name")
+            or attachment.get("saved_name")
+            or file_path.name
+        ),
+    )
+
+
 @router.get("/dashboard", summary="Dane dashboardu obslugi umow")
 async def contracts_dashboard_data(
     forms_scope: str = Query(default="submitted", pattern="^(submitted|all)$"),
@@ -1414,6 +1596,7 @@ async def contracts_form_workflow_detail(
     selected_assignee_id = _coerce_int(workflow_payload.get("sheet_sync", {}).get("assignee_id"))
     if selected_assignee_id is None:
         selected_assignee_id = _coerce_int(getattr(admin_user, "firebird_app_user_id", None))
+    mailbox_messages = await list_form_mailbox_messages(session, form_request_id=item.id)
 
     return {
         "form": {
@@ -1498,6 +1681,7 @@ async def contracts_form_workflow_detail(
             ),
         },
         "sales_packet": build_sales_packet(workflow_case, workflow_devices),
+        "mailbox_messages": mailbox_messages,
     }
 
 

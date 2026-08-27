@@ -880,6 +880,82 @@ body {
   box-shadow: 0 10px 24px rgba(31, 63, 105, 0.18);
 }
 
+.genform-mailbox-history-view {
+  display: grid;
+  gap: 12px;
+}
+
+.genform-mailbox-history-view[hidden] {
+  display: none;
+}
+
+.genform-mailbox-history-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(150px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid rgba(31, 63, 105, 0.14);
+  border-radius: 14px;
+  background: #f7f9fc;
+}
+
+.genform-mailbox-history-filters label {
+  display: grid;
+  gap: 5px;
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.genform-mailbox-history-filters input,
+.genform-mailbox-history-filters select {
+  min-width: 0;
+}
+
+.genform-mailbox-history-modal-card {
+  width: min(1120px, calc(100vw - 32px));
+}
+
+.genform-mailbox-history-detail,
+.genform-mailbox-message-list {
+  display: grid;
+  gap: 14px;
+}
+
+.genform-mailbox-message {
+  border: 1px solid rgba(31, 63, 105, 0.14);
+  border-radius: 14px;
+  padding: 14px;
+  background: #f9fbfd;
+}
+
+.genform-mailbox-message header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.genform-mailbox-message pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.genform-mailbox-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .genform-row-tone-accepted {
   background: rgba(46, 125, 50, 0.08);
 }
@@ -943,6 +1019,10 @@ body {
 
   .genform-side-menu {
     position: static;
+  }
+
+  .genform-mailbox-history-filters {
+    grid-template-columns: 1fr;
   }
 
   #genform-workflow-summary .genform-detail-summary-card:first-child {

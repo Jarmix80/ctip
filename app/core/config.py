@@ -295,6 +295,10 @@ class Settings(BaseSettings):
         default=True,
         alias="CONTRACTS_MAILBOX_SCHEDULER_ENABLED",
     )
+    contracts_mailbox_processing_enabled: bool = Field(
+        default=False,
+        alias="CONTRACTS_MAILBOX_PROCESSING_ENABLED",
+    )
     contracts_mailbox_sync_interval_seconds: int = Field(
         default=300,
         alias="CONTRACTS_MAILBOX_SYNC_INTERVAL_SECONDS",

@@ -201,12 +201,18 @@ Dodatkowo skrypt:
 - format hasła PDF: `ostatnie 5 cyfr PESEL + inicjały ImięNazwisko + $` (np. `05791JK$`),
 - zapisuje wszystkie załączniki lokalnie w strukturze `inbox/mailbox/contracts/<scope>/<YYYY-MM-DD>/<message_id>/`,
 - zapisuje metadane plików (ścieżka, nazwa, rozmiar, SHA-256) do bazy w `form_workflow_case.client_payload_snapshot._mailbox_meta`,
-- zapisuje nierozpoznane lub niedopasowane wiadomości do kolejki wyjątków w `inbox/mailbox/contracts_mailbox_state.json` (`unresolved`).
+- zapisuje każdą wiadomość idempotentnie w `ctip.contracts_mailbox_message` według unikalnego `Message-ID`; stary plik `inbox/mailbox/contracts_mailbox_state.json` pozostaje wyłącznie źródłem kontrolnym migracji i nie jest już modyfikowany,
+- przypina korespondencję pomocniczą do istniejącego formularza bez zmiany statusu biznesowego,
+- grupuje wiadomości bez formularza w zamknięte sprawy `ctip.contracts_mailbox_history_case`, widoczne w GenForm w sekcji „Wiadomości historyczne”.
 
-Powody wpisu do kolejki wyjątków:
-- `unsupported_subject` – temat nie pasuje do obsługiwanych wzorców,
-- `unmatched_form` – wiadomość nie została powiązana z formularzem,
-- `ambiguous_match` – wykryto wieloznaczne dopasowanie (np. remis punktacji).
+Stany rejestru wiadomości:
+- `linked_form` – wiadomość przypięta do formularza; tylko rozpoznane zdarzenie workflow może zmienić status,
+- `historical_archived` – wiadomość przypięta do zamkniętej sprawy historycznej,
+- `ignored` – wiadomość bez numeru wniosku i bez dopasowania, zachowana w audycie,
+- `manual_hold` – sprawa świadomie wstrzymana, np. mieszany pakiet urządzeń przypisanych do klienta i magazynu,
+- `pending` / `error` – stan otwarty wymagający ponowienia lub diagnostyki.
+
+Numery wniosków są kanonizowane: warianty `173-025234`, `173-25234` oraz zapis kontekstowy `17325234` wskazują ten sam wniosek. Sam ciąg cyfr bez kontekstu słowa „wniosek” nie jest uznawany za numer aplikacji.
 
 Wynik działania skryptu pokazuje liczniki bezpieczeństwa:
 - `nierozpoznane`,
@@ -230,6 +236,14 @@ Tryb restrykcyjny (kod wyjścia `!= 0` także dla ostrzeżeń, np. `unmatched_fo
 ```bash
 python scripts/contracts_mailbox_sync.py --limit 30 --fail-on-warnings
 ```
+
+Pierwsze zasilenie rejestru należy wykonać dwuetapowo. Samo `--backfill` zawsze działa jako podgląd; zapis wymaga dodatkowej, jawnej flagi:
+```bash
+python scripts/contracts_mailbox_sync.py --backfill --dry-run
+python scripts/contracts_mailbox_sync.py --backfill --apply-backfill
+```
+
+Podczas migracji produkcyjnej należy ustawić `CONTRACTS_MAILBOX_PROCESSING_ENABLED=false`, wykonać migrację i oba przebiegi backfillu, a następnie ustawić `CONTRACTS_MAILBOX_PROCESSING_ENABLED=true` i uruchomić ponownie wyłącznie `CTIP-Web`. Scheduler nie uruchamia synchronizacji, gdy flaga jest wyłączona.
 
 Domyślnie ostrzeżenia nie oznaczają błędu procesu (skrypt kończy się kodem `0`), żeby scheduler i panel admina nie raportowały `error` tylko przez niedopasowane wiadomości. Logowanie OCR i listy ostrzeżeń jest automatycznie skracane, aby nie zalewać audytu bardzo długim `stdout_tail`.
 
@@ -274,6 +288,14 @@ Retencja audytu mailboxa (tylko gdy jawnie wlaczona) jest realizowana automatycz
 Zalecenie: wlaczac retencje tylko na produkcji (`.env` na Windows Server), a lokalnie pozostawic `CONTRACTS_MAILBOX_AUDIT_CLEANUP_ENABLED=0`.
 
 Dashboard `GET /admin/contracts/dashboard` zwraca dodatkowo sekcję `mailbox_sync` z metadanymi ostatniego przebiegu synchronizacji e-mail (`source`, `result`, `last_run_at`, `summary`, `exit_code`), dzięki czemu operator widzi aktualność automatu bez przeglądania logów.
+
+Archiwum wiadomości udostępnia endpointy wymagające roli `admin`/`operator` oraz sekcji `generator`:
+- `GET /admin/contracts/mailbox/history` – wyszukiwarka z filtrami dat, typu zdarzenia i obecności załączników,
+- `GET /admin/contracts/mailbox/history/{id}` – pełna treść wiadomości historycznej,
+- `GET /admin/contracts/forms/{form_id}/mailbox-messages` – korespondencja przypięta do formularza,
+- `GET /admin/contracts/mailbox/messages/{message_id}/attachments/{index}` – kontrolowane pobranie załącznika.
+
+API nie ujawnia ścieżek systemu plików. Pobranie sprawdza uprawnienia, indeks manifestu i przynależność pliku do `inbox/mailbox/contracts` albo `CONTRACTS_MAILBOX_ARCHIVE_ROOT`; każda operacja jest rejestrowana w audycie.
 
 ### Smoke-test logowania web i GENFORM/FLOW
 Do szybkiej walidacji po wdrozeniu dostepny jest skrypt:
@@ -923,6 +945,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 ## Zasoby w katalogu `docs/`
 - `docs/centralka` – instrukcje centrali Slican (m.in. „CTIP” oraz „instrukcja programowania NCP v1.21”) ułatwiające konfigurację warstwy telekomunikacyjnej i protokołu CTIP.
 - `docs/baza` – aktualny schemat `schema_ctip.sql`; plik `ctip_plain` pozostawiono jako nieaktualny zrzut archiwalny (do wglądu historycznego, nie do odtwarzania).
+- `docs/instal/wdrozenie_mailbox_archive_2026-08-28.md` – procedura migracji, kontrolowanego backfillu i wycofania rejestru wiadomości GRENKE.
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).

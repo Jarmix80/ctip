@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from app.core.config import settings
@@ -53,3 +54,16 @@ def test_normalize_cleanup_settings_applies_safety_bounds() -> None:
             settings.contracts_mailbox_audit_compact_max_chars,
             settings.contracts_mailbox_audit_delete_after_days,
         ) = previous
+
+
+def test_scheduler_skips_when_mailbox_processing_is_disabled() -> None:
+    previous = settings.contracts_mailbox_processing_enabled
+    try:
+        settings.contracts_mailbox_processing_enabled = False
+
+        result = asyncio.run(scheduler.contracts_mailbox_scheduler_tick())
+
+        assert result["result"] == "skipped"
+        assert result["reason"] == "mailbox_processing_disabled"
+    finally:
+        settings.contracts_mailbox_processing_enabled = previous
