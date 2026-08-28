@@ -1374,19 +1374,20 @@ class ShippingSchemaTests(unittest.TestCase):
     def test_widoki_shipping_sa_domyslnie_wylaczone(self) -> None:
         app = create_app()
         with patch.object(settings, "shipping_enabled", False):
-            response = TestClient(app).get("/shipping/v2")
+            response = TestClient(app).get("/shipping")
 
         self.assertEqual(response.status_code, 503)
 
-    def test_funkcjonalny_widok_v2_zachowuje_kontrakt_elementow_javascript(self) -> None:
+    def test_glowny_widok_shipping_uzywa_funkcjonalnego_v2(self) -> None:
         app = create_app()
         client = TestClient(app)
         with patch.object(settings, "shipping_enabled", True):
-            response = client.get("/shipping/v2")
+            response = client.get("/shipping")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Wysyłki i dokumenty", response.text)
-        self.assertIn("Stary wygląd", response.text)
+        self.assertIn("Poprzedni wygląd", response.text)
+        self.assertIn('href="/shipping/legacy"', response.text)
         self.assertIn("Archiwum", response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
         self.assertIn(
@@ -1413,6 +1414,25 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("MutationObserver", enhancer)
         self.assertIn("selectedPackageItems", enhancer)
         self.assertIn("shipping-v2-package-items", response.text)
+
+    def test_dotychczasowy_adres_v2_przekierowuje_do_glownego_widoku(self) -> None:
+        app = create_app()
+        client = TestClient(app, follow_redirects=False)
+        with patch.object(settings, "shipping_enabled", True):
+            response = client.get("/shipping/v2")
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers["location"], "/shipping")
+
+    def test_poprzedni_widok_pozostaje_dostepny_pod_osobnym_adresem(self) -> None:
+        app = create_app()
+        client = TestClient(app)
+        with patch.object(settings, "shipping_enabled", True):
+            response = client.get("/shipping/legacy")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Wysyłki części i tonerów", response.text)
+        self.assertIn('href="/shipping"', response.text)
 
     def test_strona_prototypow_pokazuje_siedem_niefunkcjonalnych_wariantow(
         self,

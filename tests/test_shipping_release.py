@@ -86,6 +86,34 @@ class ShippingReleaseTests(unittest.TestCase):
         )
         self.assertIn("if (-not $Apply)", script)
 
+    def test_skrypt_pelnego_uruchomienia_zachowuje_faze_gotowosci(self) -> None:
+        script = Path("scripts/windows/deploy_shipping_full_prod_2026-08-28.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            '[string]$ExpectedCurrentCommit = "c206a876aeeaa5b0ed802fb24feb03b323cfca0b"',
+            script,
+        )
+        self.assertIn('[string]$ExpectedAlembicHead = "a7c4e2f9b1d3"', script)
+        self.assertIn(
+            '[string]$ReleaseBranch = "feature/shipping-full-rollout-2026-08-28"',
+            script,
+        )
+        self.assertIn(
+            'Assert-EnvEquals -Name "SHIPPING_FULFILLMENT_ENABLED" -Expected "false"', script
+        )
+        self.assertIn('Assert-EnvEquals -Name "DPD_ENABLED" -Expected "false"', script)
+        self.assertIn('Stop-Service -Name "CTIP-Web"', script)
+        self.assertNotIn('Stop-Service -Name "CollectorService"', script)
+        self.assertNotIn('Stop-Service -Name "CTIP-SMS"', script)
+        self.assertNotIn('Stop-Service -Name "CTIP-FormsPublic"', script)
+        self.assertNotIn('"alembic", "upgrade"', script)
+        self.assertIn('"http://127.0.0.1:8002/shipping"', script)
+        self.assertIn('"http://127.0.0.1:8002/shipping/legacy"', script)
+        self.assertIn('"http://127.0.0.1:8002/shipping/v2"', script)
+        self.assertIn("if (-not $Apply)", script)
+
     def test_shipping_wymaga_jawnego_nadania_sekcji(self) -> None:
         self.assertNotIn("shipping", default_sections_for_role("admin"))
         self.assertNotIn("shipping", default_sections_for_role("operator"))
