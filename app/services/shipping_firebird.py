@@ -331,14 +331,14 @@ def _match_shipping_mobile_contact(
 
 
 def _load_shipping_contacts(cursor, order: dict[str, Any]) -> list[dict[str, Any]]:
-    """Pobiera aktywne osoby klienta i oznacza konta aplikacji mobilnej."""
-    parameters = (int(order["client_id"]), int(order["company_id"]))
+    """Pobiera aktywne osoby po globalnym identyfikatorze klienta MS."""
+    parameters = (int(order["client_id"]),)
     cursor.execute(
         """
         SELECT ID_KONTAKT_TABLE, NAZWA, NAZWA_S, FUNKCJA,
                TEL_K, TEL_S, TEL_D, MAIL1, MAIL2
         FROM KONTAKT
-        WHERE ID_KLIENT = ? AND ID_FIRMA = ?
+        WHERE ID_KLIENT = ?
           AND (AKTYWNY IS NULL OR AKTYWNY <> 'NIE')
         ORDER BY NAZWA, ID_KONTAKT_TABLE
         """,
@@ -349,7 +349,7 @@ def _load_shipping_contacts(cursor, order: dict[str, Any]) -> list[dict[str, Any
         """
         SELECT ID_KONTAKT_TABLE
         FROM KONTAKT
-        WHERE ID_KLIENT = ? AND ID_FIRMA = ?
+        WHERE ID_KLIENT = ?
           AND NAZWA_S IS NOT NULL AND TRIM(NAZWA_S) <> ''
           AND LOCK_USER IS NOT NULL AND TRIM(LOCK_USER) <> ''
           AND (AKTYWNY IS NULL OR AKTYWNY <> 'NIE')
@@ -535,7 +535,7 @@ def load_shipping_overdue_invoices(
 
 
 def load_shipping_queue(*, days: int = 30, limit: int = 200) -> list[dict[str, Any]]:
-    """Pobiera niezakończone dowozy bez rzeczywistego technika terenowego."""
+    """Pobiera dowozy i rozpoznaje model po globalnych identyfikatorach klienta i maszyny."""
     connection = firebird_connection()
     cursor = connection.cursor()
     try:
@@ -566,8 +566,7 @@ def load_shipping_queue(*, days: int = 30, limit: int = 200) -> list[dict[str, A
                 m.ID_MODEL AS MODEL_ID
             FROM ZLECENIE z
             LEFT JOIN MASZYNA m
-              ON m.ID_FIRMA = z.ID_FIRMA
-             AND m.ID_KLIENT = z.ID_KLIENT
+              ON m.ID_KLIENT = z.ID_KLIENT
              AND m.ID_MASZYNA = z.ID_MASZYNA
             WHERE z.TYP_US = ?
               AND z.STAN IN (?, ?)
@@ -595,7 +594,7 @@ def load_shipping_queue(*, days: int = 30, limit: int = 200) -> list[dict[str, A
 
 
 def load_shipping_order(order_table_id: int) -> dict[str, Any]:
-    """Pobiera pełny zestaw źródeł adresu, kontaktu i urządzenia dla zlecenia."""
+    """Pobiera źródła zlecenia po globalnych identyfikatorach rekordów MS."""
     connection = firebird_connection()
     cursor = connection.cursor()
     try:
@@ -658,12 +657,11 @@ def load_shipping_order(order_table_id: int) -> dict[str, Any]:
                 m.MODEL AS MACHINE_MODEL
             FROM ZLECENIE z
             LEFT JOIN KLIENT k
-              ON k.ID_FIRMA = z.ID_FIRMA AND k.ID_KLIENT = z.ID_KLIENT
+              ON k.ID_KLIENT = z.ID_KLIENT
             LEFT JOIN ODDZIAL o
-              ON o.ID_FIRMA = z.ID_FIRMA AND o.ID_ODDZIAL = z.ID_ODDZIAL
+              ON o.ID_ODDZIAL = z.ID_ODDZIAL
             LEFT JOIN MASZYNA m
-              ON m.ID_FIRMA = z.ID_FIRMA
-             AND m.ID_KLIENT = z.ID_KLIENT
+              ON m.ID_KLIENT = z.ID_KLIENT
              AND m.ID_MASZYNA = z.ID_MASZYNA
             WHERE z.ID_ZLECENIE_TABLE = ? AND z.TYP_US = ?
             """,

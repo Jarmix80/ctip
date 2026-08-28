@@ -162,6 +162,15 @@ Kontrola odczytowa po sprzątaniu musi potwierdzić:
 
 Rekordy Archiwum Shipping pozostają jako trwały audyt pilota i nie są usuwane.
 
+## Zadania po pilocie
+
+Po zakończeniu pilota i potwierdzeniu pełnego odtworzenia stanów magazynowych należy wykonać osobne zadania interfejsowe:
+
+1. Rozszerzyć przycisk odświeżania kolejki o pełną synchronizację z Menadżerem Serwisu: ponowny odczyt całej kolejki, dodanie nowych zleceń oraz bezpieczne usunięcie z roboczego widoku CTIP spraw, których nie ma już w źródle. Rekordów Archiwum i trwałego audytu nie wolno usuwać.
+2. Poprawić wysokość i przewijanie lewej kolejki zleceń, aby ostatni wiersz był zawsze widoczny w całości niezależnie od rozdzielczości, skali systemowej i wysokości okna przeglądarki.
+
+Identyfikatory i stany początkowe bieżącego pilota zapisano w `docs/instal/pilot_shipping_2026-08-28.md`.
+
 ## Udostępnienie operatorom
 
 Dopiero po poprawnym pilocie i kontroli sprzątania należy nadać sekcję `shipping` aktywnym kontom Joanny Gostyńskiej i Agnieszki Gołembiewskiej. Nie wolno zmieniać ich ról ani innych sekcji.

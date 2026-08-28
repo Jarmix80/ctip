@@ -78,6 +78,7 @@ from app.services.shipping_firebird import (
     _search_terms,
     _vat_rate,
     finalize_shipping_order,
+    load_shipping_order,
     load_shipping_overdue_invoices,
     load_shipping_overdue_summaries,
     load_shipping_queue,
@@ -1524,7 +1525,43 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("z.STAN IN (?, ?)", query)
         self.assertIn("TRIM(z.TECHNIK)", query)
         self.assertIn("TRIM(z.TECHNIK2)", query)
+        self.assertIn("ON m.ID_KLIENT = z.ID_KLIENT", query)
+        self.assertNotIn("m.ID_FIRMA = z.ID_FIRMA", query)
         self.assertEqual(parameters.count(SHIPPING_TECHNICIAN_NAME), 2)
+
+    def test_szczegoly_zlecenia_uzywaja_globalnych_id_klienta_i_maszyny(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.description = [
+            ("order_table_id",),
+            ("order_id",),
+            ("order_year",),
+            ("status",),
+            ("company_id",),
+            ("client_id",),
+            ("machine_id",),
+            ("model_id",),
+            ("order_kind",),
+            ("order_operator",),
+        ]
+        cursor.fetchone.return_value = (83493, 18493, 2026, "O", 1, 2954, 7222, 458, "Umowa", "")
+        cursor.fetchall.side_effect = [[], []]
+
+        with patch(
+            "app.services.shipping_firebird.firebird_connection",
+            return_value=connection,
+        ):
+            result = load_shipping_order(83493)
+
+        detail_query = cursor.execute.call_args_list[0].args[0]
+        contact_queries = [call.args for call in cursor.execute.call_args_list[1:]]
+        self.assertEqual(result["model_id"], 458)
+        self.assertIn("ON k.ID_KLIENT = z.ID_KLIENT", detail_query)
+        self.assertIn("ON o.ID_ODDZIAL = z.ID_ODDZIAL", detail_query)
+        self.assertIn("ON m.ID_KLIENT = z.ID_KLIENT", detail_query)
+        self.assertNotIn("k.ID_FIRMA = z.ID_FIRMA", detail_query)
+        self.assertNotIn("m.ID_FIRMA = z.ID_FIRMA", detail_query)
+        self.assertTrue(all(args[1] == (2954,) for args in contact_queries))
 
     def test_zapis_etykiety_nie_otwiera_ponownie_zrealizowanego_zlecenia(self) -> None:
         connection = MagicMock()

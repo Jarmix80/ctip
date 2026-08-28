@@ -135,8 +135,10 @@ function Test-AllowedReleasePath {
     $exact = @(
         "README.md",
         "app/web/shipping_ui.py",
+        "app/services/shipping_firebird.py",
         "app/templates/shipping/index.html",
         "app/templates/shipping/v2.html",
+        "docs/instal/pilot_shipping_2026-08-28.md",
         "docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md",
         "docs/projekt/wysylki_dpd.md",
         "scripts/windows/deploy_shipping_full_prod_2026-08-28.ps1",
