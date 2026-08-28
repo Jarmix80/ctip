@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import reportlab
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter, Transformation
 from reportlab.graphics.barcode import code128
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -612,6 +612,51 @@ def build_mock_shipping_label_sheet(entries: list[dict[str, Any]]) -> bytes:
     return output.getvalue()
 
 
+def pack_shipping_labels_four_up(content: bytes, *, label_count: int) -> bytes:
+    """Składa osobne górne pola A6 przewoźnika w arkusz A4 2×2 bez skalowania."""
+    if label_count <= 0:
+        raise ValueError("Brak etykiet do ułożenia na arkuszu A4.")
+    reader = PdfReader(io.BytesIO(content))
+    pages = list(reader.pages)
+    if not pages:
+        raise ValueError("Dokument DPD nie zawiera stron etykiet.")
+    if label_count == 1 or len(pages) < label_count:
+        return content
+    if len(pages) != label_count:
+        raise ValueError("Liczba stron dokumentu DPD nie odpowiada liczbie etykiet.")
+
+    first_width = float(pages[0].mediabox.width)
+    first_height = float(pages[0].mediabox.height)
+    cell_width = first_width / 2
+    cell_height = first_height / 2
+    positions = ((0, 1), (0, 0), (1, 1), (1, 0))
+    writer = PdfWriter()
+
+    for index, source_page in enumerate(pages):
+        page_width = float(source_page.mediabox.width)
+        page_height = float(source_page.mediabox.height)
+        if abs(page_width - first_width) > 1 or abs(page_height - first_height) > 1:
+            raise ValueError("Strony dokumentu DPD mają różne wymiary.")
+        if index % 4 == 0:
+            writer.add_blank_page(width=first_width, height=first_height)
+        target_page = writer.pages[-1]
+        source_page.cropbox.lower_left = (0, cell_height)
+        source_page.cropbox.upper_right = (cell_width, first_height)
+        column, row = positions[index % 4]
+        target_page.merge_transformed_page(
+            source_page,
+            Transformation().translate(
+                tx=column * cell_width,
+                ty=row * cell_height - cell_height,
+            ),
+            expand=False,
+        )
+
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def build_shipping_packing_summary(entries: list[dict[str, Any]]) -> bytes:
     """Buduje tabelę zleceń, fizycznych paczek i części dla magazynu."""
     styles = _styles()
@@ -716,5 +761,6 @@ __all__ = [
     "build_mock_shipping_label_sheet",
     "build_shipping_packing_summary",
     "merge_shipping_pdf_documents",
+    "pack_shipping_labels_four_up",
     "shipping_pdf_fonts",
 ]

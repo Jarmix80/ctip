@@ -19,6 +19,8 @@ import httpx
 from fastapi import HTTPException
 from pydantic import ValidationError
 from pypdf import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas as pdf_canvas
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -67,6 +69,7 @@ from app.services.shipping_documents import (
     build_mock_shipping_label_sheet,
     build_shipping_packing_summary,
     merge_shipping_pdf_documents,
+    pack_shipping_labels_four_up,
 )
 from app.services.shipping_firebird import (
     SHIPPING_TECHNICIAN_NAME,
@@ -159,6 +162,16 @@ def _empty_pdf() -> bytes:
     return output.getvalue()
 
 
+def _native_a4_label_pages(labels: list[str]) -> bytes:
+    output = io.BytesIO()
+    document = pdf_canvas.Canvas(output, pagesize=A4)
+    for label in labels:
+        document.drawString(20, A4[1] - 30, label)
+        document.showPage()
+    document.save()
+    return output.getvalue()
+
+
 def _review_payload(
     order: dict | None = None,
     *,
@@ -247,7 +260,7 @@ class DpdShippingClientTests(unittest.TestCase):
         self.assertEqual(package["parcels"][0]["weight"], 2.0)
         self.assertEqual(
             package["parcels"][0]["content"],
-            "2x ŻÓŁTY-1 Żółty toner i bęben",
+            "2x Żółty toner i bęben",
         )
         self.assertLessEqual(len(package["reference"]), 50)
         self.assertLessEqual(len(package["parcels"][0]["reference"]), 50)
@@ -396,6 +409,36 @@ class DpdShippingClientTests(unittest.TestCase):
                 self.assertIn("Toner testowy 0", text)
                 self.assertEqual(text.count("ETYKIETA TESTOWA — NIE NADAWAĆ"), labels_count)
 
+    def test_natywne_strony_dpd_sa_skladane_po_cztery_na_a4(self) -> None:
+        labels = [f"DPD-ETYKIETA-{index}" for index in range(1, 6)]
+        content = pack_shipping_labels_four_up(
+            _native_a4_label_pages(labels),
+            label_count=len(labels),
+        )
+        reader = PdfReader(io.BytesIO(content))
+        self.assertEqual(len(reader.pages), 2)
+        first_page = reader.pages[0].extract_text() or ""
+        second_page = reader.pages[1].extract_text() or ""
+        self.assertTrue(all(label in first_page for label in labels[:4]))
+        self.assertIn(labels[4], second_page)
+
+    def test_zawartosc_przesylki_preferuje_nazwy_czesci(self) -> None:
+        settings.dpd_enabled = True
+        settings.dpd_mode = "mock"
+        payload = DpdShippingClient().build_payload(
+            idempotency_key=str(uuid4()),
+            reference="MS-2026-NAZWY",
+            receiver=_review_payload().address.model_dump(mode="json"),
+            weight_kg=3.0,
+            items=[
+                {"item_index": "IDX-BLK", "item_name": "Toner czarny", "quantity": 1},
+                {"item_index": "IDX-YLW", "item_name": "Toner żółty", "quantity": 2},
+            ],
+        )
+        content = payload["packages"][0]["parcels"][0]["content"]
+        self.assertEqual(content, "1x Toner czarny; 2x Toner żółty")
+        self.assertNotIn("IDX-", content)
+
     def test_mock_etykieta_skrotem_oznacza_dalsze_pozycje(self) -> None:
         settings.dpd_enabled = True
         settings.dpd_mode = "mock"
@@ -489,7 +532,7 @@ class DpdShippingClientTests(unittest.TestCase):
                 self.assertEqual(package["ref1"], "77/2026")
                 self.assertEqual(
                     package["parcels"][0]["content"],
-                    "1x 842348 Toner Ricoh MP3554",
+                    "1x Toner Ricoh MP3554",
                 )
                 return httpx.Response(
                     200,

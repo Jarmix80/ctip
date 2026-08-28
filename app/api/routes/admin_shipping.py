@@ -64,6 +64,7 @@ from app.services.shipping_documents import (
     build_mock_shipping_label_sheet,
     build_shipping_packing_summary,
     merge_shipping_pdf_documents,
+    pack_shipping_labels_four_up,
 )
 from app.services.shipping_firebird import (
     load_compatibility_catalog,
@@ -1325,7 +1326,7 @@ async def shipping_labels_sheet(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
-    """Zwraca natywny arkusz DPD A4 albo lokalny odpowiednik 2×2 w trybie mock."""
+    """Zwraca etykiety przewoźnika ułożone po cztery na arkuszu A4."""
     admin_session, _ = admin_context
     user = await _require_shipping_access(admin_context, session)
     requested_ids = _parse_print_order_ids(order_table_ids)
@@ -1397,6 +1398,13 @@ async def shipping_labels_sheet(
             status_code=status.HTTP_409_CONFLICT,
             detail="Jedna partia wydruku nie może mieszać etykiet mock, demo i produkcyjnych.",
         )
+    try:
+        content = pack_shipping_labels_four_up(
+            content,
+            label_count=len(shipments_by_tracking),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     await record_audit(
         session,
         user_id=user.id,
@@ -1406,6 +1414,7 @@ async def shipping_labels_sheet(
             "order_table_ids": [case.firebird_order_table_id for case in cases],
             "tracking_numbers": list(shipments_by_tracking),
             "provider_mode": next(iter(modes)),
+            "layout": "A4_2x2",
             "document_id": document_id,
             "trace_id": trace_id,
         },
@@ -1425,7 +1434,7 @@ async def shipping_print_bundle(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> Response:
-    """Zwraca tabelę kompletacyjną i niezmienione strony etykiet przewoźnika."""
+    """Zwraca tabelę kompletacyjną i arkusz etykiet przewoźnika A4 2×2."""
     await _require_shipping_access(admin_context, session)
     try:
         requested_ids = list(
@@ -1545,7 +1554,11 @@ async def shipping_print_bundle(
         else:
             labels.append(shipment.label_content)
     summary = build_shipping_packing_summary(entries)
-    content = merge_shipping_pdf_documents([summary, *labels])
+    labels_sheet = pack_shipping_labels_four_up(
+        merge_shipping_pdf_documents(labels),
+        label_count=len(labels),
+    )
+    content = merge_shipping_pdf_documents([summary, labels_sheet])
     filename = f"DPD-zestaw-{datetime.now(WARSAW):%Y%m%d-%H%M}.pdf"
     return Response(
         content=content,

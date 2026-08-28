@@ -191,11 +191,9 @@ def _parcel_content(items: list[dict[str, Any]] | None) -> str:
             quantity = f"{float(item.get('quantity') or 0):g}"
         except (TypeError, ValueError):
             quantity = _text(item.get("quantity")) or "1"
-        item_index = _text(item.get("item_index"))
         item_name = _text(item.get("item_name"))
-        identity = item_index or item_name or "część"
-        if len(items) == 1 and item_index and item_name:
-            identity = f"{item_index} {item_name}"
+        item_index = _text(item.get("item_index"))
+        identity = item_name or item_index or "część"
         descriptions.append(f"{quantity}x {identity}")
     content = "; ".join(descriptions)
     limit = _LABEL_FIELD_LIMITS["content"]
