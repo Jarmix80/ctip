@@ -36,4 +36,6 @@ W zleceniach `ZLECENIE.ID_FIRMA=1`, natomiast odpowiadające rekordy `KLIENT` i 
 
 ## Sprzątanie
 
-Po pilocie Marcin ręcznie anuluje etykiety DPD i usuwa FV, oba WZ, RW oraz trzy zlecenia. Następnie usuwa przygotowane dane `Test Umowa`, `test01` i urządzenie `7222`. Codex wykonuje końcową kontrolę odczytową dokumentów, powiązań oraz dokładnego przywrócenia trzech stanów magazynowych.
+Po pilocie Marcin ręcznie wycofuje z użycia etykiety DPD i usuwa FV, oba WZ, RW oraz trzy zlecenia. Umowa `test01` zostaje usunięta, natomiast klient `Test Umowa` i urządzenie `7222` pozostają jako kontrolowane dane do przyszłych testów. Codex wykonuje końcową kontrolę odczytową dokumentów, powiązań oraz dokładnego przywrócenia trzech stanów magazynowych.
+
+Podczas sprzątania usunięcie testowej FV automatycznie usunęło powiązany `WZ / 184 / 2026`. Trigger `DEL_FPOZYCJA` ustawił `MAGAZYN.ILOSC=NULL`, ponieważ pozycja utworzona przez Shipping miała `FPOZYCJA.PARAGON=NULL`. Stan kartoteki `10280` został ręcznie przywrócony w MS do `10`, a generator lokalny poprawiono tak, aby nowe pozycje zapisywały `PARAGON=0`.

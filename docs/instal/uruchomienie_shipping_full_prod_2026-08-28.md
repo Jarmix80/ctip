@@ -126,7 +126,7 @@ Kolejność pilota:
 6. sprawdzić po utworzeniu etykiet stan `ZR`, `ZPOZYCJA`, numery przesyłek i brak przedwczesnych dokumentów końcowych;
 7. zamknąć zlecenie RW przyciskiem pojedynczego zlecenia;
 8. zamknąć wspólną paczkę przez akcję masową;
-9. sprawdzić jeden RW, dwa WZ, jedną FV, `DATA_PRZES`, `WYKONANIE`, stan `Z` i ceny;
+9. sprawdzić jeden RW, dwa WZ, jedną FV, numer FV w `ZAKUPY.DOK_ZEW` powiązanego WZ, `DATA_PRZES`, `WYKONANIE`, stan `Z` i ceny;
 10. potwierdzić jednokrotne zmniejszenie każdego stanu magazynowego;
 11. potwierdzić trzy wpisy Archiwum oraz statusy wysłanych SMS-ów i e-maili;
 12. wymagać zera spraw `failed` i `reconcile_required`.
@@ -146,8 +146,9 @@ Kolejność ręczna:
 7. usunąć trzy testowe zlecenia i ich pozycje;
 8. odpiąć urządzenie `7222` od umowy, jeśli wymaga tego interfejs MS;
 9. usunąć umowę `test01`;
-10. usunąć urządzenie `7222`;
-11. usunąć klienta `Test Umowa`.
+10. pozostawić urządzenie `7222` i klienta `Test Umowa` jako kontrolowane dane do przyszłych testów.
+
+Po usunięciu FV należy potwierdzić, że `MAGAZYN.ILOSC` pozycji nie ma wartości `NULL`. Generator Shipping zapisuje `FPOZYCJA.PARAGON=0`, ponieważ trigger `DEL_FPOZYCJA` odejmuje to pole podczas odtwarzania stanu magazynowego.
 
 Kontrola odczytowa po sprzątaniu musi potwierdzić:
 
@@ -155,9 +156,8 @@ Kontrola odczytowa po sprzątaniu musi potwierdzić:
 - brak zapisanych dokumentów RW, WZ i FV po ich identyfikatorach;
 - brak trzech zleceń i powiązanych `ZPOZYCJA`;
 - brak umowy `test01` w rozpoznanej tabeli;
-- brak urządzenia według `ID_MASZYNA_TABLE` i `ID_MASZYNA`;
-- brak klienta według obu zapisanych identyfikatorów;
-- brak osieroconych odwołań do klienta, umowy, urządzenia, zleceń i dokumentów;
+- obecność urządzenia `7222` i klienta `Test Umowa`, ale bez umowy `test01`, zleceń pilota i dokumentów pilota;
+- brak osieroconych odwołań do umowy, zleceń i dokumentów;
 - dokładny powrót `MAGAZYN.ILOSC`, `MAGAZYN.IL_REZ` i stanu dostępnego każdej części do wartości początkowych.
 
 Rekordy Archiwum Shipping pozostają jako trwały audyt pilota i nie są usuwane.
@@ -168,6 +168,10 @@ Po zakończeniu pilota i potwierdzeniu pełnego odtworzenia stanów magazynowych
 
 1. Rozszerzyć przycisk odświeżania kolejki o pełną synchronizację z Menadżerem Serwisu: ponowny odczyt całej kolejki, dodanie nowych zleceń oraz bezpieczne usunięcie z roboczego widoku CTIP spraw, których nie ma już w źródle. Rekordów Archiwum i trwałego audytu nie wolno usuwać.
 2. Poprawić wysokość i przewijanie lewej kolejki zleceń, aby ostatni wiersz był zawsze widoczny w całości niezależnie od rozdzielczości, skali systemowej i wysokości okna przeglądarki.
+3. Wysyłać jedno powiadomienie SMS na wspólną paczkę zamiast osobnego SMS-a dla każdego zlecenia tego samego odbiorcy.
+4. Uzgodnić `EMAIL_SENDER_ADDRESS` z kontem uwierzytelnianym przez SMTP; serwer odrzucił nadawcę nieprzypisanego do aktywnego użytkownika.
+5. Wdrożyć poprawki generatora FV z WZ: numer FV w `ZAKUPY.DOK_ZEW` oraz `FPOZYCJA.PARAGON=0`, wymagane do prawidłowego odtworzenia stanu przy ręcznym usunięciu dokumentów.
+6. Opisać w interfejsie cykl niewykorzystanej etykiety DPD Services API; CTIP nie generuje protokołu ani podjazdu kuriera, a samo API nie udostępnia usunięcia wygenerowanego numeru listu.
 
 Identyfikatory i stany początkowe bieżącego pilota zapisano w `docs/instal/pilot_shipping_2026-08-28.md`.
 

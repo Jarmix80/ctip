@@ -1739,6 +1739,180 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertNotIn("'ROK'", executed_queries)
         connection.commit.assert_called_once()
 
+    def test_wz_powiazane_z_faktura_zapisuje_numer_fv_w_dokumencie_zewnetrznym(
+        self,
+    ) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.side_effect = [
+            (
+                1,
+                1,
+                739,
+                7229,
+                18495,
+                2026,
+                "Przykładowa Firma",
+                "Testowa 10",
+                "00-001",
+                "Warszawa",
+                "1234567890",
+                "Płatne",
+                None,
+                None,
+                None,
+                None,
+                None,
+                "MOCK123",
+                None,
+                "Ricoh",
+                "MPC 2011",
+                "ZR",
+                None,
+                None,
+            ),
+            None,
+            None,
+            None,
+            None,
+            (185,),
+            (38791,),
+            (64557, 5318),
+        ]
+        cursor.fetchall.return_value = [
+            (
+                501,
+                1,
+                "2. Towar inny",
+                "TONER-1",
+                "Toner testowy",
+                "szt.",
+                Decimal("490"),
+                Decimal("120"),
+                Decimal("23"),
+                1,
+                Decimal("5"),
+            )
+        ]
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+        ):
+            result = finalize_shipping_order(
+                order_table_id=83495,
+                warehouse_id=1,
+                items=[
+                    {
+                        "firebird_warehouse_item_id": 501,
+                        "quantity": 1,
+                        "price_net": 490,
+                        "purchase_price_net": 120,
+                        "vat_rate": 23,
+                    }
+                ],
+                invoice_required=True,
+                tracking_number="MOCK123",
+                issued_by="Operator Testowy",
+                shipping_address=None,
+            )
+
+        document_link_calls = [
+            execute_call
+            for execute_call in cursor.execute.call_args_list
+            if "UPDATE ZAKUPY SET DOK_ZEW" in execute_call.args[0]
+        ]
+        executed_queries = "\n".join(
+            execute_call.args[0] for execute_call in cursor.execute.call_args_list
+        )
+        self.assertEqual(result["wz_id"], 38791)
+        self.assertEqual(result["invoice_number"], "5318/KPSK/2026")
+        self.assertEqual(len(document_link_calls), 1)
+        self.assertEqual(document_link_calls[0].args[1], ("5318/KPSK/2026", 38791))
+        self.assertIn("POBRANO, ILOSCWZ, PARAGON", executed_queries)
+        self.assertIn("?, ?, ?, 0)", executed_queries)
+        connection.commit.assert_called_once()
+
+    def test_ponowienie_fv_z_wz_odtwarza_numer_fv_w_dokumencie_zewnetrznym(
+        self,
+    ) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.side_effect = [
+            (
+                1,
+                1,
+                739,
+                7229,
+                18495,
+                2026,
+                "Przykładowa Firma",
+                "Testowa 10",
+                "00-001",
+                "Warszawa",
+                "1234567890",
+                "Płatne",
+                64557,
+                None,
+                None,
+                "5318/KPSK/2026",
+                None,
+                "MOCK123",
+                datetime(2026, 8, 28).date(),
+                "Ricoh",
+                "MPC 2011",
+                "Z",
+                None,
+                None,
+            ),
+            (64557, "5318/KPSK/2026", 38791),
+            (38791, "WZ / 185 / 2026"),
+            None,
+            ("WZ / 185 / 2026",),
+        ]
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+        ):
+            result = finalize_shipping_order(
+                order_table_id=83495,
+                warehouse_id=1,
+                items=[
+                    {
+                        "firebird_warehouse_item_id": 501,
+                        "quantity": 1,
+                        "price_net": 490,
+                        "purchase_price_net": 120,
+                        "vat_rate": 23,
+                    }
+                ],
+                invoice_required=True,
+                tracking_number="MOCK123",
+                issued_by="Operator Testowy",
+                shipping_address=None,
+            )
+
+        document_link_calls = [
+            execute_call
+            for execute_call in cursor.execute.call_args_list
+            if "UPDATE ZAKUPY SET DOK_ZEW" in execute_call.args[0]
+        ]
+        self.assertEqual(result["status"], "already_exists")
+        self.assertEqual(len(document_link_calls), 1)
+        self.assertEqual(document_link_calls[0].args[1], ("5318/KPSK/2026", 38791))
+        connection.commit.assert_called_once()
+
     def test_umowa_uzywa_ceny_zakupu_niezaleznie_od_podanej_ceny(self) -> None:
         selected, catalog, purchase, source = _shipping_item_price(
             order_kind="Umowa",

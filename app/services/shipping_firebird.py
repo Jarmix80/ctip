@@ -1327,7 +1327,7 @@ def finalize_shipping_order(
     issued_by: str,
     shipping_address: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Tworzy RW albo WZ z opcjonalną FV i zamyka zlecenie w jednej transakcji."""
+    """Tworzy RW albo WZ z opcjonalną FV, wiąże dokumenty i zamyka zlecenie."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
@@ -1482,6 +1482,10 @@ def finalize_shipping_order(
                 cursor.execute("SELECT NUMER FROM ZAKUPY WHERE ID_ZAKUPY_TABLE = ?", (wz_id,))
                 row = cursor.fetchone()
                 wz_number = _text(row[0]) if row else None
+                cursor.execute(
+                    "UPDATE ZAKUPY SET DOK_ZEW = ? WHERE ID_ZAKUPY_TABLE = ?",
+                    (_text(invoice_number), wz_id),
+                )
             cursor.execute(
                 """
                 UPDATE ZLECENIE
@@ -1980,6 +1984,10 @@ def finalize_shipping_order(
                 "UPDATE FAKTURA SET NUMER = ? WHERE ID_FAKTURA_TABLE = ?",
                 (finalized_number, int(document_id)),
             )
+            cursor.execute(
+                "UPDATE ZAKUPY SET DOK_ZEW = ? WHERE ID_ZAKUPY_TABLE = ?",
+                (finalized_number, int(wz_id)),
+            )
             for item in document_items:
                 quantity_from_wz = item["quantity"]
                 cursor.execute(
@@ -1990,8 +1998,8 @@ def finalize_shipping_order(
                         RODZAJ_DOK, NUMER, DATA_SPRZ, RODZAJ, INDEKS, NAZWA,
                         CENA_NETTO, CENA_BRUTTO, CENA_Z, ILOSC, JM,
                         WARTOSC_NETTO, WARTOSC_Z, STAWKA_VAT, VAT, IDVAT,
-                        WARTOSC_BRUTTO, POBRANO, ILOSCWZ
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        WARTOSC_BRUTTO, POBRANO, ILOSCWZ, PARAGON
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                     """,
                     (
                         int(document_id),
