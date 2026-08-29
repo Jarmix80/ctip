@@ -1,35 +1,54 @@
 {
-  "timestamp": "2026-05-05T12:15:00+02:00",
+  "timestamp": "2026-08-28T01:22:00+02:00",
   "summary": [
-    "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
-    "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
-    "Restart uslug nie wystarczyl: CTIP-FormsPublic nadal zwracal 500, dopoki AppEnvironmentExtra nie zawieral pelnego zestawu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE.",
-    "Na serwerze Windows ustawiono dla CTIP-FormsPublic komplet PG* z D:\\CTIP\\.env z wymuszonym PGHOST=127.0.0.1; po restarcie lokalny i publiczny fałszywy token zwracaja 404.",
-    "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
-    "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
-    "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
-    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
+    "Dodano trwały rejestr 172 wiadomości mailboxa GRENKE i osobne archiwum spraw historycznych.",
+    "Ujednolicono numery wniosków z technicznym zerem i kontekstowym zapisem zwartym.",
+    "Pakiet urządzeń już przypisanych do klienta działa idempotentnie bez zmiany właściciela, a pakiet mieszany przechodzi do manual_hold bez zapisów Firebird.",
+    "Dodano API i ekran GenForm Wiadomości historyczne z filtrami, pełną treścią i bezpiecznym pobieraniem załączników.",
+    "Przygotowano migrację a7c4e2f9b1d3, backfill dry-run/apply oraz procedurę wdrożenia produkcyjnego.",
+    "Wdrożono commit c206a876aeeaa5b0ed802fb24feb03b323cfca0b na produkcji i wykonano pełny backfill 172 wiadomości.",
+    "Potwierdzono formularz 59 jako przypadek idempotentny oraz formularz 60 jako manual_hold dla pakietu 7 urządzeń klienta i 2 magazynowych."
   ],
   "follow_up": [
-    "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
-    "Przy kolejnym wdrozeniu sprawdzic: http://127.0.0.1:8100/health, http://127.0.0.1:8100/formularz/abc oraz https://form.ksero-partner.com.pl/formularz/abc.",
-    "Nie usuwac AppEnvironmentExtra PG* z CTIP-FormsPublic, dopoki na serwerze istnieja zmienne procesu/systemu nadpisujace .env."
+    "Wyjaśnić operacyjnie dwa urządzenia magazynowe formularza 60; system nie wykonał na nich żadnych zapisów.",
+    "Przejść do analizy 83 celowo niepołączonych wiadomości: 40 nieobsługiwanych tematów i 41 bez dopasowania.",
+    "Obserwować następne automatyczne przebiegi schedulera mailboxa oraz brak otwartych błędów rejestru."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "codex/fix-public-form-checkbox-422",
+    "branch_local": "feature/mailbox-archive-ledger-2026-08-28",
     "venv": ".venv",
-    "focus": "production-public-forms-500-fixed",
+    "focus": "contracts-mailbox-ledger-and-history",
     "verification": [
       "pre-commit run --all-files: passed",
-      "pytest -q: 371 passed, 1 xfailed, 26 warnings",
-      "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
-      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
+      "targeted pytest: 75 passed",
+      "admin contracts workflow/history API: 4 passed",
+      "alembic offline SQL f9a0b1c2d3e4:a7c4e2f9b1d3: generated successfully"
     ],
-    "services": [
-      "CTIP-FormsPublic",
-      "IIS reverse proxy",
-      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
-    ]
+    "production_expected_counts": {
+      "linked_form": 118,
+      "historical_archived": 51,
+      "ignored": 2,
+      "manual_hold": 1,
+      "error": 0,
+      "history_cases": 11
+    },
+    "production_deployment": {
+      "commit": "c206a876aeeaa5b0ed802fb24feb03b323cfca0b",
+      "alembic": "a7c4e2f9b1d3",
+      "backup": "D:\\CTIP\\backups\\prod_20260828_010831",
+      "backup_files": 9,
+      "backup_bytes": 393015419,
+      "messages_total": 172,
+      "attachments_total": 1029,
+      "attachments_missing": 0,
+      "scheduler_result": "ok",
+      "services": [
+        "CTIP-Web",
+        "CTIP-FormsPublic",
+        "CollectorService",
+        "CTIP-SMS"
+      ]
+    }
   }
 }
