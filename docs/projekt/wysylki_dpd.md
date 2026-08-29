@@ -184,6 +184,8 @@ python scripts/dpd_infoservices_backfill.py --limit 500
 
 Po sprawdzeniu listy uruchom tę samą operację z `--apply`. Backfill jest idempotentny, pobiera wyłącznie produkcyjne numery DPD zapisane w CTIP i nie ingeruje w Firebirda. Dla pojedynczego listu użyj `--waybill NUMER --apply`. W środowisku lokalnym analogicznie wczytaj `.env.test`; pozostaw `DPD_INFO_ENABLED=false`, jeżeli test nie ma otrzymać rzeczywistych zdarzeń firmy.
 
+Na Windows skrypt sam ustawia `WindowsSelectorEventLoopPolicy` przed utworzeniem pętli `asyncio`. Jest to wymagane przez asynchroniczny sterownik `psycopg`; uruchamianie backfillu nie wymaga osobnego wrappera PowerShell.
+
 Flagi `SHIPPING_CATALOG_MUTATIONS_ENABLED` i `SHIPPING_FULFILLMENT_ENABLED` są sprawdzane po stronie API. Wyłączony etap zwraca kod `423`, więc ręczne wywołanie endpointu nie omija blokady interfejsu. Wyłączenie `SHIPPING_ENABLED` zwraca `503` zarówno dla stron, jak i API modułu.
 
 DPD Polska publikuje aktualny opis DPD Services REST i udostępnia klucz przez opiekuna handlowego: <https://www.dpd.com/pl/pl/oferta-dla-firm/rozwiazania-it-dpd-polska/implementacja-wtyczek-web-service-dpd-polska/>.

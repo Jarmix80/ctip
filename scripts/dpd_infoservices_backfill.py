@@ -88,5 +88,13 @@ async def main() -> int:
     return 0
 
 
+def run() -> int:
+    """Uruchamia backfill na pętli zgodnej z PostgreSQL również na Windows."""
+    from app.core.asyncio_compat import configure_asyncio_for_windows
+
+    configure_asyncio_for_windows()
+    return asyncio.run(main())
+
+
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(run())
