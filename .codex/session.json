@@ -7,17 +7,22 @@
     "Rejestr Status przesyłek zawiera 18 przesyłek, w tym 9 aktywnych i 0 wymagających uwagi; szczegóły przykładowej przesyłki zwracają pełną oś czterech zdarzeń.",
     "Harmonogram InfoServices działa co 300 sekund, a konfiguracja API raportuje enabled=true, api_ready=true i channel_configured=true.",
     "Naprawiono uruchamianie scripts/dpd_infoservices_backfill.py na Windows przez ustawienie zgodnej polityki pętli asyncio przed asyncio.run; dodano test i dokumentację.",
-    "Poprawkę wdrożono z commitu c5861b72baed66e3bf556d1ec594e1b0818b8977 bez restartu usług; backup plików zapisano w D:\\CTIP\\backups\\patch_20260829_052149."
+    "Poprawkę wdrożono z commitu c5861b72baed66e3bf556d1ec594e1b0818b8977 bez restartu usług; backup plików zapisano w D:\\CTIP\\backups\\patch_20260829_052149.",
+    "Uporządkowano wszystkie 12 lokalnych worktree: każde jest czyste, a wszystkie aktywne gałęzie z worktree są zgodne z GitHubem.",
+    "Pierwotny prototyp Shipping i oryginalną dokumentację DPD zachowano bez łączenia z produkcją na gałęzi archive/root-shipping-prototype-2026-08-29 w commicie 50cce44.",
+    "Zapisano i wypchnięto zaległe stany sesji mailboxa i Shipping oraz konfigurację testowego Firebirda; port backendu 127.0.0.1:3051 jest aktywny i zgodny z compose.test.yml.",
+    "Produkcja pozostaje czysta na commicie 15ed0ae4149b6abfa305b2ca8ea9521a6bc0fb07; cztery usługi działają, a health, Shipping i FormsPublic zwracają HTTP 200."
   ],
   "follow_up": [
     "Monitorować zakładkę Status przesyłek podczas pierwszych rzeczywistych doręczeń i zwrotów DPD.",
-    "Nie włączać SHIPPING_COMPATIBILITY_WEB_ENABLED bez osobnej decyzji i kontroli limitów."
+    "Nie włączać SHIPPING_COMPATIBILITY_WEB_ENABLED bez osobnej decyzji i kontroli limitów.",
+    "Stary izolowany mirror WWW na porcie 8000 ma zatrzymany kontener web; bieżący test Shipping działa poprawnie na porcie 8002."
   ],
   "context": {
     "repo": "ctip",
     "branch_local": "feature/shipping-full-rollout-2026-08-28",
     "venv": ".venv",
-    "focus": "shipping-dpd-infoservices-production-enabled",
+    "focus": "shipping-dpd-infoservices-production-enabled-and-git-trees-clean",
     "verification": [
       "pre-commit run --all-files: passed",
       "pytest -q tests/test_dpd_infoservices_backfill.py tests/test_dpd_infoservices.py: 8 passed",
@@ -25,7 +30,12 @@
       "authenticated /admin/shipping/tracking: HTTP 200, total 18",
       "native Windows backfill after fix: success, inserted 0 on repeated run",
       "production /health, /shipping and FormsPublic /health: HTTP 200",
-      "latest web log tail: 0 Traceback/CRITICAL/ModuleNotFoundError"
+      "latest web log tail: 0 Traceback/CRITICAL/ModuleNotFoundError",
+      "12 lokalnych worktree: clean",
+      "wszystkie aktywne gałęzie worktree: 0 ahead, 0 behind względem GitHub",
+      "test Shipping 127.0.0.1:8002 /health i /shipping: HTTP 200",
+      "test Firebird 127.0.0.1:3051: aktywny",
+      "produkcja Git: clean i zgodna z origin"
     ],
     "services": [
       "CollectorService: Running",
