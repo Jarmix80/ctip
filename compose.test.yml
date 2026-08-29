@@ -43,8 +43,11 @@ services:
     volumes:
       - ./runtime/firebird:/data
       - ./ops/firebird/aliases.test.conf:/firebird/etc/aliases.conf:ro
+    ports:
+      - "127.0.0.1:3051:3050"
     networks:
       - ctip_test_internal
+      - ctip_test_edge
     restart: unless-stopped
 
   mailpit:

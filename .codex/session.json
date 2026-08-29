@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-05T12:15:00+02:00",
+  "timestamp": "2026-07-29T15:59:49+02:00",
   "summary": [
     "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
     "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
@@ -8,7 +8,16 @@
     "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
     "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
     "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
-    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
+    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy.",
+    "W lokalnym worktree testowym wdrozono osobny ekran /device/bnp-buyout widoczny w menu bezposrednio pod Przyjeciem PZ; istniejacy proces PZ nie zostal zmieniony.",
+    "Wykup BNP wyszukuje urzadzenie po serialu, przygotowuje kartoteke magazynu 27 ze stanem 0 i atomowo tworzy PZ oraz zmienia KP na WKP.",
+    "Kontener ctip-prod-mirror-web-1 zostal zrestartowany; port 8000 zwraca interfejs device v0.4.1 i wszystkie cztery trasy wykupu BNP.",
+    "Pole nazwy pozycji Wykupu BNP otrzymuje edytowalna podpowiedz Producent Model S/N:serial z danych znalezionej maszyny.",
+    "Interfejs Wykupu BNP v0.6.0 ma wieksze pola i czcionke oraz opisane karty akcji utworzenia kartoteki ze stanem 0 i finalizacji PZ.",
+    "Testowa trasa /device/bnp-buyout/prototypes udostepnia trzy nieaktywne makiety: Karty etapowe, Panel operacyjny i Kreator 3 krokow.",
+    "Wybrano Panel operacyjny z odwroconym ukladem: formularz i akcje po lewej, przyklejony kafelek znalezionego urzadzenia po prawej.",
+    "Wykup BNP wdrozono na produkcji w commicie 5dd3a9f2d07d7cc60e5e3d5aa8774972b76b6bd7 przez fast-forward galezi prod/backup-retention-firebird-optima-2026-07-13.",
+    "Na produkcji zrestartowano wyłącznie CTIP-Web; CollectorService i CTIP-SMS pozostaly uruchomione, /health zwraca 200, UI ma wersje device v0.6.0, a po ostatnim starcie nie ma nowych wyjatkow."
   ],
   "follow_up": [
     "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
@@ -17,19 +26,25 @@
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "codex/fix-public-form-checkbox-422",
+    "branch_local": "test/prod-mirror-2026-07-22",
     "venv": ".venv",
-    "focus": "production-public-forms-500-fixed",
+    "focus": "produkcyjnie wdrozony Wykup BNP w module /device",
     "verification": [
       "pre-commit run --all-files: passed",
       "pytest -q: 371 passed, 1 xfailed, 26 warnings",
       "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
-      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
+      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404",
+      "pre-commit, Ruff, Black, node --check i git diff --check: passed",
+      "testy BNP oraz UI: 11 passed",
+      "pelny dostepny zestaw bez test_admin_backend.py: 350 passed, 12 niezaleznych istniejacych bledow",
+      "lokalny Firebird: serial 3122MA10548, KP/5212/E/R/, propozycja WKP/5212/E/R/ i WKP/5212/BNP",
+      "produkcja: commit 5dd3a9f, /health 200, /device/bnp-buyout 200, prototypy 404, brak nowych wyjatkow po starcie"
     ],
     "services": [
       "CTIP-FormsPublic",
       "IIS reverse proxy",
-      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
+      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8",
+      "ctip-prod-mirror-web-1, lokalny PostgreSQL ctip_test i lokalny Firebird testowy"
     ]
   }
 }

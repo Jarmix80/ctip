@@ -13,7 +13,7 @@ Stos `compose.test.yml` uruchamia:
 | Moduł | Rola | Dostęp z hosta |
 |---|---|---|
 | `postgres` | lokalna baza `ctip_test`, PostgreSQL 17 | `127.0.0.1:5432` przez bramę |
-| `firebird` | robocza kopia Menadżera Serwisu, Firebird 2.5 | `127.0.0.1:3050` lub `192.168.0.9:3050` przez bramę |
+| `firebird` | robocza kopia Menadżera Serwisu, Firebird 2.5 | backend CTIP: `127.0.0.1:3051`; Menadżer Serwisu: `192.168.0.9:3050` przez bramę |
 | `mailpit` | lokalne przechwytywanie e-mail | `127.0.0.1:8025` przez bramę |
 | `mock-ctip` | symulator centrali CTIP | tylko sieć wewnętrzna |
 | `web` | pełny panel CTIP | `0.0.0.0:8000` przez bramę |
@@ -25,7 +25,7 @@ Stos `compose.test.yml` uruchamia:
 
 Kontenery aplikacyjne są podłączone wyłącznie do sieci `ctip_test_internal` (`172.28.250.0/24`) oznaczonej jako `internal`. Nie mają trasy domyślnej, dlatego nie mogą połączyć się z Internetem, produkcyjnym PostgreSQL, Firebird ani centralą Slican. Brama `test-gateway` nie uruchamia kodu CTIP i przekazuje tylko pięć jawnie skonfigurowanych portów. Brama `google-egress` przyjmuje wyłącznie ruch TLS z nazwą SNI `oauth2.googleapis.com`, `sheets.googleapis.com` albo `www.googleapis.com`; pozostałe cele są odrzucane.
 
-Testowy Firebird wczytuje aliasy z `ops/firebird/aliases.test.conf`. Menadżer Serwisu uruchomiony na tym samym hoście należy kierować na pełną ścieżkę `127.0.0.1:BAZAMS_TEST`, a z innego komputera w sieci firmowej na `192.168.0.9:BAZAMS_TEST`. Jeżeli formularz posiada osobne pola, port wynosi `3050`, a baza `BAZAMS_TEST`. Alias obsługuje również warianty `BAZAMS_TEST\BazaMS.fdb` i `BAZAMS_TEST/BazaMS.fdb`, które klient MS może zbudować automatycznie. Brama HAProxy odrzuca połączenia spoza hosta lokalnego oraz podsieci `192.168.0.0/24`.
+Testowy Firebird wczytuje aliasy z `ops/firebird/aliases.test.conf`. Backend CTIP na hoście łączy się bezpośrednio przez `127.0.0.1:3051`, natomiast Menadżer Serwisu uruchomiony na tym samym hoście należy kierować na pełną ścieżkę `127.0.0.1:BAZAMS_TEST`, a z innego komputera w sieci firmowej na `192.168.0.9:BAZAMS_TEST`. Jeżeli formularz posiada osobne pola, port MS wynosi `3050`, a baza `BAZAMS_TEST`. Alias obsługuje również warianty `BAZAMS_TEST\BazaMS.fdb` i `BAZAMS_TEST/BazaMS.fdb`, które klient MS może zbudować automatycznie. Brama HAProxy odrzuca połączenia spoza hosta lokalnego oraz podsieci `192.168.0.0/24`.
 
 ## Blokady komunikacji
 
