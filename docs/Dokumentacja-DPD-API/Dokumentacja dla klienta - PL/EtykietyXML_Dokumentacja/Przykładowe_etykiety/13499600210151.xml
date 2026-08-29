@@ -1,0 +1,85 @@
+<packages>
+   <package>
+      <parcels>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>Sender:</senderLabel>
+               <depotLabel>Depot</depotLabel>
+               <deliveryAddressLabel>Delivery address:</deliveryAddressLabel>
+               <deliveryLabel>Delivery</deliveryLabel>
+               <weightLabel>Weight</weightLabel>
+               <trackLabel>Track</trackLabel>
+               <serviceLabel>Service</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Terms &amp; Conditions of services on www.dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PM-Apartments</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Mezibranska 7</address>
+                  <address2>CZ-10100</address2>
+                  <city>Praga</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Reference 1: Nr ref. 111/01</refNo1>
+                  <refNo2>Reference 2: Nr ref. 111/01</refNo2>
+                  <refNo3/>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>1/1</parcelsCount>
+                  <weight>12.00 kg</weight>
+               </parcelDetails>
+               <content/>
+               <serviceDescription>DPD GUARANTEE</serviceDescription>
+               <optionalAdditionalInformation/>
+               <aztec2DBarcode height="33mm" width="33mm">[)~d062~d03001~d02902~d02910100~d029203~d029155~d02913499600210151~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029001/001~d02912.00KG~d029N~d029Mezibranska 7~d029Praga~d029~d029PM-Apartments~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d029012.00KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031203~d031~d03007~d029S020~d029EUR~d02935.80~d0290~d029~d030~d004</aztec2DBarcode>
+               <customerData/>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>13499600210151</waybill>
+                  <checksum>7</checksum>
+               </parcelTrackingNo>
+               <serviceText>PM2</serviceText>
+               <serviceMark/>
+               <destinationText>CZ-DPD-1392</destinationText>
+               <oSort>KTWP</oSort>
+               <serviceCodeDestinationPostalCode>155-CZ-10100</serviceCodeDestinationPostalCode>
+               <dSort>113</dSort>
+               <labelOrigin>26-08-2020 10:49:43 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%001010013499600210151155203</bc128Code>
+                  <bcText>0010100 13499600210151 155 203 W</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+      </parcels>
+   </package>
+</packages>

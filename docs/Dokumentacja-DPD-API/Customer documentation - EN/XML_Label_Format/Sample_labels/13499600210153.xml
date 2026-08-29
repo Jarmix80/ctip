@@ -1,0 +1,164 @@
+<packages>
+   <package>
+      <parcels>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>Sender:</senderLabel>
+               <depotLabel>Depot</depotLabel>
+               <deliveryAddressLabel>Delivery address:</deliveryAddressLabel>
+               <deliveryLabel>Delivery</deliveryLabel>
+               <weightLabel>Weight</weightLabel>
+               <trackLabel>Track</trackLabel>
+               <serviceLabel>Service</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Terms &amp; Conditions of services on www.dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PM-Apartments</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Str. Siretului</address>
+                  <address2>RU-113403</address2>
+                  <city>Alba</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Reference 1: Nr ref. 111/01</refNo1>
+                  <refNo2>Reference 2: Nr ref. 111/01</refNo2>
+                  <refNo3/>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>1/2</parcelsCount>
+                  <weight>11.00 kg</weight>
+               </parcelDetails>
+               <content/>
+               <serviceDescription>DPD EXPRESS</serviceDescription>
+               <optionalAdditionalInformation/>
+               <aztec2DBarcode height="33mm" width="33mm">[)~d062~d03001~d02902~d029113403~d029643~d029302~d02913499600210153~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029001/002~d02911.00KG~d029N~d029Str. Siretului~d029Alba~d029~d029PM-Apartments~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d029022.00KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031643~d031~d03007~d029S030~d0290~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d030~d004</aztec2DBarcode>
+               <customerData/>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>13499600210153</waybill>
+                  <checksum>3</checksum>
+               </parcelTrackingNo>
+               <serviceText>IE2</serviceText>
+               <serviceMark>E</serviceMark>
+               <destinationText>RU-DPD-2201-SVO9</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>302-RU-113403</serviceCodeDestinationPostalCode>
+               <dSort/>
+               <labelOrigin>26-08-2020 11:34:16 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%011340313499600210153302643</bc128Code>
+                  <bcText>0113403 13499600210153 302 643 O</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>Sender:</senderLabel>
+               <depotLabel>Depot</depotLabel>
+               <deliveryAddressLabel>Delivery address:</deliveryAddressLabel>
+               <deliveryLabel>Delivery</deliveryLabel>
+               <weightLabel>Weight</weightLabel>
+               <trackLabel>Track</trackLabel>
+               <serviceLabel>Service</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Terms &amp; Conditions of services on www.dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PM-Apartments</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Str. Siretului</address>
+                  <address2>RU-113403</address2>
+                  <city>Alba</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Reference 1: Nr ref. 111/01</refNo1>
+                  <refNo2>Reference 2: Nr ref. 111/01</refNo2>
+                  <refNo3/>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>2/2</parcelsCount>
+                  <weight>11.00 kg</weight>
+               </parcelDetails>
+               <content/>
+               <serviceDescription>DPD EXPRESS</serviceDescription>
+               <optionalAdditionalInformation/>
+               <aztec2DBarcode height="33mm" width="33mm">[)~d062~d03001~d02902~d029113403~d029643~d029302~d02913499600210154~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029002/002~d02911.00KG~d029N~d029Str. Siretului~d029Alba~d029~d029PM-Apartments~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d029022.00KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031643~d031~d03007~d029S030~d0290~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d029~d030~d004</aztec2DBarcode>
+               <customerData/>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>13499600210154</waybill>
+                  <checksum>1</checksum>
+               </parcelTrackingNo>
+               <serviceText>IE2</serviceText>
+               <serviceMark>E</serviceMark>
+               <destinationText>RU-DPD-2201-SVO9</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>302-RU-113403</serviceCodeDestinationPostalCode>
+               <dSort/>
+               <labelOrigin>26-08-2020 11:34:16 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%011340313499600210154302643</bc128Code>
+                  <bcText>0113403 13499600210154 302 643 0</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+      </parcels>
+   </package>
+</packages>

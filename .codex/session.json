@@ -1,35 +1,105 @@
 {
-  "timestamp": "2026-05-05T12:15:00+02:00",
+  "timestamp": "2026-08-29T05:00:00+02:00",
   "summary": [
-    "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
-    "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
-    "Restart uslug nie wystarczyl: CTIP-FormsPublic nadal zwracal 500, dopoki AppEnvironmentExtra nie zawieral pelnego zestawu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE.",
-    "Na serwerze Windows ustawiono dla CTIP-FormsPublic komplet PG* z D:\\CTIP\\.env z wymuszonym PGHOST=127.0.0.1; po restarcie lokalny i publiczny fałszywy token zwracaja 404.",
-    "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
-    "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
-    "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
-    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
+    "Dodano moduł /shipping automatyzujący kolejkę zleceń dowozu materiałów, weryfikację adresu, wybór tonerów, nadanie DPD i zamknięcie dnia.",
+    "Dodano siedem tabel PostgreSQL, migrację Alembic, API administracyjne, interfejs operatora, dziennik zdarzeń oraz uprawnienie sekcji shipping.",
+    "Integracja DPD działa domyślnie w trybie mock i generuje jednoznacznie oznaczoną etykietę PDF A4; tryb live wymaga właściwego klucza DPD Services REST.",
+    "Odczyt lokalnego Firebirda BAZAMS_TEST potwierdził TYP_US=8, kolejkę zleceń i 275 kartotek tonerów w magazynie nr 1; zapisy pozostawały wyłączone.",
+    "Zapis Firebird dodaje brakujące ZPOZYCJA, ustawia numer przesyłki i ZR, a zamknięcie dnia dla Umowy tworzy ROK z dokładnie zaakceptowanych ilości i ustawia Z.",
+    "Dokumentacja rekomenduje pierwszy etap A4 oraz docelowo drukarkę sieciową Zebra ZD421d 203 dpi do etykiet 100x150 mm.",
+    "Naprawiono lokalny adres /shipping: kontener web został przełączony ze starego worktree inbox/worktrees/ctip-prod-mirror na bieżące repozytorium.",
+    "W lokalnej bazie ctip_test utworzono idempotentnie siedem tabel shipping_* bez modyfikowania istniejących danych; produkcja nie była używana.",
+    "FLOW i GENFORM blokują rezerwację pozycji magazynowej, gdy dopasowana MASZYNA ma ID_KLIENT inne niż magazynowe 656, pustego właściciela albo niejednoznaczne dopasowanie.",
+    "Walidacja właściciela działa ponownie przed APPROVED_ORDER w panelu i mailboxie GRENKE; konflikt wycofuje cały pakiet, a warunkowy UPDATE chroni przed zmianą właściciela w trakcie operacji.",
+    "W fazie implementacji nie zmieniano danych produkcyjnych; incydent danych pozostawiono do obsługi operacyjnej zgodnie z poleceniem użytkownika.",
+    "Blokadę właściciela wdrożono na produkcyjny Windows Server 192.168.0.8 w D:\\CTIP jako commit e17ad41 na branchu prod/backup-retention-firebird-optima-2026-07-13; zrestartowano wyłącznie CTIP-Web."
+    ,"Skorygowany release Shipping bazuje na faktycznym produkcyjnym commicie e17ad41 i został opublikowany na gałęzi release/shipping-prod-current-2026-08-27 jako SHA 11814c5bbb4e4cc14482c2a6b71919921b130441."
+    ,"Kanoniczna migracja f9a0b1c2d3e4 została podpięta po produkcyjnym headzie d8f1a2b3c4e5; skrypt wdrożeniowy chroni pozostałe usługi, izoluje testy oraz bezpiecznie odłącza junction raportu."
+    ,"Etap pierwszy Shipping wdrożono na Windows Server 192.168.0.8 po zweryfikowanych backupach PostgreSQL i Firebird; zrestartowano wyłącznie CTIP-Web, a CollectorService, CTIP-SMS i CTIP-FormsPublic pozostały aktywne."
+    ,"Produkcja działa na HEAD 11814c5 i Alembic f9a0b1c2d3e4; /shipping/v2 oraz wszystkie kontrolowane moduły zwracają HTTP 200, realizacja Shipping i DPD pozostają wyłączone."
+    ,"Aktywnemu kontu marcin@ksero-partner.com.pl nadano jawnie sekcję Shipping; odczyt kolejki, słownika TYP_US=8 i magazynu głównego działa, a kontrolowany POST realizacji zwraca blokadę HTTP 423."
+    ,"Pełny widok Shipping V2 wdrożono na produkcji jako /shipping; poprzedni interfejs pozostaje pod /shipping/legacy, a /shipping/v2 przekierowuje do adresu głównego."
+    ,"Produkcja działa na commicie 4a35039b97233d87877e711f80ed0511c4f7de47 i Alembic a7c4e2f9b1d3; realizacja Firebird oraz DPD nadal są celowo wyłączone do rozpoczęcia pilota."
+    ,"Produkcyjny skan magazynu głównego utworzył 1383 sugestie; zatwierdzono 27 jawnych mapowań dla Ricoh IM C300 z kolejki i Ricoh IM 350 z przygotowanego urządzenia pilota."
+    ,"Dane pilota istnieją: klient Test Umowa, umowa CPC test01 i urządzenie 7222 z modelem Ricoh IM 350; nie istnieją jeszcze zlecenia testowe."
+    ,"Utworzono zlecenia pilota 18493/2026, 18494/2026 i 18495/2026; odpowiadają scenariuszom RW, WZ bez FV oraz FV z WZ."
+    ,"Hotfix 9b8678cdd181b79bd0aa8dbe14d4904ee6739496 usuwa błędne wymaganie zgodności ID_FIRMA przy odczycie klienta, kontaktów i urządzenia Shipping; wdrożono go po pełnym backupie i restarcie wyłącznie CTIP-Web."
+    ,"Pilot produkcyjny jest odblokowany: SHIPPING_FULFILLMENT_ENABLED=true i DPD_ENABLED=true; trzy zlecenia nadal nie mają shipping_case, przesyłek, dokumentów ani zmian stanów magazynowych."
+    ,"Formularz 60: ręcznie przepięto zgodę GRENKE z wiadomości rejestru 149 ze starej proformy 42/proforma/2026 do aktualnej 50/proforma/2026; status sprawy 29 ustawiono na APPROVED_ORDER."
+    ,"Formularz 60 zawiera adnotację o zmianie proformy po korekcie dwóch urządzeń bez zmiany wartości zamówienia; oryginalny numer proformy w wiadomości pozostawiono jako ślad źródłowy."
+    ,"Formularz 62 / sprawa 30: CTIP ma zero form_workflow_device i brak proformy, mimo statusu APPROVED_ORDER; właściwe urządzenie istnieje w MS jako MASZYNA 7802, Ricoh IM C300, serial 3939PC02312, KP/5232, klient 2948."
+    ,"Przyczyna formularza 62: proformę 43/proforma/2026 utworzono ręcznie w MS bez ID_MAGPOZ i serialu, a rezerwację KP/5232 wpisano wyłącznie tekstowo w arkuszu bez ctip_form_id/case_id; mailbox zaakceptował pustą listę urządzeń."
+    ,"Statusy przesyłek DPD InfoServices, ręczne odświeżanie kolejki i poprawione przewijanie Shipping wdrożono na produkcję jako commit 2f5f1fb777cd8d89f77bfc916159ccecee96c312."
+    ,"Produkcja działa na migracji c3d5e7f9a1b2; trzy addytywne tabele śledzenia są puste, a InfoServices pozostaje wyłączone do czasu ustawienia osobnego DPD_INFO_CHANNEL."
+    ,"Wdrożenie zrestartowało wyłącznie CTIP-Web; CollectorService, CTIP-SMS i CTIP-FormsPublic pozostały aktywne."
   ],
   "follow_up": [
-    "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
-    "Przy kolejnym wdrozeniu sprawdzic: http://127.0.0.1:8100/health, http://127.0.0.1:8100/formularz/abc oraz https://form.ksero-partner.com.pl/formularz/abc.",
-    "Nie usuwac AppEnvironmentExtra PG* z CTIP-FormsPublic, dopoki na serwerze istnieja zmienne procesu/systemu nadpisujace .env."
+    "Marcin zatwierdza dane i części trzech zleceń bez generowania etykiet: 18493=419082O/FV wyłączona, 18494=imc3000blk zam chemical/FV wyłączona, 18495=2021400211764/FV włączona.",
+    "Po zatwierdzeniu trzech spraw Codex sprawdza snapshoty adresów, ceny, status ready i brak zapisów Firebird przed utworzeniem prawdziwych etykiet DPD.",
+    "Następnie utworzyć osobną etykietę dla 18493 oraz jedną wspólną paczkę dla 18494 i 18495, z kontrolą po każdym etapie.",
+    "Po pilocie Marcin ręcznie anuluje etykiety i usuwa dokumenty oraz dane testowe; Codex wykonuje wyłącznie końcową kontrolę odczytową stanów i osieroconych powiązań.",
+    "Po poprawnym pilocie i sprzątaniu nadać Shipping właściwym aktywnym operatorom bez zmiany ich innych sekcji.",
+    "Po pilocie rozszerzyć odświeżanie kolejki o synchronizację spraw z MS oraz poprawić przewijanie tak, aby ostatnie zlecenie było widoczne w całości.",
+    "Uzyskać od DPD albo od Marcina wartość kanału DPDInfoServices, ustawić DPD_INFO_CHANNEL i DPD_INFO_ENABLED=true, zrestartować wyłącznie CTIP-Web, uruchomić kontrolowaną synchronizację i backfill zapisanych numerów listów."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "codex/fix-public-form-checkbox-422",
+    "branch_local": "feature/shipping-full-rollout-2026-08-28",
+    "head_before_changes": "c206a876aeeaa5b0ed802fb24feb03b323cfca0b",
     "venv": ".venv",
-    "focus": "production-public-forms-500-fixed",
+    "focus": "shipping-production-release",
     "verification": [
       "pre-commit run --all-files: passed",
-      "pytest -q: 371 passed, 1 xfailed, 26 warnings",
-      "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
-      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
-    ],
-    "services": [
-      "CTIP-FormsPublic",
-      "IIS reverse proxy",
-      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
+      "pytest -q tests/test_shipping.py tests/test_api_auth.py tests/test_settings.py: 25 passed",
+      "python -m compileall -q app: passed",
+      "alembic heads: f1a2b3c4d5e6",
+      "local Firebird read-only: dictionary_valid=true, type_id=8, queue_count=50, toner_sku_count=275, writes_enabled=false",
+      "pełny pytest: 517 passed i 20 failed; 19 błędów niezwiązanych z modułem, 1 błąd schematu przez brak rewizji f3a7c9e2d610 w bieżącej gałęzi",
+      "GET http://192.168.0.9:8000/shipping: 200",
+      "pytest -q tests/test_shipping.py tests/test_db_schema.py: 15 passed",
+      "pre-commit run --all-files: passed po wdrożeniu blokady właściciela",
+      "pytest -q tests/test_workflow_device_ownership.py tests/test_contracts_dashboard.py tests/test_workflow_machine_binding.py tests/test_contracts_mailbox_sync.py: 37 passed",
+      "wybrane testy endpointów workflow w tests/test_admin_backend.py: 6 passed",
+      "pełny pytest przerwany po 107 passed i 8 niezależnych błędach backupu, konfiguracji Firebird oraz brakującej tabeli device_counter_reading",
+      "produkcja: HEAD=e17ad41, repo czyste, CTIP-Web/CollectorService/CTIP-SMS=Running, lokalny i LAN /health=200",
+      "produkcja: /flow=200, /genform=200, hashe flow.js i genform.js zgodne z commitem, smoke klasyfikatora właściciela=ok",
+      "produkcja: nowy proces Uvicorn 21516 uruchomiony bez tracebacków i błędów importu",
+      "release Shipping: pre-commit run --all-files passed",
+      "release Shipping: 89 testów ustawień, migracji i procesu Shipping passed",
+      "pełna regresja: 358 testów, 343 passed; 14 błędów środowiskowych identycznych na bazowym commicie 05780b8 oraz 1 brak lokalnego pliku inbox/process_ricoh_images.py",
+      "migracja na świeżym PostgreSQL 16: 8a4d1f7c2b90 -> f9a0b1c2d3e4, 7 tabel Shipping i indeks pg_trgm",
+      "blokada prototypu: migracja przerwana bez częściowych zmian, rewizja pozostała 8a4d1f7c2b90",
+      "składnia PowerShell skryptu wdrożeniowego sprawdzona parserem PowerShell w izolowanym kontenerze",
+      "produkcja HTTP: /health=200, /=200, /admin=200, /shipping/v2=404 przed wdrożeniem",
+      "produkcja Firebird read-only: open TYP_US=8=40, MAGAZYN ID_MAGAZYN=1=1649"
+      ,"release produkcyjny: HEAD=11814c5bbb4e4cc14482c2a6b71919921b130441, repo czyste, Alembic=f9a0b1c2d3e4"
+      ,"produkcja po wdrożeniu: CTIP-Web, CollectorService, CTIP-SMS i CTIP-FormsPublic Running"
+      ,"smoke HTTP po wdrożeniu: /health, /, /admin, /operator, /genform, /flow, /device, /shipping/v2 i FormsPublic /health = 200"
+      ,"Shipping produkcja: 7 tabel, 0 rekordów przed skanem, słownik TYP_US=8 valid=true, kolejka=2, wyszukiwanie tonerów=200 wyników"
+      ,"flagi produkcyjne: Shipping=true, katalog=true, fulfillment=false, DPD=false; kontrolowany endpoint DPD zwraca HTTP 423"
+      ,"uprawnienia: aktywne konto marcin@ksero-partner.com.pl ma admin, operator, generator, delivery, device i shipping"
+      ,"release pełnego Shipping: pre-commit passed; 100 testów passed, 1 istniejące ostrzeżenie Starlette"
+      ,"wdrożenie pełnego Shipping: HEAD=4a35039b97233d87877e711f80ed0511c4f7de47, Alembic=a7c4e2f9b1d3, repo czyste"
+      ,"backup wdrożeniowy: zweryfikowane niepuste kopie PostgreSQL, globals i Firebird w prod_20260828_132237"
+      ,"smoke produkcyjny: /health, /shipping, /shipping/legacy, /operator, /genform, /flow, /device i FormsPublic = 200; /shipping/v2 = 307"
+      ,"Shipping katalog: 1383 relacje, 27 confirmed i 1356 suggested; bieżąca kolejka=6, brak zleceń pilota Test Umowa"
+      ,"operacje: SMTP connection_ok=true, SMS old_new=0 i errors_24h=0, ostatni backup automatyczny SUCCESS, wszystkie cztery usługi Running"
+      ,"hotfix pilota: pre-commit passed; 101 testów passed, 1 istniejące ostrzeżenie Starlette"
+      ,"produkcja pilot: HEAD=9b8678cdd181b79bd0aa8dbe14d4904ee6739496, backup=prod_20260828_141325, wszystkie usługi Running, brak błędów web po starcie"
+      ,"zlecenia pilota: 18493->ID_TABLE 83493/model 458, 18494->83494/model 539, 18495->83495/model 380; wszystkie O bez dokumentów i przesyłek"
+      ,"stany bazowe: MAGAZYN 13250=9/0, 15533=9/0, 10280=10/0; trzy wybrane mapowania confirmed"
+      ,"flagi aktywnego pilota: SHIPPING_FULFILLMENT_ENABLED=true, DPD_ENABLED=true, Firebird write_ready=true, DPD api_ready=true i sender_ready=true"
+      ,"formularz 60: APPROVED_ORDER, proforma 50/proforma/2026 (Firebird 64553), wiadomość 149 linked_form/manual_proforma_relink, audit 34342"
+      ,"mailbox scheduler 2026-08-28 15:58:15 Europe/Warsaw: result=ok, manual_hold=0, warnings=0"
+      ,"diagnoza formularza 62: case 30 stage=CLIENT_READY, device_count=0, proforma=null; MS client 2948 ma MASZYNA 7802 / serial 3939PC02312"
+      ,"arkusz/cache dla KP/5232: source_row=18734, sheet_row=78, reservation_grenke zawiera kancelarię, ale form_ctip/ctip_form_id/ctip_workflow_case_id są puste"
+      ,"release InfoServices: pre-commit passed; 112 testów passed i 12 podtestów passed"
+      ,"backup przed wdrożeniem: prod_20260829_044659, 9 plików, 393807695 bajtów, PostgreSQL i Firebird zakończone powodzeniem"
+      ,"produkcja po wdrożeniu: HEAD=2f5f1fb777cd8d89f77bfc916159ccecee96c312, Alembic=c3d5e7f9a1b2, repo czyste"
+      ,"smoke produkcyjny: /health, /shipping, /shipping/legacy, /operator, /genform, /flow, /device i FormsPublic=200; /shipping/v2=307"
+      ,"interfejs produkcyjny zawiera shipping-queue-refresh, shipping-tracking-view i asset tracking-02"
+      ,"operacje po wdrożeniu: cztery usługi Running, SMS_NEW=0, SMS_ERRORS_24H=0, IMAP i SMTP login OK, SMTP panelu connection_ok=true"
+      ,"InfoServices produkcja: trzy tabele istnieją, 0 przesyłek, 0 zdarzeń, 0 synchronizacji; kontrolowany POST sync zwraca HTTP 400 przy DPD_INFO_ENABLED=false"
     ]
   }
 }

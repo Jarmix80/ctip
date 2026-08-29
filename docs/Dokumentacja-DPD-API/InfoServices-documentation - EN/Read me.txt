@@ -1,0 +1,44 @@
+1) The recommended scenario for using InfoServices is based on using the getEventsForCustomerV4 method in conjunction with the markEventsAsProcessedV1 method.
+After retrieving statuses using the getEventsForWaybillV4 method and saving the events to the database, you should confirm this using the markEventsAsProcessedV1 method, specifying the <confirmId> identifier of the same value as returned by getEventsForWaybillV4. This prevents us from receiving the same events each time.
+
+2) Parcel waybill / tracking number can change  in some situations and in such a cases you should track the new parcel number. It can happen in the following situations:
+* 230402 - Parcel redirected (on request of its sender or receiver)
+* 230403, 230408 - Parcel to be returned to sender
+The new tracking number is provided in the <eventDataList><value> element.
+See an example below of tracing by our InfoServices getEventsForWaybillV1 method (return of the 0000285761310U parcel which gets the new number):
+            <eventsList>
+               <businessCode>230403</businessCode>
+               <country>PL</country>
+               <depot>1322</depot>
+               <depotName>Katowice</depotName>
+               <description>Parcel return</description><!--to be returned to sender-->
+               <eventDataList>
+                  <code/>
+                  <description/>
+                  <value>0000010923567L</value><!--the new tracking number-->
+               </eventDataList>
+               <eventTime>2021-01-08T11:18:52.122</eventTime>
+               <objectId>6980758665</objectId>
+               <packageReference>2366692</packageReference>
+               <parcelReference/>
+               <waybill>0000285761310U</waybill>
+            </eventsList>
+Next you follow the 0000010923567L parcel:
+            <eventsList>
+               <businessCode>190101</businessCode><!--the same code as for delivery to the original receiver-->
+               <country>PL</country>
+               <depot>1357</depot>
+               <depotName>KATOWICE 2</depotName>
+               <description>Parcel delivered</description><!--returned to sender-->
+               <eventDataList>
+                  <code/>
+                  <description/>
+                  <value>bednarek</value>
+               </eventDataList>
+               <eventTime>2021-01-11T16:42:28.637</eventTime>
+               <objectId>1357500000032543569</objectId>
+               <packageReference>2366692</packageReference>
+               <parcelReference/>
+               <waybill>0000010923567L</waybill>
+            </eventsList>
+			

@@ -1,0 +1,47 @@
+1) Rekomendowany scenariusz użycia InfoServices bazuje na użyciu metody getEventsForCustomerV4 w połączeniu z metodą markEventsAsProcessedV1.
+Po pobraniu statusów metodą getEventsForWaybillV4 i zapisaniu zdarzeń w bazie danych, należy dokonać zatwierdzenia tego faktu metodą markEventsAsProcessedV1, w parametrze <confirmId> podając identyfikator o tej samej nazwie zwrócony przez getEventsForWaybillV4. Dzięki temu nie będziemy za każdym razem dostawać tych samych zdarzeń.
+
+2) Dla trzech statusów:
+•    230402 - Przekierowanie (na żądanie odbiorcy lub nadawcy)
+•    230403 - Decyzja o zwrocie paczki krajowej
+•    230408 - Przenumerowanie zwracanej paczki zagranicznej
+paczka uzyskuje nowy numer listu przewozowego. Jest on wtedy przekazywany w polu <eventsList><eventDataList><value>.
+Poniżej przykładowa odpowiedź naszego API dotycząca zwrotu umownej paczki 0001285761310U:
+            <eventsList>
+               <businessCode>230403</businessCode>
+               <country>PL</country>
+               <depot>1322</depot>
+               <depotName>Katowice</depotName>
+               <description>Zwrot przesyłki</description>
+               <eventDataList>
+                  <code/>
+                  <description/>
+                  <value>0000110923567L</value>
+               </eventDataList>
+               <eventTime>2021-01-08T11:18:52.122</eventTime>
+               <objectId>6980758665</objectId>
+               <packageReference>2366692</packageReference>
+               <parcelReference/>
+               <waybill>0001285761310U</waybill>
+            </eventsList>
+
+Dalej śledzimy już paczkę 0000110923567L: 
+            <eventsList>
+               <businessCode>190101</businessCode>
+               <country>PL</country>
+               <depot>1357</depot>
+               <depotName>KATOWICE 2</depotName>
+               <description>Przesyłka doręczona</description>
+               <eventDataList>
+                  <code/>
+                  <description/>
+                  <value>nowak</value>
+               </eventDataList>
+               <eventTime>2021-01-11T16:42:28.637</eventTime>
+               <objectId>1357500000032543569</objectId>
+               <packageReference>2366692</packageReference>
+               <parcelReference/>
+               <waybill>0000110923567L</waybill>
+            </eventsList>
+
+

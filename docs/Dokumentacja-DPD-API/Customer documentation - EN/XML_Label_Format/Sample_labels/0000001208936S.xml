@@ -1,0 +1,93 @@
+<packages>
+   <package>
+      <parcels>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>NADAWCA</senderLabel>
+               <depotLabel>Oddział nr</depotLabel>
+               <deliveryAddressLabel>Adres doręczenia</deliveryAddressLabel>
+               <deliveryLabel>PACZKA:</deliveryLabel>
+               <weightLabel>WAGA:</weightLabel>
+               <trackLabel>Numer paczki</trackLabel>
+               <serviceLabel>Kod usługi</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Warunki świadczenia usług dostępne na stronie dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PL00001 PSP SWA31</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Mineralna</address>
+                  <address2>PL-02274</address2>
+                  <city>Warszawa</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349 N-67588</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Nr ref. 111/01</refNo1>
+                  <refNo2>Nr ref. 111/01</refNo2>
+                  <refNo3>FVAT 17/03</refNo3>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>1/1</parcelsCount>
+                  <weight>11.00 kg</weight>
+               </parcelDetails>
+               <content>Owoce i warzywa</content>
+               <serviceDescription/>
+               <optionalAdditionalInformation>
+                  <services>
+                     <service code="DPD_PICKUP" font-weight="bold" side="left">
+                        <lines>
+                           <line>DPD PICKUP</line>
+                        </lines>
+                     </service>
+                  </services>
+               </optionalAdditionalInformation>
+               <aztec2DBarcode height="31.7mm" width="31.7mm">[)~d062~d03001~d02902~d02902274~d029616~d029337~d0290000001208936S~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029001/001~d02911.00KG~d029N~d029Mineralna~d029Warszawa~d029~d029PL00001 PSP SWA31~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d029011.00KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031616~d031~d030~d004</aztec2DBarcode>
+               <customerData>Andrzej Tester</customerData>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>0000001208936S</waybill>
+                  <checksum>B</checksum>
+               </parcelTrackingNo>
+               <serviceText>D-B2C-PSD</serviceText>
+               <serviceMark/>
+               <destinationText>PL-DPD-1305-WA1</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>337-PL-02274</serviceCodeDestinationPostalCode>
+               <dSort>AA11</dSort>
+               <labelOrigin>26-08-2020 11:25:27 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%00022740000001208936S337616</bc128Code>
+                  <bcText>0002274 0000001208936S 337 616 B</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+      </parcels>
+   </package>
+</packages>

@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-PanelSection = Literal["admin", "operator", "generator", "delivery", "device"]
+PanelSection = Literal["admin", "operator", "generator", "delivery", "device", "shipping"]
 PanelRole = Literal["admin", "operator", "serwisant"]
 DeviceTheme = Literal["blue", "graphite", "mint"]
 

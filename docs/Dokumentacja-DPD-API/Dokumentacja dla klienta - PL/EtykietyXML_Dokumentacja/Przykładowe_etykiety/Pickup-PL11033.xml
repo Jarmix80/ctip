@@ -1,0 +1,92 @@
+<packages>
+   <package>
+      <parcels>
+         <parcel>
+            <labelLayout>
+               <pageHeight>152mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>NADAWCA</senderLabel>
+               <depotLabel>Oddział nr</depotLabel>
+               <deliveryAddressLabel>Adres doręczenia</deliveryAddressLabel>
+               <deliveryLabel>PACZKA:</deliveryLabel>
+               <weightLabel>WAGA:</weightLabel>
+               <trackLabel>Numer paczki</trackLabel>
+               <serviceLabel>Kod usługi</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Warunki świadczenia usług dostępne na stronie dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PL11033 Oddział DPD Polska</company>
+                  <name>nazwa odbiorcy</name>
+                  <phone>123123123</phone>
+                  <address>Mineralna 5A</address>
+                  <address2>PL-02274</address2>
+                  <city>Warszawa</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>firma nadawcy</company>
+                  <name>nazwa nadawcynazwa nadawcy</name>
+                  <address>adres nadawcy</address>
+                  <address2>PL-02274 Warszawa</address2>
+                  <phone>Tel.: 123123123</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1305 N-124118</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. MINERALNA 5A</address>
+                  <address2>PL-02274 WARSZAWA</address2>
+                  <phone>Tel.: +48 801400373 / +48 225775555</phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>ref1</refNo1>
+                  <refNo2>ref2</refNo2>
+                  <refNo3>ref3</refNo3>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>1/2</parcelsCount>
+                  <weight>11.00 kg</weight>
+               </parcelDetails>
+               <content>zawartosc</content>
+               <serviceDescription/>
+               <optionalAdditionalInformation>
+                  <services>
+                     <service code="DPD_PICKUP" font-weight="bold" side="left">
+                        <lines>
+                           <line>DPD PICKUP</line>
+                        </lines>
+                     </service>
+                  </services>
+               </optionalAdditionalInformation>
+               <aztec2DBarcode height="31.7mm" width="31.7mm">[)~d062~d03001~d02902~d02902274~d029616~d029337~d0291000646673684U~d029GEOP~d029124118~d029250~d029ref1~d029001/002~d02911.00KG~d029N~d029Mineralna 5A~d029Warszawa~d029~d029PL11033 Oddzial DPD Polska~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031nazwa odbiorcy~d031~d031~d031~d031~d031~d031~d031~d031~d029011.00KG~d029~d029~d029~d029~d029N~d029zawartosc~d029ref2~d0290~d029~d029~d03007~d029S010~d029firma nadawcy~d031123123123~d031nazwa nadawcy~d031~d031adres nadawcy~d031~d031Warszawa~d03102274~d031616~d031~d030~d004</aztec2DBarcode>
+               <customerData>Uwagi dla kuriera 112</customerData>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>1000646673684U</waybill>
+                  <checksum>8</checksum>
+               </parcelTrackingNo>
+               <serviceText>BIZ-D-B2C-PSD</serviceText>
+               <serviceMark/>
+               <destinationText>PL-DPD-1305-WA1</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>337-PL-02274</serviceCodeDestinationPostalCode>
+               <dSort>A18 18</dSort>
+               <labelOrigin>07-09-2023 17:02:00 1.4.4</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%00022741000646673684U337616</bc128Code>
+                  <bcText>0002274 1000646673684U 337 616 S</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+      </parcels>
+   </package>
+</packages>

@@ -1,0 +1,84 @@
+{
+    "invoice": {
+        "exporter": {
+            "type": "BUSINESS",
+            "company": "TEST",
+            "name": "Exporter name",
+            "propertyNo": "22",
+            "phone": "0048519518111",
+            "email": "buyer@dpd.com.pl",
+            "vatNumber": "GB121323312333",
+            "eoriNumber": "EORI554433",
+            "country": "PL"
+        },
+        "seller": {
+            "type": "BUSINESS",
+            "company": "Seller company",
+            "name": "Seller ",
+            "propertyNo": "12",
+            "street": "Nowa",
+            "city": "Olsztyn",
+            "postalCode": "DD14QX",
+            "phone": "0048519518111",
+            "email": "buyer@dpd.com.pl",
+            "vatNumber": "DE111113",
+            "eoriNumber": "EORI1234567",
+            "country": "DE"
+        },
+        "importer": {
+            "type": "PRIVATE",
+            "company": "TEST",
+            "name": "Importer name",
+            "country": "GB",
+            "propertyNo": "12",
+            "phone": "0048519518111",
+            "email": "buyer@dpd.com.pl",
+            "vatNumber": "DE123123123",
+            "eoriNumber": null,
+            "referenceNumber": "Test1234"
+        },
+        "buyer": {
+            "type": "PRIVATE",
+            "company": "Buyer company",
+            "name": "Buyername",
+            "propertyNo": "22",
+            "street": "Achillesa",
+            "city": "Warszawa",
+            "postalCode": "DD14QX",
+            "phone": "0048519518111",
+            "email": "buyer@dpd.com.pl",
+            "vatNumber": "GB123123123",
+            "eoriNumber": "GB123213312213",
+            "country": "PL"
+        },
+        "generalInfo": {
+            "charges": {
+                "totalCustomsAmount": 110,
+                "transportCost": "10",
+                "currency": "PLN"
+            },
+            "consolidatedCustomsPermission": "true",
+            "terms": "DAP",
+            "invoiceType": "COMMERCIAL",
+            "invoiceNumber": "FV12345678",
+            "invoiceDate": "2019-03-12",
+            "contentDescription": "Spiritual Front",
+            "shipmentPurpose": "SAMPL_DUTY",
+            "sprn": null
+        },
+        "invoiceLines": [{
+            "itemsQuantity": 4,
+            "content": "owoce i warzywa ąęźćńółŁĄĆŹĘ",
+            "contentEN": "fruits and vegetables1",
+            "lineCustomsAmount": 100,
+            "countryOfOrigin": "LT",
+            "grossWeight": 912,
+            "taricCode": "29332990"
+        }],
+        "attachments": [{
+            "content": "emF3YXJ0b3NjIHBsaWt1IHpha29kb3dhbmEgdyBiYXNlIDY0IG5hanM=",
+            "fileName": "filename2497.JPG",
+            "fileType": "AUTHORISATION"
+        }]
+    }
+}

@@ -61,6 +61,13 @@ class DatabaseSchemaTest(unittest.TestCase):
             "ivr_map",
             "contact",
             "contact_device",
+            "shipping_address",
+            "shipping_consumable_compatibility",
+            "shipping_case",
+            "shipping_item",
+            "shipping_shipment",
+            "shipping_day_close",
+            "shipping_event",
         }
         rows = self._fetchall(
             "SELECT table_name FROM information_schema.tables " "WHERE table_schema='ctip'"

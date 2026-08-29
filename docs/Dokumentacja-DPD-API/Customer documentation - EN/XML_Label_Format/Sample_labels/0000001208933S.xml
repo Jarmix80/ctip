@@ -1,0 +1,292 @@
+<packages>
+   <package>
+      <parcels>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>NADAWCA</senderLabel>
+               <depotLabel>Oddział nr</depotLabel>
+               <deliveryAddressLabel>Adres doręczenia</deliveryAddressLabel>
+               <deliveryLabel>PACZKA:</deliveryLabel>
+               <weightLabel>WAGA:</weightLabel>
+               <trackLabel>Numer paczki</trackLabel>
+               <serviceLabel>Kod usługi</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Warunki świadczenia usług dostępne na stronie dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PM-Apartments</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Achillesa 1</address>
+                  <address2>PL-02874</address2>
+                  <city>Warszawa</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349 N-67588</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Nr ref. 111/01</refNo1>
+                  <refNo2>Nr ref. 111/01</refNo2>
+                  <refNo3>FVAT 17/03</refNo3>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>1/3</parcelsCount>
+                  <weight>55.00 kg</weight>
+               </parcelDetails>
+               <content>Owoce i warzywa</content>
+               <serviceDescription/>
+               <optionalAdditionalInformation>
+                  <services>
+                     <service code="TIMEFIXED" font-weight="bold" side="left">
+                        <lines>
+                           <line>DPD NA GODZ. 14:00</line>
+                        </lines>
+                     </service>
+                     <service code="ROD" side="left">
+                        <lines>
+                           <line>DOKUMENTY ZWR</line>
+                        </lines>
+                     </service>
+                     <service code="CUD" side="left">
+                        <lines>
+                           <line>PRZESYŁKA ZWR</line>
+                        </lines>
+                     </service>
+                     <service code="CARRY_IN" side="right">
+                        <lines>
+                           <line>WNIESIENIE</line>
+                        </lines>
+                     </service>
+                  </services>
+               </optionalAdditionalInformation>
+               <aztec2DBarcode height="31.7mm" width="31.7mm">[)~d062~d03001~d02902~d02902874~d029616~d029899~d0290000001208933S~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029001/003~d02955.00KG~d029N~d029Achillesa 1~d029Warszawa~d029~d029PM-Apartments~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d0290165.0KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031616~d031~d030~d004</aztec2DBarcode>
+               <customerData>Andrzej Tester</customerData>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>0000001208933S</waybill>
+                  <checksum>N</checksum>
+               </parcelTrackingNo>
+               <serviceText>PRIV-OTD</serviceText>
+               <serviceMark/>
+               <destinationText>PL-DPD-1305-WA1</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>899-PL-02874</serviceCodeDestinationPostalCode>
+               <dSort>D17 17</dSort>
+               <labelOrigin>26-08-2020 11:23:52 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%10028740000001208933S899616</bc128Code>
+                  <bcText>1002874 0000001208933S 899 616 3</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>NADAWCA</senderLabel>
+               <depotLabel>Oddział nr</depotLabel>
+               <deliveryAddressLabel>Adres doręczenia</deliveryAddressLabel>
+               <deliveryLabel>PACZKA:</deliveryLabel>
+               <weightLabel>WAGA:</weightLabel>
+               <trackLabel>Numer paczki</trackLabel>
+               <serviceLabel>Kod usługi</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Warunki świadczenia usług dostępne na stronie dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PM-Apartments</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Achillesa 1</address>
+                  <address2>PL-02874</address2>
+                  <city>Warszawa</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349 N-67588</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Nr ref. 111/01</refNo1>
+                  <refNo2>Nr ref. 111/01</refNo2>
+                  <refNo3>FVAT 17/03</refNo3>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>2/3</parcelsCount>
+                  <weight>55.00 kg</weight>
+               </parcelDetails>
+               <content>Owoce i warzywa</content>
+               <serviceDescription/>
+               <optionalAdditionalInformation>
+                  <services>
+                     <service code="TIMEFIXED" font-weight="bold" side="left">
+                        <lines>
+                           <line>DPD NA GODZ. 14:00</line>
+                        </lines>
+                     </service>
+                     <service code="CARRY_IN" side="right">
+                        <lines>
+                           <line>WNIESIENIE</line>
+                        </lines>
+                     </service>
+                  </services>
+               </optionalAdditionalInformation>
+               <aztec2DBarcode height="31.7mm" width="31.7mm">[)~d062~d03001~d02902~d02902874~d029616~d029899~d0290000001208934S~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029002/003~d02955.00KG~d029N~d029Achillesa 1~d029Warszawa~d029~d029PM-Apartments~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d0290165.0KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031616~d031~d030~d004</aztec2DBarcode>
+               <customerData>Andrzej Tester</customerData>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>0000001208934S</waybill>
+                  <checksum>J</checksum>
+               </parcelTrackingNo>
+               <serviceText>PRIV-OTD</serviceText>
+               <serviceMark/>
+               <destinationText>PL-DPD-1305-WA1</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>899-PL-02874</serviceCodeDestinationPostalCode>
+               <dSort>D17 17</dSort>
+               <labelOrigin>26-08-2020 11:23:52 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%10028740000001208934S899616</bc128Code>
+                  <bcText>1002874 0000001208934S 899 616 6</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+         <parcel>
+            <labelLayout>
+               <pageHeight>170mm</pageHeight>
+               <pageWidth>100mm</pageWidth>
+               <marginLeft>2.1mm</marginLeft>
+               <marginRight>2.9mm</marginRight>
+            </labelLayout>
+            <staticFields>
+               <senderLabel>NADAWCA</senderLabel>
+               <depotLabel>Oddział nr</depotLabel>
+               <deliveryAddressLabel>Adres doręczenia</deliveryAddressLabel>
+               <deliveryLabel>PACZKA:</deliveryLabel>
+               <weightLabel>WAGA:</weightLabel>
+               <trackLabel>Numer paczki</trackLabel>
+               <serviceLabel>Kod usługi</serviceLabel>
+            </staticFields>
+            <header>
+               <legalDisclaimer>Warunki świadczenia usług dostępne na stronie dpd.com.pl</legalDisclaimer>
+               <logo>DPD-B-W.jpg</logo>
+            </header>
+            <shipment>
+               <deliveryAddress>
+                  <company>PM-Apartments</company>
+                  <name>Łucja Mątewka</name>
+                  <phone>111222333</phone>
+                  <address>Achillesa 1</address>
+                  <address2>PL-02874</address2>
+                  <city>Warszawa</city>
+               </deliveryAddress>
+               <senderDetails>
+                  <company>SKLEP ZOOLOGICZNY</company>
+                  <name>Łukasz Kąkoł</name>
+                  <address>Syreny 31</address>
+                  <address2>PL-01155 Warszawa</address2>
+                  <phone>Tel.: 111222333</phone>
+               </senderDetails>
+               <originBU>
+                  <depotNo>1349 N-67588</depotNo>
+                  <name>DPD Polska Sp.z.o.o.</name>
+                  <address>UL. GROBLOWA 4</address>
+                  <address2>PL-05804 PRUSZKÓW</address2>
+                  <phone>Tel.: </phone>
+                  <duplicate/>
+               </originBU>
+               <deliveryDetails>
+                  <refNo1>Nr ref. 111/01</refNo1>
+                  <refNo2>Nr ref. 111/01</refNo2>
+                  <refNo3>FVAT 17/03</refNo3>
+               </deliveryDetails>
+               <parcelDetails>
+                  <parcelsCount>3/3</parcelsCount>
+                  <weight>55.00 kg</weight>
+               </parcelDetails>
+               <content>Owoce i warzywa</content>
+               <serviceDescription/>
+               <optionalAdditionalInformation>
+                  <services>
+                     <service code="TIMEFIXED" font-weight="bold" side="left">
+                        <lines>
+                           <line>DPD NA GODZ. 14:00</line>
+                        </lines>
+                     </service>
+                     <service code="CARRY_IN" side="right">
+                        <lines>
+                           <line>WNIESIENIE</line>
+                        </lines>
+                     </service>
+                  </services>
+               </optionalAdditionalInformation>
+               <aztec2DBarcode height="31.7mm" width="31.7mm">[)~d062~d03001~d02902~d02902874~d029616~d029899~d0290000001208935S~d029GEOP~d02967588~d029239~d029Nr ref. 111/01~d029003/003~d02955.00KG~d029N~d029Achillesa 1~d029Warszawa~d029~d029PM-Apartments~d029~d03007~d029G02~d0290~d0290~d0290~d029~d031~d031Łucja Mątewka~d031~d031~d031~d031~d031~d031~d031~d031~d0290165.0KG~d029~d029~d029~d029~d029N~d029Owoce i warzywa~d029Nr ref. 111/01~d0290~d029~d029~d03007~d029S010~d029SKLEP ZOOLOGICZNY~d031111222333~d031Łukasz Kąkoł~d031~d031Syreny 31~d031~d031Warszawa~d03101155~d031616~d031~d030~d004</aztec2DBarcode>
+               <customerData>Andrzej Tester</customerData>
+               <extendedData/>
+            </shipment>
+            <routingText>
+               <parcelTrackingNo>
+                  <waybill>0000001208935S</waybill>
+                  <checksum>F</checksum>
+               </parcelTrackingNo>
+               <serviceText>PRIV-OTD</serviceText>
+               <serviceMark/>
+               <destinationText>PL-DPD-1305-WA1</destinationText>
+               <oSort>WA1</oSort>
+               <serviceCodeDestinationPostalCode>899-PL-02874</serviceCodeDestinationPostalCode>
+               <dSort>D17 17</dSort>
+               <labelOrigin>26-08-2020 11:23:52 1.0.0</labelOrigin>
+               <barcode height="30mm" module-width="0.375mm" quiet-zone="6mw"
+                        human-readable-placement="none">
+                  <bc128Code>%10028740000001208935S899616</bc128Code>
+                  <bcText>1002874 0000001208935S 899 616 U</bcText>
+               </barcode>
+            </routingText>
+         </parcel>
+      </parcels>
+   </package>
+</packages>

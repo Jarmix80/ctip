@@ -75,3 +75,5 @@
 
 ## 2026-07-31
 - Ograniczono unikalność znormalizowanego serialu i numeru KP w `ctip.device_inventory_unit` do wpisów o statusie `active`. Wycofana historia PZ nie blokuje dzięki temu ponownego przyjęcia tego samego fizycznego urządzenia, a równoległe aktywne duplikaty nadal są blokowane.
+- Dodano tabele modułu wysyłek: `shipping_address`, `shipping_consumable_compatibility`, `shipping_case`, `shipping_item`, `shipping_shipment`, `shipping_day_close` i `shipping_event`.
+- Dodano unikalność sprawy dla zlecenia Firebird, klucza idempotencji nadania, pojedynczej przesyłki na sprawę oraz zamknięcia dnia, aby blokować podwójne etykiety i dokumenty RW.

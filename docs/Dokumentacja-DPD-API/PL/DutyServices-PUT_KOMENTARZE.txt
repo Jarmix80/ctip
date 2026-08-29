@@ -1,0 +1,88 @@
+{ 
+    "invoice": {
+        "exporter": { // to samo co nadawca na etykiecie lub sender w DPD Services
+            "type": "BUSINESS", // dostępne wartości: PRIVATE, BUSINESS
+            "name": "Exporter name",
+            "company":"Some sample company",
+            "propertyNo": "22", // pole zawsze wymagane - może być spacja
+            "phone": "55666777",
+            "email": "exporter@email.com",
+            "vatNumber": "VAT1234567",
+            "eoriNumber": "EORI1123EXP",
+            "country": "PL"
+        },
+        "seller":{
+            "type": "BUSINESS", // dostępne wartości: PRIVATE, BUSINESS
+            "company":"Seller company",
+            "name": "Seller  ",
+            "propertyNo": "12", // pole zawsze wymagane - może być spacja
+            "street":"Nowa",
+            "city": "Olsztyn",
+            "postalCode": "H91 W260",
+            "phone":"777777777",
+            "email": "seller@email.com",
+            "vatNumber":"VATSELLER123",
+            "eoriNumber":"EORI1234567",
+            "country": "IE" //dostępne wartości: GB, UK
+        },
+        "importer": { // to samo co odbiorca na etykiecie lub receiver w DPD Services
+            "type": "PRIVATE", // dostępne wartości: PRIVATE, BUSINESS
+            "company":"Importer company",
+            "name": "Importer name",
+            "propertyNo": "12", // pole zawsze wymagane - może być spacja
+            "phone":"777777777",
+            "email": "importer@dpd.com.pl",
+            "vatNumber":"VAT123456",
+            "eoriNumber":"EORI1231233",
+            "country": "UA" //dostępne wartości: GB, UK
+        },
+        "buyer":{ 
+            "type": "PRIVATE", // dostępne wartości: PRIVATE, BUSINESS
+            "company":"Buyer company", 
+            "name": "Buyername",
+            "propertyNo": "12", // pole zawsze wymagane - może być spacja
+            "street":"Achillesa",
+            "city": "Warszawa",
+            "postalCode": "DD14QX",
+            "phone":"777777777",
+            "email": "buyer@email.com",
+            "vatNumber":"VAT1234567",
+            "eoriNumber": "EORI123456",
+            "country": "GB" //dostępne wartości: GB, UK
+        	
+        },
+        "generalInfo": {
+            "charges": { // całą sekcję można usunąć, gdy "shipmentPurpose" to DOCUM_NO_VALUE
+                "totalCustomsAmount": "26000",
+                "transportCost": "1000",
+                "currency": "UAH" //dostępne wartości: PLN, GBP, EUR, UAH, USD
+            },
+            "consolidatedCustomsPermission": "false",
+            "terms": "DAP", //dostępne wartości: DAP, EDAP
+            "invoiceType": "COMMERCIAL",
+            "invoiceNumber": "IV66",
+            "invoiceDate": "2019-03-12",
+            "contentDescription": "Spiritual Front", // pole wymagane - od ośmiu do 150 znaków
+            "shipmentPurpose": "PROD_RETURN" //dostępne wartości: SAMPL_DUTY, SALES_GOOD, PERSO_STUFF, ITEMS_TO_FIX, PROD_RETURN, INTERN_SHIPM, GIFT_D, DOCUM_NO_VALUE, OTHER_D
+           
+        },
+        "invoiceLines": [
+             {
+                "itemsQuantity": 4,
+                "content": "Meble to są bardzo ładne meble",
+                "contentEN": "fruits and vegetables1",
+                "lineCustomsAmount": 25000,
+                "countryOfOrigin": "LT",
+                "grossWeight": 912,
+                "taricCode": "29332990"
+            }
+        ],
+        "attachments": [
+            {
+                "content": "BFFA2917-9EBB-4720-81CC-070D7290A710", // binarna reprezentacja dokumentu faktury zakodowana w BASE64
+                "fileName": "filename2497.pdf", // UWAGA web serwis nie przyjmie *.PDF
+                "fileType": "COMMERCIAL" // dostępne wartości: COMMERCIAL, PROFORMA, AUTHORISATION
+            }
+        ]
+    }
+}

@@ -1,0 +1,2 @@
+Numer listu przewozowego wartość z pola waybill - dokładnie: <routingText><parcelTrackingNo><waybill>. 
+By uzyskać etykietę w formacie XML, wywołując metodę generateSpedLabelsV4 ustawiamy parametr <outputDocFormatV1> na XML.

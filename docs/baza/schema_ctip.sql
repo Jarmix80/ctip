@@ -1201,3 +1201,174 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 --
 
 \unrestrict ZhoCtUc30GzkxBj7Yh0bzFBbOdWa7nQwYCLFFyI6FrXZAs0p8C43i7qFe78uujG
+
+-- Rozszerzenie 2026-07-31: automatyzacja wysyłek części i tonerów.
+CREATE TABLE ctip.shipping_address (
+    id serial PRIMARY KEY,
+    firebird_client_id integer NOT NULL,
+    firebird_machine_id integer,
+    location_key text NOT NULL,
+    company_name text NOT NULL,
+    contact_name text,
+    street text NOT NULL,
+    postal_code text NOT NULL,
+    city text NOT NULL,
+    country_code text DEFAULT 'PL'::text NOT NULL,
+    phone text NOT NULL,
+    email text,
+    source text NOT NULL,
+    verified_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
+    verified_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT uq_shipping_address_client_location
+        UNIQUE (firebird_client_id, location_key)
+);
+
+CREATE TABLE ctip.shipping_consumable_compatibility (
+    id serial PRIMARY KEY,
+    firebird_model_id integer NOT NULL,
+    firebird_warehouse_item_id integer NOT NULL,
+    model_label text NOT NULL,
+    item_index text,
+    item_name text NOT NULL,
+    confirmed_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT uq_shipping_compatibility_model_item
+        UNIQUE (firebird_model_id, firebird_warehouse_item_id)
+);
+CREATE INDEX idx_shipping_compatibility_model
+    ON ctip.shipping_consumable_compatibility (firebird_model_id);
+
+CREATE TABLE ctip.shipping_case (
+    id serial PRIMARY KEY,
+    firebird_order_table_id integer NOT NULL,
+    firebird_order_id integer NOT NULL,
+    firebird_order_year integer NOT NULL,
+    firebird_client_id integer NOT NULL,
+    firebird_machine_id integer,
+    firebird_model_id integer,
+    order_kind text,
+    status text DEFAULT 'review_pending'::text NOT NULL,
+    address_id integer REFERENCES ctip.shipping_address(id) ON DELETE SET NULL,
+    address_snapshot json NOT NULL,
+    source_snapshot json NOT NULL,
+    weight_kg numeric(8,3) NOT NULL,
+    reviewed_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT uq_shipping_case_firebird_order UNIQUE (firebird_order_table_id),
+    CONSTRAINT shipping_case_status_check CHECK (
+        status = ANY (ARRAY[
+            'review_pending'::text, 'ready'::text, 'shipment_created'::text,
+            'handed_over'::text, 'closed'::text, 'manual_billing'::text,
+            'reconcile_required'::text
+        ])
+    )
+);
+CREATE INDEX idx_shipping_case_status_updated
+    ON ctip.shipping_case (status, updated_at DESC);
+
+CREATE TABLE ctip.shipping_item (
+    id serial PRIMARY KEY,
+    shipping_case_id integer NOT NULL REFERENCES ctip.shipping_case(id) ON DELETE CASCADE,
+    firebird_warehouse_item_id integer NOT NULL,
+    warehouse_id integer NOT NULL,
+    item_index text,
+    item_name text NOT NULL,
+    unit text DEFAULT 'szt.'::text NOT NULL,
+    quantity numeric(12,3) NOT NULL,
+    price_net numeric(18,4) NOT NULL,
+    purchase_price_net numeric(18,4) NOT NULL,
+    vat_rate numeric(8,3) NOT NULL,
+    firebird_position_id integer,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT uq_shipping_item_case_warehouse
+        UNIQUE (shipping_case_id, firebird_warehouse_item_id)
+);
+
+CREATE TABLE ctip.shipping_day_close (
+    id serial PRIMARY KEY,
+    business_date date NOT NULL,
+    status text DEFAULT 'processing'::text NOT NULL,
+    shipment_count integer DEFAULT 0 NOT NULL,
+    closed_count integer DEFAULT 0 NOT NULL,
+    error_count integer DEFAULT 0 NOT NULL,
+    summary json NOT NULL,
+    closed_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    completed_at timestamptz,
+    CONSTRAINT uq_shipping_day_close_date UNIQUE (business_date),
+    CONSTRAINT shipping_day_close_status_check CHECK (
+        status = ANY (ARRAY['processing'::text, 'completed'::text, 'partial'::text, 'failed'::text])
+    )
+);
+
+CREATE TABLE ctip.shipping_shipment (
+    id serial PRIMARY KEY,
+    shipping_case_id integer NOT NULL REFERENCES ctip.shipping_case(id) ON DELETE CASCADE,
+    day_close_id integer REFERENCES ctip.shipping_day_close(id) ON DELETE SET NULL,
+    idempotency_key text NOT NULL,
+    provider text DEFAULT 'dpd'::text NOT NULL,
+    provider_mode text NOT NULL,
+    provider_shipment_id text,
+    tracking_number text,
+    status text DEFAULT 'processing'::text NOT NULL,
+    label_content bytea,
+    label_content_type text,
+    label_format text,
+    provider_request json NOT NULL,
+    provider_response json,
+    firebird_status text DEFAULT 'pending'::text NOT NULL,
+    firebird_error text,
+    notification_sms_status text DEFAULT 'pending'::text NOT NULL,
+    notification_email_status text DEFAULT 'pending'::text NOT NULL,
+    notification_error text,
+    error_text text,
+    created_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+    handed_over_at timestamptz,
+    closed_at timestamptz,
+    CONSTRAINT uq_shipping_shipment_case UNIQUE (shipping_case_id),
+    CONSTRAINT uq_shipping_shipment_idempotency UNIQUE (idempotency_key),
+    CONSTRAINT shipping_shipment_status_check CHECK (
+        status = ANY (ARRAY[
+            'processing'::text, 'label_ready'::text, 'handed_over'::text,
+            'closed'::text, 'failed'::text, 'reconcile_required'::text
+        ])
+    )
+);
+CREATE INDEX idx_shipping_shipment_status_created
+    ON ctip.shipping_shipment (status, created_at DESC);
+
+CREATE TABLE ctip.shipping_event (
+    id serial PRIMARY KEY,
+    shipping_case_id integer NOT NULL REFERENCES ctip.shipping_case(id) ON DELETE CASCADE,
+    shipment_id integer REFERENCES ctip.shipping_shipment(id) ON DELETE CASCADE,
+    event_type text NOT NULL,
+    payload json NOT NULL,
+    created_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
+    created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+CREATE INDEX idx_shipping_event_case_created
+    ON ctip.shipping_event (shipping_case_id, created_at DESC);
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE
+    ctip.shipping_address,
+    ctip.shipping_consumable_compatibility,
+    ctip.shipping_case,
+    ctip.shipping_item,
+    ctip.shipping_day_close,
+    ctip.shipping_shipment,
+    ctip.shipping_event
+TO appuser;
+GRANT ALL ON SEQUENCE
+    ctip.shipping_address_id_seq,
+    ctip.shipping_consumable_compatibility_id_seq,
+    ctip.shipping_case_id_seq,
+    ctip.shipping_item_id_seq,
+    ctip.shipping_day_close_id_seq,
+    ctip.shipping_shipment_id_seq,
+    ctip.shipping_event_id_seq
+TO appuser;

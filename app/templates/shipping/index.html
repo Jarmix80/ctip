@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>CTIP – wysyłki części</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}"></script>
+  </head>
+  <body>
+    <main class="shipping-shell">
+      <header class="shipping-header">
+        <div>
+          <p class="shipping-kicker">CTIP / LOGISTYKA</p>
+          <h1>Wysyłki części i tonerów</h1>
+          <p>Weryfikacja zlecenia MS, wybór tonera, etykieta DPD i zamknięcie dnia.</p>
+        </div>
+        <div class="shipping-header-actions">
+          <span id="shipping-user" class="shipping-chip">Użytkownik</span>
+          <a href="/choice" class="shipping-button secondary">Wybór sekcji</a>
+          <button id="shipping-refresh" type="button" class="shipping-button secondary">Odśwież</button>
+          <button id="shipping-logout" type="button" class="shipping-button secondary">Wyloguj</button>
+        </div>
+      </header>
+
+      <section id="shipping-alert" class="shipping-alert" hidden></section>
+
+      <section class="shipping-status-grid">
+        <article><span>DPD</span><strong id="shipping-dpd-status">—</strong></article>
+        <article><span>Magazyn</span><strong id="shipping-warehouse">—</strong></article>
+        <article><span>Kurier</span><strong id="shipping-cutoff">—</strong></article>
+        <article><span>Do obsługi</span><strong id="shipping-count">0</strong></article>
+      </section>
+
+      <section class="shipping-toolbar">
+        <label>
+          <span>Zakres kolejki</span>
+          <select id="shipping-days">
+            <option value="30">Ostatnie 30 dni</option>
+            <option value="90">Ostatnie 90 dni</option>
+            <option value="365">Ostatni rok</option>
+            <option value="3650">Archiwum</option>
+          </select>
+        </label>
+        <label class="shipping-search">
+          <span>Szukaj</span>
+          <input id="shipping-search" type="search" placeholder="Klient, model, numer zlecenia">
+        </label>
+        <button id="shipping-day-close" type="button" class="shipping-button danger">
+          Kurier odebrał paczki — zamknij dzień
+        </button>
+      </section>
+
+      <div class="shipping-workspace">
+        <section class="shipping-card shipping-queue-card">
+          <div class="shipping-card-head">
+            <div><p class="shipping-step">KROK 1</p><h2>Kolejka MS</h2></div>
+            <span id="shipping-loading" class="shipping-muted" hidden>Wczytywanie…</span>
+          </div>
+          <div id="shipping-queue" class="shipping-queue"></div>
+        </section>
+
+        <section id="shipping-detail" class="shipping-card shipping-detail" hidden>
+          <div class="shipping-card-head">
+            <div>
+              <p class="shipping-step">KROK 2</p>
+              <h2 id="shipping-order-title">Zlecenie</h2>
+              <p id="shipping-order-subtitle" class="shipping-muted"></p>
+            </div>
+            <span id="shipping-case-status" class="shipping-badge">Weryfikacja</span>
+          </div>
+
+          <section class="shipping-source-note">
+            <strong>Lokalizacja z MS</strong>
+            <span id="shipping-location">Brak</span>
+          </section>
+
+          <div class="shipping-form-grid">
+            <label><span>Firma *</span><input id="shipping-company" maxlength="250"></label>
+            <label><span>Osoba kontaktowa</span><input id="shipping-contact" maxlength="150"></label>
+            <label class="wide"><span>Ulica i numer *</span><input id="shipping-street" maxlength="250"></label>
+            <label><span>Kod pocztowy *</span><input id="shipping-postal" maxlength="6" placeholder="00-000"></label>
+            <label><span>Miejscowość *</span><input id="shipping-city" maxlength="150"></label>
+            <label><span>Telefon *</span><input id="shipping-phone" maxlength="30"></label>
+            <label><span>E-mail</span><input id="shipping-email" type="email" maxlength="250"></label>
+            <label>
+              <span>Źródło adresu *</span>
+              <select id="shipping-address-source">
+                <option value="location">Lokalizacja urządzenia</option>
+                <option value="saved">Zapamiętany adres</option>
+                <option value="order">Dane zlecenia</option>
+                <option value="client">Dane firmy</option>
+                <option value="manual">Wpisano ręcznie</option>
+              </select>
+            </label>
+            <label>
+              <span>Waga paczki *</span>
+              <select id="shipping-weight"></select>
+            </label>
+          </div>
+          <label class="shipping-check-row">
+            <input id="shipping-save-address" type="checkbox" checked>
+            <span>Zapamiętaj zweryfikowany adres dla tej lokalizacji</span>
+          </label>
+
+          <div class="shipping-stock-head">
+            <div><p class="shipping-step">KROK 3</p><h3>Wybierz tonery z magazynu</h3></div>
+            <input id="shipping-stock-search" type="search" placeholder="Filtruj nazwę lub indeks">
+          </div>
+          <div class="shipping-table-wrap">
+            <table class="shipping-table">
+              <thead><tr><th></th><th>Indeks / toner</th><th>Dostępne</th><th>Ilość</th><th>Zapamiętaj</th></tr></thead>
+              <tbody id="shipping-stock"></tbody>
+            </table>
+          </div>
+
+          <div class="shipping-actions">
+            <button id="shipping-review" type="button" class="shipping-button primary">
+              Zatwierdź dane i rezerwację
+            </button>
+            <button id="shipping-create" type="button" class="shipping-button success" disabled>
+              Generuj etykietę DPD
+            </button>
+            <button id="shipping-manual" type="button" class="shipping-button secondary" disabled>
+              Wpisz ręczny numer DPD
+            </button>
+            <a id="shipping-label" class="shipping-button dark" href="#" target="_blank" hidden>
+              Otwórz etykietę A4
+            </a>
+          </div>
+          <p id="shipping-feedback" class="shipping-feedback" hidden></p>
+        </section>
+
+        <section id="shipping-empty" class="shipping-card shipping-empty">
+          <strong>Wybierz zlecenie z kolejki</strong>
+          <p>System podpowie adres, kontakt i tonery zgodne z urządzeniem.</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

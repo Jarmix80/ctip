@@ -5,6 +5,8 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
+- Proces automatyzacji wysyłek tonerów, integracji DPD, etykiety A4 i zamknięcia dnia: `docs/projekt/wysylki_dpd.md`.
+- Oryginalne, nieformatowane materiały techniczne przekazane przez DPD znajdują się w `docs/Dokumentacja-DPD-API/`; zasady ich wykorzystania przez CTIP opisuje polska dokumentacja projektowa.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
@@ -13,6 +15,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Hotfix produkcyjny dla toru `mailbox -> APPROVED_ORDER` z jednorazowa naprawa formularza `39`: `docs/instal/hotfix_mailbox_binding_prod_2026-05-22.md`.
 
 ## Najważniejsze komponenty
+- `app/api/routes/admin_shipping.py`, `app/services/shipping_workflow.py` i `/shipping` – kolejka zleceń `dowóz materiałów`, wybór tonerów z magazynu nr 1, etykieta DPD oraz kontrolowane zamknięcie dnia.
 - `collector_full.py` – produkcyjny kolektor CTIP: łączy się z centralą, koreluje zdarzenia, persystuje rekordy w schemacie `ctip` oraz rejestruje zadania SMS.
 - `collector_service.py` – wrapper w formie usługi Windows utrzymujący działanie `collector_full.py` i restartujący proces po awarii; automatycznie dopina ścieżki `pywin32` oraz dodaje katalog `pywin32_system32` do ścieżki DLL (start jako `pythonservice.exe`), wymagane wcześniejsze `pywin32_postinstall`.
 - `sms_sender.py` – pętla pollingująca kolejkę `sms_out`; implementacja `send_sms` wymaga podpięcia właściwego operatora.
@@ -352,6 +355,25 @@ Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11`
 | `FB_WAREHOUSE_CLIENT_ID` | `656` | Domyślny `ID_KLIENT` dla technicznych zapisów urządzeń magazynowych w lokalnej Firebird. |
 | `FB_WAREHOUSE_ID` | `28` | Domyślny `ID_MAGAZYN` dla pozycji magazynowych tworzonych przez synchronizację urządzeń. |
 
+### Zmienne środowiskowe modułu wysyłek DPD
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `DPD_ENABLED` | `false` | Główny przełącznik tworzenia przesyłek. Produkcyjnie włączaj dopiero po teście API i migracji. |
+| `DPD_TEST_MODE` | `true` | Generuje lokalną etykietę PDF z oznaczeniem testowym i nie wysyła danych do DPD. |
+| `DPD_API_URL` | *(puste)* | Bazowy adres DPD Services REST przydzielony dla konta i środowiska. |
+| `DPD_LOGIN`, `DPD_API_KEY`, `DPD_CLIENT_NUMBER` | *(puste)* | Dane integracyjne uzyskane od opiekuna DPD; nie są zapisywane w repozytorium. |
+| `DPD_CREATE_SHIPMENT_PATH` | `/shipments` | Ścieżka tworzenia przesyłki zgodna z dokumentacją przypisaną do klucza API. |
+| `DPD_LABEL_PATH_TEMPLATE` | `/shipments/{shipment_id}/label?format=A4` | Ścieżka pobierania etykiety, gdy nie została zwrócona w odpowiedzi nadania. |
+| `DPD_TIMEOUT_SECONDS` | `20` | Limit czasu pojedynczego wywołania DPD. |
+| `DPD_SENDER_*` | zależne od firmy | Pełne dane nadawcy: firma, kontakt, ulica, kod, miasto, telefon i e-mail. |
+| `SHIPPING_WAREHOUSE_ID` | `1` | Magazyn wydający tonery i części dla przesyłek. |
+| `SHIPPING_DEFAULT_WEIGHT_KG` | `2` | Domyślna waga standardowej paczki. |
+| `SHIPPING_WEIGHT_PRESETS_KG` | `1,2,5,10` | Lista wag dostępnych operatorowi bez podłączonej wagi elektronicznej. |
+| `SHIPPING_COURIER_CUTOFF_HOUR`, `SHIPPING_COURIER_CUTOFF_MINUTE` | `14`, `30` | Początek ostrzeżenia o możliwym zakończeniu dziennego odbioru. |
+
+Panel `/shipping` wymaga sekcji `shipping`. Szczegółowy proces, stany awaryjne, endpointy i procedurę pilotażu opisuje `docs/projekt/wysylki_dpd.md`.
+Pierwszy etap drukuje zapisany PDF A4; wariant docelowy z etykietą 100×150 mm i drukarką sieciową Zebra ZD421d opisano w tej samej dokumentacji.
+
 ### Zmienne środowiskowe Google Sheets
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -587,7 +609,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 
 ### Uruchomienie środowiska
 1. Zainstaluj pakiet w trybie deweloperskim: `pip install -e .`
-2. Zastosuj aktualną migrację bazy: `psql $DATABASE_URL -f docs/baza/migrations.sql`.
+2. Zastosuj aktualne migracje bazy: `set -a && source .env.test && set +a && alembic upgrade head`.
 3. Uruchom serwer: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` (wariant `--host 0.0.0.0` udostępnia panel w sieci LAN; w celu zawężenia dostępu ustaw odpowiednie IP).
 
 ### Dostępne endpointy (wersja prototypowa)
@@ -910,6 +932,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/projekt` – przestrzeń na notatki projektowe, szkice i checklisty wdrożeniowe; kluczowe pliki: `panel_admin_architektura.md` (architektura backendu panelu), `panel_admin_ui.md` (plan interfejsu administratora), `dziennik_2026-02-26.md` (podsumowanie wdrozen z 26 lutego 2026), `dziennik_2026-03-05.md` (podsumowanie prac SharePoint/backup z 5 marca 2026) oraz `dziennik_2026-04-09.md` (domkniecie etapu publicznych formularzy, automatu MS i zmian panelu administratora).
 - `docs/projekt/obsluga_urzadzen.md` – reguły przyjęcia PZ, rezerwacji, danych historycznych, outboxu Google Sheets i uprawnień modułu `/device`.
 - `docs/projekt/wykup_bnp.md` – reguły identyfikacji, kartoteki magazynu `27`, finalizacji PZ oraz blokad procesu wykupu BNP.
+- `docs/projekt/wysylki_dpd.md` – proces weryfikacji zleceń `dowóz materiałów`, nadania DPD, wydruku A4, dokumentu RW i zamknięcia dnia.
 - `docs/raport` – statyczny raport CPC (HTML + CSV) udostępniany bez logowania pod `http://127.0.0.1:8000/raport`; serwer FastAPI montuje katalog bez prawa zapisu, dzięki czemu pełni rolę tylko-do-odczytu.
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.
