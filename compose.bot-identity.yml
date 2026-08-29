@@ -1,0 +1,64 @@
+services:
+  api:
+    image: ${BOT_IDENTITY_IMAGE:?Ustaw BOT_IDENTITY_IMAGE na zweryfikowany tag obrazu}
+    container_name: ctip-bot-identity-api
+    command:
+      - python
+      - -m
+      - uvicorn
+      - app.bot_identity_api_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8082"
+      - --lifespan
+      - "off"
+    env_file:
+      - ${BOT_IDENTITY_ENV_FILE:-.env.bot-identity.runtime}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      chat_kp:
+        aliases:
+          - ctip-bot-api
+      ctip_test_internal:
+        aliases:
+          - ctip-bot-api
+
+  sync:
+    image: ${BOT_IDENTITY_IMAGE:?Ustaw BOT_IDENTITY_IMAGE na zweryfikowany tag obrazu}
+    container_name: ctip-bot-identity-sync
+    command:
+      - python
+      - -m
+      - app.bot_identity_worker
+    env_file:
+      - ${BOT_IDENTITY_ENV_FILE:-.env.bot-identity.runtime}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    networks:
+      - ctip_test_internal
+
+networks:
+  chat_kp:
+    external: true
+    name: chat_kp_chat_kp
+  ctip_test_internal:
+    external: true
+    name: ctip-prod-mirror_ctip_test_internal

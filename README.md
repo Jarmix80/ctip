@@ -473,6 +473,13 @@ dwóch sieci Docker, a sam CHAT_KP nie otrzymuje dostępu do sieci Firebird ani
 PostgreSQL CTIP. Szczegóły scenariusza znajdują się w
 `docs/bot_identity_directory.md`.
 
+Trwałe wdrożenie laboratoryjne korzysta z `Dockerfile.bot-identity` i
+`compose.bot-identity.yml`. Obraz zawiera pakiet `app`, działa jako użytkownik
+bez uprawnień administratora i nie montuje źródeł z worktree. Sekrety są
+przekazywane wyłącznie przez ignorowany plik `.env.bot-identity.runtime`.
+Procedurę budowy, testów canary, podmiany oraz rollbacku opisuje
+`docs/instal/bot_identity_docker_test.md`.
+
 ### Zmienne środowiskowe Google Sheets
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -1087,6 +1094,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/instal/wdrozenie_mailbox_archive_2026-08-28.md` – procedura migracji, kontrolowanego backfillu i wycofania rejestru wiadomości GRENKE.
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
+- `docs/instal/bot_identity_docker_test.md` – runbook niemutowalnego obrazu, testów canary, podmiany i rollbacku usług Bot Identity dla CHAT_KP.
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).
 - `docs/instal/wdrozenie_shipping_prod_2026-08-27.md` – etapowe wdrożenie Shipping na Windows Server, backupy, kontrola migracji, faza odczytowa, pilot, nadanie uprawnień i rollback kodu.
 - `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md` – pełne uruchomienie Shipping, V2 jako widok główny, bramka tworzenia zleceń pilotażowych oraz kontrola usuwania klienta, umowy, urządzenia, dokumentów i odtworzenia stanów magazynowych.
