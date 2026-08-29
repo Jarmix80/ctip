@@ -519,6 +519,8 @@ async def post_service_case(
             idempotency_key=idempotency_key,
             service_channel=channel,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         _raise_bad_request(exc)
     await session.commit()

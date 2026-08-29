@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_db_session
 from app.bot_identity_api_app import create_bot_identity_api_app
 from app.core.config import settings
 
@@ -61,6 +62,53 @@ def test_capabilities_match_chat_kp_contract(monkeypatch) -> None:
         "idempotent_sms": True,
         "idempotent_cases": True,
     }
+
+
+def test_case_endpoint_returns_403_for_expired_sms_challenge(monkeypatch) -> None:
+    class DummySession:
+        async def commit(self) -> None:
+            raise AssertionError("Odrzucona sprawa nie może zostać zatwierdzona.")
+
+    async def session_override():
+        yield DummySession()
+
+    async def reject_expired_challenge(*args, **kwargs):
+        raise PermissionError("Weryfikacja SMS jest nieważna albo wygasła.")
+
+    monkeypatch.setattr(settings, "crm_enabled", True)
+    monkeypatch.setattr(settings, "bot_identity_chat_token", "chat-test-token")
+    monkeypatch.setattr(
+        "app.api.routes.crm.create_chat_case",
+        reject_expired_challenge,
+    )
+    app = create_bot_identity_api_app()
+    app.dependency_overrides[get_db_session] = session_override
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/cases",
+        headers={"Authorization": "Bearer chat-test-token"},
+        json={
+            "source_channel": "chat",
+            "source_system": "chat_kp",
+            "conversation_ref": "expired-challenge-case",
+            "category": "service",
+            "summary": "Test wygasłego wyzwania",
+            "customer_ref": "739",
+            "customer_match_status": "exact",
+            "customer_name": "Firma testowa",
+            "device_refs": ["device-ref-1"],
+            "sms_challenge_id": "expired-challenge",
+            "phone_verification_status": "sms_verified_known",
+            "customer_confirmed": True,
+            "privacy_notice_accepted": True,
+            "privacy_notice_version": "2026-07",
+            "privacy_notice_checksum": "f" * 64,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Weryfikacja SMS jest nieważna albo wygasła."
 
 
 def test_model_image_endpoint_returns_only_registered_image(

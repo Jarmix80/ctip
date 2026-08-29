@@ -464,6 +464,8 @@ urządzenia potwierdzonego klienta: losowe `device_ref`, producenta i model z
 projekcji `MASZYNA → MODEL`, pełny `serial`, zgodne `serial_last4`, bezpieczne
 `image_url`, lokalizację i flagę aktywności. Kontrakt spraw obsługuje stare
 `device_ref` oraz opcjonalne `device_refs` z deduplikacją i limitem 20.
+Wygasła albo niedotycząca klienta weryfikacja SMS zwraca HTTP 403 zamiast błędu
+wewnętrznego, natomiast urządzenie spoza potwierdzonej firmy jest odrzucane.
 Szczegółowe reguły ujawniania oraz mapowanie `MODEL.PLIK` opisuje
 `docs/bot_identity_directory.md`.
 
