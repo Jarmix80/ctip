@@ -331,6 +331,131 @@ class ShippingEvent(Base):
     )
 
 
+class ShippingTrackingParcel(Base):
+    """Bieżący stan listu przewozowego ustalony ze zdarzeń DPD InfoServices."""
+
+    __tablename__ = "shipping_tracking_parcel"
+    __table_args__ = (
+        CheckConstraint(
+            "status_category in ("
+            "'registered','in_transit','out_for_delivery','pickup_ready','delivered',"
+            "'undelivered','redirected','returning','critical','other'"
+            ")",
+            name="shipping_tracking_parcel_category_check",
+        ),
+        UniqueConstraint("provider", "waybill", name="uq_shipping_tracking_parcel_waybill"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False, default="dpd")
+    waybill: Mapped[str] = mapped_column(Text, nullable=False)
+    source_channel: Mapped[str] = mapped_column(Text, nullable=False)
+    latest_business_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    latest_depot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_depot_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_country: Mapped[str | None] = mapped_column(Text, nullable=True)
+    replacement_waybill: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status_category: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    status_label: Mapped[str] = mapped_column(Text, nullable=False, default="Inny status DPD")
+    is_terminal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    requires_attention: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    first_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+
+    events: Mapped[list[ShippingTrackingEvent]] = relationship(
+        back_populates="parcel",
+        cascade="all, delete-orphan",
+    )
+
+
+class ShippingTrackingEvent(Base):
+    """Znormalizowane i idempotentne zdarzenie listu przewozowego z DPD."""
+
+    __tablename__ = "shipping_tracking_event"
+    __table_args__ = (
+        CheckConstraint(
+            "operation_type in ('INSERT','CANCEL')",
+            name="shipping_tracking_event_operation_check",
+        ),
+        UniqueConstraint("source_event_key", name="uq_shipping_tracking_event_source_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    parcel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.shipping_tracking_parcel.id", ondelete="CASCADE"), nullable=True
+    )
+    source_event_key: Mapped[str] = mapped_column(Text, nullable=False)
+    waybill: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dpd_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    object_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operation_type: Mapped[str] = mapped_column(Text, nullable=False, default="INSERT")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    depot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    depot_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    country: Mapped[str | None] = mapped_column(Text, nullable=True)
+    package_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parcel_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_data: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    raw_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+
+    parcel: Mapped[ShippingTrackingParcel | None] = relationship(back_populates="events")
+
+
+class ShippingTrackingSyncRun(Base):
+    """Rejestr wykonania synchronizacji kanału DPD InfoServices."""
+
+    __tablename__ = "shipping_tracking_sync_run"
+    __table_args__ = (
+        CheckConstraint(
+            "trigger_type in ('scheduler','manual','backfill')",
+            name="shipping_tracking_sync_run_trigger_check",
+        ),
+        CheckConstraint(
+            "status in ('processing','success','partial','failed')",
+            name="shipping_tracking_sync_run_status_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_channel: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger_type: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="processing")
+    fetched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    inserted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cancelled_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    batch_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    confirm_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acknowledgement_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    triggered_by: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 Index("idx_shipping_case_status_updated", ShippingCase.status, ShippingCase.updated_at.desc())
 Index(
     "idx_shipping_shipment_status_created",
@@ -349,9 +474,38 @@ Index(
     ShippingShipment.closed_at.desc(),
 )
 Index(
+    "idx_shipping_shipment_provider_tracking",
+    ShippingShipment.provider,
+    ShippingShipment.tracking_number,
+)
+Index(
     "idx_shipping_event_case_created",
     ShippingEvent.shipping_case_id,
     ShippingEvent.created_at.desc(),
+)
+Index(
+    "idx_shipping_tracking_parcel_status_event",
+    ShippingTrackingParcel.status_category,
+    ShippingTrackingParcel.latest_event_time.desc(),
+)
+Index(
+    "idx_shipping_tracking_parcel_attention_event",
+    ShippingTrackingParcel.requires_attention,
+    ShippingTrackingParcel.latest_event_time.desc(),
+)
+Index(
+    "idx_shipping_tracking_event_parcel_time",
+    ShippingTrackingEvent.parcel_id,
+    ShippingTrackingEvent.event_time.desc(),
+    ShippingTrackingEvent.id.desc(),
+)
+Index(
+    "idx_shipping_tracking_event_object",
+    ShippingTrackingEvent.object_id,
+)
+Index(
+    "idx_shipping_tracking_sync_started",
+    ShippingTrackingSyncRun.started_at.desc(),
 )
 __all__ = [
     "ShippingAddress",
@@ -361,4 +515,7 @@ __all__ = [
     "ShippingEvent",
     "ShippingItem",
     "ShippingShipment",
+    "ShippingTrackingEvent",
+    "ShippingTrackingParcel",
+    "ShippingTrackingSyncRun",
 ]

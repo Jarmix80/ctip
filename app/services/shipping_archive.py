@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models import AdminUser, ShippingCase, ShippingEvent, ShippingShipment
 from app.services.shipping_firebird import shipping_document_mode
+from app.services.shipping_tracking import tracking_for_waybills
 
 WARSAW = ZoneInfo("Europe/Warsaw")
 ARCHIVE_VERSION = 1
@@ -412,11 +413,23 @@ async def list_shipping_archive(
         for value in (case.reviewed_by, shipment.created_by, shipment.closed_by)
     }
     users = await _load_operators(session, operator_ids)
+    items = [_archive_item(shipment, case, users=users) for shipment, case in rows]
+    tracking = await tracking_for_waybills(
+        session,
+        {
+            str(item.get("shipment", {}).get("tracking_number"))
+            for item in items
+            if item.get("shipment", {}).get("tracking_number")
+        },
+    )
+    for item in items:
+        waybill = item.get("shipment", {}).get("tracking_number")
+        item["dpd_tracking"] = tracking.get(str(waybill)) if waybill else None
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
-        "items": [_archive_item(shipment, case, users=users) for shipment, case in rows],
+        "items": items,
         "filters": {"operators": await _archive_operator_options(session)},
     }
 
@@ -464,12 +477,19 @@ async def get_shipping_archive_detail(
         closed_by=shipment.closed_by,
         closed_at=shipment.closed_at or shipment.updated_at,
     )
+    tracking = await tracking_for_waybills(
+        session,
+        {str(shipment.tracking_number)} if shipment.tracking_number else set(),
+    )
     return {
         "shipment_id": shipment.id,
         "order_table_id": shipment.shipping_case.firebird_order_table_id,
         "snapshot": snapshot,
         "label_url": (
             f"/admin/shipping/shipments/{shipment.id}/label" if shipment.label_content else None
+        ),
+        "dpd_tracking": (
+            tracking.get(str(shipment.tracking_number)) if shipment.tracking_number else None
         ),
         "events": [
             {

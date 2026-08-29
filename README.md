@@ -503,9 +503,16 @@ Historyczna akcja synchronizacji urządzenia z arkusza w `/contracts` jest wył�
 | `SHIPPING_WAREHOUSE_ID` | `1` | Identyfikator magazynu głównego części w Firebirdzie. |
 | `DPD_ENABLED` | `false` | Włącza klienta DPD; podczas fazy odczytowej musi pozostać `false`. |
 | `DPD_MODE` | `production` | Tryb adaptera: `mock`, `demo` albo `production`. |
+| `DPD_INFO_ENABLED` | `false` | Włącza niezależny, tylko do odczytu harmonogram statusów DPD InfoServices. |
+| `DPD_INFO_API_URL` | oficjalny adres DPD | Endpoint SOAP InfoServices; klient akceptuje wyłącznie oficjalny host HTTPS DPD. |
+| `DPD_INFO_CHANNEL` | *(puste)* | Kanał InfoServices przypisany przez DPD do firmy; jest wymagany razem z `DPD_LOGIN` i `DPD_PASSWORD`. |
+| `DPD_INFO_SYNC_INTERVAL_SECONDS` | `300` | Odstęp automatycznej synchronizacji statusów w sekundach. |
+| `DPD_INFO_BATCH_LIMIT` | `1000` | Maksymalna liczba zdarzeń pobieranych w pojedynczej partii SOAP. |
+| `DPD_INFO_MAX_BATCHES_PER_SYNC` | `10` | Bezpieczny limit partii obsługiwanych w jednym przebiegu harmonogramu. |
+| `DPD_INFO_TIMEOUT_SECONDS` | `30` | Timeout pojedynczego wywołania SOAP InfoServices. |
 | `SHIPPING_TEST_FIREBIRD_WRITES` | `false` | Wyjątek wyłącznie dla izolowanej bazy `ctip_test` i Firebirda testowego; na produkcji zawsze `false`. |
 
-Pełna lista ustawień DPD, nadawcy, wag, godziny granicznej i opcjonalnego wzbogacania WWW znajduje się w `.env.example` oraz `docs/projekt/wysylki_dpd.md`. Sekcja `shipping` nie jest przyznawana automatycznie żadnej roli; administrator nadaje ją jawnie wskazanym aktywnym kontom.
+Pełna lista ustawień DPD, InfoServices, nadawcy, wag, godziny granicznej i opcjonalnego wzbogacania WWW znajduje się w `.env.example` oraz `docs/projekt/wysylki_dpd.md`. Zakładka „Status przesyłek” pokazuje historię DPD, umożliwia przejście ze zlecenia lub Archiwum do numeru listu i nie zmienia danych Menadżera Serwisu. Stały przycisk odświeżania kolejki ponownie pobiera zlecenia z MS i usuwa z widoku pozycje, które przestały spełniać filtr; elastyczny kontener z własnym przewijaniem nie obcina ostatniego rekordu. Sekcja `shipping` nie jest przyznawana automatycznie żadnej roli; administrator nadaje ją jawnie wskazanym aktywnym kontom.
 
 Logowanie do `/auth/login` i `/admin/auth/login` ustawia obecnie dwa transporty tej samej sesji:
 - bezpieczniejsze ciasteczko `HttpOnly` dla przeglądarki,

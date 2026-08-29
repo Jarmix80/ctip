@@ -120,6 +120,25 @@ class Settings(BaseSettings):
         alias="DPD_GENERATE_LABELS_PATH",
     )
     dpd_timeout_seconds: float = Field(default=20.0, alias="DPD_TIMEOUT_SECONDS")
+    dpd_info_enabled: bool = Field(default=False, alias="DPD_INFO_ENABLED")
+    dpd_info_api_url: str = Field(
+        default=(
+            "https://dpdinfoservices.dpd.com.pl/"
+            "DPDInfoServicesObjEventsService/DPDInfoServicesObjEvents"
+        ),
+        alias="DPD_INFO_API_URL",
+    )
+    dpd_info_channel: str | None = Field(default=None, alias="DPD_INFO_CHANNEL")
+    dpd_info_sync_interval_seconds: int = Field(
+        default=300,
+        alias="DPD_INFO_SYNC_INTERVAL_SECONDS",
+    )
+    dpd_info_batch_limit: int = Field(default=1000, alias="DPD_INFO_BATCH_LIMIT")
+    dpd_info_max_batches_per_sync: int = Field(
+        default=10,
+        alias="DPD_INFO_MAX_BATCHES_PER_SYNC",
+    )
+    dpd_info_timeout_seconds: float = Field(default=30.0, alias="DPD_INFO_TIMEOUT_SECONDS")
     dpd_sender_company: str = Field(default="Ksero-Partner", alias="DPD_SENDER_COMPANY")
     dpd_sender_contact: str | None = Field(default=None, alias="DPD_SENDER_CONTACT")
     dpd_sender_street: str | None = Field(default=None, alias="DPD_SENDER_STREET")

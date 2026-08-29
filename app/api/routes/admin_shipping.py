@@ -36,6 +36,17 @@ from app.schemas.shipping import (
 )
 from app.services import section_permissions
 from app.services.audit import record_audit
+from app.services.dpd_infoservices import (
+    DpdInfoConfigurationError,
+    DpdInfoServicesClient,
+    DpdInfoTransportError,
+)
+from app.services.dpd_infoservices_sync import (
+    DpdInfoSyncBusyError,
+    latest_dpd_info_sync_status,
+    synchronize_dpd_infoservices,
+    tracking_counts,
+)
 from app.services.dpd_shipping import DpdConfigurationError, DpdShippingClient, DpdTransportError
 from app.services.firebird_runtime import (
     firebird_writes_enabled,
@@ -76,6 +87,11 @@ from app.services.shipping_firebird import (
     load_shipping_queue,
     shipping_order_state_payload,
     validate_shipping_dictionary,
+)
+from app.services.shipping_tracking import (
+    get_shipping_tracking_detail,
+    list_shipping_tracking,
+    tracking_for_waybills,
 )
 from app.services.shipping_workflow import (
     ShippingConflictError,
@@ -299,6 +315,9 @@ async def shipping_config(
         second=0,
         microsecond=0,
     )
+    dpd_info_status = DpdInfoServicesClient().configuration_status()
+    dpd_info_status["last_sync"] = await latest_dpd_info_sync_status(session)
+    dpd_info_status["counts"] = await tracking_counts(session)
     return {
         "shipping": {
             "enabled": settings.shipping_enabled,
@@ -306,6 +325,7 @@ async def shipping_config(
             "fulfillment_enabled": settings.shipping_fulfillment_enabled,
         },
         "dpd": DpdShippingClient().configuration_status(),
+        "dpd_info": dpd_info_status,
         "firebird": {
             "write_ready": firebird_write_ready,
             "write_block_reason": None if firebird_write_ready else firebird_write_reason,
@@ -798,6 +818,112 @@ async def shipping_archive_list(
     )
 
 
+@router.get("/tracking", summary="Statusy wszystkich przesyłek DPD InfoServices")
+async def shipping_tracking_list(
+    query: str | None = Query(default=None, max_length=200),  # noqa: B008
+    category: (
+        Literal[
+            "registered",
+            "in_transit",
+            "out_for_delivery",
+            "pickup_ready",
+            "delivered",
+            "undelivered",
+            "redirected",
+            "returning",
+            "critical",
+            "other",
+        ]
+        | None
+    ) = Query(
+        default=None
+    ),  # noqa: B008
+    linked: bool | None = Query(default=None),  # noqa: B008
+    terminal: bool | None = Query(default=None),  # noqa: B008
+    attention: bool | None = Query(default=None),  # noqa: B008
+    date_from: date | None = Query(default=None),  # noqa: B008
+    date_to: date | None = Query(default=None),  # noqa: B008
+    tracking_sort: Literal["newest", "oldest", "waybill", "status"] = Query(  # noqa: B008
+        default="newest", alias="sort"
+    ),
+    page: int = Query(default=1, ge=1),  # noqa: B008
+    page_size: int = Query(default=50, ge=1, le=200),  # noqa: B008
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca statusy z kanału DPD wraz z powiązaniami do zleceń CTIP."""
+    await _require_shipping_access(admin_context, session)
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Data początkowa nie może być późniejsza od daty końcowej.",
+        )
+    return await list_shipping_tracking(
+        session,
+        query=query,
+        category=category,
+        linked=linked,
+        terminal=terminal,
+        attention=attention,
+        date_from=date_from,
+        date_to=date_to,
+        sort=tracking_sort,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.post("/tracking/sync", summary="Synchronizuj kanał DPD InfoServices")
+async def shipping_tracking_sync(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Wykonuje jeden kontrolowany, idempotentny cykl synchronizacji."""
+    admin_session, _ = admin_context
+    user = await _require_shipping_access(admin_context, session)
+    try:
+        result = await synchronize_dpd_infoservices(trigger_type="manual", user_id=user.id)
+    except DpdInfoSyncBusyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except DpdInfoConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except DpdInfoTransportError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await record_audit(
+        session,
+        user_id=user.id,
+        action="shipping_dpd_info_sync",
+        client_ip=admin_session.client_ip,
+        payload={
+            "run_id": result["run_id"],
+            "status": result["status"],
+            "fetched_count": result["fetched_count"],
+            "inserted_count": result["inserted_count"],
+        },
+    )
+    await session.commit()
+    return result
+
+
+@router.get("/tracking/{waybill}", summary="Szczegóły statusu przesyłki DPD")
+async def shipping_tracking_detail(
+    waybill: str,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca pełną oś zdarzeń i wszystkie powiązane zlecenia."""
+    await _require_shipping_access(admin_context, session)
+    detail = await get_shipping_tracking_detail(session, waybill=waybill)
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nie znaleziono przesyłki w lokalnym rejestrze InfoServices.",
+        )
+    return detail
+
+
 @router.get("/archive/{order_table_id}", summary="Szczegóły wpisu Archiwum")
 async def shipping_archive_detail(
     order_table_id: int,
@@ -861,6 +987,14 @@ async def shipping_queue(
         )
         cases = {row.firebird_order_table_id: row for row in rows}
         consolidation_groups = build_shipping_consolidation_groups(rows)
+    tracking = await tracking_for_waybills(
+        session,
+        {
+            str(case.shipment.tracking_number)
+            for case in cases.values()
+            if case.shipment and case.shipment.tracking_number
+        },
+    )
     for item in items:
         case = cases.get(int(item["order_table_id"]))
         item["ctip_status"] = case.status if case else "review_pending"
@@ -871,6 +1005,11 @@ async def shipping_queue(
         item["consolidation"] = consolidation_groups.get(int(item["order_table_id"]))
         item["consolidated_shipment"] = shipping_shipment_consolidation(
             case.shipment if case else None
+        )
+        item["dpd_tracking"] = (
+            tracking.get(str(case.shipment.tracking_number))
+            if case and case.shipment and case.shipment.tracking_number
+            else None
         )
         customer_key = (int(item["company_id"]), int(item["client_id"]))
         item["overdue_payment"] = overdue_summaries[customer_key]

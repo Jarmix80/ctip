@@ -43,6 +43,9 @@ from .shipping import (  # noqa: F401
     ShippingEvent,
     ShippingItem,
     ShippingShipment,
+    ShippingTrackingEvent,
+    ShippingTrackingParcel,
+    ShippingTrackingSyncRun,
 )
 from .sms_out import SmsOut  # noqa: F401
 from .sms_template import SmsTemplate  # noqa: F401

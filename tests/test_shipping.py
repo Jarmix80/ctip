@@ -40,6 +40,9 @@ from app.models import (
     ShippingEvent,
     ShippingItem,
     ShippingShipment,
+    ShippingTrackingEvent,
+    ShippingTrackingParcel,
+    ShippingTrackingSyncRun,
 )
 from app.schemas.shipping import (
     ShippingBulkCreateRequest,
@@ -738,6 +741,9 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     ShippingDayClose.__table__,
                     ShippingShipment.__table__,
                     ShippingEvent.__table__,
+                    ShippingTrackingParcel.__table__,
+                    ShippingTrackingEvent.__table__,
+                    ShippingTrackingSyncRun.__table__,
                 ],
             )
         self.session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
@@ -1434,12 +1440,16 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('href="/shipping/legacy"', response.text)
         self.assertIn("Archiwum", response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
+        self.assertIn("Status przesyłek", response.text)
+        self.assertIn('id="shipping-tracking-view"', response.text)
+        self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-archive-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-tracking-02",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
         self.assertIn('id="shipping-sort"', response.text)
+        self.assertIn('id="shipping-queue-refresh"', response.text)
         self.assertIn("Etap pracy (domyślne)", response.text)
         self.assertIn('id="shipping-phone-note"', response.text)
         self.assertIn("Zezwól na część ze stanem zerowym", response.text)
@@ -1453,11 +1463,15 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("background: #14282f", stylesheet)
         self.assertIn(".shipping-negative-stock-control", stylesheet)
         self.assertIn("font-size: 17px", stylesheet)
+        self.assertIn("height: calc(100vh - 104px)", stylesheet)
+        self.assertIn("min-height: 0; max-height: none", stylesheet)
         enhancer = Path("app/static/shipping/shipping-v2.js").read_text(encoding="utf-8")
         self.assertNotIn("fetch(", enhancer)
         self.assertIn("MutationObserver", enhancer)
         self.assertIn("selectedPackageItems", enhancer)
         self.assertIn("shipping-v2-package-items", response.text)
+        self.assertIn("refreshShippingQueueManually", javascript)
+        self.assertIn("usunięte z kolejki", javascript)
 
     def test_dotychczasowy_adres_v2_przekierowuje_do_glownego_widoku(self) -> None:
         app = create_app()

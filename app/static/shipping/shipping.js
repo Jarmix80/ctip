@@ -38,6 +38,14 @@ const shippingState = {
     operators: [],
     selectedOrderId: null,
   },
+  tracking: {
+    items: [],
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    loaded: false,
+    selectedWaybill: null,
+  },
 };
 
 function shippingCatalogMutationsEnabled() {
@@ -112,6 +120,13 @@ function shippingCaseStatusLabel(status) {
     manual_billing: "Do wystawienia FV",
     reconcile_required: "Wymaga uzgodnienia",
   }[status] || "Nieznany etap";
+}
+
+function shippingDpdStatusMarkup(tracking, compact = false) {
+  if (!tracking) return "";
+  const title = [tracking.description, tracking.business_code ? `Kod ${tracking.business_code}` : null]
+    .filter(Boolean).join(" • ");
+  return `<span class="shipping-dpd-state ${escapeShippingHtml(tracking.category || "other")}" title="${escapeShippingHtml(title)}">${escapeShippingHtml(compact ? tracking.status_label : `${tracking.status_label}${tracking.business_code ? ` · ${tracking.business_code}` : ""}`)}</span>`;
 }
 
 function shippingOrderSourceLabel(source) {
@@ -334,6 +349,7 @@ function renderShippingQueue() {
             ${item.invoice_required ? '<span class="shipping-invoice-badge">Wystaw FV</span>' : ""}
             ${item.consolidation ? `<span class="shipping-consolidation-badge">Wspólny adres: ${escapeShippingHtml(shippingOrdersCountLabel(item.consolidation.count))}</span>` : ""}
             ${item.consolidated_shipment ? `<span class="shipping-consolidation-badge">Wspólna paczka: ${escapeShippingHtml(shippingOrdersCountLabel(item.consolidated_shipment.count))}</span>` : ""}
+            ${shippingDpdStatusMarkup(item.dpd_tracking, true)}
           </span>
           <small>${escapeShippingHtml([item.device_brand, item.device_model].filter(Boolean).join(" ") || "Brak modelu")}</small>
           <small>${escapeShippingHtml(item.problem || "Brak opisu")}</small>
@@ -945,6 +961,9 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
   const label = document.getElementById("shipping-label");
   label.hidden = !shipment?.label_available;
   label.href = shipment?.label_available ? `/admin/shipping/shipments/${shipment.id}/label` : "#";
+  const trackingButton = document.getElementById("shipping-tracking-open");
+  trackingButton.hidden = !shipment?.tracking_number;
+  trackingButton.dataset.waybill = shipment?.tracking_number || "";
   if (showTrackingFeedback && shipment?.tracking_number) {
     const warnings = Array.isArray(shipment.provider_warnings) ? shipment.provider_warnings : [];
     const warningText = warnings.length ? ` Ostrzeżenia etykiety: ${warnings.join(" ")}` : "";
@@ -1221,11 +1240,52 @@ async function loadShippingQueue(clearSelection = false, silent = false) {
     const days = document.getElementById("shipping-days").value;
     const payload = await shippingJson(`/admin/shipping/queue?days=${encodeURIComponent(days)}`);
     shippingState.queue = payload.items || [];
+    const currentOrderIds = new Set(
+      shippingState.queue.map((item) => Number(item.order_table_id)),
+    );
+    shippingState.selectedOrderIds = new Set(
+      [...shippingState.selectedOrderIds].filter((orderId) => currentOrderIds.has(orderId)),
+    );
+    shippingState.printableOrderIds = new Set(
+      [...shippingState.printableOrderIds].filter((orderId) => currentOrderIds.has(orderId)),
+    );
+    if (shippingState.selectedOrderId && !currentOrderIds.has(shippingState.selectedOrderId)) {
+      shippingState.selectedOrderId = null;
+      shippingState.detail = null;
+      shippingState.liveOrderState = null;
+      shippingState.selectedItems.clear();
+      document.getElementById("shipping-detail").hidden = true;
+      document.getElementById("shipping-empty").hidden = false;
+      renderShippingOverduePayment(null);
+      renderShippingOrderState(null);
+    }
     renderShippingQueue();
+    return shippingState.queue;
   } catch (error) {
     if (!silent) shippingAlert(error.message, true);
+    return null;
   } finally {
     if (!silent) document.getElementById("shipping-loading").hidden = true;
+  }
+}
+
+async function refreshShippingQueueManually() {
+  const button = document.getElementById("shipping-queue-refresh");
+  const previousOrderIds = new Set(
+    shippingState.queue.map((item) => Number(item.order_table_id)),
+  );
+  button.disabled = true;
+  button.textContent = "Odświeżanie…";
+  try {
+    const queue = await loadShippingQueue(false);
+    if (!queue) return;
+    const currentOrderIds = new Set(queue.map((item) => Number(item.order_table_id)));
+    const added = [...currentOrderIds].filter((orderId) => !previousOrderIds.has(orderId)).length;
+    const removed = [...previousOrderIds].filter((orderId) => !currentOrderIds.has(orderId)).length;
+    shippingAlert(`Kolejka MS odświeżona. Nowe: ${added}, usunięte z kolejki: ${removed}, razem: ${queue.length}.`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Odśwież kolejkę ↻";
   }
 }
 
@@ -1384,7 +1444,7 @@ function renderShippingArchive() {
         <span><strong>#${escapeShippingHtml(item.order_number || "—")}</strong><small>${escapeShippingHtml(item.company_name || "Bez nazwy klienta")} • ${escapeShippingHtml(item.city || "brak miasta")}</small><small>${escapeShippingHtml(device)}</small><em class="shipping-source-badge ${item.source === "mobile" ? "source-mobile" : "source-manual"}">${escapeShippingHtml(shippingOrderSourceLabel(item.source))}</em></span>
         <span><strong>${escapeShippingHtml(closer)}</strong><small>Weryfikacja, kompletacja i zamknięcie</small><small>${escapeShippingHtml(shippingArchiveProviderLabel(shipment.provider_mode))}</small></span>
         <span><strong>${Number(item.item_count || 0)} poz. • ${Number(item.quantity || 0).toLocaleString("pl-PL", { maximumFractionDigits: 3 })} szt.</strong>${itemPreview}${remaining ? `<small>+ ${remaining} kolejnych pozycji</small>` : ""}</span>
-        <span>${shippingArchiveDocumentChips(item.documents)}<small>DPD ${escapeShippingHtml(shipment.tracking_number || "brak numeru")}</small>${shipment.consolidation ? `<em>Wspólna paczka: ${Number(shipment.consolidation.count)} zlecenia</em>` : ""}</span>
+        <span>${shippingArchiveDocumentChips(item.documents)}<small>DPD ${escapeShippingHtml(shipment.tracking_number || "brak numeru")}</small>${shippingDpdStatusMarkup(item.dpd_tracking, true)}${shipment.consolidation ? `<em>Wspólna paczka: ${Number(shipment.consolidation.count)} zlecenia</em>` : ""}</span>
       </button>`;
     }).join("")
     : '<div class="shipping-v2-archive-empty"><strong>Brak wyników</strong><span>Zmień wyszukiwaną frazę albo wyczyść filtry.</span></div>';
@@ -1465,6 +1525,9 @@ function renderShippingArchiveDetail(payload) {
   const labelLink = payload.label_url
     ? `<a class="shipping-button dark" href="${escapeShippingHtml(payload.label_url)}" target="_blank">Otwórz etykietę DPD</a>`
     : '<span class="shipping-muted">Brak zapisanej etykiety PDF.</span>';
+  const trackingLink = payload.dpd_tracking
+    ? `<button type="button" class="shipping-button primary" data-open-tracking="${escapeShippingHtml(payload.dpd_tracking.waybill)}">Status przesyłki: ${escapeShippingHtml(payload.dpd_tracking.status_label)}</button>`
+    : '<span class="shipping-muted">Status InfoServices nie został jeszcze pobrany.</span>';
   document.getElementById("shipping-archive-detail-content").innerHTML = `
     <section class="shipping-v2-archive-summary"><span><small>ROZLICZENIE</small><strong>${escapeShippingHtml(shippingArchiveDocumentModeLabel(documents.mode))}</strong></span><span><small>NUMER DPD</small><strong>${escapeShippingHtml(shipment.tracking_number || "Brak")}</strong></span><span><small>URZĄDZENIE</small><strong>${escapeShippingHtml(deviceLabel)}</strong></span><span><small>ŹRÓDŁO</small><strong>${escapeShippingHtml(shippingOrderSourceLabel(order.source))}</strong></span></section>
     <section class="shipping-v2-archive-section"><header><small>TREŚĆ ZLECENIA</small></header><p class="shipping-v2-archive-problem">${escapeShippingHtml(order.problem || "Brak treści zlecenia.")}</p></section>
@@ -1473,7 +1536,10 @@ function renderShippingArchiveDetail(payload) {
     <section class="shipping-v2-archive-section"><header><small>DOKUMENTY MS</small></header><div class="shipping-v2-archive-documents">${shippingArchiveDocumentChips(documents)}</div><small>Identyfikatory: RW ${escapeShippingHtml(documents.rw?.id || "—")} • WZ ${escapeShippingHtml(documents.wz?.id || "—")} • FV ${escapeShippingHtml(documents.invoice?.id || "—")}</small></section>
     <section class="shipping-v2-archive-section"><header><small>ODPOWIEDZIALNOŚĆ</small></header><div class="shipping-v2-archive-operators">${operatorCards}</div></section>
     <section class="shipping-v2-archive-section"><header><small>HISTORIA SPRAWY</small></header><ol class="shipping-v2-archive-events">${eventRows}</ol></section>
-    <footer class="shipping-v2-archive-detail-actions">${labelLink}</footer>`;
+    <footer class="shipping-v2-archive-detail-actions">${labelLink}${trackingLink}</footer>`;
+  document.querySelectorAll("[data-open-tracking]").forEach((button) => {
+    button.addEventListener("click", () => openShippingTracking(button.dataset.openTracking));
+  });
 }
 
 async function openShippingArchiveDetail(orderTableId) {
@@ -1507,9 +1573,204 @@ function clearShippingArchiveFilters() {
   loadShippingArchive(true);
 }
 
-function switchShippingView(view) {
+function shippingTrackingQueryParams() {
+  const params = new URLSearchParams({
+    page: String(shippingState.tracking.page),
+    page_size: String(shippingState.tracking.pageSize),
+    sort: document.getElementById("shipping-tracking-sort").value,
+  });
+  [
+    ["shipping-tracking-query", "query"],
+    ["shipping-tracking-category", "category"],
+    ["shipping-tracking-linked", "linked"],
+    ["shipping-tracking-terminal", "terminal"],
+    ["shipping-tracking-date-from", "date_from"],
+    ["shipping-tracking-date-to", "date_to"],
+  ].forEach(([elementId, parameter]) => {
+    const value = document.getElementById(elementId).value.trim();
+    if (value) params.set(parameter, value);
+  });
+  if (document.getElementById("shipping-tracking-attention-only").checked) {
+    params.set("attention", "true");
+  }
+  return params;
+}
+
+function shippingTrackingSyncLabel(sync) {
+  if (!sync) return "Brak wykonanej synchronizacji";
+  const when = sync.completed_at || sync.started_at;
+  const status = {
+    success: "Synchronizacja poprawna",
+    partial: "Synchronizacja częściowa",
+    failed: "Błąd synchronizacji",
+    processing: "Synchronizacja w toku",
+  }[sync.status] || "Stan nieznany";
+  return `${status} • ${shippingDateTimeLabel(when)}${sync.error_text ? ` • ${sync.error_text}` : ""}`;
+}
+
+function renderShippingTracking(payload) {
+  const summary = payload.summary || {};
+  const categories = summary.categories || {};
+  const rows = shippingState.tracking.items;
+  document.getElementById("shipping-tracking-tab-count").textContent = String(summary.active || 0);
+  document.getElementById("shipping-tracking-total").textContent = String(summary.total || 0);
+  document.getElementById("shipping-tracking-active").textContent = String(summary.active || 0);
+  document.getElementById("shipping-tracking-delivery").textContent = String(categories.out_for_delivery || 0);
+  document.getElementById("shipping-tracking-delivered").textContent = String(categories.delivered || 0);
+  document.getElementById("shipping-tracking-attention").textContent = String(summary.attention || 0);
+  document.getElementById("shipping-tracking-sync-status").textContent = shippingTrackingSyncLabel(payload.sync);
+  document.getElementById("shipping-tracking-page").textContent = `Strona ${shippingState.tracking.page} • rekordy ${shippingState.tracking.total}`;
+  document.getElementById("shipping-tracking-prev").disabled = shippingState.tracking.page <= 1;
+  document.getElementById("shipping-tracking-next").disabled = shippingState.tracking.page * shippingState.tracking.pageSize >= shippingState.tracking.total;
+  document.getElementById("shipping-tracking-rows").innerHTML = rows.length
+    ? rows.map((item) => {
+      const links = item.links || [];
+      const linkPreview = links.length
+        ? links.slice(0, 2).map((link) => `<small><strong>#${escapeShippingHtml(link.order_number)}</strong> ${escapeShippingHtml(link.company_name || "Bez nazwy klienta")}</small>`).join("")
+        : '<small>Przesyłka spoza CTIP</small>';
+      const remaining = Math.max(0, links.length - 2);
+      const eventTime = item.event_time ? shippingDateTimeLabel(item.event_time) : "Brak czasu zdarzenia";
+      return `<button type="button" class="shipping-v2-tracking-row ${item.waybill === shippingState.tracking.selectedWaybill ? "active" : ""}" data-tracking-waybill="${escapeShippingHtml(item.waybill)}">
+        <span><time>${escapeShippingHtml(eventTime)}</time><small>Synchronizacja: ${escapeShippingHtml(shippingDateTimeLabel(item.last_synced_at))}</small></span>
+        <span><strong>${escapeShippingHtml(item.waybill)}</strong><em>${item.linked ? "Powiązana z CTIP" : "Spoza CTIP"}</em>${item.replacement_waybill ? `<small>Nowy list: ${escapeShippingHtml(item.replacement_waybill)}</small>` : ""}</span>
+        <span>${shippingDpdStatusMarkup(item)}<small>${escapeShippingHtml(item.description || "Brak opisu zdarzenia")}</small></span>
+        <span>${linkPreview}${remaining ? `<small>+ ${remaining} kolejnych zleceń</small>` : ""}</span>
+        <span><strong>${escapeShippingHtml(item.depot_name || item.depot || "Brak oddziału")}</strong><small>${item.depot_name && item.depot ? `${escapeShippingHtml(item.depot)} • ` : ""}Kod: ${escapeShippingHtml(item.business_code || "—")} • ${escapeShippingHtml(item.country || "—")}</small></span>
+      </button>`;
+    }).join("")
+    : '<div class="shipping-v2-tracking-empty"><strong>Brak przesyłek</strong><span>Zmień filtry albo uruchom synchronizację InfoServices.</span></div>';
+  document.querySelectorAll("[data-tracking-waybill]").forEach((button) => {
+    button.addEventListener("click", () => openShippingTrackingDetail(button.dataset.trackingWaybill));
+  });
+}
+
+async function loadShippingTracking(resetPage = false) {
+  if (resetPage) shippingState.tracking.page = 1;
+  document.getElementById("shipping-tracking-loading").hidden = false;
+  try {
+    const payload = await shippingJson(`/admin/shipping/tracking?${shippingTrackingQueryParams()}`);
+    shippingState.tracking.items = payload.items || [];
+    shippingState.tracking.total = Number(payload.total || 0);
+    shippingState.tracking.loaded = true;
+    renderShippingTracking(payload);
+  } catch (error) {
+    document.getElementById("shipping-tracking-rows").innerHTML = `<div class="shipping-v2-tracking-empty error"><strong>Nie udało się wczytać statusów</strong><span>${escapeShippingHtml(error.message)}</span></div>`;
+  } finally {
+    document.getElementById("shipping-tracking-loading").hidden = true;
+  }
+}
+
+function renderShippingTrackingDetail(payload) {
+  const parcel = payload.parcel || {};
+  const links = payload.links || [];
+  const events = payload.events || [];
+  document.getElementById("shipping-tracking-detail-title").textContent = `DPD ${parcel.waybill || "—"}`;
+  document.getElementById("shipping-tracking-detail-subtitle").textContent = `${parcel.status_label || "Inny status DPD"} • ${shippingDateTimeLabel(parcel.event_time)}`;
+  const linkRows = links.length
+    ? links.map((link) => `<a href="${escapeShippingHtml(link.target_url)}"><strong>Zlecenie #${escapeShippingHtml(link.order_number)}</strong><small>${escapeShippingHtml(link.company_name || "Bez nazwy klienta")} • ${escapeShippingHtml(link.city || "brak miasta")}</small><small>${link.is_archived ? "Otwórz w Archiwum" : "Otwórz w Realizacji wysyłek"}</small></a>`).join("")
+    : '<span class="shipping-muted">Brak powiązania z przesyłką utworzoną w CTIP.</span>';
+  const replacement = payload.replacement
+    ? `<a href="/shipping?view=tracking&waybill=${encodeURIComponent(payload.replacement.waybill)}"><strong>Kontynuuj śledzenie: ${escapeShippingHtml(payload.replacement.waybill)}</strong><small>${escapeShippingHtml(payload.replacement.status_label)} • ${escapeShippingHtml(payload.replacement.description || "brak opisu")}</small></a>`
+    : parcel.replacement_waybill
+      ? `<span class="shipping-muted">DPD nadało nowy numer ${escapeShippingHtml(parcel.replacement_waybill)}, ale nie pobrano jeszcze jego zdarzeń.</span>`
+      : "";
+  const eventRows = events.length
+    ? events.map((event) => {
+      const extra = (event.event_data || []).filter((value) => value?.value).map((value) => `${value.description || value.code || "Dane"}: ${value.value}`).join(" • ");
+      const cancelled = event.is_cancelled || event.operation_type === "CANCEL";
+      const cancellationLabel = event.operation_type === "CANCEL"
+        ? "DPD przesłało polecenie anulowania wcześniejszego zdarzenia"
+        : event.is_cancelled ? "Zdarzenie anulowane przez DPD" : "";
+      const depot = [event.depot_name, event.depot].filter(Boolean).join(" / ") || "—";
+      return `<li class="${cancelled ? "cancelled" : ""}"><time>${escapeShippingHtml(shippingDateTimeLabel(event.event_time))}</time><span><strong>${escapeShippingHtml(event.description || "Zdarzenie DPD")}</strong><small>Kod ${escapeShippingHtml(event.business_code || "—")} • ${escapeShippingHtml(event.group || "Bez grupy")} • oddział ${escapeShippingHtml(depot)}</small>${extra ? `<small class="shipping-v2-tracking-event-data">${escapeShippingHtml(extra)}</small>` : ""}${cancellationLabel ? `<small>${escapeShippingHtml(cancellationLabel)}</small>` : ""}</span></li>`;
+    }).join("")
+    : '<li><span><strong>Brak zapisanych zdarzeń</strong></span></li>';
+  document.getElementById("shipping-tracking-detail-content").innerHTML = `
+    <section class="shipping-v2-tracking-current"><span><small>STATUS</small><strong>${shippingDpdStatusMarkup(parcel)}</strong></span><span><small>KOD DPD</small><strong>${escapeShippingHtml(parcel.business_code || "—")}</strong></span><span><small>ODDZIAŁ</small><strong>${escapeShippingHtml(parcel.depot_name || parcel.depot || "—")}</strong></span><span><small>OSTATNIE ZDARZENIE</small><strong>${escapeShippingHtml(shippingDateTimeLabel(parcel.event_time))}</strong></span></section>
+    <section class="shipping-v2-tracking-section"><header><small>OPIS DPD</small></header><p>${escapeShippingHtml(parcel.description || "Brak opisu zdarzenia.")}</p></section>
+    <section class="shipping-v2-tracking-section"><header><small>POWIĄZANE ZLECENIA CTIP</small></header><div class="shipping-v2-tracking-links">${linkRows}${replacement}</div></section>
+    <section class="shipping-v2-tracking-section"><header><small>PEŁNA HISTORIA INFOSERVICES</small></header><ol class="shipping-v2-tracking-events">${eventRows}</ol></section>`;
+}
+
+async function openShippingTrackingDetail(waybill) {
+  const normalized = String(waybill || "").trim();
+  if (!normalized) return;
+  shippingState.tracking.selectedWaybill = normalized;
+  const detail = document.getElementById("shipping-tracking-detail");
+  detail.hidden = false;
+  document.getElementById("shipping-tracking-detail-content").innerHTML = '<div class="shipping-v2-tracking-empty">Wczytywanie historii…</div>';
+  try {
+    const payload = await shippingJson(`/admin/shipping/tracking/${encodeURIComponent(normalized)}`);
+    renderShippingTrackingDetail(payload);
+    const params = new URLSearchParams({ view: "tracking", waybill: normalized });
+    window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
+  } catch (error) {
+    document.getElementById("shipping-tracking-detail-content").innerHTML = `<div class="shipping-v2-tracking-empty error">${escapeShippingHtml(error.message)}</div>`;
+  }
+}
+
+async function openShippingTracking(waybill) {
+  switchShippingView("tracking", false);
+  if (!shippingState.tracking.loaded) await loadShippingTracking();
+  await openShippingTrackingDetail(waybill);
+}
+
+function clearShippingTrackingFilters() {
+  [
+    "shipping-tracking-query",
+    "shipping-tracking-category",
+    "shipping-tracking-linked",
+    "shipping-tracking-terminal",
+    "shipping-tracking-date-from",
+    "shipping-tracking-date-to",
+  ].forEach((elementId) => { document.getElementById(elementId).value = ""; });
+  document.getElementById("shipping-tracking-sort").value = "newest";
+  document.getElementById("shipping-tracking-attention-only").checked = false;
+  loadShippingTracking(true);
+}
+
+async function synchronizeShippingTracking() {
+  const button = document.getElementById("shipping-tracking-sync");
+  button.disabled = true;
+  document.getElementById("shipping-tracking-sync-status").textContent = "Synchronizacja w toku…";
+  try {
+    const result = await shippingJson("/admin/shipping/tracking/sync", { method: "POST" });
+    shippingAlert(result.message || "Synchronizacja InfoServices zakończona.");
+    await Promise.all([loadShippingTracking(true), loadShippingQueue(false)]);
+  } catch (error) {
+    shippingAlert(error.message, true);
+    document.getElementById("shipping-tracking-sync-status").textContent = error.message;
+  } finally {
+    button.disabled = !(shippingState.config?.dpd_info?.enabled && shippingState.config?.dpd_info?.api_ready);
+  }
+}
+
+async function applyShippingDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get("view");
+  if (view === "tracking") {
+    switchShippingView("tracking", false);
+    await loadShippingTracking();
+    if (params.get("waybill")) await openShippingTrackingDetail(params.get("waybill"));
+    return;
+  }
+  if (view === "archive") {
+    switchShippingView("archive", false);
+    await loadShippingArchive();
+    if (params.get("order")) await openShippingArchiveDetail(Number(params.get("order")));
+    return;
+  }
+  if (view === "dispatch" && params.get("order")) {
+    switchShippingView("dispatch", false);
+    await loadShippingDetail(Number(params.get("order")));
+  }
+}
+
+function switchShippingView(view, updateUrl = true) {
   document.getElementById("shipping-dispatch-view").hidden = view !== "dispatch";
   document.getElementById("shipping-catalog-view").hidden = view !== "catalog";
+  const trackingView = document.getElementById("shipping-tracking-view");
+  if (trackingView) trackingView.hidden = view !== "tracking";
   const archiveView = document.getElementById("shipping-archive-view");
   if (archiveView) archiveView.hidden = view !== "archive";
   document.querySelectorAll("[data-shipping-view]").forEach((button) => {
@@ -1519,7 +1780,12 @@ function switchShippingView(view) {
     loadCatalogStock();
     loadCatalogMappings();
   }
+  if (view === "tracking") loadShippingTracking();
   if (view === "archive") loadShippingArchive();
+  if (updateUrl) {
+    const params = new URLSearchParams({ view });
+    window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
+  }
 }
 
 function renderCatalogStock() {
@@ -1790,6 +2056,8 @@ async function initializeShipping() {
       production: config.dpd.api_ready ? "Produkcja" : "Produkcja — brak konfiguracji",
     }[config.dpd.mode] || "Brak konfiguracji";
     document.getElementById("shipping-dpd-status").textContent = config.dpd.enabled ? dpdLabel : "Wyłączone";
+    document.getElementById("shipping-tracking-sync").disabled = !(config.dpd_info?.enabled && config.dpd_info?.api_ready);
+    document.getElementById("shipping-tracking-tab-count").textContent = String(config.dpd_info?.counts?.active || 0);
     const dpdDemoButton = document.getElementById("shipping-dpd-demo-test");
     dpdDemoButton.hidden = !(shippingFulfillmentEnabled() && config.dpd.enabled && config.dpd.mode === "demo" && config.dpd.api_ready && config.dpd.sender_ready);
     document.getElementById("shipping-warehouse").textContent = `Magazyn ${config.warehouse_id}`;
@@ -1809,6 +2077,7 @@ async function initializeShipping() {
       shippingAlert("Jest po godzinie granicznej. Upewnij się, że kurier nie zakończył dzisiejszego odbioru.");
     }
     await loadShippingQueue(true);
+    await applyShippingDeepLink();
     startShippingAutoRefresh();
   } catch (error) {
     shippingAlert(error.message, true);
@@ -1821,12 +2090,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const catalogMappingsDebounced = shippingDebounce(() => loadCatalogMappings(true));
   const manualModelsDebounced = shippingDebounce(loadManualModels);
   const archiveSearchDebounced = shippingDebounce(() => loadShippingArchive(true), 300);
+  const trackingSearchDebounced = shippingDebounce(() => loadShippingTracking(true), 300);
   document.querySelectorAll("[data-shipping-view]").forEach((button) => button.addEventListener("click", () => switchShippingView(button.dataset.shippingView)));
   document.getElementById("shipping-refresh").addEventListener("click", () => {
     const archiveActive = document.querySelector('[data-shipping-view="archive"]')?.classList.contains("active");
-    if (archiveActive) loadShippingArchive();
-    else loadShippingQueue(false);
+    const trackingActive = document.querySelector('[data-shipping-view="tracking"]')?.classList.contains("active");
+    if (trackingActive) loadShippingTracking();
+    else if (archiveActive) loadShippingArchive();
+    else refreshShippingQueueManually();
   });
+  document.getElementById("shipping-queue-refresh").addEventListener("click", refreshShippingQueueManually);
   document.getElementById("shipping-days").addEventListener("change", () => loadShippingQueue(true));
   document.getElementById("shipping-sort").addEventListener("change", renderShippingQueue);
   document.getElementById("shipping-search").addEventListener("input", renderShippingQueue);
@@ -1874,6 +2147,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shipping-create").addEventListener("click", () => createShipping(false));
   document.getElementById("shipping-manual").addEventListener("click", () => createShipping(true));
   document.getElementById("shipping-close-order").addEventListener("click", closeShippingOrder);
+  document.getElementById("shipping-tracking-open").addEventListener("click", (event) => {
+    openShippingTracking(event.currentTarget.dataset.waybill);
+  });
   document.getElementById("shipping-day-close").addEventListener("click", closeShippingDay);
   document.getElementById("shipping-catalog-scan").addEventListener("click", scanCatalog);
   document.getElementById("shipping-catalog-web").addEventListener("click", enrichCatalogWithWeb);
@@ -1918,6 +2194,35 @@ document.addEventListener("DOMContentLoaded", () => {
       shippingState.archive.selectedOrderId = null;
       document.getElementById("shipping-archive-detail").hidden = true;
       renderShippingArchive();
+    });
+  }
+  if (document.getElementById("shipping-tracking-view")) {
+    document.getElementById("shipping-tracking-query").addEventListener("input", trackingSearchDebounced);
+    [
+      "shipping-tracking-category",
+      "shipping-tracking-linked",
+      "shipping-tracking-terminal",
+      "shipping-tracking-date-from",
+      "shipping-tracking-date-to",
+      "shipping-tracking-sort",
+      "shipping-tracking-attention-only",
+    ].forEach((elementId) => {
+      document.getElementById(elementId).addEventListener("change", () => loadShippingTracking(true));
+    });
+    document.getElementById("shipping-tracking-clear").addEventListener("click", clearShippingTrackingFilters);
+    document.getElementById("shipping-tracking-sync").addEventListener("click", synchronizeShippingTracking);
+    document.getElementById("shipping-tracking-prev").addEventListener("click", () => {
+      shippingState.tracking.page -= 1;
+      loadShippingTracking();
+    });
+    document.getElementById("shipping-tracking-next").addEventListener("click", () => {
+      shippingState.tracking.page += 1;
+      loadShippingTracking();
+    });
+    document.getElementById("shipping-tracking-detail-close").addEventListener("click", () => {
+      shippingState.tracking.selectedWaybill = null;
+      document.getElementById("shipping-tracking-detail").hidden = true;
+      loadShippingTracking();
     });
   }
   document.getElementById("shipping-logout").addEventListener("click", async () => {

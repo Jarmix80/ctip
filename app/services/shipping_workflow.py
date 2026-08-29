@@ -654,7 +654,17 @@ async def serialize_shipping_case(
 ) -> dict[str, Any] | None:
     """Zwraca serializowany stan sprawy dla API."""
     case = await get_shipping_case(session, order_table_id)
-    return _serialize_case(case) if case else None
+    if case is None:
+        return None
+    payload = _serialize_case(case)
+    if case.shipment and case.shipment.tracking_number:
+        from app.services.shipping_tracking import tracking_for_waybills
+
+        tracking = await tracking_for_waybills(session, {str(case.shipment.tracking_number)})
+        payload["dpd_tracking"] = tracking.get(str(case.shipment.tracking_number))
+    else:
+        payload["dpd_tracking"] = None
+    return payload
 
 
 async def invalidate_shipping_case_for_location_change(

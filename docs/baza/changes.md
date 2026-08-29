@@ -2,6 +2,11 @@
 
 ## 2026-08-28
 
+- Migracja `c3d5e7f9a1b2` dodaje addytywne śledzenie DPD InfoServices bez zmiany danych zleceń, dokumentów MS ani istniejącego Archiwum.
+- Tabela `ctip.shipping_tracking_parcel` przechowuje bieżący, wyliczony stan numeru listu, kategorię prezentacyjną, informację o stanie końcowym i oznaczenie wymagające uwagi operatora.
+- Tabela `ctip.shipping_tracking_event` zapisuje idempotentną historię zdarzeń `INSERT` i `CANCEL`, w tym dane dodatkowe, przekierowania oraz numery listów zastępczych.
+- Tabela `ctip.shipping_tracking_sync_run` rejestruje przebiegi harmonogramu, synchronizacje ręczne i backfill wraz z wynikiem potwierdzenia odebranej partii po stronie DPD.
+- Dodano indeks `idx_shipping_shipment_provider_tracking`, który łączy jeden numer DPD ze wszystkimi zleceniami CTIP należącymi do wspólnej paczki.
 - Migracja `a7c4e2f9b1d3` dodaje trwały, idempotentny rejestr `ctip.contracts_mailbox_message` oparty na unikalnym `Message-ID`.
 - Dodano tabelę `ctip.contracts_mailbox_history_case`, która grupuje korespondencję historyczną po kanonicznym numerze wniosku bez tworzenia sztucznych rekordów `form_request`.
 - Rejestr przechowuje pełną treść tekstową, klasyfikację, stan końcowy, powiązanie z formularzem lub sprawą historyczną oraz manifest załączników. API nie zwraca lokalnych ścieżek plików.

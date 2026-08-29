@@ -14,13 +14,17 @@ from app.services.section_permissions import default_sections_for_role, normaliz
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
-    def test_rejestr_mailboxa_jest_jedynym_headem_alembic(self) -> None:
+    def test_infoservices_jest_jedynym_headem_alembic(self) -> None:
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["a7c4e2f9b1d3"])
-        revision = scripts.get_revision("a7c4e2f9b1d3")
+        self.assertEqual(scripts.get_heads(), ["c3d5e7f9a1b2"])
+        revision = scripts.get_revision("c3d5e7f9a1b2")
         self.assertIsNotNone(revision)
-        self.assertEqual(revision.down_revision, "f9a0b1c2d3e4")
+        self.assertEqual(revision.down_revision, "a7c4e2f9b1d3")
+
+        mailbox_revision = scripts.get_revision("a7c4e2f9b1d3")
+        self.assertIsNotNone(mailbox_revision)
+        self.assertEqual(mailbox_revision.down_revision, "f9a0b1c2d3e4")
 
         shipping_revision = scripts.get_revision("f9a0b1c2d3e4")
         self.assertIsNotNone(shipping_revision)
@@ -130,12 +134,14 @@ class ShippingReleaseTests(unittest.TestCase):
             normalize_sections(["operator", "shipping"], role="operator"),
         )
 
-    def test_kazda_operacja_post_ma_blokade_etapu_wdrozenia(self) -> None:
+    def test_operacje_mutacyjne_maja_blokady_a_synchronizacja_jest_odczytowa(self) -> None:
         routes = Path("app/api/routes/admin_shipping.py").read_text(encoding="utf-8")
 
-        self.assertEqual(routes.count("@router.post"), 13)
+        self.assertEqual(routes.count("@router.post"), 14)
         self.assertEqual(routes.count("_require_catalog_mutations()"), 6)
         self.assertEqual(routes.count("_require_fulfillment()"), 9)
+        self.assertIn('@router.post("/tracking/sync"', routes)
+        self.assertIn("synchronize_dpd_infoservices", routes)
 
 
 if __name__ == "__main__":

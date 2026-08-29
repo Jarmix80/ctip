@@ -6,6 +6,17 @@ Moduł `/shipping` automatyzuje realizację zleceń Menadżera Serwisu typu `TYP
 
 Moduł `/delivery` obsługujący dowozy urządzeń i workflow GRENKE pozostaje odrębnym procesem.
 
+## Statusy DPD InfoServices
+
+1. Zakładka „Status przesyłek” pobiera zdarzenia z produkcyjnego DPD InfoServices SOAP i prezentuje wszystkie znane numery listów, niezależnie od tego, czy zostały już przeniesione do Archiwum. Wyszukiwarka obejmuje numer listu, numer zlecenia, klienta, referencje i opisy zdarzeń; toleruje brak polskich znaków oraz podstawowe odmiany końcówek.
+2. Synchronizacja przyrostowa używa `getEventsForCustomerV4`. Każda partia jest najpierw zapisywana i zatwierdzana w PostgreSQL, a dopiero potem potwierdzana w DPD metodą `markEventsAsProcessedV1`. Awaria potwierdzenia powoduje bezpieczne ponowne pobranie; unikalny klucz zdarzenia blokuje duplikaty.
+3. Harmonogram działa niezależnie od tworzenia etykiet i Firebirda. Domyślnie uruchamia się co 300 sekund, a operator może wykonać dodatkowe odświeżenie przyciskiem „Synchronizuj DPD”. Blokada procesu i blokada doradcza PostgreSQL zapobiegają równoległym przebiegom po uruchomieniu wielu instancji aplikacji.
+4. Historia pojedynczego numeru listu jest uzupełniana metodą `getEventsForWaybillV1`. Zdarzenia `CANCEL` nie są usuwane: anulują odpowiadający wpis i wymuszają ponowne wyliczenie bieżącego stanu.
+5. Kody DPD są mapowane na polskie kategorie według katalogu InfoServices z 27 marca 2026 r. Statusy informacyjne nie zastępują zdarzenia transportowego, natomiast niedoręczenie, zwrot i zdarzenia krytyczne otrzymują oznaczenie wymagające uwagi.
+6. Kod przekierowania, zwrotu albo utworzenia przesyłki zastępczej zachowuje nowy numer listu z danych dodatkowych DPD. Wszystkie zlecenia CTIP współdzielące jeden numer DPD prowadzą do tej samej historii przesyłki.
+7. „Realizacja wysyłek” oraz „Archiwum” pokazują skrót bieżącego statusu i odnośnik do pełnej osi zdarzeń. Snapshot Archiwum pozostaje niezmienny; status jest dołączany dynamicznie.
+8. InfoServices jest warstwą tylko do odczytu. Synchronizacja nie zamyka zleceń, nie tworzy ani nie usuwa RW, WZ lub FV, nie zmienia stanu magazynu i nie wywołuje DispositionServices.
+
 ## Przepływ operacyjny
 
 1. CTIP pobiera z lokalnego lub produkcyjnego Firebirda wyłącznie niezakończone zlecenia `TYP_US=8` w stanie `O` albo `ZR`, dla których `ZLECENIE.TECHNIK` i `ZLECENIE.TECHNIK2` są puste albo zawierają dokładną wartość techniczną `Wysyłka Wysyłka`. Każdy inny technik oznacza, że materiał dostarcza pracownik terenowy, dlatego takie zlecenie nie trafia do kolejki wysyłkowej.
@@ -84,8 +95,11 @@ Moduł `/delivery` obsługujący dowozy urządzeń i workflow GRENKE pozostaje o
 - `shipping_shipment` — identyfikatory DPD, numer listu, etykieta, metadane wspólnej paczki, statusy uzgodnienia oraz identyfikatory i numery wynikowych dokumentów RW, WZ i FV. Pola `closed_by`, `archive_snapshot` i `archive_search_text` przechowują operatora zamknięcia, niezmienny stan końcowy oraz znormalizowaną treść wyszukiwarki. Wspólna paczka ma jeden numer DPD, ale osobny rekord dla każdego zlecenia, aby zachować niezależne dokumenty MS.
 - `shipping_day_close` — idempotentne zamknięcie dnia.
 - `shipping_event` — niemodyfikowalny dziennik etapów i błędów.
+- `shipping_tracking_parcel` — wyliczony bieżący stan numeru listu, kategoria, ostatnie zdarzenie i ewentualny numer zastępczy.
+- `shipping_tracking_event` — pełna, idempotentna historia zdarzeń InfoServices wraz z obsługą operacji `CANCEL`.
+- `shipping_tracking_sync_run` — audyt przebiegów automatycznych, ręcznych i backfillu wraz ze stanem potwierdzenia partii DPD.
 
-Produkcyjna migracja `f9a0b1c2d3e4` tworzy wszystkie finalne tabele, pola, ograniczenia i indeksy Shipping po rewizji `8a4d1f7c2b90`. Migracja nie adoptuje prototypu: przerywa pracę, jeżeli wykryje istniejące tabele Shipping. Produkcja rozpoczyna z pustym katalogiem i pustym Archiwum; lokalne sugestie, mapowania oraz testowe przesyłki nie są kopiowane.
+Produkcyjna migracja `f9a0b1c2d3e4` tworzy podstawowe tabele Shipping, a addytywna migracja `c3d5e7f9a1b2` dodaje trzy tabele InfoServices i indeks łączenia numeru listu. Migracja śledzenia nie modyfikuje istniejących zleceń, przesyłek ani snapshotów Archiwum.
 
 Tabele `shipping_address` i `shipping_case` przechowują `location_source`, `location_text_snapshot` i `location_fingerprint`. `shipping_case.invoice_required` zapisuje decyzję o wariancie RW, WZ albo FV + WZ. `shipping_item.allow_negative_stock`, `catalog_price_net` i `price_source` przechowują jawną zgodę na wyjątek magazynowy oraz pełny snapshot ceny. `shipping_shipment` zawiera identyfikatory dokumentów Firebird, operatora zamknięcia i niezmienny snapshot Archiwum. Nowe snapshoty powstają w tej samej transakcji co finalizacja dokumentów, dlatego odczyt Archiwum nie wymaga połączenia z Firebirdem.
 
@@ -105,6 +119,9 @@ Tabele `shipping_address` i `shipping_case` przechowują `location_source`, `loc
 - `GET /admin/shipping/models` — wyszukiwanie kanonicznych modeli Firebird.
 - `GET /admin/shipping/archive` — stronicowane Archiwum z wyszukiwaniem wielowyrazowym i przybliżonym oraz filtrami daty, operatora, typu dokumentu, źródła, trybu przesyłki i wspólnego pakowania.
 - `GET /admin/shipping/archive/{id}` — pełny, tylko do odczytu snapshot zakończonego zlecenia wraz z operatorami, dokumentami, częściami, cenami, historią zdarzeń i odnośnikiem do etykiety DPD.
+- `GET /admin/shipping/tracking` — stronicowana lista numerów listów ze statusem, filtrami, podsumowaniem i powiązanymi zleceniami CTIP.
+- `GET /admin/shipping/tracking/{waybill}` — pełna oś zdarzeń DPD dla jednego numeru listu wraz z odnośnikami do Realizacji i Archiwum.
+- `POST /admin/shipping/tracking/sync` — ręczne uruchomienie chronionej synchronizacji przyrostowej InfoServices.
 - `GET /admin/shipping/queue` — kolejka zleceń z Firebirda z polskim etapem prezentowanym przez UI, źródłem `mobile|manual`, decyzją FV, podsumowaniem zaległych płatności i informacją o możliwym wspólnym pakowaniu.
 - `GET /admin/shipping/orders/{id}` — pełna treść zlecenia, kontekst lokalizacji, jawni kandydaci adresu, stan, zgodności i lista przeterminowanych nieopłaconych FV klienta.
 - `GET /admin/shipping/orders/{id}/state` — lekki, bieżący stan MS używany przez okresowe odświeżanie i blokady interfejsu.
@@ -129,7 +146,7 @@ Strona prototypów służy wyłącznie do porównywania układów. Jej skrypt ni
 
 ### Funkcjonalny widok V2
 
-Trasa `/shipping` wdraża wybrany wariant 07 jako główny funkcjonalny interfejs. Korzysta z tych samych endpointów, sesji administratora i głównego skryptu `shipping.js` co poprzedni widok, dlatego akceptacja danych, wybór części, etykiety, wydruk zbiorczy, zamknięcie pojedynczego zlecenia, zamknięcie dnia oraz katalog zgodności działają według tej samej logiki. Pod tabelą magazynową znajduje się dynamiczna lista wszystkich części dodanych do paczki z indeksem, nazwą, ilością i jednostką; aktualizuje się przy zaznaczeniu, odznaczeniu oraz zmianie ilości. Funkcjonalna zakładka „Archiwum” pokazuje wszystkie zamknięte sprawy od najnowszych, rejestr dokumentów i części, zestaw filtrów oraz boczną kartę szczegółów. Rekord jest tylko do odczytu; można z niego ponownie otworzyć zapisaną etykietę DPD, ale nie zmienić danych procesu. Osobny skrypt `shipping-v2.js` nie wykonuje żądań sieciowych; wyłącznie synchronizuje boczny postęp, lokalizację, operatora i podsumowanie paczki z elementami działającego formularza.
+Trasa `/shipping` wdraża wybrany wariant 07 jako główny funkcjonalny interfejs. Korzysta z tych samych endpointów, sesji administratora i głównego skryptu `shipping.js` co poprzedni widok, dlatego akceptacja danych, wybór części, etykiety, wydruk zbiorczy, zamknięcie pojedynczego zlecenia, zamknięcie dnia oraz katalog zgodności działają według tej samej logiki. Pod tabelą magazynową znajduje się dynamiczna lista wszystkich części dodanych do paczki z indeksem, nazwą, ilością i jednostką; aktualizuje się przy zaznaczeniu, odznaczeniu oraz zmianie ilości. Funkcjonalna zakładka „Archiwum” pokazuje wszystkie zamknięte sprawy od najnowszych, rejestr dokumentów i części, zestaw filtrów oraz boczną kartę szczegółów. Rekord jest tylko do odczytu; można z niego ponownie otworzyć zapisaną etykietę DPD, ale nie zmienić danych procesu. Zakładka „Status przesyłek” udostępnia liczniki, filtry, ręczną synchronizację oraz szczegółową oś czasu InfoServices; odnośniki w Realizacji i Archiwum otwierają od razu właściwy numer listu. Stały przycisk „Odśwież kolejkę” ponownie pobiera pełny zakres z MS, dodaje nowe zlecenia, usuwa z widoku nieaktualne i czyści osierocone zaznaczenia. Lewa kolejka używa elastycznej wysokości oraz własnego przewijania, dzięki czemu ostatni rekord nie jest obcinany. Osobny skrypt `shipping-v2.js` nie wykonuje żądań sieciowych; wyłącznie synchronizuje boczny postęp, lokalizację, operatora i podsumowanie paczki z elementami działającego formularza.
 
 Motyw V2 stosuje granatowo-grafitową kolorystykę wariantu 03, miętowe akcenty oraz subtelną siatkę techniczną z dwóch gradientów liniowych na tle przestrzeni roboczej. Etykiety systemowe, dane zlecenia, tabela części, Archiwum i panel audytu używają dodatkowo powiększonej typografii dostosowanej do pracy na ekranie stanowiska magazynowego. Skrypt zachowuje klasę `shipping-v2-location-note` podczas każdej aktualizacji lokalizacji, dzięki czemu także komunikat o braku lokalizacji pozostaje na ciemnym tle. Ostrzeżenie po godzinie granicznej ma przygaszone morsko-granatowe tło spójne z V2, natomiast rzeczywiste błędy zachowują czerwone oznaczenie. Poprzedni wygląd pozostaje dostępny pod `/shipping/legacy` jako awaryjny interfejs pomocniczy.
 
@@ -155,6 +172,17 @@ Motyw V2 stosuje granatowo-grafitową kolorystykę wariantu 03, miętowe akcenty
 9. W pełnym teście zlecenia tryb Demo nadal zastępuje odbiorcę po stronie DPD adresem Ksero-Partner. Rzeczywisty adres klienta jest walidowany lokalnie, ale nie trafia do współdzielonego środowiska testowego przewoźnika.
 10. Wydrukuj partie 1, 2, 3, 4 i 5 etykiet, sprawdź rozpoczęcie od pierwszego pola arkusza oraz zeskanuj wszystkie kody. Lista części musi zostać wydrukowana jako osobne zadanie na zwykłym papierze.
 11. Produkcję uruchamiaj etapowo. Faza odczytowa używa `SHIPPING_ENABLED=true`, `SHIPPING_CATALOG_MUTATIONS_ENABLED=true`, `SHIPPING_FULFILLMENT_ENABLED=false` i `DPD_ENABLED=false`. Dopiero po kontroli kolejki oraz katalogu ustaw `SHIPPING_FULFILLMENT_ENABLED=true`, `DPD_MODE=production`, `DPD_ENABLED=true` i pozostaw produkcyjne `FB_ALLOW_WRITES=true`.
+12. InfoServices uruchom niezależnie po migracji: ustaw `DPD_INFO_ENABLED=true`, oficjalny `DPD_INFO_API_URL`, kanał w `DPD_INFO_CHANNEL` oraz dane `DPD_LOGIN` i `DPD_PASSWORD`. Zweryfikuj ręczną synchronizację, a następnie ostatni przebieg i liczniki w zakładce „Status przesyłek”.
+
+Pierwsze uzupełnienie historii wykonuj dwuetapowo. Najpierw pokaż plan bez zapisu:
+
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+python scripts/dpd_infoservices_backfill.py --limit 500
+```
+
+Po sprawdzeniu listy uruchom tę samą operację z `--apply`. Backfill jest idempotentny, pobiera wyłącznie produkcyjne numery DPD zapisane w CTIP i nie ingeruje w Firebirda. Dla pojedynczego listu użyj `--waybill NUMER --apply`. W środowisku lokalnym analogicznie wczytaj `.env.test`; pozostaw `DPD_INFO_ENABLED=false`, jeżeli test nie ma otrzymać rzeczywistych zdarzeń firmy.
 
 Flagi `SHIPPING_CATALOG_MUTATIONS_ENABLED` i `SHIPPING_FULFILLMENT_ENABLED` są sprawdzane po stronie API. Wyłączony etap zwraca kod `423`, więc ręczne wywołanie endpointu nie omija blokady interfejsu. Wyłączenie `SHIPPING_ENABLED` zwraca `503` zarówno dla stron, jak i API modułu.
 

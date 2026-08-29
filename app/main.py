@@ -26,6 +26,10 @@ from app.services.device_sheet_worker import (
     start_device_sheet_outbox_scheduler,
     stop_device_sheet_outbox_scheduler,
 )
+from app.services.dpd_infoservices_sync import (
+    start_dpd_infoservices_scheduler,
+    stop_dpd_infoservices_scheduler,
+)
 from app.services.workflow_sheet_status_cache import (
     ensure_workflow_sheet_status_cache_table,
     start_workflow_sheet_status_cache_scheduler,
@@ -53,6 +57,7 @@ async def _app_lifespan(_: FastAPI):
     contracts_mailbox_scheduler_started = False
     device_sheet_outbox_scheduler_started = False
     device_audit_scheduler_started = False
+    dpd_infoservices_scheduler_started = False
     await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
@@ -71,6 +76,9 @@ async def _app_lifespan(_: FastAPI):
         device_sheet_outbox_scheduler_started = True
     await start_device_audit_scheduler()
     device_audit_scheduler_started = True
+    if settings.shipping_enabled and settings.dpd_info_enabled:
+        await start_dpd_infoservices_scheduler()
+        dpd_infoservices_scheduler_started = True
     try:
         yield
     finally:
@@ -86,6 +94,8 @@ async def _app_lifespan(_: FastAPI):
             await stop_device_sheet_outbox_scheduler()
         if device_audit_scheduler_started:
             await stop_device_audit_scheduler()
+        if dpd_infoservices_scheduler_started:
+            await stop_dpd_infoservices_scheduler()
 
 
 def create_app() -> FastAPI:
