@@ -477,6 +477,8 @@ Trwałe wdrożenie laboratoryjne korzysta z `Dockerfile.bot-identity` i
 `compose.bot-identity.yml`. Obraz zawiera pakiet `app`, działa jako użytkownik
 bez uprawnień administratora i nie montuje źródeł z worktree. Sekrety są
 przekazywane wyłącznie przez ignorowany plik `.env.bot-identity.runtime`.
+Kod obsługuje bieżący schemat `ctip_test`, w którym `crm_case.category` jest
+wymagane, bez uruchamiania migracji podczas startu kontenera.
 Procedurę budowy, testów canary, podmiany oraz rollbacku opisuje
 `docs/instal/bot_identity_docker_test.md`.
 

@@ -348,6 +348,35 @@ class CrmCaseTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(item.device_label, "device-ref-1")
             self.assertEqual(item.device_refs, ["device-ref-1", "device-ref-2"])
+            self.assertEqual(item.category, "service")
+
+    async def test_chat_accounting_case_matches_current_crm_schema(self) -> None:
+        async with self.sessions() as session:
+            payload = ChatCaseCreateRequest(
+                source_channel="chat",
+                source_system="chat_kp",
+                conversation_ref="conversation-accounting",
+                category="accounting",
+                summary="Pytanie o rozliczenie",
+                customer_match_status="not_applicable",
+                customer_name="Klient testowy",
+                customer_confirmed=True,
+                privacy_notice_accepted=True,
+                privacy_notice_version="2026-07",
+                privacy_notice_checksum="e" * 64,
+            )
+
+            item = await create_chat_case(
+                session,
+                payload,
+                idempotency_key="accounting-case",
+                service_channel="chat",
+            )
+            response = serialize_chat_case(item)
+
+            self.assertEqual(item.queue, "other")
+            self.assertEqual(item.category, "accounting")
+            self.assertEqual(response.category, "accounting")
 
     async def test_chat_case_rejects_device_of_another_customer(self) -> None:
         now = datetime.now(UTC)

@@ -53,8 +53,9 @@ usług CTIP.
 3. W PostgreSQL wykonaj wyłącznie zapytania do `information_schema`. Wymagane są
    tabele `bot_identity_*`, kolumny `bot_identity_device.device_ref`,
    `bot_identity_device.image_url`, `bot_identity_device.model`,
-   `bot_identity_device.serial_last4` oraz `crm_case.device_refs`. Brak elementu
-   zatrzymuje wdrożenie; nie wolno wykonywać `alembic upgrade`.
+   `bot_identity_device.serial_last4`, `crm_case.device_refs` oraz wymagana
+   kolumna `crm_case.category`. Brak elementu zatrzymuje wdrożenie; nie wolno
+   wykonywać `alembic upgrade`.
 4. Uruchom canary workera z limitem czasu i potwierdź zakończony wpis
    `bot_identity_sync_run`. Firebird musi być otwierany w transakcji tylko do
    odczytu, a kontener musi raportować `FB_ALLOW_WRITES=false`.

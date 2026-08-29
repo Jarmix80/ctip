@@ -1,13 +1,5 @@
 FROM python@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
 
-ARG VCS_REF=unknown
-ARG SOURCE_REF=e69cc72996f432593e39b3c5752c8d36c43cf59c
-
-LABEL org.opencontainers.image.title="CTIP Bot Identity" \
-      org.opencontainers.image.description="Izolowane API i worker katalogu tożsamości CTIP" \
-      org.opencontainers.image.revision="${VCS_REF}" \
-      pl.ksero-partner.ctip.source-revision="${SOURCE_REF}"
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -20,6 +12,14 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin ctip
 
 COPY --chown=10001:10001 app ./app
+
+ARG VCS_REF=unknown
+ARG SOURCE_REF=e69cc72996f432593e39b3c5752c8d36c43cf59c
+
+LABEL org.opencontainers.image.title="CTIP Bot Identity" \
+      org.opencontainers.image.description="Izolowane API i worker katalogu tożsamości CTIP" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      pl.ksero-partner.ctip.source-revision="${SOURCE_REF}"
 
 USER 10001:10001
 

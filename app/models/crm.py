@@ -68,6 +68,7 @@ class CrmCase(Base):
     source_detail: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str | None] = mapped_column(Text)
     queue: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False, default="other")
     status: Mapped[str] = mapped_column(Text, nullable=False, default="new")
     priority: Mapped[str] = mapped_column(Text, nullable=False, default="normal")
     subject: Mapped[str] = mapped_column(Text, nullable=False)

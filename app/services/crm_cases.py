@@ -52,7 +52,7 @@ CHAT_CATEGORY_BY_QUEUE = {
 CRM_QUEUE_BY_CHAT_CATEGORY = {
     "sales": "sales",
     "service": "service_it",
-    "accounting": "accounting",
+    "accounting": "other",
     "contracts_settlements": "contracts",
     "other": "other",
 }
@@ -164,11 +164,20 @@ def serialize_case(item: CrmCase) -> CrmCaseResponse:
 
 def serialize_chat_case(item: CrmCase) -> ChatCaseResponse:
     """Mapuje wewnętrzną sprawę Centrum Obsługi na kontrakt CHAT_KP."""
+    category = item.category.strip().lower()
+    if category not in {
+        "sales",
+        "service",
+        "accounting",
+        "other",
+        "contracts_settlements",
+    }:
+        category = CHAT_CATEGORY_BY_QUEUE.get(item.queue, "other")
     return ChatCaseResponse(
         case_id=item.ref,
         external_reference=item.external_ref,
         status=CHAT_STATUS_BY_CRM_STATUS.get(item.status, "failed"),  # type: ignore[arg-type]
-        category=CHAT_CATEGORY_BY_QUEUE.get(item.queue, "other"),  # type: ignore[arg-type]
+        category=category,  # type: ignore[arg-type]
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -321,6 +330,7 @@ async def create_case(
     message = payload.message or payload.content or payload.summary or ""
     is_lab = bool(force_lab or payload.is_lab)
     now = _utc_now()
+    queue = _queue(payload)
     item = CrmCase(
         ref=_case_ref(is_lab=is_lab),
         external_ref=external_ref,
@@ -328,7 +338,8 @@ async def create_case(
         source_channel=payload.channel,
         source_detail=payload.source_detail,
         source_url=payload.source_url,
-        queue=_queue(payload),
+        queue=queue,
+        category=(payload.category or queue).strip().lower(),
         status="new",
         priority=payload.priority,
         subject=payload.subject.strip(),
