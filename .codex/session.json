@@ -1,35 +1,37 @@
 {
-  "timestamp": "2026-05-05T12:15:00+02:00",
+  "timestamp": "2026-08-29T05:24:25+02:00",
   "summary": [
-    "Naprawiono produkcyjny blad publicznych formularzy: https://form.ksero-partner.com.pl/formularz/abc zwraca teraz 404 ze strona 'Link nieaktywny', a nie 500.",
-    "Potwierdzono, ze /health dzialal poprawnie, a blad 500 powstawal dopiero przy get_form_by_token() i pierwszym polaczeniu PostgreSQL.",
-    "Restart uslug nie wystarczyl: CTIP-FormsPublic nadal zwracal 500, dopoki AppEnvironmentExtra nie zawieral pelnego zestawu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE.",
-    "Na serwerze Windows ustawiono dla CTIP-FormsPublic komplet PG* z D:\\CTIP\\.env z wymuszonym PGHOST=127.0.0.1; po restarcie lokalny i publiczny fałszywy token zwracaja 404.",
-    "Zdiagnozowano, ze asyncpg na Windows Server konczyl handshake bledem ConnectionDoesNotExistError, mimo ze psql i psycopg dzialaly poprawnie.",
-    "W repo utrwalono przejscie SQLAlchemy na postgresql+psycopg, zgodna polityke asyncio dla Windows w app/__init__.py, absolutne sciezki .env/.env.test oraz absolutna sciezke szablonow formularza.",
-    "Rozszerzono scripts/windows/fix_forms_public_500.ps1: tryb -Apply ustawia AppEnvironmentExtra PG*, koryguje AppDirectory, restartuje CTIP-FormsPublic i testuje /health oraz /formularz/*.",
-    "Zaktualizowano README.md i docs/instal/public_forms_production.md o produkcyjna pulapke 500 oraz sposob naprawy."
+    "Na produkcji 192.168.0.8 ustawiono DPD_INFO_ENABLED=true po potwierdzeniu kompletnego DPD_INFO_CHANNEL; SHIPPING_COMPATIBILITY_WEB_ENABLED pozostawiono false zgodnie z decyzją użytkownika.",
+    "Pierwsza ręczna synchronizacja kanału DPD InfoServices zakończyła się statusem success: pobrano 87 zdarzeń, zapisano 86 nowych, potwierdzono odbiór partii.",
+    "Wykonano kontrolowany backfill dwóch produkcyjnych listów: pobrano i zapisano po 2 zdarzenia; ponowienie po wdrożeniu poprawki pobrało 2 zdarzenia i zapisało 0, potwierdzając idempotencję.",
+    "Rejestr Status przesyłek zawiera 18 przesyłek, w tym 9 aktywnych i 0 wymagających uwagi; szczegóły przykładowej przesyłki zwracają pełną oś czterech zdarzeń.",
+    "Harmonogram InfoServices działa co 300 sekund, a konfiguracja API raportuje enabled=true, api_ready=true i channel_configured=true.",
+    "Naprawiono uruchamianie scripts/dpd_infoservices_backfill.py na Windows przez ustawienie zgodnej polityki pętli asyncio przed asyncio.run; dodano test i dokumentację.",
+    "Poprawkę wdrożono z commitu c5861b72baed66e3bf556d1ec594e1b0818b8977 bez restartu usług; backup plików zapisano w D:\\CTIP\\backups\\patch_20260829_052149."
   ],
   "follow_up": [
-    "Po wdrozeniu zmian z repo uruchomic na Windows: scripts/windows/fix_forms_public_500.ps1 -Apply albo standardowy update z restartem CTIP-FormsPublic.",
-    "Przy kolejnym wdrozeniu sprawdzic: http://127.0.0.1:8100/health, http://127.0.0.1:8100/formularz/abc oraz https://form.ksero-partner.com.pl/formularz/abc.",
-    "Nie usuwac AppEnvironmentExtra PG* z CTIP-FormsPublic, dopoki na serwerze istnieja zmienne procesu/systemu nadpisujace .env."
+    "Monitorować zakładkę Status przesyłek podczas pierwszych rzeczywistych doręczeń i zwrotów DPD.",
+    "Nie włączać SHIPPING_COMPATIBILITY_WEB_ENABLED bez osobnej decyzji i kontroli limitów."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "codex/fix-public-form-checkbox-422",
+    "branch_local": "feature/shipping-full-rollout-2026-08-28",
     "venv": ".venv",
-    "focus": "production-public-forms-500-fixed",
+    "focus": "shipping-dpd-infoservices-production-enabled",
     "verification": [
       "pre-commit run --all-files: passed",
-      "pytest -q: 371 passed, 1 xfailed, 26 warnings",
-      "pytest -q tests/test_settings.py tests/test_form_ui.py tests/test_public_forms_app.py: 14 passed, 1 warning",
-      "public GET https://form.ksero-partner.com.pl/formularz/abc: 404"
+      "pytest -q tests/test_dpd_infoservices_backfill.py tests/test_dpd_infoservices.py: 8 passed",
+      "authenticated /admin/shipping/config: HTTP 200, InfoServices ready",
+      "authenticated /admin/shipping/tracking: HTTP 200, total 18",
+      "native Windows backfill after fix: success, inserted 0 on repeated run",
+      "production /health, /shipping and FormsPublic /health: HTTP 200",
+      "latest web log tail: 0 Traceback/CRITICAL/ModuleNotFoundError"
     ],
     "services": [
-      "CTIP-FormsPublic",
-      "IIS reverse proxy",
-      "PostgreSQL 127.0.0.1:5433 on Windows Server 192.168.0.8"
+      "CollectorService: Running",
+      "CTIP-Web: Running",
+      "CTIP-SMS: Running",
+      "CTIP-FormsPublic: Running"
     ]
   }
 }
