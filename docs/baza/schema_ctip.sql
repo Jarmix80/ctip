@@ -1220,6 +1220,7 @@ CREATE TABLE ctip.shipping_case (
     location_text_snapshot text,
     location_fingerprint text,
     weight_kg numeric(8,3) NOT NULL,
+    label_text text,
     reviewed_by integer REFERENCES ctip.admin_user(id) ON DELETE SET NULL,
     reviewed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,

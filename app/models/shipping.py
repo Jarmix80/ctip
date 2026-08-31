@@ -152,6 +152,7 @@ class ShippingCase(Base):
     location_text_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     location_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
     weight_kg: Mapped[Decimal] = mapped_column(Numeric(8, 3), nullable=False)
+    label_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[int | None] = mapped_column(
         ForeignKey("ctip.admin_user.id", ondelete="SET NULL"), nullable=True
     )

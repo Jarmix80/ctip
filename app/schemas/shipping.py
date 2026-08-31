@@ -65,8 +65,20 @@ class ShippingReviewRequest(StrictShippingRequest):
     location_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     weight_kg: Decimal = Field(gt=0, le=31.5, decimal_places=3)
     items: list[ShippingReviewItemRequest] = Field(min_length=1, max_length=20)
+    label_text: str | None = Field(default=None, min_length=1, max_length=81)
     save_address: bool = True
     invoice_required: bool = False
+
+    @field_validator("label_text", mode="before")
+    @classmethod
+    def normalize_label_text(cls, value: str | None) -> str | None:
+        """Scala białe znaki i odrzuca pustą treść etykiety podaną przez operatora."""
+        if value is None:
+            return None
+        normalized = " ".join(str(value).split())
+        if not normalized:
+            raise ValueError("Treść etykiety DPD nie może być pusta.")
+        return normalized
 
 
 class ShippingCreateRequest(StrictShippingRequest):
@@ -109,6 +121,7 @@ class ShippingConsolidatedCreateRequest(StrictShippingRequest):
 
     order_table_ids: list[int] = Field(min_length=2, max_length=20)
     idempotency_key: UUID
+    label_text: str | None = Field(default=None, min_length=1, max_length=81)
 
     @field_validator("order_table_ids")
     @classmethod
@@ -119,6 +132,35 @@ class ShippingConsolidatedCreateRequest(StrictShippingRequest):
             raise ValueError("Wspólna paczka wymaga co najmniej dwóch różnych zleceń.")
         if any(order_id <= 0 for order_id in normalized):
             raise ValueError("Identyfikator zlecenia musi być większy od zera.")
+        return normalized
+
+    @field_validator("label_text", mode="before")
+    @classmethod
+    def normalize_label_text(cls, value: str | None) -> str | None:
+        """Normalizuje finalną treść wspólnej etykiety przekazaną z modalu."""
+        if value is None:
+            return None
+        normalized = " ".join(str(value).split())
+        if not normalized:
+            raise ValueError("Treść wspólnej etykiety DPD nie może być pusta.")
+        return normalized
+
+
+class ShippingAttachExistingRequest(StrictShippingRequest):
+    """Dołączenie gotowych zleceń do istniejącej fizycznej paczki."""
+
+    primary_order_table_id: int = Field(gt=0)
+    additional_order_table_ids: list[int] = Field(min_length=1, max_length=19)
+    idempotency_key: UUID
+    confirm_weight_within_existing_label: bool
+
+    @field_validator("additional_order_table_ids")
+    @classmethod
+    def normalize_additional_order_ids(cls, value: list[int]) -> list[int]:
+        """Usuwa powtórzenia i odrzuca niepoprawne identyfikatory zleceń."""
+        normalized = list(dict.fromkeys(value))
+        if not normalized or any(order_id <= 0 for order_id in normalized):
+            raise ValueError("Wybierz co najmniej jedno poprawne zlecenie do dołączenia.")
         return normalized
 
 
@@ -188,6 +230,7 @@ class ShippingCompatibilityWebRequest(StrictShippingRequest):
 
 
 __all__ = [
+    "ShippingAttachExistingRequest",
     "ShippingCompatibilityManualBatchRequest",
     "ShippingCompatibilityManualRequest",
     "ShippingCompatibilityReviewRequest",

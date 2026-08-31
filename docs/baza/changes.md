@@ -96,3 +96,7 @@
 
 ## 2026-07-31
 - Ograniczono unikalność znormalizowanego serialu i numeru KP w `ctip.device_inventory_unit` do wpisów o statusie `active`. Wycofana historia PZ nie blokuje dzięki temu ponownego przyjęcia tego samego fizycznego urządzenia, a równoległe aktywne duplikaty nadal są blokowane.
+
+## 2026-08-31
+- Rozszerzono `ctip.shipping_case` o opcjonalną kolumnę `label_text`, która przechowuje zatwierdzoną przez operatora treść drukowanych pól `ref1` i `content` etykiety DPD.
+- Istniejące sprawy pozostają zgodne z migracją dzięki wartości `NULL`; treść jest dla nich wyliczana z numeru zlecenia oraz zapisanych części przy kolejnym użyciu modułu Shipping.

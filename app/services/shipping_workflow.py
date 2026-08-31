@@ -7,7 +7,7 @@ import hashlib
 import re
 import unicodedata
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Any
@@ -28,7 +28,12 @@ from app.models import (
     ShippingShipment,
 )
 from app.schemas.shipping import ShippingReviewRequest
-from app.services.dpd_shipping import DpdShippingClient, DpdTransportError
+from app.services.dpd_shipping import (
+    DPD_LABEL_TEXT_LIMIT,
+    DpdShippingClient,
+    DpdTransportError,
+    normalize_dpd_label_text,
+)
 from app.services.email_client import send_smtp_message
 from app.services.firebird_runtime import firebird_writes_enabled
 from app.services.shipping_archive import archive_shipping_shipment
@@ -62,6 +67,60 @@ def _now() -> datetime:
 def _text(value: Any) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
+
+
+def build_shipping_label_text(
+    *,
+    order_numbers: list[str],
+    items: list[dict[str, Any]],
+) -> str:
+    """Buduje widoczną treść etykiety z numerów zleceń, ilości i nazw części."""
+    segments = list(dict.fromkeys(value for value in order_numbers if _text(value)))
+    for item in items:
+        try:
+            quantity = f"{float(item.get('quantity') or 0):g}"
+        except (TypeError, ValueError):
+            quantity = _text(item.get("quantity")) or "1"
+        item_name = _text(item.get("item_name")) or "część"
+        segments.append(f"{quantity}x {item_name}")
+    generated = "; ".join(segments) or "Materiały serwisowe"
+    if len(generated) <= DPD_LABEL_TEXT_LIMIT:
+        return generated
+    return generated[: DPD_LABEL_TEXT_LIMIT - 1].rstrip() + "…"
+
+
+def _shipping_case_label_text(case: ShippingCase) -> str:
+    """Zwraca zapisany tekst albo zgodny z interfejsem tekst wygenerowany ze sprawy."""
+    if _text(case.label_text):
+        return normalize_dpd_label_text(case.label_text)
+    return build_shipping_label_text(
+        order_numbers=[f"{case.firebird_order_id}/{case.firebird_order_year}"],
+        items=[{"quantity": item.quantity, "item_name": item.item_name} for item in case.items],
+    )
+
+
+def _shipment_label_text(shipment: ShippingShipment | None) -> str | None:
+    """Odczytuje dokładną treść nowej etykiety albo rekonstruuje starsze żądanie DPD."""
+    if shipment is None or not isinstance(shipment.provider_request, dict):
+        return None
+    request = shipment.provider_request
+    metadata = request.get("_ctip") if isinstance(request.get("_ctip"), dict) else {}
+    stored = _text(metadata.get("label_text"))
+    if stored:
+        return normalize_dpd_label_text(stored)
+    try:
+        package = (request.get("packages") or [])[0]
+        parcel = (package.get("parcels") or [])[0]
+    except (IndexError, TypeError):
+        return None
+    reconstructed = " ".join(
+        value for value in (_text(package.get("ref1")), _text(parcel.get("content"))) if value
+    )
+    if not reconstructed:
+        return None
+    if len(reconstructed) > DPD_LABEL_TEXT_LIMIT:
+        reconstructed = reconstructed[: DPD_LABEL_TEXT_LIMIT - 1].rstrip() + "…"
+    return reconstructed
 
 
 def _shipping_item_price(
@@ -203,6 +262,102 @@ def build_shipping_consolidation_groups(
             ),
         }
         for case in ordered:
+            result[case.firebird_order_table_id] = details
+    return result
+
+
+def _shipping_declared_weight(shipment: ShippingShipment) -> Decimal | None:
+    """Odczytuje wagę zapisaną przy istniejącym liście przewozowym."""
+    request = shipment.provider_request if isinstance(shipment.provider_request, dict) else {}
+    try:
+        package = (request.get("packages") or [])[0]
+        parcel = (package.get("parcels") or [])[0]
+        weight = Decimal(str(parcel.get("weight")))
+    except (IndexError, InvalidOperation, TypeError, AttributeError):
+        return None
+    return weight if weight > 0 else None
+
+
+def build_shipping_existing_label_attachment_groups(
+    cases: list[ShippingCase],
+) -> dict[int, dict[str, Any]]:
+    """Wykrywa gotowe zlecenia możliwe do dołączenia do jednej istniejącej etykiety."""
+    grouped: dict[tuple[str, str, str, str], list[ShippingCase]] = {}
+    for case in cases:
+        signature = _shipping_consolidation_signature(case.address_snapshot or {})
+        if all(signature):
+            grouped.setdefault(signature, []).append(case)
+
+    result: dict[int, dict[str, Any]] = {}
+    for signature, matches in grouped.items():
+        ready = [case for case in matches if case.status == "ready" and case.shipment is None]
+        label_groups: dict[str, list[ShippingCase]] = {}
+        for case in matches:
+            shipment = case.shipment
+            if (
+                case.status != "shipment_created"
+                or shipment is None
+                or shipment.status != "label_ready"
+                or shipment.handed_over_at is not None
+                or not shipment.tracking_number
+                or not shipment.label_content
+            ):
+                continue
+            label_groups.setdefault(str(shipment.tracking_number), []).append(case)
+        if not ready or len(label_groups) != 1:
+            continue
+        tracking_number, existing = next(iter(label_groups.items()))
+        available_slots = 20 - len(existing)
+        if available_slots <= 0:
+            continue
+        existing_ids = {case.firebird_order_table_id for case in existing}
+        primary = existing[0]
+        saved_consolidation = shipping_shipment_consolidation(primary.shipment)
+        saved_primary_id = int((saved_consolidation or {}).get("primary_order_table_id") or 0)
+        if saved_primary_id in existing_ids:
+            primary = next(
+                case for case in existing if case.firebird_order_table_id == saved_primary_id
+            )
+        ordered_ready = sorted(
+            ready, key=lambda case: (case.firebird_order_year, case.firebird_order_id)
+        )[:available_slots]
+        selection_ids = [
+            primary.firebird_order_table_id,
+            *(case.firebird_order_table_id for case in ordered_ready),
+        ]
+        group_key = hashlib.sha256(
+            "|".join((*signature, tracking_number)).encode("utf-8")
+        ).hexdigest()[:16]
+        declared_weight = _shipping_declared_weight(primary.shipment)
+        details = {
+            "group_key": group_key,
+            "primary_order_table_id": primary.firebird_order_table_id,
+            "primary_order_number": f"{primary.firebird_order_id}/{primary.firebird_order_year}",
+            "ready_order_table_ids": [case.firebird_order_table_id for case in ordered_ready],
+            "ready_order_numbers": [
+                f"{case.firebird_order_id}/{case.firebird_order_year}" for case in ordered_ready
+            ],
+            "selection_order_table_ids": selection_ids,
+            "tracking_number": tracking_number,
+            "declared_weight_kg": float(declared_weight) if declared_weight else None,
+            "company_name": primary.address_snapshot.get("company_name"),
+            "address": ", ".join(
+                value
+                for value in (
+                    primary.address_snapshot.get("street"),
+                    " ".join(
+                        value
+                        for value in (
+                            primary.address_snapshot.get("postal_code"),
+                            primary.address_snapshot.get("city"),
+                        )
+                        if value
+                    ),
+                )
+                if value
+            ),
+        }
+        for case in [*existing, *ordered_ready]:
             result[case.firebird_order_table_id] = details
     return result
 
@@ -607,6 +762,7 @@ def _serialize_case(case: ShippingCase) -> dict[str, Any]:
         "order_kind": case.order_kind,
         "invoice_required": case.invoice_required,
         "weight_kg": float(case.weight_kg),
+        "label_text": _shipping_case_label_text(case),
         "address": case.address_snapshot,
         "location_source": case.location_source,
         "location_text_snapshot": case.location_text_snapshot,
@@ -929,6 +1085,7 @@ async def review_shipping_order(
     case.location_text_snapshot = location_context["current_text"]
     case.location_fingerprint = location_context["fingerprint"]
     case.weight_kg = payload.weight_kg
+    case.label_text = payload.label_text
     case.reviewed_by = user_id
     case.reviewed_at = now
     case.updated_at = now
@@ -1025,6 +1182,8 @@ async def review_shipping_order(
                 mapping.reviewed_at = now
                 mapping.confirmed_by = user_id
                 mapping.updated_at = now
+    if case.label_text is None:
+        case.label_text = _shipping_case_label_text(case)
     session.add(
         ShippingEvent(
             shipping_case_id=case.id,
@@ -1033,6 +1192,7 @@ async def review_shipping_order(
                 "item_count": len(selected),
                 "address_source": address_data["source"],
                 "invoice_required": invoice_required,
+                "label_text": case.label_text,
                 "negative_stock_item_ids": [
                     int(warehouse["warehouse_item_id"])
                     for (
@@ -1129,6 +1289,7 @@ async def create_shipping_shipment(
         )
     if case.status != "ready":
         raise ShippingConflictError("Zlecenie wymaga wcześniejszej akceptacji danych wysyłki.")
+    case.label_text = _shipping_case_label_text(case)
     order_state = shipping_order_state_payload(order)
     if not order_state["can_prepare_shipment"]:
         raise ShippingConflictError(
@@ -1192,6 +1353,7 @@ async def create_shipping_shipment(
                 weight_kg=float(case.weight_kg),
                 items=_shipping_case_label_items(case),
                 business_references=[f"{case.firebird_order_id}/{case.firebird_order_year}"],
+                label_text=case.label_text,
             )
             if test_firebird_writes:
                 request_payload["ctip_test_firebird_writes"] = True
@@ -1330,6 +1492,7 @@ async def create_consolidated_shipping_shipment(
     order_table_ids: list[int],
     idempotency_key: str,
     user_id: int,
+    label_text: str | None = None,
 ) -> dict[str, Any]:
     """Tworzy jedną paczkę DPD i przypisuje ją do kilku zgodnych zleceń."""
     existing = (
@@ -1445,6 +1608,13 @@ async def create_consolidated_shipping_shipment(
         for case in cases
         for item in _shipping_case_label_items(case, include_order_number=True)
     ]
+    effective_label_text = (
+        normalize_dpd_label_text(label_text)
+        if label_text
+        else build_shipping_label_text(order_numbers=order_numbers, items=label_items)
+    )
+    for case in cases:
+        case.label_text = effective_label_text
     try:
         request_payload, result = await asyncio.to_thread(
             dpd.create_shipment,
@@ -1454,6 +1624,7 @@ async def create_consolidated_shipping_shipment(
             weight_kg=float(total_weight),
             items=label_items,
             business_references=order_numbers,
+            label_text=effective_label_text,
         )
         request_payload["ctip_consolidation"] = consolidation
         if test_firebird_writes:
@@ -1545,6 +1716,269 @@ async def create_consolidated_shipping_shipment(
         )
     await session.commit()
     refreshed = await _shipping_cases_for_order_ids(session, order_table_ids)
+    return _serialize_consolidated_shipment(refreshed)
+
+
+async def attach_shipping_cases_to_existing_label(
+    session: AsyncSession,
+    *,
+    orders: list[dict[str, Any]],
+    primary_order_table_id: int,
+    additional_order_table_ids: list[int],
+    idempotency_key: str,
+    confirm_weight_within_existing_label: bool,
+    user_id: int,
+) -> dict[str, Any]:
+    """Dołącza gotowe zlecenia do istniejącego listu bez tworzenia nowej etykiety DPD."""
+    if not confirm_weight_within_existing_label:
+        raise ShippingConflictError(
+            "Dołączenie wymaga potwierdzenia, że rzeczywista waga całej paczki "
+            "nie przekracza wagi zapisanej na istniejącej etykiecie."
+        )
+    additional_ids = list(dict.fromkeys(int(value) for value in additional_order_table_ids))
+    if primary_order_table_id in additional_ids:
+        raise ShippingConflictError(
+            "Zlecenie z istniejącą etykietą nie może być dołączane samo do siebie."
+        )
+
+    existing_request = (
+        await session.execute(
+            select(ShippingShipment).where(ShippingShipment.idempotency_key == idempotency_key)
+        )
+    ).scalar_one_or_none()
+    if existing_request is not None:
+        consolidation = shipping_shipment_consolidation(existing_request)
+        if consolidation is None:
+            raise ShippingConflictError(
+                "Poprzednia próba dołączenia wymaga uzgodnienia przed ponowieniem operacji."
+            )
+        existing_cases = await _shipping_cases_for_order_ids(
+            session, consolidation["order_table_ids"]
+        )
+        return _serialize_consolidated_shipment(existing_cases)
+
+    primary = await get_shipping_case(session, primary_order_table_id)
+    if primary is None or primary.shipment is None:
+        raise ShippingConflictError("Wybrane zlecenie nie ma istniejącej etykiety.")
+    primary_shipment = primary.shipment
+    if (
+        primary.status != "shipment_created"
+        or primary_shipment.status != "label_ready"
+        or primary_shipment.handed_over_at is not None
+        or not primary_shipment.tracking_number
+        or not primary_shipment.label_content
+    ):
+        raise ShippingConflictError(
+            "Dołączenie jest możliwe wyłącznie do gotowej etykiety przed przekazaniem kurierowi."
+        )
+    existing_label_text = _shipment_label_text(primary_shipment) or _shipping_case_label_text(
+        primary
+    )
+    declared_weight = _shipping_declared_weight(primary_shipment)
+    if declared_weight is None:
+        raise ShippingConflictError(
+            "Istniejąca etykieta nie zawiera odczytywalnej wagi paczki. "
+            "Dołączenie zostało zablokowane."
+        )
+
+    saved_consolidation = shipping_shipment_consolidation(primary_shipment)
+    existing_ids = list((saved_consolidation or {}).get("order_table_ids") or [])
+    if not existing_ids:
+        existing_ids = [primary_order_table_id]
+    if len(set([*existing_ids, *additional_ids])) > 20:
+        raise ShippingConflictError("Jedna wspólna paczka może obejmować maksymalnie 20 zleceń.")
+    if primary_order_table_id not in existing_ids:
+        raise ShippingConflictError(
+            "Wybrane zlecenie nie jest głównym zleceniem istniejącej paczki."
+        )
+    existing_cases = await _shipping_cases_for_order_ids(session, existing_ids)
+    if len(existing_cases) != len(existing_ids):
+        raise ShippingConflictError("Nie udało się odczytać wszystkich zleceń istniejącej paczki.")
+    tracking_number = str(primary_shipment.tracking_number)
+    if any(
+        case.shipment is None
+        or case.shipment.status != "label_ready"
+        or case.shipment.handed_over_at is not None
+        or str(case.shipment.tracking_number or "") != tracking_number
+        for case in existing_cases
+    ):
+        raise ShippingConflictError("Istniejąca wspólna paczka ma niespójny stan etykiet.")
+
+    additional_cases = await _shipping_cases_for_order_ids(session, additional_ids)
+    if len(additional_cases) != len(additional_ids):
+        raise ShippingConflictError("Nie wszystkie zlecenia do dołączenia zostały zatwierdzone.")
+    orders_by_id = {int(order["order_table_id"]): order for order in orders}
+    requested_ids = {primary_order_table_id, *additional_ids}
+    if set(orders_by_id) != requested_ids:
+        raise ShippingConflictError("Nie udało się odczytać wybranych zleceń z MS.")
+
+    signatures = {
+        _shipping_consolidation_signature(case.address_snapshot or {})
+        for case in [*existing_cases, *additional_cases]
+    }
+    if len(signatures) != 1 or not all(next(iter(signatures))):
+        raise ShippingConflictError(
+            "Dołączenie do etykiety wymaga identycznej firmy, ulicy, kodu i miejscowości."
+        )
+    primary_state = shipping_order_state_payload(orders_by_id[primary_order_table_id])
+    if not primary_state["can_finalize"] or primary_state["tracking_number"] != tracking_number:
+        raise ShippingConflictError(
+            "Stan lub numer przesyłki głównego zlecenia różni się od istniejącej etykiety."
+        )
+    for case in additional_cases:
+        if case.status != "ready" or case.shipment is not None:
+            raise ShippingConflictError(
+                f"Zlecenie {case.firebird_order_id}/{case.firebird_order_year} "
+                "nie jest gotowe do dołączenia."
+            )
+        order = orders_by_id[case.firebird_order_table_id]
+        order_state = shipping_order_state_payload(order)
+        if not order_state["can_prepare_shipment"]:
+            raise ShippingConflictError(
+                shipping_order_state_conflict_message(
+                    order_state, operation="dołączenie do istniejącej etykiety"
+                )
+            )
+        if await invalidate_shipping_case_for_location_change(
+            session, case=case, order=order, user_id=user_id
+        ):
+            raise ShippingLocationChangedError(
+                "Lokalizacja jednego ze zleceń zmieniła się w MS. "
+                "Odśwież dane i ponownie zatwierdź adres."
+            )
+
+    mock_firebird_writes = bool(
+        primary_shipment.provider_mode == "mock"
+        and primary_shipment.provider_request.get("ctip_test_firebird_writes") is True
+    )
+    if primary_shipment.provider_mode != "mock" or mock_firebird_writes:
+        enabled, reason = firebird_writes_enabled()
+        if not enabled:
+            raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
+
+    now = _now()
+    new_shipments: list[ShippingShipment] = []
+    for index, case in enumerate(additional_cases):
+        request = dict(primary_shipment.provider_request or {})
+        request.pop("ctip_consolidation", None)
+        request["ctip_attachment_pending"] = {
+            "primary_order_table_id": primary_order_table_id,
+            "tracking_number": tracking_number,
+        }
+        shipment = ShippingShipment(
+            shipping_case=case,
+            idempotency_key=(idempotency_key if index == 0 else f"{idempotency_key}:{case.id}"),
+            provider=primary_shipment.provider,
+            provider_mode=primary_shipment.provider_mode,
+            provider_shipment_id=primary_shipment.provider_shipment_id,
+            tracking_number=tracking_number,
+            status="label_ready",
+            label_content=primary_shipment.label_content,
+            label_content_type=primary_shipment.label_content_type,
+            label_format=primary_shipment.label_format,
+            provider_request=request,
+            provider_response=primary_shipment.provider_response,
+            firebird_status="pending",
+            created_by=user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        new_shipments.append(shipment)
+        session.add(shipment)
+        await session.flush()
+    await session.commit()
+
+    write_errors: list[str] = []
+    for case, shipment in zip(additional_cases, new_shipments, strict=True):
+        if primary_shipment.provider_mode == "mock" and not mock_firebird_writes:
+            shipment.firebird_status = "simulated"
+            continue
+        try:
+            write_result = await asyncio.to_thread(
+                write_shipment_to_order,
+                order_table_id=case.firebird_order_table_id,
+                tracking_number=tracking_number,
+                items=_shipping_case_firebird_items(case),
+            )
+            shipment.firebird_status = write_result["status"]
+            positions = write_result.get("created_position_ids", [])
+            for item, position_id in zip(case.items, positions, strict=False):
+                item.firebird_position_id = position_id
+        except Exception as exc:
+            write_errors.append(f"{case.firebird_order_id}/{case.firebird_order_year}: {exc}")
+
+    if write_errors:
+        error_text = (
+            "Nie udało się bezpiecznie dołączyć wszystkich zleceń do istniejącej etykiety: "
+            + "; ".join(write_errors)
+        )
+        for case, shipment in zip(additional_cases, new_shipments, strict=True):
+            case.status = "reconcile_required"
+            shipment.status = "reconcile_required"
+            shipment.firebird_status = "reconcile_required"
+            shipment.firebird_error = error_text
+            shipment.updated_at = _now()
+            session.add(
+                ShippingEvent(
+                    shipping_case_id=case.id,
+                    shipment_id=shipment.id,
+                    event_type="existing_label_attachment_reconcile_required",
+                    payload={"tracking_number": tracking_number, "errors": write_errors},
+                    created_by=user_id,
+                    created_at=_now(),
+                )
+            )
+        await session.commit()
+        raise ShippingConflictError(error_text)
+
+    all_cases = [*existing_cases, *additional_cases]
+    all_order_ids = [case.firebird_order_table_id for case in all_cases]
+    order_numbers = [f"{case.firebird_order_id}/{case.firebird_order_year}" for case in all_cases]
+    signature = next(iter(signatures))
+    group_id = (
+        _text((saved_consolidation or {}).get("group_id"))
+        or hashlib.sha256(
+            "|".join(
+                (*signature, tracking_number, *(str(value) for value in all_order_ids))
+            ).encode("utf-8")
+        ).hexdigest()[:20]
+    )
+    consolidation = {
+        "group_id": group_id,
+        "order_table_ids": all_order_ids,
+        "order_numbers": order_numbers,
+        "primary_order_table_id": int(
+            (saved_consolidation or {}).get("primary_order_table_id") or primary_order_table_id
+        ),
+    }
+    for case in all_cases:
+        shipment = case.shipment
+        assert shipment is not None
+        request = dict(shipment.provider_request or {})
+        request.pop("ctip_attachment_pending", None)
+        request["ctip_consolidation"] = consolidation
+        shipment.provider_request = request
+        shipment.updated_at = _now()
+        case.label_text = existing_label_text
+        case.status = "shipment_created"
+        case.updated_at = _now()
+        session.add(
+            ShippingEvent(
+                shipping_case_id=case.id,
+                shipment_id=shipment.id,
+                event_type="consolidated_shipment_attached_existing_label",
+                payload={
+                    "group_id": group_id,
+                    "tracking_number": tracking_number,
+                    "order_table_ids": all_order_ids,
+                    "primary_order_table_id": consolidation["primary_order_table_id"],
+                },
+                created_by=user_id,
+                created_at=_now(),
+            )
+        )
+    await session.commit()
+    refreshed = await _shipping_cases_for_order_ids(session, all_order_ids)
     return _serialize_consolidated_shipment(refreshed)
 
 
@@ -2069,7 +2503,10 @@ async def close_shipping_day(
 
 __all__ = [
     "ShippingConflictError",
+    "attach_shipping_cases_to_existing_label",
     "build_shipping_consolidation_groups",
+    "build_shipping_existing_label_attachment_groups",
+    "build_shipping_label_text",
     "build_stock_payload",
     "close_shipping_day",
     "close_shipping_order",

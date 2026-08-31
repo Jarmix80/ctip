@@ -27,7 +27,8 @@
 
 .shipping-v2-body button,
 .shipping-v2-body input,
-.shipping-v2-body select { color-scheme: dark; }
+.shipping-v2-body select,
+.shipping-v2-body textarea { color-scheme: dark; }
 
 .shipping-v2-shell { min-height: 100vh; }
 
@@ -237,6 +238,16 @@
 .shipping-v2-selected-parts li small { color: #b7c5d4; font-size: 12px; line-height: 1.35; }
 .shipping-v2-selected-parts li b { flex: 0 0 auto; color: #fff; font-size: 13px; }
 .shipping-v2-selected-parts li.empty { color: #8292a7; border-style: dashed; background: transparent; }
+.shipping-v2-body .shipping-label-editor { margin: 12px 0 0; border-color: #334960; background: #0d1726; }
+.shipping-v2-body .shipping-label-editor textarea,
+.shipping-v2-body .shipping-label-dialog textarea { border-color: #3b516c; color: #f2f7fc; background: #111e30; }
+.shipping-v2-body .shipping-label-editor-head strong { color: #59d9a6; }
+.shipping-v2-body .shipping-label-preview span { color: #8292a7; background: #111e30; }
+.shipping-v2-body .shipping-label-preview b,
+.shipping-v2-body .shipping-label-dialog-meta b { color: #dce6f2; }
+.shipping-v2-body .shipping-label-editor-actions small,
+.shipping-v2-body .shipping-label-dialog-meta { color: #8292a7; }
+.shipping-v2-body .shipping-label-dialog-card { border-color: #334960; background: #142236; }
 
 .shipping-v2-document-actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 13px 24px; border-top: 1px solid #334960; background: rgba(17, 30, 48, .97); box-shadow: 0 -8px 22px rgba(0, 0, 0, .2); }
 .shipping-v2-package-summary { display: grid; gap: 3px; margin-right: auto; }

@@ -15,6 +15,8 @@ const shippingState = {
   runtimeRefreshBusy: false,
   autoRefreshStarted: false,
   selectedItems: new Map(),
+  labelTextDirty: false,
+  generatedLabelText: "",
   stockScope: "model",
   allowNegativeStock: false,
   priceMode: null,
@@ -90,6 +92,171 @@ function escapeShippingHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+const SHIPPING_LABEL_TEXT_LIMIT = 81;
+const SHIPPING_LABEL_REFERENCE_LIMIT = 27;
+const SHIPPING_LABEL_CONTENT_LIMIT = 54;
+
+function normalizeShippingLabelText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function fitShippingLabelText(value) {
+  const normalized = normalizeShippingLabelText(value);
+  if (normalized.length <= SHIPPING_LABEL_TEXT_LIMIT) return normalized;
+  return `${normalized.slice(0, SHIPPING_LABEL_TEXT_LIMIT - 1).trimEnd()}…`;
+}
+
+function splitShippingLabelText(value) {
+  const normalized = normalizeShippingLabelText(value);
+  if (normalized.length <= SHIPPING_LABEL_REFERENCE_LIMIT) {
+    return { reference: normalized, content: "" };
+  }
+  const minimumSplit = Math.max(1, normalized.length - SHIPPING_LABEL_CONTENT_LIMIT);
+  let splitAt = SHIPPING_LABEL_REFERENCE_LIMIT;
+  for (let index = SHIPPING_LABEL_REFERENCE_LIMIT; index >= minimumSplit; index -= 1) {
+    if (/\s/.test(normalized[index - 1])) {
+      splitAt = index - 1;
+      break;
+    }
+  }
+  let reference = normalized.slice(0, splitAt).trimEnd();
+  let content = normalized.slice(splitAt).trimStart();
+  if (!reference || content.length > SHIPPING_LABEL_CONTENT_LIMIT) {
+    reference = normalized.slice(0, SHIPPING_LABEL_REFERENCE_LIMIT);
+    content = normalized.slice(SHIPPING_LABEL_REFERENCE_LIMIT);
+  }
+  return { reference, content };
+}
+
+function automaticShippingLabelText(order, selectedItems) {
+  const orderNumber = order?.order_id && order?.order_year
+    ? `${order.order_id}/${order.order_year}`
+    : "";
+  const segments = orderNumber ? [orderNumber] : [];
+  selectedItems.forEach((item) => {
+    const quantity = Number(item.quantity || 0).toLocaleString("pl-PL", { maximumFractionDigits: 3 });
+    const itemName = item.stockItem?.item_name || item.item_name || "część";
+    segments.push(`${quantity}x ${itemName}`);
+  });
+  return fitShippingLabelText(segments.join("; ") || "Materiały serwisowe");
+}
+
+function renderShippingLabelTextMeta() {
+  const input = document.getElementById("shipping-label-text");
+  if (!input) return;
+  const normalized = normalizeShippingLabelText(input.value);
+  const split = splitShippingLabelText(normalized);
+  document.getElementById("shipping-label-text-count").textContent = `${normalized.length}/${SHIPPING_LABEL_TEXT_LIMIT}`;
+  document.getElementById("shipping-label-reference-preview").textContent = split.reference || "—";
+  document.getElementById("shipping-label-content-preview").textContent = split.content || "—";
+  const reset = document.getElementById("shipping-label-text-reset");
+  if (reset) reset.disabled = input.readOnly || !shippingState.labelTextDirty;
+  const note = document.getElementById("shipping-label-text-note");
+  if (note) {
+    note.textContent = input.readOnly
+      ? "Treść została zapisana na wygenerowanej etykiecie i nie podlega dalszej edycji."
+      : shippingState.labelTextDirty
+        ? "Treść zmieniona ręcznie — zmiany listy części nie nadpiszą pola."
+        : "Treść aktualizuje się automatycznie do pierwszej ręcznej zmiany.";
+  }
+}
+
+function updateAutomaticShippingLabelText(force = false) {
+  const input = document.getElementById("shipping-label-text");
+  if (!input) return;
+  shippingState.generatedLabelText = automaticShippingLabelText(
+    shippingState.detail?.order,
+    Array.from(shippingState.selectedItems.values()),
+  );
+  if (force || !shippingState.labelTextDirty) {
+    input.value = shippingState.generatedLabelText;
+    shippingState.labelTextDirty = false;
+  }
+  renderShippingLabelTextMeta();
+}
+
+function initializeShippingLabelText(caseData) {
+  const input = document.getElementById("shipping-label-text");
+  if (!input) return;
+  shippingState.generatedLabelText = automaticShippingLabelText(
+    shippingState.detail?.order,
+    Array.from(shippingState.selectedItems.values()),
+  );
+  const saved = normalizeShippingLabelText(caseData?.label_text);
+  input.value = saved || shippingState.generatedLabelText;
+  shippingState.labelTextDirty = Boolean(saved && saved !== shippingState.generatedLabelText);
+  input.readOnly = Boolean(caseData?.shipment);
+  renderShippingLabelTextMeta();
+}
+
+function validatedShippingLabelText(input) {
+  const normalized = normalizeShippingLabelText(input?.value);
+  if (!normalized) throw new Error("Treść etykiety DPD nie może być pusta.");
+  if (normalized.length > SHIPPING_LABEL_TEXT_LIMIT) {
+    throw new Error(`Treść etykiety DPD może mieć maksymalnie ${SHIPPING_LABEL_TEXT_LIMIT} znaków.`);
+  }
+  return normalized;
+}
+
+function updateConsolidatedLabelPreview() {
+  const input = document.getElementById("shipping-consolidated-label-text");
+  if (!input) return;
+  const normalized = normalizeShippingLabelText(input.value);
+  const split = splitShippingLabelText(normalized);
+  document.getElementById("shipping-consolidated-label-count").textContent = `${normalized.length}/${SHIPPING_LABEL_TEXT_LIMIT}`;
+  document.getElementById("shipping-consolidated-reference-preview").textContent = split.reference || "—";
+  document.getElementById("shipping-consolidated-content-preview").textContent = split.content || "—";
+}
+
+function openConsolidatedLabelEditor(initialValue) {
+  const dialog = document.getElementById("shipping-consolidated-label-dialog");
+  const input = document.getElementById("shipping-consolidated-label-text");
+  if (!dialog || !input || typeof dialog.showModal !== "function") {
+    const value = window.prompt("Treść wspólnej etykiety DPD (maks. 81 znaków):", initialValue);
+    if (value === null) return Promise.resolve(null);
+    try {
+      return Promise.resolve(validatedShippingLabelText({ value }));
+    } catch (error) {
+      shippingFeedback(error.message, true);
+      return Promise.resolve(null);
+    }
+  }
+  input.value = fitShippingLabelText(initialValue);
+  updateConsolidatedLabelPreview();
+  return new Promise((resolve) => {
+    let settled = false;
+    const confirm = document.getElementById("shipping-consolidated-label-confirm");
+    const cancel = document.getElementById("shipping-consolidated-label-cancel");
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      input.removeEventListener("input", updateConsolidatedLabelPreview);
+      confirm.removeEventListener("click", confirmValue);
+      cancel.removeEventListener("click", cancelValue);
+      dialog.removeEventListener("close", closeDialog);
+      if (dialog.open) dialog.close();
+      resolve(value);
+    };
+    const confirmValue = () => {
+      try {
+        finish(validatedShippingLabelText(input));
+      } catch (error) {
+        shippingFeedback(error.message, true);
+        input.focus();
+      }
+    };
+    const cancelValue = () => finish(null);
+    const closeDialog = () => finish(null);
+    input.addEventListener("input", updateConsolidatedLabelPreview);
+    confirm.addEventListener("click", confirmValue);
+    cancel.addEventListener("click", cancelValue);
+    dialog.addEventListener("close", closeDialog);
+    dialog.showModal();
+    input.focus();
+    input.select();
+  });
 }
 
 function safeShippingUrl(value) {
@@ -333,7 +500,7 @@ function renderShippingQueue() {
       const sourceClass = item.order_source === "mobile" ? "source-mobile" : "source-manual";
       const overduePayment = item.overdue_payment;
       const hasOverduePayment = Boolean(overduePayment?.has_overdue_invoices);
-      return `<div class="shipping-queue-entry ${statusClass} ${item.consolidation || item.consolidated_shipment ? "has-consolidation" : ""} ${hasOverduePayment ? "has-overdue-payment" : ""}">
+      return `<div class="shipping-queue-entry ${statusClass} ${item.consolidation || item.existing_label_attachment || item.consolidated_shipment ? "has-consolidation" : ""} ${hasOverduePayment ? "has-overdue-payment" : ""}">
         <label class="shipping-queue-select" title="${escapeShippingHtml(selectionLabel)}">
           <input type="checkbox" data-order-select="${orderTableId}"
             ${shippingState.selectedOrderIds.has(orderTableId) ? "checked" : ""}
@@ -348,6 +515,7 @@ function renderShippingQueue() {
             <span class="shipping-source-badge ${sourceClass}">${escapeShippingHtml(shippingOrderSourceLabel(item.order_source))}</span>
             ${item.invoice_required ? '<span class="shipping-invoice-badge">Wystaw FV</span>' : ""}
             ${item.consolidation ? `<span class="shipping-consolidation-badge">Wspólny adres: ${escapeShippingHtml(shippingOrdersCountLabel(item.consolidation.count))}</span>` : ""}
+            ${item.existing_label_attachment ? `<span class="shipping-consolidation-badge">Można dołączyć do ${escapeShippingHtml(item.existing_label_attachment.tracking_number)}</span>` : ""}
             ${item.consolidated_shipment ? `<span class="shipping-consolidation-badge">Wspólna paczka: ${escapeShippingHtml(shippingOrdersCountLabel(item.consolidated_shipment.count))}</span>` : ""}
             ${shippingDpdStatusMarkup(item.dpd_tracking, true)}
           </span>
@@ -378,20 +546,31 @@ function renderShippingConsolidationWarning() {
   if (!node) return;
   const queueItem = shippingState.queue.find((item) => Number(item.order_table_id) === shippingState.selectedOrderId);
   const consolidation = queueItem?.consolidation;
-  node.hidden = !consolidation;
-  if (!consolidation) return;
-  document.getElementById("shipping-consolidation-message").textContent = `Wykryto ${shippingOrdersCountLabel(consolidation.count)} tej samej firmy na identyczny adres: ${consolidation.order_numbers.join(", ")}. Można spakować je w jedną paczkę i wygenerować jeden numer przesyłki.`;
-  document.getElementById("shipping-consolidation-address").textContent = `${consolidation.company_name || "Klient"} • ${consolidation.address || "brak adresu"}. Zaznacz grupę, a następnie użyj „Jedna paczka / jedna etykieta”.`;
+  const attachment = queueItem?.existing_label_attachment;
+  node.hidden = !consolidation && !attachment;
+  if (consolidation) {
+    document.getElementById("shipping-consolidation-message").textContent = `Wykryto ${shippingOrdersCountLabel(consolidation.count)} tej samej firmy na identyczny adres: ${consolidation.order_numbers.join(", ")}. Można spakować je w jedną paczkę i wygenerować jeden numer przesyłki.`;
+    document.getElementById("shipping-consolidation-address").textContent = `${consolidation.company_name || "Klient"} • ${consolidation.address || "brak adresu"}. Zaznacz grupę, a następnie użyj „Jedna paczka / jedna etykieta”.`;
+    return;
+  }
+  if (!attachment) return;
+  const weight = attachment.declared_weight_kg ? ` Etykieta ma wagę ${Number(attachment.declared_weight_kg).toLocaleString("pl-PL")} kg.` : "";
+  document.getElementById("shipping-consolidation-message").textContent = `Istnieje już etykieta ${attachment.tracking_number} dla zlecenia ${attachment.primary_order_number}. Można dołączyć: ${attachment.ready_order_numbers.join(", ")}.`;
+  document.getElementById("shipping-consolidation-address").textContent = `${attachment.company_name || "Klient"} • ${attachment.address || "brak adresu"}.${weight} Przed dołączeniem potwierdź rzeczywistą wagę całej paczki.`;
 }
 
 function selectShippingConsolidationGroup() {
   const queueItem = shippingState.queue.find((item) => Number(item.order_table_id) === shippingState.selectedOrderId);
   const consolidation = queueItem?.consolidation;
-  if (!consolidation) return;
+  const attachment = queueItem?.existing_label_attachment;
+  if (!consolidation && !attachment) return;
   shippingState.selectedOrderIds.clear();
-  (consolidation.order_table_ids || []).forEach((orderId) => shippingState.selectedOrderIds.add(Number(orderId)));
+  const orderIds = consolidation?.order_table_ids || attachment?.selection_order_table_ids || [];
+  orderIds.forEach((orderId) => shippingState.selectedOrderIds.add(Number(orderId)));
   renderShippingQueue();
-  shippingFeedback(`Zaznaczono ${shippingOrdersCountLabel(consolidation.count)} do jednej wspólnej paczki.`);
+  shippingFeedback(consolidation
+    ? `Zaznaczono ${shippingOrdersCountLabel(consolidation.count)} do jednej wspólnej paczki.`
+    : `Zaznaczono istniejącą etykietę i ${shippingOrdersCountLabel(attachment.ready_order_table_ids.length)} do dołączenia.`);
 }
 
 function renderShippingOverduePayment(payment) {
@@ -428,15 +607,65 @@ function renderShippingBulkActions() {
     && readyItems.length === selectedItems.length
     && readyItems.every((item) => item.consolidation?.group_key)
     && consolidationKeys.size === 1;
+  const selectedLabelItems = selectedItems.filter((item) => item.label_available && !item.can_generate_label);
+  const attachmentKeys = new Set(selectedItems.map((item) => item.existing_label_attachment?.group_key).filter(Boolean));
+  const canAttachExisting = selectedItems.length >= 2
+    && selectedLabelItems.length === 1
+    && readyItems.length === selectedItems.length - 1
+    && selectedItems.every((item) => item.existing_label_attachment?.group_key)
+    && attachmentKeys.size === 1;
   const fulfillmentLocked = !shippingFulfillmentEnabled();
   const consolidationText = canConsolidate ? " • możliwa 1 wspólna paczka" : "";
-  document.getElementById("shipping-selected-count").textContent = `${selectedIds.length} wybranych • ${readyCount} do wygenerowania • ${printableCount} do druku${consolidationText}`;
+  const attachmentText = canAttachExisting ? " • możliwe dołączenie do istniejącej etykiety" : "";
+  document.getElementById("shipping-selected-count").textContent = `${selectedIds.length} wybranych • ${readyCount} do wygenerowania • ${printableCount} do druku${consolidationText}${attachmentText}`;
   document.getElementById("shipping-generate-selected").disabled = fulfillmentLocked || shippingState.bulkBusy || readyCount === 0;
   document.getElementById("shipping-generate-consolidated").disabled = fulfillmentLocked || shippingState.bulkBusy || !canConsolidate;
+  document.getElementById("shipping-attach-existing").disabled = fulfillmentLocked || shippingState.bulkBusy || !canAttachExisting;
   document.getElementById("shipping-generate-ready").disabled = fulfillmentLocked || shippingState.bulkBusy;
   document.getElementById("shipping-print-selected").disabled = shippingState.bulkBusy || printableCount === 0;
   document.getElementById("shipping-print-packing").disabled = shippingState.bulkBusy || printableCount === 0;
   document.getElementById("shipping-clear-selection").disabled = shippingState.bulkBusy || selectedIds.length === 0;
+}
+
+async function attachShippingToExistingLabel() {
+  const selectedItems = shippingState.queue.filter((item) => shippingState.selectedOrderIds.has(Number(item.order_table_id)));
+  const attachment = selectedItems.find((item) => item.existing_label_attachment)?.existing_label_attachment;
+  const additionalOrderIds = selectedItems.filter((item) => item.can_generate_label).map((item) => Number(item.order_table_id));
+  if (!attachment || !additionalOrderIds.length) {
+    shippingFeedback("Zaznacz jedną istniejącą etykietę i co najmniej jedno zgodne zlecenie gotowe do wysyłki.", true);
+    return;
+  }
+  const weight = attachment.declared_weight_kg ? `${Number(attachment.declared_weight_kg).toLocaleString("pl-PL")} kg` : "wagę zapisaną na etykiecie";
+  const orderNumbers = selectedItems.filter((item) => item.can_generate_label).map((item) => `${item.order_id}/${item.order_year}`);
+  if (!window.confirm(`Dołączyć zlecenia ${orderNumbers.join(", ")} do etykiety ${attachment.tracking_number}? Potwierdzasz, że rzeczywista waga całej fizycznej paczki nie przekracza ${weight}.`)) return;
+  shippingState.bulkBusy = true;
+  renderShippingBulkActions();
+  shippingFeedback(`Dołączanie zleceń do etykiety ${attachment.tracking_number}…`);
+  try {
+    const result = await shippingJson("/admin/shipping/shipments/attach-existing", {
+      method: "POST",
+      body: JSON.stringify({
+        primary_order_table_id: Number(attachment.primary_order_table_id),
+        additional_order_table_ids: additionalOrderIds,
+        idempotency_key: shippingRequestUuid(),
+        confirm_weight_within_existing_label: true,
+      }),
+    });
+    (result.printable_order_ids || []).forEach((orderId) => {
+      shippingState.selectedOrderIds.add(Number(orderId));
+      shippingState.printableOrderIds.add(Number(orderId));
+    });
+    await loadShippingQueue(false);
+    if (shippingState.selectedOrderId && additionalOrderIds.includes(shippingState.selectedOrderId)) {
+      await loadShippingDetail(shippingState.selectedOrderId);
+    }
+    shippingFeedback(`Dołączono ${shippingOrdersCountLabel(additionalOrderIds.length)} do etykiety ${result.tracking_number}.`);
+  } catch (error) {
+    shippingFeedback(error.message, true);
+  } finally {
+    shippingState.bulkBusy = false;
+    renderShippingBulkActions();
+  }
 }
 
 async function generateConsolidatedShipping() {
@@ -448,14 +677,22 @@ async function generateConsolidatedShipping() {
     return;
   }
   const orderNumbers = selectedItems.map((item) => `${item.order_id}/${item.order_year}`);
-  if (!window.confirm(`Wygenerować jedną paczkę i jedną etykietę dla zleceń: ${orderNumbers.join(", ")}?`)) return;
+  const automaticText = fitShippingLabelText(
+    selectedItems.map((item) => item.label_text || `${item.order_id}/${item.order_year}`).join("; "),
+  );
+  const labelText = await openConsolidatedLabelEditor(automaticText);
+  if (!labelText) return;
   shippingState.bulkBusy = true;
   renderShippingBulkActions();
   shippingFeedback(`Generowanie jednej etykiety dla ${shippingOrdersCountLabel(orderTableIds.length)}…`);
   try {
     const result = await shippingJson("/admin/shipping/shipments/consolidated", {
       method: "POST",
-      body: JSON.stringify({ order_table_ids: orderTableIds, idempotency_key: shippingRequestUuid() }),
+      body: JSON.stringify({
+        order_table_ids: orderTableIds,
+        idempotency_key: shippingRequestUuid(),
+        label_text: labelText,
+      }),
     });
     (result.printable_order_ids || []).forEach((orderId) => {
       shippingState.selectedOrderIds.add(Number(orderId));
@@ -477,13 +714,16 @@ async function generateConsolidatedShipping() {
 }
 
 async function generateShippingBulk(allReady = false) {
-  const orderTableIds = shippingState.queue
-    .filter((item) => shippingState.selectedOrderIds.has(Number(item.order_table_id)) && item.can_generate_label)
+  const targetItems = shippingState.queue
+    .filter((item) => (allReady || shippingState.selectedOrderIds.has(Number(item.order_table_id))) && item.can_generate_label);
+  const orderTableIds = targetItems
     .map((item) => Number(item.order_table_id));
   if (!allReady && !orderTableIds.length) {
     shippingFeedback("Zaznacz co najmniej jedno zatwierdzone zlecenie bez etykiety.", true);
     return;
   }
+  const sharedGroups = new Set(targetItems.map((item) => item.consolidation?.group_key).filter(Boolean));
+  if (sharedGroups.size && !window.confirm("Wśród wybranych zleceń są pozycje możliwe do wysłania wspólną paczką. Czy mimo to wygenerować dla nich osobne etykiety?")) return;
   shippingState.bulkBusy = true;
   renderShippingBulkActions();
   shippingFeedback(allReady ? "Generowanie etykiet dla wszystkich gotowych zleceń…" : `Generowanie ${orderTableIds.length} etykiet…`);
@@ -823,6 +1063,7 @@ function bindShippingStockRows() {
       const itemId = Number(checkbox.dataset.stockSelect);
       if (!checkbox.checked) {
         shippingState.selectedItems.delete(itemId);
+        updateAutomaticShippingLabelText();
         return;
       }
       const stockItem = (shippingState.detail?.stock || []).find((item) => Number(item.warehouse_item_id) === itemId);
@@ -843,6 +1084,7 @@ function bindShippingStockRows() {
         allow_negative_stock: zeroStock && shippingState.allowNegativeStock,
         stockItem,
       });
+      updateAutomaticShippingLabelText();
     });
   });
   document.querySelectorAll("[data-stock-quantity], [data-stock-price], [data-stock-remember]").forEach((input) => {
@@ -856,6 +1098,7 @@ function bindShippingStockRows() {
       if (input.dataset.stockPrice) selected.price_source = "manual";
       selected.remember_for_model = Boolean(document.querySelector(`[data-stock-remember="${itemId}"]`).checked);
       if (input.dataset.stockPrice) renderShippingStock();
+      if (input.dataset.stockQuantity) updateAutomaticShippingLabelText();
     });
   });
 }
@@ -886,7 +1129,7 @@ function renderShippingStock() {
         <td><input type="checkbox" data-stock-select="${itemId}" ${chosen ? "checked" : ""} ${available <= 0 && !chosen && !zeroAllowed ? "disabled" : ""}></td>
         <td><strong>${escapeShippingHtml(item.item_index || "—")}</strong><br>${escapeShippingHtml(item.item_name)}${item.compatible ? '<br><span class="shipping-compatible">POTWIERDZONY DLA MODELU</span>' : ""}${negativeStockBadge}</td>
         <td>${available.toLocaleString("pl-PL", { maximumFractionDigits: 3 })} ${escapeShippingHtml(item.unit || "szt.")}</td>
-        <td><input type="number" min="0.001" max="${quantityMaximum}" step="1" value="${chosen?.quantity || 1}" data-stock-quantity="${itemId}"></td>
+        <td><input type="number" min="1" max="${quantityMaximum}" step="1" value="${chosen?.quantity || 1}" data-stock-quantity="${itemId}"></td>
         <td class="shipping-price-cell"><input type="number" min="0.01" max="1000000" step="0.01" value="${Number(pricing.value || 0).toFixed(2)}" data-stock-price="${itemId}" ${editablePrice ? "" : "readonly"}><small>netto / ${escapeShippingHtml(item.unit || "szt.")}</small><span class="shipping-price-source ${priceWarning ? "warning" : ""}">${escapeShippingHtml(shippingPriceSourceLabel(pricing.source))}</span></td>
         <td><input type="checkbox" data-stock-remember="${itemId}" ${chosen?.remember_for_model || item.compatible ? "checked" : ""}></td>
       </tr>`;
@@ -951,6 +1194,11 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
   const fulfillmentLocked = !shippingFulfillmentEnabled();
   document.getElementById("shipping-review").disabled = fulfillmentLocked || Boolean(shipment)
     || Boolean(orderState && !orderState.can_review);
+  const labelTextInput = document.getElementById("shipping-label-text");
+  if (labelTextInput) {
+    labelTextInput.readOnly = Boolean(shipment);
+    renderShippingLabelTextMeta();
+  }
   document.getElementById("shipping-create").disabled = fulfillmentLocked || !ready || locationBlocked
     || Boolean(orderState && !orderState.can_prepare_shipment);
   document.getElementById("shipping-manual").disabled = fulfillmentLocked || !ready || locationBlocked
@@ -1098,6 +1346,7 @@ async function loadShippingDetail(orderId) {
     applyShippingBilling(order, detail.case);
     if (detail.case?.weight_kg) document.getElementById("shipping-weight").value = String(detail.case.weight_kg);
     renderShippingStock();
+    initializeShippingLabelText(detail.case);
     applyShippingCase(detail.case);
     renderShippingOrderState(detail.order_state);
   } catch (error) {
@@ -1174,11 +1423,20 @@ async function reviewShipping() {
     document.getElementById("shipping-stock-search").scrollIntoView({ behavior: "smooth", block: "center" });
     return;
   }
+  let labelText;
+  try {
+    labelText = validatedShippingLabelText(document.getElementById("shipping-label-text"));
+  } catch (error) {
+    shippingFeedback(error.message, true);
+    document.getElementById("shipping-label-text").focus();
+    return;
+  }
   const payload = {
     address,
     location_fingerprint: shippingState.detail.location_context.fingerprint,
     weight_kg: Number(document.getElementById("shipping-weight").value),
     items,
+    label_text: labelText,
     save_address: document.getElementById("shipping-save-address").checked,
     invoice_required: document.getElementById("shipping-invoice-required").checked,
   };
@@ -2106,6 +2364,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shipping-stock-search").addEventListener("input", searchStockDebounced);
   document.getElementById("shipping-generate-selected").addEventListener("click", () => generateShippingBulk(false));
   document.getElementById("shipping-generate-consolidated").addEventListener("click", generateConsolidatedShipping);
+  document.getElementById("shipping-attach-existing").addEventListener("click", attachShippingToExistingLabel);
   document.getElementById("shipping-generate-ready").addEventListener("click", () => generateShippingBulk(true));
   document.getElementById("shipping-print-packing").addEventListener("click", printSelectedShippingPackingList);
   document.getElementById("shipping-print-selected").addEventListener("click", printSelectedShippingLabels);
@@ -2124,9 +2383,17 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     renderShippingStock();
+    updateAutomaticShippingLabelText();
     shippingFeedback(shippingState.allowNegativeStock
       ? "Dozwolono wybór pozycji ze stanem zerowym. Decyzja zostanie zapisana przy wybranej części."
       : "Wyłączono zgodę na ujemny stan i usunięto takie pozycje z paczki.");
+  });
+  document.getElementById("shipping-label-text").addEventListener("input", () => {
+    shippingState.labelTextDirty = true;
+    renderShippingLabelTextMeta();
+  });
+  document.getElementById("shipping-label-text-reset").addEventListener("click", () => {
+    updateAutomaticShippingLabelText(true);
   });
   document.getElementById("shipping-invoice-required").addEventListener("change", () => {
     const nextMode = shippingPriceMode();

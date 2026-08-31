@@ -22,6 +22,7 @@ from app.models import (
     ShippingShipment,
 )
 from app.schemas.shipping import (
+    ShippingAttachExistingRequest,
     ShippingBulkCreateRequest,
     ShippingCompatibilityManualBatchRequest,
     ShippingCompatibilityManualRequest,
@@ -95,8 +96,11 @@ from app.services.shipping_tracking import (
 )
 from app.services.shipping_workflow import (
     ShippingConflictError,
+    attach_shipping_cases_to_existing_label,
     build_shipping_address_candidates,
     build_shipping_consolidation_groups,
+    build_shipping_existing_label_attachment_groups,
+    build_shipping_label_text,
     build_stock_payload,
     close_shipping_day,
     close_shipping_order,
@@ -973,12 +977,16 @@ async def shipping_queue(
     order_ids = [int(item["order_table_id"]) for item in items]
     cases: dict[int, ShippingCase] = {}
     consolidation_groups: dict[int, dict[str, Any]] = {}
+    existing_label_attachment_groups: dict[int, dict[str, Any]] = {}
     if order_ids:
         rows = list(
             (
                 await session.execute(
                     select(ShippingCase)
-                    .options(selectinload(ShippingCase.shipment))
+                    .options(
+                        selectinload(ShippingCase.items),
+                        selectinload(ShippingCase.shipment),
+                    )
                     .where(ShippingCase.firebird_order_table_id.in_(order_ids))
                 )
             )
@@ -987,6 +995,7 @@ async def shipping_queue(
         )
         cases = {row.firebird_order_table_id: row for row in rows}
         consolidation_groups = build_shipping_consolidation_groups(rows)
+        existing_label_attachment_groups = build_shipping_existing_label_attachment_groups(rows)
     tracking = await tracking_for_waybills(
         session,
         {
@@ -1002,7 +1011,22 @@ async def shipping_queue(
         item["can_generate_label"] = bool(case and case.status == "ready" and case.shipment is None)
         item["label_available"] = bool(case and case.shipment and case.shipment.label_content)
         item["invoice_required"] = bool(case and case.invoice_required)
+        item["label_text"] = (
+            case.label_text
+            or build_shipping_label_text(
+                order_numbers=[f"{case.firebird_order_id}/{case.firebird_order_year}"],
+                items=[
+                    {"quantity": selected.quantity, "item_name": selected.item_name}
+                    for selected in case.items
+                ],
+            )
+            if case
+            else None
+        )
         item["consolidation"] = consolidation_groups.get(int(item["order_table_id"]))
+        item["existing_label_attachment"] = existing_label_attachment_groups.get(
+            int(item["order_table_id"])
+        )
         item["consolidated_shipment"] = shipping_shipment_consolidation(
             case.shipment if case else None
         )
@@ -1202,6 +1226,7 @@ async def shipping_consolidated_create(
                 order_table_ids=payload.order_table_ids,
                 idempotency_key=str(payload.idempotency_key),
                 user_id=user.id,
+                label_text=payload.label_text,
             )
     except ShippingConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -1222,6 +1247,60 @@ async def shipping_consolidated_create(
             "order_table_ids": payload.order_table_ids,
             "group_id": result.get("group_id"),
             "tracking_number": result.get("tracking_number"),
+        },
+    )
+    await session.commit()
+    return result
+
+
+@router.post(
+    "/shipments/attach-existing",
+    status_code=status.HTTP_201_CREATED,
+    summary="Dołącz zlecenia do istniejącej etykiety",
+)
+async def shipping_attach_existing(
+    payload: ShippingAttachExistingRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Dołącza gotowe zlecenia do istniejącej paczki przed przekazaniem kurierowi."""
+    admin_session, _ = admin_context
+    user = await _require_shipping_access(admin_context, session)
+    _require_fulfillment()
+    order_ids = [payload.primary_order_table_id, *payload.additional_order_table_ids]
+    orders = [
+        await _run_firebird(session, load_shipping_order, order_table_id)
+        for order_table_id in order_ids
+    ]
+    runtime = await load_firebird_runtime_config(session)
+    try:
+        with use_firebird_runtime_config(runtime):
+            result = await attach_shipping_cases_to_existing_label(
+                session,
+                orders=orders,
+                primary_order_table_id=payload.primary_order_table_id,
+                additional_order_table_ids=payload.additional_order_table_ids,
+                idempotency_key=str(payload.idempotency_key),
+                confirm_weight_within_existing_label=(payload.confirm_weight_within_existing_label),
+                user_id=user.id,
+            )
+    except ShippingConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+    await record_audit(
+        session,
+        user_id=user.id,
+        action="shipping_attach_existing_label",
+        client_ip=admin_session.client_ip,
+        payload={
+            "primary_order_table_id": payload.primary_order_table_id,
+            "additional_order_table_ids": payload.additional_order_table_ids,
+            "group_id": result.get("group_id"),
+            "tracking_number": result.get("tracking_number"),
+            "weight_confirmed": payload.confirm_weight_within_existing_label,
         },
     )
     await session.commit()

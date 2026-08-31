@@ -14,10 +14,14 @@ from app.services.section_permissions import default_sections_for_role, normaliz
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
-    def test_infoservices_jest_jedynym_headem_alembic(self) -> None:
+    def test_tresc_etykiety_jest_jedynym_headem_alembic(self) -> None:
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["c3d5e7f9a1b2"])
+        self.assertEqual(scripts.get_heads(), ["e4a8c1d9f2b7"])
+        revision = scripts.get_revision("e4a8c1d9f2b7")
+        self.assertIsNotNone(revision)
+        self.assertEqual(revision.down_revision, "c3d5e7f9a1b2")
+
         revision = scripts.get_revision("c3d5e7f9a1b2")
         self.assertIsNotNone(revision)
         self.assertEqual(revision.down_revision, "a7c4e2f9b1d3")
@@ -134,12 +138,29 @@ class ShippingReleaseTests(unittest.TestCase):
             normalize_sections(["operator", "shipping"], role="operator"),
         )
 
+    def test_ilosc_czesci_magazynowej_rosnie_o_pelne_sztuki(self) -> None:
+        frontend = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
+
+        self.assertIn('type="number" min="1" max="${quantityMaximum}" step="1"', frontend)
+        self.assertNotIn('type="number" min="0.001" max="${quantityMaximum}" step="1"', frontend)
+
+    def test_interfejs_ma_edytor_i_modal_tresci_etykiety(self) -> None:
+        frontend = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
+        template = Path("app/templates/shipping/v2.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="shipping-label-text" maxlength="81"', template)
+        self.assertIn('id="shipping-label-text-reset"', template)
+        self.assertIn('id="shipping-consolidated-label-dialog"', template)
+        self.assertIn("labelTextDirty", frontend)
+        self.assertIn("openConsolidatedLabelEditor", frontend)
+        self.assertIn("label_text: labelText", frontend)
+
     def test_operacje_mutacyjne_maja_blokady_a_synchronizacja_jest_odczytowa(self) -> None:
         routes = Path("app/api/routes/admin_shipping.py").read_text(encoding="utf-8")
 
-        self.assertEqual(routes.count("@router.post"), 14)
+        self.assertEqual(routes.count("@router.post"), 15)
         self.assertEqual(routes.count("_require_catalog_mutations()"), 6)
-        self.assertEqual(routes.count("_require_fulfillment()"), 9)
+        self.assertEqual(routes.count("_require_fulfillment()"), 10)
         self.assertIn('@router.post("/tracking/sync"', routes)
         self.assertIn("synchronize_dpd_infoservices", routes)
 

@@ -20,6 +20,7 @@ from app.services.shipping_documents import build_mock_shipping_label
 DPD_DEMO_URL = "https://dpdservicesdemo.dpd.com.pl"
 DPD_PRODUCTION_URL = "https://dpdservices.dpd.com.pl"
 DPD_MODES = {"mock", "demo", "production"}
+DPD_LABEL_TEXT_LIMIT = 81
 
 _API_FIELD_LIMITS = {
     "company": 100,
@@ -179,6 +180,39 @@ def _business_reference_fields(values: list[str]) -> dict[str, str]:
             "Lista numerów zleceń nie mieści się w polach ref1, ref2 i ref3 DPD."
         )
     return {f"ref{index}": value for index, value in enumerate(chunks, start=1)}
+
+
+def normalize_dpd_label_text(value: Any) -> str:
+    """Normalizuje wspólną treść dwóch drukowanych pól etykiety DPD."""
+    normalized = " ".join(str(value or "").split())
+    if not normalized:
+        raise DpdConfigurationError("Treść etykiety DPD nie może być pusta.")
+    if len(normalized) > DPD_LABEL_TEXT_LIMIT:
+        raise DpdConfigurationError(
+            f"Treść etykiety DPD może mieć maksymalnie {DPD_LABEL_TEXT_LIMIT} znaków."
+        )
+    return normalized
+
+
+def split_dpd_label_text(value: Any) -> tuple[str, str]:
+    """Dzieli treść na drukowane pola `ref1` i `content` bez utraty znaków."""
+    normalized = normalize_dpd_label_text(value)
+    reference_limit = _LABEL_FIELD_LIMITS["ref1"]
+    content_limit = _LABEL_FIELD_LIMITS["content"]
+    if len(normalized) <= reference_limit:
+        return normalized, ""
+    minimum_split = max(1, len(normalized) - content_limit)
+    split_at = reference_limit
+    for index in range(reference_limit, minimum_split - 1, -1):
+        if normalized[index - 1].isspace():
+            split_at = index - 1
+            break
+    reference = normalized[:split_at].rstrip()
+    content = normalized[split_at:].lstrip()
+    if not reference or len(content) > content_limit:
+        reference = normalized[:reference_limit]
+        content = normalized[reference_limit:]
+    return reference, content
 
 
 def _parcel_content(items: list[dict[str, Any]] | None) -> str:
@@ -440,6 +474,7 @@ class DpdShippingClient:
         weight_kg: float,
         business_references: list[str] | None = None,
         items: list[dict[str, Any]] | None = None,
+        label_text: str | None = None,
     ) -> dict[str, Any]:
         """Buduje zwalidowane żądanie `generatePackagesNumbers`."""
         self._validate()
@@ -455,10 +490,25 @@ class DpdShippingClient:
         requested_receiver = self._receiver(receiver)
         self._validate_address("odbiorcy", requested_receiver)
         effective_receiver = dict(sender) if self.mode == "demo" else requested_receiver
-        references = _business_reference_fields(business_references or [reference])
-        content = _parcel_content(items)
+        effective_business_references = business_references or [reference]
+        normalized_label_text = normalize_dpd_label_text(label_text) if label_text else None
+        if normalized_label_text:
+            reference_text, content = split_dpd_label_text(normalized_label_text)
+            references = {"ref1": reference_text}
+        else:
+            references = _business_reference_fields(effective_business_references)
+            content = _parcel_content(items)
         package_reference = _technical_reference("CTIP", idempotency_key)
         parcel_reference = _technical_reference("CTIP-P", idempotency_key)
+        parcel = _without_empty_values(
+            {
+                "reference": parcel_reference,
+                "weight": weight,
+                "content": content,
+                "customerData1": package_reference,
+                "customerData2": ", ".join(effective_business_references)[:200],
+            }
+        )
         payload: dict[str, Any] = {
             "generationPolicy": "STOP_ON_FIRST_ERROR",
             "packages": [
@@ -472,19 +522,13 @@ class DpdShippingClient:
                         else _positive_int(settings.dpd_payer_fid, "DPD_PAYER_FID")
                     ),
                     **references,
-                    "parcels": [
-                        {
-                            "reference": parcel_reference,
-                            "weight": weight,
-                            "content": content,
-                            "customerData1": package_reference,
-                            "customerData2": ", ".join(business_references or [reference])[:200],
-                        }
-                    ],
+                    "parcels": [parcel],
                 }
             ],
             "_ctip": {
                 "mode": self.mode,
+                "label_text": normalized_label_text,
+                "business_references": effective_business_references,
                 "demo_receiver_override": self.mode == "demo",
                 "requested_receiver": requested_receiver if self.mode == "demo" else None,
                 "label_warnings": list(
@@ -665,6 +709,7 @@ class DpdShippingClient:
         weight_kg: float,
         items: list[dict[str, Any]] | None = None,
         business_references: list[str] | None = None,
+        label_text: str | None = None,
     ) -> tuple[dict[str, Any], DpdShipmentResult]:
         """Tworzy przesyłkę, pobiera etykietę A4 albo wykonuje lokalną symulację."""
         payload = self.build_payload(
@@ -674,6 +719,7 @@ class DpdShippingClient:
             weight_kg=weight_kg,
             business_references=business_references,
             items=items,
+            label_text=label_text,
         )
         metadata = payload.get("_ctip") or {}
         warnings = tuple(metadata.get("label_warnings") or [])
@@ -783,10 +829,13 @@ class DpdShippingClient:
 
 __all__ = [
     "DPD_DEMO_URL",
+    "DPD_LABEL_TEXT_LIMIT",
     "DPD_PRODUCTION_URL",
     "DpdConfigurationError",
     "DpdLabelResult",
     "DpdShipmentResult",
     "DpdShippingClient",
     "DpdTransportError",
+    "normalize_dpd_label_text",
+    "split_dpd_label_text",
 ]

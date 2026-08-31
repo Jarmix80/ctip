@@ -14,7 +14,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: var(--bg); }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 .shipping-shell { width: min(1520px, 100%); margin: 0 auto; padding: 24px; }
 .shipping-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 20px; }
 .shipping-header h1 { margin: 2px 0 6px; font-size: clamp(28px, 3vw, 42px); }
@@ -43,8 +43,9 @@ button, input, select { font: inherit; }
 .shipping-toolbar label, .shipping-form-grid label { display: grid; gap: 6px; color: #475467; font-size: 13px; font-weight: 650; }
 .shipping-field-note { min-height: 16px; color: #667085; font-size: 11px; font-weight: 500; line-height: 1.35; }
 .shipping-search { flex: 1; }
-input, select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #cfd6e1; border-radius: 9px; color: var(--ink); background: #fff; }
-input:focus, select:focus { outline: 3px solid #d1e9ff; border-color: #1570ef; }
+input, select, textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #cfd6e1; border-radius: 9px; color: var(--ink); background: #fff; }
+textarea { resize: vertical; line-height: 1.45; }
+input:focus, select:focus, textarea:focus { outline: 3px solid #d1e9ff; border-color: #1570ef; }
 input.invalid { border-color: var(--red); background: #fef3f2; }
 input.invalid:focus { outline-color: #fecdca; }
 .shipping-workspace { display: grid; grid-template-columns: minmax(300px, 430px) minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -152,6 +153,22 @@ input.invalid:focus { outline-color: #fecdca; }
 .shipping-negative-stock-badge { display: inline-flex; margin-top: 4px; padding: 2px 6px; border-radius: 999px; color: #93370d; background: #fef0c7; font-size: 10px; font-weight: 800; }
 .shipping-negative-stock-badge.allowed { color: #b42318; background: #fee4e2; }
 .shipping-negative-stock-row { background: #fff7ed; }
+.shipping-label-editor { display: grid; gap: 9px; margin: 14px 18px 0; padding: 14px; border: 1px solid var(--line); border-radius: 11px; background: #f8fafc; }
+.shipping-label-editor-head, .shipping-label-editor-actions { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.shipping-label-editor-head label { font-weight: 800; }
+.shipping-label-editor-head strong { color: var(--blue); font-size: 12px; }
+.shipping-label-preview { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; color: #667085; font-size: 12px; }
+.shipping-label-preview span { min-width: 0; padding: 7px 9px; border-radius: 7px; background: #fff; }
+.shipping-label-preview b { color: #344054; overflow-wrap: anywhere; }
+.shipping-label-editor-actions small { color: #667085; }
+.shipping-label-dialog { width: min(680px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; color: var(--ink); background: transparent; }
+.shipping-label-dialog::backdrop { background: rgba(16, 24, 40, .72); }
+.shipping-label-dialog-card { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: 0 22px 70px rgba(16, 24, 40, .28); }
+.shipping-label-dialog-card header, .shipping-label-dialog-card footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.shipping-label-dialog-card h2, .shipping-label-dialog-card p { margin: 0; }
+.shipping-label-dialog-meta { display: grid; gap: 6px; color: #667085; font-size: 12px; }
+.shipping-label-dialog-meta b { color: var(--ink); overflow-wrap: anywhere; }
+.shipping-label-dialog-card footer { justify-content: flex-end; }
 .shipping-actions { padding: 18px; }
 .shipping-feedback { margin: 0 18px; padding: 12px; border-radius: 10px; color: #1849a9; background: #eff4ff; }
 .shipping-feedback.error { color: #b42318; background: #fef3f2; }
@@ -217,6 +234,8 @@ input.invalid:focus { outline-color: #fecdca; }
   .shipping-status-grid, .shipping-form-grid { grid-template-columns: 1fr; }
   .shipping-form-grid .wide { grid-column: auto; }
   .shipping-stock-head { align-items: stretch; flex-direction: column; }
+  .shipping-label-preview { grid-template-columns: 1fr; }
+  .shipping-label-editor-head, .shipping-label-editor-actions { align-items: stretch; flex-direction: column; }
   .shipping-tabs, .shipping-catalog-intro, .shipping-catalog-toolbar, .shipping-catalog-filters, .shipping-catalog-actions { align-items: stretch; flex-direction: column; }
   .shipping-catalog-filters select { width: 100%; }
   .shipping-manual-grid { grid-template-columns: 1fr; }

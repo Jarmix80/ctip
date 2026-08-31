@@ -481,7 +481,8 @@ def _draw_mock_shipping_label(
     document.setFillColor(grey)
     document.setFont(bold, 4.8)
     document.drawString(route_middle + 2 * mm, parties_bottom - 11.5 * mm, "ZAWARTOŚĆ PACZKI")
-    item_lines = _mock_label_item_lines(items)
+    custom_label_text = _plain_text((payload.get("_ctip") or {}).get("label_text"))
+    item_lines = [] if custom_label_text else _mock_label_item_lines(items)
     if not item_lines:
         item_lines = [parcel.get("content") or "Materiały serwisowe"]
     for line_index, line in enumerate(item_lines):

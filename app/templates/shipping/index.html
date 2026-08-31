@@ -5,8 +5,8 @@
     <title>CTIP – wysyłki części</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-consolidated-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-dpd-rest-01"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-label-text-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-label-text-01"></script>
   </head>
   <body>
     <main class="shipping-shell">
@@ -79,6 +79,7 @@
             <div class="shipping-bulk-buttons">
               <button id="shipping-generate-selected" type="button" class="shipping-button success compact" disabled>Osobne etykiety</button>
               <button id="shipping-generate-consolidated" type="button" class="shipping-button primary compact" disabled>Jedna paczka / jedna etykieta</button>
+              <button id="shipping-attach-existing" type="button" class="shipping-button primary compact" disabled>Dołącz do istniejącej etykiety</button>
               <button id="shipping-generate-ready" type="button" class="shipping-button primary compact">Generuj wszystkie gotowe</button>
               <button id="shipping-print-packing" type="button" class="shipping-button secondary compact" disabled>Drukuj listę części</button>
               <button id="shipping-print-selected" type="button" class="shipping-button dark compact" disabled>Drukuj etykiety</button>
@@ -188,6 +189,12 @@
               <thead><tr><th></th><th>Indeks / część</th><th>Dostępne</th><th>Ilość</th><th>Cena netto</th><th>Potwierdź zgodność</th></tr></thead>
               <tbody id="shipping-stock"></tbody>
             </table>
+          </div>
+          <div class="shipping-label-editor">
+            <div class="shipping-label-editor-head"><label for="shipping-label-text">Treść etykiety DPD</label><strong id="shipping-label-text-count">0/81</strong></div>
+            <textarea id="shipping-label-text" maxlength="81" rows="3" placeholder="Numer zlecenia i części dołączone do paczki"></textarea>
+            <div class="shipping-label-preview"><span>Referencja (27): <b id="shipping-label-reference-preview">—</b></span><span>Zawartość (54): <b id="shipping-label-content-preview">—</b></span></div>
+            <div class="shipping-label-editor-actions"><small id="shipping-label-text-note">Treść aktualizuje się automatycznie do pierwszej ręcznej zmiany.</small><button id="shipping-label-text-reset" type="button" class="shipping-button secondary compact">Przywróć treść automatyczną</button></div>
           </div>
 
           <div class="shipping-actions">
@@ -306,6 +313,16 @@
           <div id="shipping-manual-models" class="shipping-model-picker"></div>
         </section>
       </section>
+
+      <dialog id="shipping-consolidated-label-dialog" class="shipping-label-dialog">
+        <div class="shipping-label-dialog-card">
+          <header><div><p class="shipping-step">WSPÓLNA PACZKA</p><h2>Treść wspólnej etykiety DPD</h2></div><button id="shipping-consolidated-label-cancel" type="button" class="shipping-button secondary compact">Anuluj</button></header>
+          <p>Sprawdź finalny tekst dla wszystkich wybranych zleceń. Możesz zmienić także automatycznie wpisane numery zleceń.</p>
+          <textarea id="shipping-consolidated-label-text" maxlength="81" rows="4"></textarea>
+          <div class="shipping-label-dialog-meta"><span id="shipping-consolidated-label-count">0/81</span><span>Referencja: <b id="shipping-consolidated-reference-preview">—</b></span><span>Zawartość: <b id="shipping-consolidated-content-preview">—</b></span></div>
+          <footer><button id="shipping-consolidated-label-confirm" type="button" class="shipping-button success">Generuj wspólną etykietę</button></footer>
+        </div>
+      </dialog>
     </main>
   </body>
 </html>

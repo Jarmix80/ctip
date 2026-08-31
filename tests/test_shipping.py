@@ -23,6 +23,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas as pdf_canvas
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
@@ -45,6 +46,7 @@ from app.models import (
     ShippingTrackingSyncRun,
 )
 from app.schemas.shipping import (
+    ShippingAttachExistingRequest,
     ShippingBulkCreateRequest,
     ShippingCompatibilityManualBatchRequest,
     ShippingConsolidatedCreateRequest,
@@ -54,6 +56,7 @@ from app.services.dpd_shipping import (
     DpdConfigurationError,
     DpdShippingClient,
     DpdTransportError,
+    split_dpd_label_text,
 )
 from app.services.shipping_archive import (
     get_shipping_archive_detail,
@@ -96,8 +99,11 @@ from app.services.shipping_workflow import (
     ShippingConflictError,
     ShippingLocationChangedError,
     _shipping_item_price,
+    attach_shipping_cases_to_existing_label,
     build_shipping_address_candidates,
     build_shipping_consolidation_groups,
+    build_shipping_existing_label_attachment_groups,
+    build_shipping_label_text,
     close_shipping_day,
     close_shipping_order,
     create_consolidated_shipping_shipment,
@@ -180,36 +186,38 @@ def _review_payload(
     *,
     allow_negative_stock: bool = False,
     unit_price_net: str | None = None,
+    label_text: str | None = None,
 ) -> ShippingReviewRequest:
     source_order = order or _order()
-    return ShippingReviewRequest.model_validate(
-        {
-            "address": {
-                "company_name": "Przykładowa Firma",
-                "contact_name": "Jan Kowalski",
-                "street": "Testowa 10",
-                "postal_code": "00-001",
-                "city": "Warszawa",
-                "country_code": "PL",
-                "phone": "500 600 700",
-                "email": "klient@example.com",
-                "source": "location",
-                "location_text": "Sekretariat, parter",
-            },
-            "location_fingerprint": shipping_location_context(source_order)["fingerprint"],
-            "weight_kg": "2.000",
-            "items": [
-                {
-                    "firebird_warehouse_item_id": 501,
-                    "quantity": "1.000",
-                    "unit_price_net": unit_price_net,
-                    "remember_for_model": True,
-                    "allow_negative_stock": allow_negative_stock,
-                }
-            ],
-            "save_address": True,
-        }
-    )
+    payload = {
+        "address": {
+            "company_name": "Przykładowa Firma",
+            "contact_name": "Jan Kowalski",
+            "street": "Testowa 10",
+            "postal_code": "00-001",
+            "city": "Warszawa",
+            "country_code": "PL",
+            "phone": "500 600 700",
+            "email": "klient@example.com",
+            "source": "location",
+            "location_text": "Sekretariat, parter",
+        },
+        "location_fingerprint": shipping_location_context(source_order)["fingerprint"],
+        "weight_kg": "2.000",
+        "items": [
+            {
+                "firebird_warehouse_item_id": 501,
+                "quantity": "1.000",
+                "unit_price_net": unit_price_net,
+                "remember_for_model": True,
+                "allow_negative_stock": allow_negative_stock,
+            }
+        ],
+        "save_address": True,
+    }
+    if label_text is not None:
+        payload["label_text"] = label_text
+    return ShippingReviewRequest.model_validate(payload)
 
 
 class DpdShippingClientTests(unittest.TestCase):
@@ -441,6 +449,67 @@ class DpdShippingClientTests(unittest.TestCase):
         content = payload["packages"][0]["parcels"][0]["content"]
         self.assertEqual(content, "1x Toner czarny; 2x Toner żółty")
         self.assertNotIn("IDX-", content)
+
+    def test_edytowalna_tresc_wykorzystuje_ref1_i_content_bez_utraty(self) -> None:
+        settings.dpd_enabled = True
+        settings.dpd_mode = "mock"
+        label_text = "18491/2026; 1x Toner czarny; 2x Zespół wywoływania Develop"
+        payload = DpdShippingClient().build_payload(
+            idempotency_key=str(uuid4()),
+            reference="MS-2026-18491",
+            receiver=_review_payload().address.model_dump(mode="json"),
+            weight_kg=2.0,
+            business_references=["18491/2026"],
+            label_text=label_text,
+        )
+
+        package = payload["packages"][0]
+        parcel = package["parcels"][0]
+        self.assertLessEqual(len(package["ref1"]), 27)
+        self.assertLessEqual(len(parcel["content"]), 54)
+        self.assertEqual(f"{package['ref1']} {parcel['content']}", label_text)
+        self.assertNotIn("ref2", package)
+        self.assertNotIn("ref3", package)
+        self.assertEqual(parcel["customerData2"], "18491/2026")
+        self.assertEqual(payload["_ctip"]["label_text"], label_text)
+        self.assertEqual(payload["_ctip"]["business_references"], ["18491/2026"])
+
+    def test_krotka_tresc_etykiety_nie_wymaga_pola_content(self) -> None:
+        settings.dpd_enabled = True
+        settings.dpd_mode = "mock"
+        payload = DpdShippingClient().build_payload(
+            idempotency_key=str(uuid4()),
+            reference="MS-2026-18491",
+            receiver=_review_payload().address.model_dump(mode="json"),
+            weight_kg=2.0,
+            label_text="18491/2026",
+        )
+
+        package = payload["packages"][0]
+        self.assertEqual(package["ref1"], "18491/2026")
+        self.assertNotIn("content", package["parcels"][0])
+
+    def test_tresc_etykiety_ma_twardy_limit_81_znakow(self) -> None:
+        reference, content = split_dpd_label_text("A" * 81)
+        self.assertEqual(len(reference), 27)
+        self.assertEqual(len(content), 54)
+        with self.assertRaisesRegex(DpdConfigurationError, "maksymalnie 81"):
+            split_dpd_label_text("A" * 82)
+
+    def test_generator_tresci_uzywa_ilosci_i_nazwy_bez_indeksu(self) -> None:
+        generated = build_shipping_label_text(
+            order_numbers=["18491/2026"],
+            items=[
+                {
+                    "quantity": 2,
+                    "item_index": "D2423091",
+                    "item_name": "Developing blk MPC3004-6004",
+                }
+            ],
+        )
+
+        self.assertEqual(generated, "18491/2026; 2x Developing blk MPC3004-6004")
+        self.assertNotIn("D2423091", generated)
 
     def test_mock_etykieta_skrotem_oznacza_dalsze_pozycje(self) -> None:
         settings.dpd_enabled = True
@@ -790,11 +859,37 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["status"], "ready")
             self.assertEqual(result["address"]["phone"], "+48500600700")
             self.assertEqual(result["items"][0]["firebird_warehouse_item_id"], 501)
+            self.assertEqual(result["label_text"], "77/2026; 1x Toner Ricoh IM C3000 czarny")
             self.assertEqual(
                 await session.scalar(
                     select(func.count()).select_from(ShippingConsumableCompatibility)
                 ),
                 1,
+            )
+
+    async def test_review_zapisuje_recznie_edytowana_tresc_etykiety(self) -> None:
+        async with self.session_factory() as session:
+            with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
+                result = await review_shipping_order(
+                    session,
+                    order=_order(),
+                    payload=_review_payload(label_text="  Opis   ręczny bez numeru  "),
+                    user_id=1,
+                )
+            created = await create_shipping_shipment(
+                session,
+                order=_order(),
+                order_table_id=1001,
+                idempotency_key=str(uuid4()),
+                user_id=1,
+            )
+            shipment = await session.get(ShippingShipment, created["shipment"]["id"])
+
+            self.assertEqual(result["label_text"], "Opis ręczny bez numeru")
+            self.assertEqual(shipment.provider_request["_ctip"]["label_text"], result["label_text"])
+            self.assertEqual(
+                shipment.provider_request["packages"][0]["parcels"][0]["customerData2"],
+                "77/2026",
             )
 
     async def test_przypisany_technik_blokuje_review(self) -> None:
@@ -930,6 +1025,7 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     order_table_ids=[1001, 1002],
                     idempotency_key=str(uuid4()),
                     user_id=1,
+                    label_text="Wspólna paczka; 1x Toner czarny; 1x Toner żółty",
                 )
 
             self.assertEqual(create_dpd_shipment.call_count, 1)
@@ -947,6 +1043,14 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             consolidation = shipping_shipment_consolidation(shipments[0])
             self.assertEqual(consolidation["order_table_ids"], [1001, 1002])
+            self.assertEqual(
+                {shipment.provider_request["_ctip"]["label_text"] for shipment in shipments},
+                {"Wspólna paczka; 1x Toner czarny; 1x Toner żółty"},
+            )
+            self.assertEqual(
+                set((await session.execute(select(ShippingCase.label_text))).scalars()),
+                {"Wspólna paczka; 1x Toner czarny; 1x Toner żółty"},
+            )
 
             async def mark_notifications_sent(shipment, _case):
                 shipment.notification_sms_status = "sent"
@@ -983,6 +1087,107 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     ).scalars()
                 ),
                 {"sent", "skipped_consolidated"},
+            )
+
+    async def test_gotowe_zlecenie_mozna_dolaczyc_do_istniejacej_etykiety(self) -> None:
+        first_order = _order(1001)
+        second_order = {**_order(1002), "order_id": 78}
+        async with self.session_factory() as session:
+            with patch(
+                "app.services.shipping_workflow.load_physical_stock",
+                return_value=_stock(),
+            ):
+                await review_shipping_order(
+                    session,
+                    order=first_order,
+                    payload=_review_payload(first_order),
+                    user_id=1,
+                )
+                await review_shipping_order(
+                    session,
+                    order=second_order,
+                    payload=_review_payload(second_order),
+                    user_id=1,
+                )
+            primary_result = await create_shipping_shipment(
+                session,
+                order=first_order,
+                order_table_id=1001,
+                idempotency_key=str(uuid4()),
+                user_id=1,
+            )
+            primary_tracking = primary_result["shipment"]["tracking_number"]
+            cases_before = list(
+                (
+                    await session.execute(
+                        select(ShippingCase).options(selectinload(ShippingCase.shipment))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            candidates = build_shipping_existing_label_attachment_groups(cases_before)
+            self.assertEqual(set(candidates), {1001, 1002})
+            self.assertEqual(candidates[1002]["primary_order_table_id"], 1001)
+            self.assertEqual(candidates[1002]["declared_weight_kg"], 2.0)
+
+            request_key = str(uuid4())
+            primary_after_label = {
+                **first_order,
+                "status": "ZR",
+                "tracking_number": primary_tracking,
+            }
+            attached = await attach_shipping_cases_to_existing_label(
+                session,
+                orders=[primary_after_label, second_order],
+                primary_order_table_id=1001,
+                additional_order_table_ids=[1002],
+                idempotency_key=request_key,
+                confirm_weight_within_existing_label=True,
+                user_id=1,
+            )
+            repeated = await attach_shipping_cases_to_existing_label(
+                session,
+                orders=[primary_after_label, second_order],
+                primary_order_table_id=1001,
+                additional_order_table_ids=[1002],
+                idempotency_key=request_key,
+                confirm_weight_within_existing_label=True,
+                user_id=1,
+            )
+
+            self.assertEqual(attached["tracking_number"], primary_tracking)
+            self.assertEqual(repeated["group_id"], attached["group_id"])
+            self.assertEqual(attached["printable_order_ids"], [1001, 1002])
+            shipments = list(
+                (await session.execute(select(ShippingShipment).order_by(ShippingShipment.id)))
+                .scalars()
+                .all()
+            )
+            self.assertEqual(len(shipments), 2)
+            self.assertEqual(
+                {shipment.tracking_number for shipment in shipments}, {primary_tracking}
+            )
+            self.assertEqual({shipment.status for shipment in shipments}, {"label_ready"})
+            self.assertEqual({shipment.firebird_status for shipment in shipments}, {"simulated"})
+            self.assertEqual(shipments[0].label_content, shipments[1].label_content)
+            self.assertEqual(
+                set((await session.execute(select(ShippingCase.label_text))).scalars()),
+                {"77/2026; 1x Toner Ricoh IM C3000 czarny"},
+            )
+            self.assertEqual(
+                shipping_shipment_consolidation(shipments[0])["order_table_ids"],
+                [1001, 1002],
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ShippingEvent)
+                    .where(
+                        ShippingEvent.event_type == "consolidated_shipment_attached_existing_label"
+                    )
+                ),
+                2,
             )
 
     async def test_zamkniecie_dnia_wspolnej_paczki_wysyla_jedno_powiadomienie(self) -> None:
@@ -1516,7 +1721,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-tracking-02",
+            f"/static/shipping/shipping-v2.css?v={app.version}-label-text-01",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
@@ -2077,6 +2282,18 @@ class ShippingSchemaTests(unittest.TestCase):
                 }
             )
 
+    def test_dolaczenie_do_etykiety_normalizuje_liste_zlecen(self) -> None:
+        payload = ShippingAttachExistingRequest.model_validate(
+            {
+                "primary_order_table_id": 1001,
+                "additional_order_table_ids": [1002, 1003, 1002],
+                "idempotency_key": str(uuid4()),
+                "confirm_weight_within_existing_label": True,
+            }
+        )
+
+        self.assertEqual(payload.additional_order_table_ids, [1002, 1003])
+
     def test_wyszukiwanie_dzieli_fraze_na_niezalezne_wyrazy(self) -> None:
         self.assertEqual(_search_terms("toner  MPC 3503 toner"), ["toner", "MPC", "3503"])
 
@@ -2145,6 +2362,9 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("shipping-generate-selected", javascript)
         self.assertIn("shipping-generate-consolidated", javascript)
         self.assertIn("/admin/shipping/shipments/consolidated", javascript)
+        self.assertIn("shipping-attach-existing", javascript)
+        self.assertIn("/admin/shipping/shipments/attach-existing", javascript)
+        self.assertIn("confirm_weight_within_existing_label: true", javascript)
         self.assertIn("function selectShippingConsolidationGroup()", javascript)
         self.assertIn("shipping-print-selected", javascript)
         self.assertIn("shipping-print-packing", javascript)
