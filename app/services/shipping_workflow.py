@@ -136,6 +136,26 @@ def shipping_shipment_consolidation(
     }
 
 
+def _shipping_notification_group_key(shipment: ShippingShipment) -> str | None:
+    """Zwraca klucz fizycznej wspólnej paczki używany do deduplikacji powiadomień."""
+    consolidation = shipping_shipment_consolidation(shipment)
+    if consolidation is None:
+        return None
+    return _text(consolidation.get("group_id")) or None
+
+
+def _shipping_notification_attempted(shipment: ShippingShipment) -> bool:
+    """Sprawdza, czy dla rekordu wykonano już rzeczywistą albo symulowaną próbę powiadomienia."""
+    return shipment.notification_sms_status in {"sent", "failed", "simulated"}
+
+
+def _skip_consolidated_notifications(shipment: ShippingShipment) -> None:
+    """Oznacza pominięcie duplikatu powiadomień dla kolejnego zlecenia wspólnej paczki."""
+    shipment.notification_sms_status = "skipped_consolidated"
+    shipment.notification_email_status = "skipped_consolidated"
+    shipment.notification_error = None
+
+
 def build_shipping_consolidation_groups(
     cases: list[ShippingCase],
 ) -> dict[int, dict[str, Any]]:
@@ -1625,8 +1645,9 @@ async def _finalize_shipping_shipment(
     user_id: int,
     operator_name: str,
     day_close_id: int | None = None,
+    send_notifications: bool = True,
 ) -> dict[str, Any]:
-    """Finalizuje jedną przesyłkę tym samym procesem RW, WZ albo FV z WZ."""
+    """Finalizuje przesyłkę i opcjonalnie wysyła jedno powiadomienie dla fizycznej paczki."""
     if shipment.status not in {"label_ready", "handed_over"}:
         raise ShippingConflictError(
             "Wybrane zlecenie nie ma gotowej etykiety oczekującej na odbiór kuriera."
@@ -1734,7 +1755,13 @@ async def _finalize_shipping_shipment(
             closed_at=now,
             closing_operator_name=operator_name,
         )
-        notification_errors = await _send_notifications(shipment, case)
+        if send_notifications:
+            notification_errors = await _send_notifications(shipment, case)
+            notification_skip_reason = None
+        else:
+            _skip_consolidated_notifications(shipment)
+            notification_errors = []
+            notification_skip_reason = "consolidated_duplicate"
         if notification_errors:
             shipment.notification_error = "; ".join(notification_errors)
         session.add(
@@ -1745,6 +1772,7 @@ async def _finalize_shipping_shipment(
                 payload={
                     "documents": document_result,
                     "notification_errors": notification_errors,
+                    "notification_skip_reason": notification_skip_reason,
                     "scope": "day_close" if day_close_id is not None else "single_order",
                 },
                 created_by=user_id,
@@ -1755,6 +1783,7 @@ async def _finalize_shipping_shipment(
             "status": "closed",
             "documents": document_result,
             "notification_errors": notification_errors,
+            "notification_skip_reason": notification_skip_reason,
         }
     except ShippingOrderStateConflict as exc:
         shipment.status = "reconcile_required"
@@ -1777,6 +1806,7 @@ async def close_shipping_order(
     user_id: int,
 ) -> dict[str, Any]:
     """Kończy wybrane zlecenie albo wszystkie zlecenia jednej wspólnej paczki."""
+    session.expire_all()
     stmt = (
         select(ShippingShipment)
         .join(ShippingCase, ShippingCase.id == ShippingShipment.shipping_case_id)
@@ -1791,10 +1821,9 @@ async def close_shipping_order(
         raise ShippingConflictError(
             "Wybrane zlecenie nie ma przesyłki przygotowanej do zakończenia."
         )
-    selected_case = shipment.shipping_case
+    shipment_id = shipment.id
     consolidation = shipping_shipment_consolidation(shipment)
-    cases = [selected_case]
-    shipments_by_case_id = {selected_case.id: shipment}
+    session.expire(shipment)
     if consolidation:
         grouped_shipments = list(
             (
@@ -1807,11 +1836,16 @@ async def close_shipping_order(
                     .options(
                         selectinload(ShippingShipment.shipping_case).selectinload(
                             ShippingCase.items
-                        )
+                        ),
+                        selectinload(ShippingShipment.shipping_case).selectinload(
+                            ShippingCase.shipment
+                        ),
                     )
                     .where(
                         ShippingCase.firebird_order_table_id.in_(consolidation["order_table_ids"])
                     )
+                    .order_by(ShippingShipment.id)
+                    .with_for_update()
                 )
             )
             .scalars()
@@ -1827,10 +1861,36 @@ async def close_shipping_order(
             for order_id in consolidation["order_table_ids"]
         ]
         shipments_by_case_id = {grouped.shipping_case_id: grouped for grouped in grouped_shipments}
+    else:
+        shipment = (
+            await session.execute(
+                select(ShippingShipment)
+                .options(
+                    selectinload(ShippingShipment.shipping_case).selectinload(ShippingCase.items),
+                    selectinload(ShippingShipment.shipping_case).selectinload(
+                        ShippingCase.shipment
+                    ),
+                )
+                .where(ShippingShipment.id == shipment_id)
+                .with_for_update()
+            )
+        ).scalar_one()
+        cases = [shipment.shipping_case]
+        shipments_by_case_id = {shipment.shipping_case_id: shipment}
+
+    selected_case = next(
+        case for case in cases if case.firebird_order_table_id == int(order_table_id)
+    )
 
     operator_name = await _shipping_operator_name(session, user_id)
     order_results: list[dict[str, Any]] = []
     newly_closed_count = 0
+    handled_notification_groups = {
+        key
+        for grouped_shipment in shipments_by_case_id.values()
+        if (key := _shipping_notification_group_key(grouped_shipment))
+        and _shipping_notification_attempted(grouped_shipment)
+    }
     for case in cases:
         grouped_shipment = shipments_by_case_id[case.id]
         if grouped_shipment.status == "closed":
@@ -1840,13 +1900,20 @@ async def close_shipping_order(
                 "notification_errors": [],
             }
         else:
+            notification_group = _shipping_notification_group_key(grouped_shipment)
+            send_notifications = (
+                notification_group is None or notification_group not in handled_notification_groups
+            )
             try:
                 result = await _finalize_shipping_shipment(
                     session,
                     shipment=grouped_shipment,
                     user_id=user_id,
                     operator_name=operator_name,
+                    send_notifications=send_notifications,
                 )
+                if notification_group is not None and send_notifications:
+                    handled_notification_groups.add(notification_group)
                 newly_closed_count += 1
             except Exception:
                 await session.commit()
@@ -1883,6 +1950,7 @@ async def close_shipping_day(
     user_id: int,
 ) -> dict[str, Any]:
     """Oznacza odbiór, tworzy właściwe dokumenty MS i wysyła powiadomienia raz."""
+    session.expire_all()
     existing_stmt = select(ShippingDayClose).where(ShippingDayClose.business_date == business_date)
     existing = (await session.execute(existing_stmt)).scalar_one_or_none()
     if existing and existing.status == "completed":
@@ -1906,6 +1974,7 @@ async def close_shipping_day(
             ShippingShipment.status.in_(("label_ready", "handed_over")),
         )
         .order_by(ShippingShipment.id)
+        .with_for_update()
     )
     shipments = list((await session.execute(stmt)).scalars().all())
     now = _now()
@@ -1928,7 +1997,17 @@ async def close_shipping_day(
     wz_count = 0
     invoice_count = 0
     operator_name = await _shipping_operator_name(session, user_id)
+    handled_notification_groups = {
+        key
+        for shipment in shipments
+        if (key := _shipping_notification_group_key(shipment))
+        and _shipping_notification_attempted(shipment)
+    }
     for shipment in shipments:
+        notification_group = _shipping_notification_group_key(shipment)
+        send_notifications = (
+            notification_group is None or notification_group not in handled_notification_groups
+        )
         try:
             result = await _finalize_shipping_shipment(
                 session,
@@ -1936,7 +2015,10 @@ async def close_shipping_day(
                 user_id=user_id,
                 operator_name=operator_name,
                 day_close_id=day_close.id,
+                send_notifications=send_notifications,
             )
+            if notification_group is not None and send_notifications:
+                handled_notification_groups.add(notification_group)
             document_result = result["documents"]
             document_mode = document_result["document_mode"]
             if document_mode == "rw":

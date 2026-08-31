@@ -948,11 +948,20 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             consolidation = shipping_shipment_consolidation(shipments[0])
             self.assertEqual(consolidation["order_table_ids"], [1001, 1002])
 
-            closed = await close_shipping_order(
-                session,
-                order_table_id=1001,
-                user_id=1,
-            )
+            async def mark_notifications_sent(shipment, _case):
+                shipment.notification_sms_status = "sent"
+                shipment.notification_email_status = "sent"
+                return []
+
+            with patch(
+                "app.services.shipping_workflow._send_notifications",
+                side_effect=mark_notifications_sent,
+            ) as send_notifications:
+                closed = await close_shipping_order(
+                    session,
+                    order_table_id=1001,
+                    user_id=1,
+                )
 
             self.assertTrue(closed["consolidated"])
             self.assertEqual(closed["closed_count"], 2)
@@ -965,6 +974,69 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 set((await session.execute(select(ShippingShipment.status))).scalars()),
                 {"closed"},
+            )
+            send_notifications.assert_awaited_once()
+            self.assertEqual(
+                set(
+                    (
+                        await session.execute(select(ShippingShipment.notification_sms_status))
+                    ).scalars()
+                ),
+                {"sent", "skipped_consolidated"},
+            )
+
+    async def test_zamkniecie_dnia_wspolnej_paczki_wysyla_jedno_powiadomienie(self) -> None:
+        first_order = _order(1001)
+        second_order = {**_order(1002), "order_id": 78}
+        async with self.session_factory() as session:
+            with patch(
+                "app.services.shipping_workflow.load_physical_stock",
+                return_value=_stock(),
+            ):
+                await review_shipping_order(
+                    session,
+                    order=first_order,
+                    payload=_review_payload(first_order),
+                    user_id=1,
+                )
+                await review_shipping_order(
+                    session,
+                    order=second_order,
+                    payload=_review_payload(second_order),
+                    user_id=1,
+                )
+            await create_consolidated_shipping_shipment(
+                session,
+                orders=[first_order, second_order],
+                order_table_ids=[1001, 1002],
+                idempotency_key=str(uuid4()),
+                user_id=1,
+            )
+
+            async def mark_notifications_sent(shipment, _case):
+                shipment.notification_sms_status = "sent"
+                shipment.notification_email_status = "sent"
+                return []
+
+            with patch(
+                "app.services.shipping_workflow._send_notifications",
+                side_effect=mark_notifications_sent,
+            ) as send_notifications:
+                closed = await close_shipping_day(
+                    session,
+                    business_date=datetime.now(ZoneInfo("Europe/Warsaw")).date(),
+                    user_id=1,
+                )
+
+            self.assertEqual(closed["closed_count"], 2)
+            send_notifications.assert_awaited_once()
+            self.assertEqual(
+                set(
+                    (
+                        await session.execute(select(ShippingShipment.notification_sms_status))
+                    ).scalars()
+                ),
+                {"sent", "skipped_consolidated"},
             )
 
     async def test_mock_moze_zapisac_pozycje_i_rw_wylacznie_w_trybie_testowym(self) -> None:
