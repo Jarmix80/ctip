@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-29T05:00:00+02:00",
+  "timestamp": "2026-08-31T14:30:00+02:00",
   "summary": [
     "Dodano moduł /shipping automatyzujący kolejkę zleceń dowozu materiałów, weryfikację adresu, wybór tonerów, nadanie DPD i zamknięcie dnia.",
     "Dodano siedem tabel PostgreSQL, migrację Alembic, API administracyjne, interfejs operatora, dziennik zdarzeń oraz uprawnienie sekcji shipping.",
@@ -32,6 +32,14 @@
     ,"Statusy przesyłek DPD InfoServices, ręczne odświeżanie kolejki i poprawione przewijanie Shipping wdrożono na produkcję jako commit 2f5f1fb777cd8d89f77bfc916159ccecee96c312."
     ,"Produkcja działa na migracji c3d5e7f9a1b2; trzy addytywne tabele śledzenia są puste, a InfoServices pozostaje wyłączone do czasu ustawienia osobnego DPD_INFO_CHANNEL."
     ,"Wdrożenie zrestartowało wyłącznie CTIP-Web; CollectorService, CTIP-SMS i CTIP-FormsPublic pozostały aktywne."
+    ,"Jednorazowo podpięto produkcyjne zlecenie 18492/2026 do istniejącej etykiety 1050056698791U zlecenia 18490/2026; grupa wspólnej paczki ma ID 099a121348ad1c200243."
+    ,"Jednorazowo podpięto produkcyjne zlecenie 18507/2026 do istniejącej etykiety 1050057314750U zlecenia 18491/2026; grupa wspólnej paczki ma ID c826f56afed3a4b80321."
+    ,"Przed podpięciem wykonano pełny backup PostgreSQL i Firebird w D:\\CTIP\\backups\\prod_20260831_135041; operator potwierdził, że każda fizyczna paczka mieści się w zadeklarowanych 2 kg."
+    ,"Zdiagnozowano ilość w sekcji Shipping „Wybierz części z magazynu”: połączenie min=0.001 i step=1 ustawiało bazę kroku na 0.001, dlatego przyciski tworzyły 1.001 i 2.001."
+    ,"W produkcyjnym drzewie kodu f6d966 przygotowano bez commita poprawkę min=1, test regresyjny i aktualizację README; zgodnie z zakazem commitów zmiana nie została wdrożona na serwer."
+    ,"W produkcyjnym drzewie kodu f6d966 przygotowano bez commita pełną akcję Shipping „Dołącz do istniejącej etykiety” dla jednego listu label_ready i zgodnych zleceń ready."
+    ,"Nowa akcja nie tworzy drugiego numeru DPD, wymaga identycznego adresu, świeżego stanu MS, odczytywalnej wagi etykiety, potwierdzenia rzeczywistej wagi oraz limitu 20 zleceń; kopiuje etykietę, zapisuje tracking w MS i pełny audyt."
+    ,"Interfejs wykrywa kandydatów do istniejącej etykiety, pokazuje konkretną akcję i ostrzega przed przypadkowym wygenerowaniem osobnych etykiet. Zmiana nie została wdrożona na produkcję z powodu obowiązującego zakazu commitów."
   ],
   "follow_up": [
     "Marcin zatwierdza dane i części trzech zleceń bez generowania etykiet: 18493=419082O/FV wyłączona, 18494=imc3000blk zam chemical/FV wyłączona, 18495=2021400211764/FV włączona.",
@@ -100,6 +108,15 @@
       ,"interfejs produkcyjny zawiera shipping-queue-refresh, shipping-tracking-view i asset tracking-02"
       ,"operacje po wdrożeniu: cztery usługi Running, SMS_NEW=0, SMS_ERRORS_24H=0, IMAP i SMTP login OK, SMTP panelu connection_ok=true"
       ,"InfoServices produkcja: trzy tabele istnieją, 0 przesyłek, 0 zdarzeń, 0 synchronizacji; kontrolowany POST sync zwraca HTTP 400 przy DPD_INFO_ENABLED=false"
+      ,"produkcja 2026-08-31: HEAD=f6d9667262f86946ce0408ccbd0fe4a181379767, CTIP-Web Running, /health=200"
+      ,"wspólna paczka 18490+18492: oba CTIP shipment_created/label_ready, Firebird ZR, tracking 1050056698791U, identyczny hash etykiety, pozycje 161305 i 161321"
+      ,"wspólna paczka 18491+18507: oba CTIP shipment_created/label_ready, Firebird ZR, tracking 1050057314750U, identyczny hash etykiety, pozycje 161306 i 161322"
+      ,"audyt jednorazowego podpięcia: po jednym zdarzeniu consolidated_shipment_attached_existing_label dla każdego z czterech zleceń"
+      ,"poprawka ilości Shipping: pre-commit run --all-files passed; nowy test regresyjny 1 passed; git diff --check passed"
+      ,"test_shipping_release.py: 7 passed i 1 istniejący błąd niezwiązany z poprawką — admin ma obecnie domyślną sekcję shipping"
+      ,"akcja dołączania do istniejącej etykiety: pre-commit run --all-files passed"
+      ,"akcja dołączania do istniejącej etykiety: pytest -q tests/test_shipping.py tests/test_shipping_release.py = 91 passed, 1 ostrzeżenie biblioteki Starlette"
+      ,"akcja dołączania do istniejącej etykiety: git diff --check passed; brak commita i brak wdrożenia produkcyjnego"
     ]
   }
 }
