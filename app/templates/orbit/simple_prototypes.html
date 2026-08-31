@@ -1,0 +1,315 @@
+{% macro module_catalog(variant) -%}
+  <div class="module-catalog module-catalog-{{ variant }}">
+    {% for group in module_groups %}
+      <section class="catalog-group" data-group="{{ group.key }}">
+        <header class="catalog-group-head">
+          <div>
+            <small>{{ "%02d"|format(loop.index) }}</small>
+            <span><strong>{{ group.label }}</strong><em>{{ group.description }}</em></span>
+          </div>
+          <b aria-hidden="true">+</b>
+        </header>
+        <div class="catalog-items">
+          {% for module in modules %}
+            {% if module.group == group.key %}
+              <article
+                class="catalog-module{% if module.path == '/choice' %} is-current{% endif %}"
+                data-route="{{ module.path }}"
+                aria-disabled="true"
+              >
+                <span class="catalog-mark" aria-hidden="true">{{ module.mark }}</span>
+                <span class="catalog-copy">
+                  <strong>{{ module.name }}</strong>
+                  <small>{{ module.description }}</small>
+                  <code>{{ module.path }}</code>
+                </span>
+                <i aria-hidden="true">→</i>
+              </article>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+{%- endmacro %}
+
+{% macro account_panel() -%}
+  <section class="account-panel account-panel-dark" aria-label="Makieta zwijanego panelu konta">
+    <div class="account-identity">
+      <span class="avatar">MK</span>
+      <span><strong>Marcin K.</strong><small>Administrator</small></span>
+    </div>
+    <div class="account-actions">
+      <span>Profil i dane kontaktowe</span>
+      <span>Zmiana hasła</span>
+      <span>Wylogowanie</span>
+    </div>
+    <button type="button" disabled>Rozwiń konto</button>
+  </section>
+{%- endmacro %}
+
+{% macro choice_sidebar() -%}
+  <aside class="sidebar-catalog">
+    <div class="sidebar-catalog-title"><small>KATALOG SYSTEMU</small><strong>Twoje moduły</strong></div>
+    {{ module_catalog("sidebar") }}
+    {{ account_panel() }}
+  </aside>
+{%- endmacro %}
+
+{% macro command_topbar(context) -%}
+  <header class="simple-command-topbar choice-command-topbar">
+    <img src="/static/orbit/brand/kp-orbit-horizontal-reverse.png" alt="KP Orbit">
+    <span class="simple-system-state"><i></i> {{ context }}</span>
+    <time class="choice-date-time" datetime="2026-08-31T11:54:00+02:00">
+      <strong>11:54</strong>
+      <small>Poniedziałek, 31 sierpnia 2026</small>
+    </time>
+  </header>
+{%- endmacro %}
+
+{% macro animated_orbit_logo() -%}
+  <div class="login-orbit login-orbit-hero" aria-label="Animowany znak KP Orbit">
+    <span class="login-ring ring-blue" aria-hidden="true"></span>
+    <span class="login-ring ring-red" aria-hidden="true"></span>
+    <img src="/static/orbit/brand/kp-orbit-icon-192.png" alt="KP Orbit">
+  </div>
+{%- endmacro %}
+
+{% macro mock_login_fields() -%}
+  <div class="mock-login-fields" aria-label="Nieaktywny formularz logowania">
+    <label><span>Adres e-mail</span><div class="mock-login-input">marcin@ksero-partner.com.pl</div></label>
+    <label><span>Hasło</span><div class="mock-login-input password-dots">••••••••••••</div></label>
+    <div class="mock-login-options"><span>☑ Zapamiętaj sesję</span><small>Bezpieczne logowanie wewnętrzne</small></div>
+    <button type="button" disabled>Zaloguj do KP Orbit</button>
+  </div>
+{%- endmacro %}
+
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>KP Orbit – rozwinięcie układu konsoli bocznej</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/orbit/brand/kp-orbit-icon-32.png">
+    <link rel="stylesheet" href="/static/orbit/prototypes.css?v={{ request.app.version }}-orbit-prototypes-1">
+    <link rel="stylesheet" href="/static/orbit/simple_prototypes.css?v={{ request.app.version }}-simple-prototypes-2">
+  </head>
+  <body id="top">
+    <main class="gallery-shell simple-gallery refined-gallery">
+      <header class="gallery-hero simple-gallery-hero">
+        <div class="gallery-brand">
+          <img src="/static/orbit/brand/kp-orbit-horizontal-color.png" alt="KP Orbit – Centrum Procesów">
+          <span>Rozwinięcie wybranego kierunku</span>
+        </div>
+        <div class="gallery-intro">
+          <p class="eyebrow">KP ORBIT / ŚRODOWISKO TESTOWE / BRAK ZAPISU</p>
+          <h1>Konsola boczna z informacją operacyjną</h1>
+          <p>
+            Pięć wariantów układu 01 z datą, czasem oraz podglądem formularzy, wysyłek
+            i urządzeń. Na końcu znajduje się wybrany ekran logowania 02.
+          </p>
+        </div>
+      </header>
+
+      <aside class="prototype-warning" role="note">
+        <strong>Sześć makiet niefunkcjonalnych</strong>
+        <span>
+          Liczby i zdarzenia są przykładowe. Makiety nie uruchamiają API, nie sprawdzają
+          uprawnień i nie zapisują danych.
+        </span>
+      </aside>
+
+      <nav class="gallery-jump simple-jump refined-jump" aria-label="Wybór makiety">
+        <a href="#choice-day"><span>C1</span><strong>Pulpit dnia</strong><small>Bilans i priorytety</small></a>
+        <a href="#choice-queues"><span>C2</span><strong>Kolejki operacyjne</strong><small>Trzy obszary pracy</small></a>
+        <a href="#choice-timeline"><span>C3</span><strong>Oś dnia</strong><small>Zdarzenia i terminy</small></a>
+        <a href="#choice-manager"><span>C4</span><strong>Radar kierownika</strong><small>KPI i alerty</small></a>
+        <a href="#choice-compact"><span>C5</span><strong>Monitor kompaktowy</strong><small>Zwarty przegląd</small></a>
+        <a href="#login-split"><span>L2</span><strong>Ekran dzielony</strong><small>Wybrany wariant</small></a>
+      </nav>
+
+      <section id="choice-day" class="prototype-section" data-choice-prototype="sidebar-day-dashboard">
+        <header class="prototype-heading">
+          <div><p>Choice 01A</p><h2>Pulpit dnia</h2><span>Najbardziej uniwersalny wariant: szybki bilans, priorytety i ostatnie zdarzenia.</span></div>
+          <span class="prototype-tag recommended">Rekomendowany</span>
+        </header>
+        <div class="mock-app simple-choice sidebar-choice refined-choice">
+          {{ command_topbar("System gotowy · dane demonstracyjne") }}
+          <div class="sidebar-choice-layout refined-sidebar-layout">
+            {{ choice_sidebar() }}
+            <main class="sidebar-choice-main operations-main day-dashboard">
+              <section class="choice-lead operations-lead">
+                <div><small>PULPIT DNIA</small><h3>Dzień dobry, Marcin</h3><p>Najważniejsze informacje operacyjne w jednym miejscu.</p></div>
+                <span class="choice-count"><strong>09</strong><small>dostępnych modułów</small></span>
+              </section>
+              <section class="operations-kpi-grid">
+                <article class="operation-kpi forms-kpi" data-domain="forms"><span class="operation-icon">FO</span><div><small>FORMULARZE</small><strong>12 nowych</strong><p>4 oczekują na weryfikację</p></div><b>+3</b></article>
+                <article class="operation-kpi shipping-kpi" data-domain="shipping"><span class="operation-icon">PR</span><div><small>WYSYŁKI</small><strong>7 w realizacji</strong><p>3 etykiety DPD gotowe</p></div><b>1!</b></article>
+                <article class="operation-kpi devices-kpi" data-domain="devices"><span class="operation-icon">UR</span><div><small>URZĄDZENIA</small><strong>24 na magazynie</strong><p>6 przyjęć w tym tygodniu</p></div><b>3</b></article>
+              </section>
+              <div class="day-dashboard-grid">
+                <section class="operations-panel priority-panel">
+                  <header><div><small>DO OBSŁUGI</small><h4>Priorytety na dziś</h4></div><span>5 zadań</span></header>
+                  <div class="priority-list">
+                    <article><i class="priority-red"></i><time>09:30</time><div><strong>Formularze wymagające decyzji</strong><small>2 sprawy przekroczyły planowany termin</small></div><b>02</b></article>
+                    <article><i class="priority-blue"></i><time>11:00</time><div><strong>Odbiór przesyłek DPD</strong><small>Zweryfikuj kompletność trzech etykiet</small></div><b>03</b></article>
+                    <article><i class="priority-green"></i><time>14:00</time><div><strong>Przyjęcia urządzeń</strong><small>Potwierdź numery seryjne w magazynie</small></div><b>06</b></article>
+                  </div>
+                </section>
+                <section class="operations-panel activity-panel">
+                  <header><div><small>AKTYWNOŚĆ</small><h4>Ostatnie zmiany</h4></div><span>dzisiaj</span></header>
+                  <div class="activity-stream">
+                    <article><time>11:42</time><span class="activity-dot blue"></span><p><strong>Formularz 68</strong> przeszedł do weryfikacji.</p></article>
+                    <article><time>11:18</time><span class="activity-dot green"></span><p>Przesyłka <strong>18495/2026</strong> jest gotowa.</p></article>
+                    <article><time>10:54</time><span class="activity-dot red"></span><p>Urządzenie <strong>KP/5241</strong> wymaga kontroli.</p></article>
+                    <article><time>10:20</time><span class="activity-dot blue"></span><p>Dodano <strong>2 nowe formularze</strong>.</p></article>
+                  </div>
+                </section>
+              </div>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section id="choice-queues" class="prototype-section" data-choice-prototype="sidebar-operation-queues">
+        <header class="prototype-heading">
+          <div><p>Choice 01B</p><h2>Kolejki operacyjne</h2><span>Trzy równorzędne kolumny pokazują sprawy oczekujące w kluczowych modułach.</span></div>
+          <span class="prototype-tag">Najlepszy dla operatora</span>
+        </header>
+        <div class="mock-app simple-choice sidebar-choice refined-choice">
+          {{ command_topbar("Kolejki zsynchronizowane · dane demonstracyjne") }}
+          <div class="sidebar-choice-layout refined-sidebar-layout">
+            {{ choice_sidebar() }}
+            <main class="sidebar-choice-main operations-main queues-dashboard">
+              <section class="choice-lead operations-lead"><div><small>CENTRUM OPERACYJNE</small><h3>Kolejki do obsługi</h3><p>Każdy obszar ma własny licznik, priorytet i ostatnią zmianę.</p></div><span class="mock-data-badge">DANE PRZYKŁADOWE</span></section>
+              <section class="operation-queue-grid">
+                <article class="queue-column" data-domain="forms"><header><span class="operation-icon">FO</span><div><small>FORMULARZE</small><h4>12 aktywnych</h4></div><b>4 pilne</b></header><div class="queue-items"><p><strong>Formularz 68</strong><small>Weryfikacja danych · 8 min</small></p><p><strong>Formularz 67</strong><small>Oczekuje na zgodę · 24 min</small></p><p><strong>Formularz 66</strong><small>Brak urządzenia · 1 godz.</small></p></div><footer>8 pozostałych spraw <span>→</span></footer></article>
+                <article class="queue-column" data-domain="shipping"><header><span class="operation-icon">PR</span><div><small>WYSYŁKI</small><h4>7 w realizacji</h4></div><b>1 alert</b></header><div class="queue-items"><p><strong>18495/2026</strong><small>Etykieta gotowa · DPD</small></p><p><strong>18494/2026</strong><small>Kompletowanie części</small></p><p><strong>18493/2026</strong><small>Kontrola adresu</small></p></div><footer>4 pozostałe wysyłki <span>→</span></footer></article>
+                <article class="queue-column" data-domain="devices"><header><span class="operation-icon">UR</span><div><small>URZĄDZENIA</small><h4>9 zmian</h4></div><b>3 kontrole</b></header><div class="queue-items"><p><strong>KP/5241</strong><small>Wymaga kontroli numeru</small></p><p><strong>KP/5238</strong><small>Przyjęcie na magazyn</small></p><p><strong>KP/5232</strong><small>Rezerwacja aktywna</small></p></div><footer>6 pozostałych zmian <span>→</span></footer></article>
+              </section>
+              <section class="queue-summary"><span><i></i> 21 spraw w normie</span><span><i></i> 6 wymaga uwagi</span><span><i></i> Najstarsza sprawa: 1 godz. 18 min</span></section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section id="choice-timeline" class="prototype-section" data-choice-prototype="sidebar-day-timeline">
+        <header class="prototype-heading">
+          <div><p>Choice 01C</p><h2>Oś dnia</h2><span>Zadania z różnych modułów są uporządkowane chronologicznie.</span></div>
+          <span class="prototype-tag">Najlepszy do planowania</span>
+        </header>
+        <div class="mock-app simple-choice sidebar-choice refined-choice">
+          {{ command_topbar("Plan dnia · dane demonstracyjne") }}
+          <div class="sidebar-choice-layout refined-sidebar-layout">
+            {{ choice_sidebar() }}
+            <main class="sidebar-choice-main operations-main timeline-dashboard">
+              <section class="choice-lead operations-lead"><div><small>PONIEDZIAŁEK / TYDZIEŃ 36</small><h3>Plan i zdarzenia dnia</h3><p>Połączony widok terminów, realizacji oraz zmian statusów.</p></div><span class="mock-data-badge">11:54 · TERAZ</span></section>
+              <div class="timeline-layout">
+                <section class="operations-panel day-timeline">
+                  <header><div><small>HARMONOGRAM</small><h4>Od rana do końca dnia</h4></div><span>8 zdarzeń</span></header>
+                  <div class="timeline-items">
+                    <article class="is-done"><time>08:15</time><i></i><div><small>FORMULARZE</small><strong>Synchronizacja nowych zgłoszeń</strong><p>Zakończono · 5 nowych pozycji</p></div></article>
+                    <article class="is-done"><time>10:30</time><i></i><div><small>URZĄDZENIA</small><strong>Kontrola przyjęć magazynowych</strong><p>Zakończono · 3 urządzenia</p></div></article>
+                    <article class="is-current"><time>12:00</time><i></i><div><small>WYSYŁKI</small><strong>Zamknięcie paczek przed odbiorem DPD</strong><p>7 przesyłek · 1 wymaga uwagi</p></div></article>
+                    <article><time>14:00</time><i></i><div><small>FORMULARZE</small><strong>Weryfikacja spraw oczekujących</strong><p>4 sprawy do decyzji</p></div></article>
+                    <article><time>16:15</time><i></i><div><small>URZĄDZENIA</small><strong>Podsumowanie zmian magazynowych</strong><p>Raport końca dnia</p></div></article>
+                  </div>
+                </section>
+                <aside class="timeline-summary">
+                  <article data-domain="forms"><span class="operation-icon">FO</span><div><small>FORMULARZE</small><strong>12</strong><p>4 do weryfikacji</p></div></article>
+                  <article data-domain="shipping"><span class="operation-icon">PR</span><div><small>WYSYŁKI</small><strong>7</strong><p>3 gotowe</p></div></article>
+                  <article data-domain="devices"><span class="operation-icon">UR</span><div><small>URZĄDZENIA</small><strong>9</strong><p>3 kontrole</p></div></article>
+                  <section><small>WYKONANIE PLANU</small><strong>42%</strong><div><i></i></div><p>3 z 8 zdarzeń zakończone</p></section>
+                </aside>
+              </div>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section id="choice-manager" class="prototype-section" data-choice-prototype="sidebar-manager-radar">
+        <header class="prototype-heading">
+          <div><p>Choice 01D</p><h2>Radar kierownika</h2><span>Mniej pojedynczych spraw, więcej trendów, ostrzeżeń i obciążenia zespołu.</span></div>
+          <span class="prototype-tag">Najlepszy zarządczo</span>
+        </header>
+        <div class="mock-app simple-choice sidebar-choice refined-choice">
+          {{ command_topbar("Podsumowanie operacyjne · dane demonstracyjne") }}
+          <div class="sidebar-choice-layout refined-sidebar-layout">
+            {{ choice_sidebar() }}
+            <main class="sidebar-choice-main operations-main manager-dashboard">
+              <section class="choice-lead operations-lead"><div><small>RADAR OPERACYJNY</small><h3>Kondycja procesów</h3><p>Stan kolejek, trendy i obszary wymagające decyzji.</p></div><span class="system-score"><strong>86</strong><small>punktów kondycji</small></span></section>
+              <section class="manager-kpi-grid">
+                <article data-domain="forms"><small>FORMULARZE</small><strong>12</strong><p>Aktywne sprawy</p><span class="trend-up">↑ 8%</span></article>
+                <article data-domain="shipping"><small>WYSYŁKI</small><strong>7</strong><p>W realizacji</p><span class="trend-good">5 w normie</span></article>
+                <article data-domain="devices"><small>URZĄDZENIA</small><strong>24</strong><p>Na magazynie</p><span class="trend-neutral">3 kontrole</span></article>
+                <article><small>ŚREDNI CZAS</small><strong>38m</strong><p>Obsługa sprawy</p><span class="trend-good">↓ 6 min</span></article>
+              </section>
+              <div class="manager-content-grid">
+                <section class="operations-panel process-health"><header><div><small>OBCIĄŻENIE</small><h4>Stan głównych procesów</h4></div><span>aktualizacja 11:50</span></header><div class="health-bars"><article><span>Formularze</span><div><i style="--bar: 74%"></i></div><b>74%</b></article><article><span>Wysyłki</span><div><i style="--bar: 58%"></i></div><b>58%</b></article><article><span>Urządzenia</span><div><i style="--bar: 43%"></i></div><b>43%</b></article><article><span>FLOW</span><div><i style="--bar: 66%"></i></div><b>66%</b></article></div></section>
+                <section class="operations-panel manager-alerts"><header><div><small>ALERTY</small><h4>Wymagane decyzje</h4></div><span>3 aktywne</span></header><div><article><i class="priority-red"></i><p><strong>2 formularze po terminie</strong><small>Wymagana decyzja operatora</small></p></article><article><i class="priority-blue"></i><p><strong>1 wysyłka bez potwierdzenia</strong><small>Sprawdź kompletność paczki</small></p></article><article><i class="priority-green"></i><p><strong>3 urządzenia do kontroli</strong><small>Numery seryjne i rezerwacje</small></p></article></div></section>
+              </div>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section id="choice-compact" class="prototype-section" data-choice-prototype="sidebar-compact-monitor">
+        <header class="prototype-heading">
+          <div><p>Choice 01E</p><h2>Monitor kompaktowy</h2><span>Największa gęstość danych dla operatora pracującego na szerokim monitorze.</span></div>
+          <span class="prototype-tag">Najwięcej danych</span>
+        </header>
+        <div class="mock-app simple-choice sidebar-choice refined-choice compact-choice">
+          {{ command_topbar("Monitor procesów · dane demonstracyjne") }}
+          <div class="sidebar-choice-layout refined-sidebar-layout">
+            {{ choice_sidebar() }}
+            <main class="sidebar-choice-main operations-main compact-dashboard">
+              <section class="compact-heading"><div><small>MONITOR OPERACYJNY</small><h3>Stan bieżący</h3></div><span class="mock-data-badge">OSTATNIA ZMIANA 11:52</span></section>
+              <section class="compact-metrics">
+                <article data-domain="forms"><span class="operation-icon">FO</span><div><small>FORMULARZE</small><strong>12 / 4 pilne</strong></div><b>67%</b></article>
+                <article data-domain="shipping"><span class="operation-icon">PR</span><div><small>WYSYŁKI</small><strong>7 / 3 gotowe</strong></div><b>43%</b></article>
+                <article data-domain="devices"><span class="operation-icon">UR</span><div><small>URZĄDZENIA</small><strong>24 / 3 kontrole</strong></div><b>88%</b></article>
+              </section>
+              <section class="operations-panel compact-table-panel">
+                <header><div><small>WSPÓLNA KOLEJKA</small><h4>Najnowsze i najważniejsze pozycje</h4></div><span>27 aktywnych</span></header>
+                <div class="compact-table" role="table" aria-label="Demonstracyjna kolejka operacyjna">
+                  <div class="compact-table-head" role="row"><span>Obszar</span><span>Pozycja</span><span>Stan</span><span>Zmiana</span><span>Priorytet</span></div>
+                  <article role="row"><span><i class="table-domain forms">FO</i> Formularze</span><strong>Formularz 68</strong><span>Weryfikacja</span><time>11:42</time><b class="priority-high">WYSOKI</b></article>
+                  <article role="row"><span><i class="table-domain shipping">PR</i> Wysyłki</span><strong>18495/2026</strong><span>Etykieta gotowa</span><time>11:18</time><b class="priority-normal">NORMALNY</b></article>
+                  <article role="row"><span><i class="table-domain devices">UR</i> Urządzenia</span><strong>KP/5241</strong><span>Kontrola danych</span><time>10:54</time><b class="priority-high">WYSOKI</b></article>
+                  <article role="row"><span><i class="table-domain forms">FO</i> Formularze</span><strong>Formularz 67</strong><span>Oczekuje na zgodę</span><time>10:20</time><b class="priority-normal">NORMALNY</b></article>
+                  <article role="row"><span><i class="table-domain shipping">PR</i> Wysyłki</span><strong>18494/2026</strong><span>Kompletowanie</span><time>09:48</time><b class="priority-low">NISKI</b></article>
+                  <article role="row"><span><i class="table-domain devices">UR</i> Urządzenia</span><strong>KP/5238</strong><span>Przyjęcie</span><time>09:22</time><b class="priority-low">NISKI</b></article>
+                </div>
+              </section>
+              <section class="compact-footer-status"><span><i></i> API demonstracyjne wyłączone</span><span>Formularze 12</span><span>Wysyłki 7</span><span>Urządzenia 24</span></section>
+            </main>
+          </div>
+        </div>
+      </section>
+
+      <section id="login-split" class="prototype-section login-prototype-section" data-login-prototype="split-screen-selected">
+        <header class="prototype-heading">
+          <div><p>Logowanie 02 · wybrane</p><h2>Ekran dzielony</h2><span>Wyśrodkowana lewa część, bez statycznego logotypu i z większą animacją orbitalną.</span></div>
+          <span class="prototype-tag recommended">Wybrany kierunek</span>
+        </header>
+        <div class="mock-app login-mock login-split-screen selected-login-split">
+          <section class="login-split-brand selected-login-brand">
+            {{ animated_orbit_logo() }}
+            <h3>Centrum procesów<br>Ksero-Partner</h3>
+            <p>Telefonia, formularze, urządzenia, logistyka i administracja w jednej bezpiecznej przestrzeni.</p>
+          </section>
+          <section class="login-split-form">
+            <div><small>WITAJ PONOWNIE</small><h3>Zaloguj się</h3><p>Użyj firmowego adresu e-mail i hasła.</p></div>
+            {{ mock_login_fields() }}
+            <span class="login-form-help">Problem z dostępem? Skontaktuj się z administratorem.</span>
+          </section>
+        </div>
+      </section>
+
+      <footer class="gallery-footer">
+        <a href="#top">Wróć na początek</a>
+        <span>KP Orbit · rozwinięcie konsoli bocznej · dane demonstracyjne</span>
+      </footer>
+    </main>
+  </body>
+</html>

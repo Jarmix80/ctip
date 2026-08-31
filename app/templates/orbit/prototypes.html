@@ -1,0 +1,362 @@
+{% macro module_list(active="Pulpit", compact=false) -%}
+  <ul class="module-list{% if compact %} module-list-compact{% endif %}">
+    {% for module in modules %}
+      <li class="module-item{% if module.name == active %} is-active{% endif %}" data-route="{{ module.path }}">
+        <span class="module-mark" aria-hidden="true">{{ module.mark }}</span>
+        <span class="module-copy">
+          <strong>{{ module.name }}</strong>
+          <small>{{ module.path }}</small>
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+{%- endmacro %}
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <title>KP Orbit – pięć prototypów pulpitu</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/orbit/brand/kp-orbit-icon-32.png">
+    <link
+      rel="stylesheet"
+      href="/static/orbit/prototypes.css?v={{ request.app.version }}-orbit-prototypes-1"
+    >
+  </head>
+  <body id="top">
+    <main class="gallery-shell">
+      <header class="gallery-hero">
+        <div class="gallery-brand">
+          <img
+            src="/static/orbit/brand/kp-orbit-horizontal-color.png"
+            alt="KP Orbit – Centrum Procesów"
+          >
+          <span>Galeria koncepcji interfejsu</span>
+        </div>
+        <div class="gallery-intro">
+          <p class="eyebrow">CTIP / ŚRODOWISKO TESTOWE / ETAP KONCEPCYJNY</p>
+          <h1>Pięć kierunków pulpitu KP Orbit</h1>
+          <p>
+            Każdy wariant pokazuje komplet modułów, przykładowe dane oraz zachowanie układu
+            na komputerze i telefonie. Wybór dotyczy wyłącznie kierunku wizualnego.
+          </p>
+        </div>
+      </header>
+
+      <aside class="prototype-warning" role="note">
+        <strong>Makiety niefunkcjonalne</strong>
+        <span>
+          Brak połączeń z PostgreSQL, Firebird, centralą CTIP, pocztą, DPD i pozostałymi API.
+          Elementy akcji są wyłączone.
+        </span>
+      </aside>
+
+      <nav class="gallery-jump" aria-label="Wybór prototypu">
+        <a href="#klasyczny">
+          <span>01</span>
+          <strong>Klasyczny Orbit</strong>
+          <small>Najbliżej dostarczonej makiety</small>
+        </a>
+        <a href="#centrum">
+          <span>02</span>
+          <strong>Centrum Operacyjne</strong>
+          <small>Ciemne i zwarte</small>
+        </a>
+        <a href="#proces">
+          <span>03</span>
+          <strong>Proces 360</strong>
+          <small>Praca etapami</small>
+        </a>
+        <a href="#kafelki">
+          <span>04</span>
+          <strong>Kafelki Modułowe</strong>
+          <small>Proste wejście do aplikacji</small>
+        </a>
+        <a href="#focus">
+          <span>05</span>
+          <strong>Minimal Focus</strong>
+          <small>Spokojna praca zadaniowa</small>
+        </a>
+      </nav>
+
+      <section id="klasyczny" class="prototype-section" data-prototype="klasyczny-orbit">
+        <header class="prototype-heading">
+          <div>
+            <p>Wariant 01</p>
+            <h2>Klasyczny Orbit</h2>
+            <span>Granatowa nawigacja, jasne karty i układ najbliższy dostarczonej makiecie.</span>
+          </div>
+          <span class="prototype-tag recommended">Punkt odniesienia</span>
+        </header>
+
+        <div class="mock-app classic-app">
+          <aside class="classic-sidebar">
+            <img
+              class="sidebar-logo"
+              src="/static/orbit/brand/kp-orbit-horizontal-reverse.png"
+              alt="KP Orbit"
+            >
+            {{ module_list() }}
+            <div class="sidebar-profile">
+              <span class="avatar">MK</span>
+              <span><strong>Marcin K.</strong><small>Administrator</small></span>
+            </div>
+          </aside>
+          <div class="classic-workspace">
+            <header class="mock-topbar light-topbar">
+              <div><small>SOBOTA, 29 SIERPNIA</small><strong>Dzień dobry, Marcin</strong></div>
+              <div class="topbar-actions"><span class="health-dot">System działa</span><span>?</span><span>3</span></div>
+            </header>
+            <div class="classic-content">
+              <section class="welcome-line">
+                <div><h3>Pulpit operacyjny</h3><p>Najważniejsze dane ze wszystkich procesów firmy.</p></div>
+                <div class="mock-actions">
+                  <button type="button" disabled>+ Nowa sprawa</button>
+                  <button type="button" class="secondary" disabled>Nadaj przesyłkę</button>
+                </div>
+              </section>
+              <section class="metric-grid four-columns">
+                <article><span class="metric-icon red">!</span><small>Wymaga uwagi</small><strong>12</strong><p>3 sprawy pilne</p></article>
+                <article><span class="metric-icon blue">F</span><small>Aktywne formularze</small><strong>28</strong><p>7 oczekuje na klienta</p></article>
+                <article><span class="metric-icon navy">U</span><small>Urządzenia w ruchu</small><strong>16</strong><p>5 dostaw w tym tygodniu</p></article>
+                <article><span class="metric-icon green">P</span><small>Przesyłki dzisiaj</small><strong>9</strong><p>7 doręczonych</p></article>
+              </section>
+              <div class="dashboard-columns">
+                <section class="panel-card attention-card">
+                  <header><div><small>PRIORYTETY</small><h4>Co wymaga uwagi</h4></div><span>12 spraw</span></header>
+                  <div class="attention-row"><span class="severity critical"></span><div><strong>Formularz 62 bez urządzenia</strong><small>FLOW · 18 minut temu</small></div><b>Pilne</b></div>
+                  <div class="attention-row"><span class="severity warning"></span><div><strong>Przesyłka czeka na etykietę</strong><small>DPD · zlecenie 18495/2026</small></div><b>Dzisiaj</b></div>
+                  <div class="attention-row"><span class="severity info"></span><div><strong>Do potwierdzenia termin dostawy</strong><small>Dostawy · klient 2948</small></div><b>Jutro</b></div>
+                </section>
+                <section class="panel-card activity-card">
+                  <header><div><small>HISTORIA</small><h4>Ostatnia aktywność</h4></div><span>Na żywo</span></header>
+                  <ol class="activity-list">
+                    <li><span>FO</span><div><strong>Utworzono formularz 64</strong><small>Anna · 10:42</small></div></li>
+                    <li><span>TS</span><div><strong>Wysłano SMS do klienta</strong><small>Marcin · 10:31</small></div></li>
+                    <li><span>UR</span><div><strong>Przyjęto 3 urządzenia</strong><small>Magazyn · 09:56</small></div></li>
+                  </ol>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="centrum" class="prototype-section" data-prototype="centrum-operacyjne">
+        <header class="prototype-heading">
+          <div>
+            <p>Wariant 02</p>
+            <h2>Centrum Operacyjne</h2>
+            <span>Ciemna konsola z dużą gęstością informacji i mocnym wskazaniem alarmów.</span>
+          </div>
+          <span class="prototype-tag">Duży monitor</span>
+        </header>
+
+        <div class="mock-app command-app">
+          <header class="command-topbar">
+            <img src="/static/orbit/brand/kp-orbit-horizontal-reverse.png" alt="KP Orbit">
+            <div class="command-state"><span></span> Wszystkie systemy operacyjne</div>
+            <div class="command-clock"><small>CZAS LOKALNY</small><strong>11:04:26</strong></div>
+          </header>
+          <div class="command-layout">
+            <aside class="command-nav">
+              <small>MODUŁY SYSTEMU</small>
+              {{ module_list() }}
+            </aside>
+            <div class="command-main">
+              <section class="command-lead">
+                <div><p>CENTRUM DOWODZENIA</p><h3>Operacje firmy</h3><span>Stan bieżący · dane demonstracyjne</span></div>
+                <div class="pulse-score"><span>94</span><small>sprawność</small></div>
+              </section>
+              <section class="command-metrics">
+                <article><small>OTWARTE SPRAWY</small><strong>47</strong><span class="trend up">+8 dzisiaj</span></article>
+                <article><small>W KOLEJCE FLOW</small><strong>11</strong><span class="trend warn">3 po terminie</span></article>
+                <article><small>AKTYWNE POŁĄCZENIA</small><strong>04</strong><span class="trend">12 operatorów</span></article>
+                <article><small>PRZESYŁKI</small><strong>09</strong><span class="trend up">7 doręczonych</span></article>
+              </section>
+              <div class="command-panels">
+                <section class="command-panel radar-panel">
+                  <header><span>OBRAZ OPERACYJNY</span><b>LIVE</b></header>
+                  <div class="orbit-radar" aria-hidden="true">
+                    <span class="radar-ring ring-one"></span><span class="radar-ring ring-two"></span>
+                    <span class="radar-core">KP</span><i class="radar-point point-one"></i>
+                    <i class="radar-point point-two"></i><i class="radar-point point-three"></i>
+                  </div>
+                  <div class="radar-legend"><span><i class="ok"></i>Stabilne 7</span><span><i class="warn"></i>Uwaga 2</span><span><i class="danger"></i>Pilne 1</span></div>
+                </section>
+                <section class="command-panel queue-panel">
+                  <header><span>KOLEJKA PRIORYTETÓW</span><b>12</b></header>
+                  <ol>
+                    <li><em>P1</em><div><strong>Brak powiązanego urządzenia</strong><small>Formularz 62 · FLOW</small></div><time>18 min</time></li>
+                    <li><em>P2</em><div><strong>Przesyłka bez etykiety</strong><small>18495/2026 · DPD</small></div><time>31 min</time></li>
+                    <li><em>P3</em><div><strong>Dostawa do potwierdzenia</strong><small>Klient 2948 · Poznań</small></div><time>1 godz.</time></li>
+                    <li><em>OK</em><div><strong>Synchronizacja poczty</strong><small>Ostatni przebieg poprawny</small></div><time>2 min</time></li>
+                  </ol>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="proces" class="prototype-section" data-prototype="proces-360">
+        <header class="prototype-heading">
+          <div>
+            <p>Wariant 03</p>
+            <h2>Proces 360</h2>
+            <span>Widok porządkuje moduły i zadania według kolejnych etapów obsługi klienta.</span>
+          </div>
+          <span class="prototype-tag">Procesy end-to-end</span>
+        </header>
+
+        <div class="mock-app process-app">
+          <header class="process-topbar">
+            <img src="/static/orbit/brand/kp-orbit-horizontal-color.png" alt="KP Orbit">
+            <div class="process-search">Szukaj klienta, formularza, urządzenia lub przesyłki…</div>
+            <span class="avatar soft">MK</span>
+          </header>
+          <nav class="process-modules" aria-label="Moduły makiety Proces 360">
+            {{ module_list(compact=true) }}
+          </nav>
+          <div class="process-content">
+            <section class="process-heading">
+              <div><small>PULPIT PROCESÓW</small><h3>Od kontaktu do dostawy</h3><p>Wszystkie sprawy prowadzone w jednym ciągu operacyjnym.</p></div>
+              <span class="date-chip">29 sierpnia 2026</span>
+            </section>
+            <section class="journey-board">
+              <article class="journey-step contact-step">
+                <header><span>01</span><div><small>START</small><h4>Kontakt</h4></div><b>14</b></header>
+                <p>Telefonia, wiadomości i nowe potrzeby klientów.</p>
+                <div class="journey-card"><strong>4 aktywne rozmowy</strong><small>Średni czas: 03:42</small></div>
+                <div class="journey-card"><strong>10 SMS do obsługi</strong><small>2 wymagają odpowiedzi</small></div>
+              </article>
+              <article class="journey-step forms-step">
+                <header><span>02</span><div><small>DANE</small><h4>Formularze</h4></div><b>28</b></header>
+                <p>Zbieranie danych i kontrola kompletności formularzy.</p>
+                <div class="journey-card alert"><strong>Formularz 62</strong><small>Brak powiązanego urządzenia</small></div>
+                <div class="journey-card"><strong>7 oczekuje na klienta</strong><small>Najstarszy: 2 dni</small></div>
+              </article>
+              <article class="journey-step flow-step">
+                <header><span>03</span><div><small>REALIZACJA</small><h4>FLOW</h4></div><b>11</b></header>
+                <p>Proformy, zgody, umowy oraz przygotowanie urządzeń.</p>
+                <div class="journey-card"><strong>5 zaakceptowanych</strong><small>Gotowe do realizacji</small></div>
+                <div class="journey-card"><strong>3 nowe proformy</strong><small>Do weryfikacji handlowca</small></div>
+              </article>
+              <article class="journey-step delivery-step">
+                <header><span>04</span><div><small>FINAŁ</small><h4>Dostawa</h4></div><b>9</b></header>
+                <p>Dostawy urządzeń, przesyłki części i potwierdzenia.</p>
+                <div class="journey-card"><strong>5 dostaw urządzeń</strong><small>2 zaplanowane na dziś</small></div>
+                <div class="journey-card"><strong>9 przesyłek DPD</strong><small>7 już doręczonych</small></div>
+              </article>
+            </section>
+            <section class="process-footer-card">
+              <div><span class="process-status-icon">✓</span><div><strong>Przepływy techniczne działają prawidłowo</strong><small>Ostatnia synchronizacja: 2 minuty temu</small></div></div>
+              <button type="button" disabled>Zobacz stan integracji</button>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="kafelki" class="prototype-section" data-prototype="kafelki-modulowe">
+        <header class="prototype-heading">
+          <div>
+            <p>Wariant 04</p>
+            <h2>Kafelki Modułowe</h2>
+            <span>Duże wejścia do aplikacji, ograniczona liczba tabel i prosty punkt startowy.</span>
+          </div>
+          <span class="prototype-tag">Najprostszy start</span>
+        </header>
+
+        <div class="mock-app tiles-app">
+          <header class="tiles-topbar">
+            <img src="/static/orbit/brand/kp-orbit-horizontal-color.png" alt="KP Orbit">
+            <div class="tiles-user"><span class="status-pill">System działa</span><span class="avatar soft">MK</span></div>
+          </header>
+          <div class="tiles-content">
+            <section class="tiles-welcome">
+              <div><small>DZIEŃ DOBRY, MARCIN</small><h3>Co chcesz dziś zrobić?</h3><p>Wybierz moduł lub przejdź do jednej z pilnych spraw.</p></div>
+              <div class="tiles-date"><strong>29</strong><span>Sierpień<br>2026</span></div>
+            </section>
+            <section class="app-tile-grid" aria-label="Moduły makiety Kafelki Modułowe">
+              {% for module in modules %}
+                <article class="app-tile tile-{{ loop.index }}" data-route="{{ module.path }}">
+                  <span class="tile-mark">{{ module.mark }}</span>
+                  <div><h4>{{ module.name }}</h4><small>{{ module.path }}</small></div>
+                  <span class="tile-arrow">→</span>
+                </article>
+              {% endfor %}
+            </section>
+            <div class="tiles-lower">
+              <section class="quick-panel">
+                <header><div><small>SZYBKIE AKCJE</small><h4>Najczęściej używane</h4></div></header>
+                <div class="quick-actions">
+                  <button type="button" disabled><span>+</span>Nowy formularz</button>
+                  <button type="button" disabled><span>DPD</span>Nadaj przesyłkę</button>
+                  <button type="button" disabled><span>SMS</span>Wyślij wiadomość</button>
+                </div>
+              </section>
+              <section class="notice-panel">
+                <span class="notice-number">3</span>
+                <div><small>SPRAWY PILNE</small><strong>Wymagają decyzji przed 12:00</strong><p>Formularz 62, przesyłka 18495 i dostawa klienta 2948.</p></div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="focus" class="prototype-section" data-prototype="minimal-focus">
+        <header class="prototype-heading">
+          <div>
+            <p>Wariant 05</p>
+            <h2>Minimal Focus</h2>
+            <span>Spokojny interfejs zadaniowy z wąską nawigacją i jednym wyraźnym priorytetem.</span>
+          </div>
+          <span class="prototype-tag">Najmniej rozpraszający</span>
+        </header>
+
+        <div class="mock-app focus-app">
+          <aside class="focus-rail">
+            <img src="/static/orbit/brand/kp-orbit-icon-192.png" alt="KP Orbit">
+            {{ module_list(compact=true) }}
+            <span class="avatar">MK</span>
+          </aside>
+          <div class="focus-workspace">
+            <header class="focus-topbar">
+              <div><small>PULPIT / SOBOTA</small><strong>Twoje centrum pracy</strong></div>
+              <div class="focus-tools"><span>Pomoc</span><span>Powiadomienia · 3</span></div>
+            </header>
+            <div class="focus-content">
+              <section class="focus-hero">
+                <div class="focus-copy"><small>NAJWAŻNIEJSZE TERAZ</small><h3>Uzupełnij urządzenie<br>w formularzu 62</h3><p>Sprawa nie może przejść do kolejnego etapu FLOW bez powiązania urządzenia z Menadżera Serwisu.</p><button type="button" disabled>Przejdź do sprawy</button></div>
+                <div class="focus-orbit" aria-hidden="true"><span>62</span><i></i><b></b></div>
+              </section>
+              <section class="focus-summary">
+                <article><small>DO ZROBIENIA</small><strong>8</strong><span>3 pilne</span></article>
+                <article><small>W TOKU</small><strong>17</strong><span>+4 dzisiaj</span></article>
+                <article><small>ZAKOŃCZONE</small><strong>34</strong><span>w tym tygodniu</span></article>
+              </section>
+              <div class="focus-columns">
+                <section class="focus-list">
+                  <header><div><small>NASTĘPNE</small><h4>Plan pracy</h4></div><span>8 zadań</span></header>
+                  <ol>
+                    <li><span class="task-time">11:20</span><div><strong>Potwierdź przesyłkę 18495</strong><small>Przesyłki · DPD</small></div><em>Pilne</em></li>
+                    <li><span class="task-time">12:00</span><div><strong>Uzgodnij termin dostawy</strong><small>Dostawy · klient 2948</small></div><em>Plan</em></li>
+                    <li><span class="task-time">14:30</span><div><strong>Sprawdź nowe formularze</strong><small>Formularze · 7 pozycji</small></div><em>Plan</em></li>
+                  </ol>
+                </section>
+                <section class="focus-note">
+                  <small>ASYSTENT KP ORBIT</small><h4>Mogę przygotować podsumowanie otwartych spraw.</h4><p>Raport obejmie FLOW, urządzenia, dostawy i przesyłki.</p><button type="button" disabled>Przygotuj raport</button>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="gallery-footer">
+        <a href="#top">Wróć na początek</a>
+        <span>KP Orbit · makiety testowe · brak zapisu danych</span>
+      </footer>
+    </main>
+  </body>
+</html>

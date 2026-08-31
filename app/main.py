@@ -40,6 +40,7 @@ from app.web.form_ui import router as form_ui_router
 from app.web.genform_ui import router as genform_ui_router
 from app.web.mm_ui import router as mm_ui_router
 from app.web.operator_ui import router as operator_ui_router
+from app.web.orbit_ui import router as orbit_ui_router
 from app.web.root_ui import router as root_ui_router
 from app.web.shipping_ui import router as shipping_ui_router
 
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
                 "/shipping",
                 "/choice",
                 "/operator",
+                "/orbit",
             )
         ):
             response.headers.setdefault("Cache-Control", "no-store")
@@ -143,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(form_ui_router)
     app.include_router(genform_ui_router)
     app.include_router(operator_ui_router)
+    app.include_router(orbit_ui_router)
     app.include_router(shipping_ui_router)
     app.include_router(root_ui_router)
     app.include_router(mm_ui_router)
