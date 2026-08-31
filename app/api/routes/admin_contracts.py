@@ -86,6 +86,7 @@ from app.services.contracts_workflow import (
     set_form_workflow_proforma,
     workflow_business_status_label,
 )
+from app.services.delivery import ensure_delivery_case_for_workflow
 from app.services.grenke_launch import launch_grenke_prefill
 from app.services.workflow_device_ownership import (
     MACHINE_MATCH_BOUND_CURRENT_WORKFLOW,
@@ -2607,6 +2608,7 @@ async def contracts_form_workflow_devices(
     binding_items_payload: list[dict[str, Any]] = []
     binding_alert_payload: dict[str, Any] | None = None
     binding_failures_count = 0
+    delivery_case_payload: dict[str, Any] | None = None
 
     normalized_status = normalize_workflow_business_status(workflow_case.business_status)
     if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER and workflow_devices:
@@ -2717,6 +2719,20 @@ async def contracts_form_workflow_devices(
                 error=sheet_sync_warning,
             )
 
+    if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
+        delivery_case, contract_end = await ensure_delivery_case_for_workflow(
+            session,
+            workflow_case=workflow_case,
+            form_request=item,
+            devices=workflow_devices,
+            updated_by=admin_user.id,
+        )
+        delivery_case_payload = {
+            "delivery_case_id": delivery_case.id,
+            "grenke_contract_end_id": contract_end.id,
+            "grenke_contract_end_status": contract_end.status,
+        }
+
     message_parts = [
         (
             "Wybor urzadzen zapisany po stronie CTIP."
@@ -2791,6 +2807,7 @@ async def contracts_form_workflow_devices(
             "sheet_release_warning": sheet_release_warning,
             "binding_items": binding_items_payload,
             "binding_alert": binding_alert_payload,
+            "delivery": delivery_case_payload,
         },
     )
     await session.commit()
@@ -2811,6 +2828,7 @@ async def contracts_form_workflow_devices(
             "items": binding_items_payload,
             "alert": binding_alert_payload,
         },
+        "delivery": delivery_case_payload,
     }
 
 
@@ -2901,6 +2919,7 @@ async def contracts_form_workflow_status(
     sheet_sync_warning: str | None = None
     sheet_sync_reason: str | None = None
     resources_release_result: dict[str, Any] | None = None
+    delivery_case_payload: dict[str, Any] | None = None
 
     if normalized_status == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER:
         issuer_name = (
@@ -3006,6 +3025,19 @@ async def contracts_form_workflow_status(
                 response_message_parts.append(
                     f"Synchronizacja arkusza pominięta ({sheet_sync_reason})."
                 )
+        delivery_case, contract_end = await ensure_delivery_case_for_workflow(
+            session,
+            workflow_case=workflow_case,
+            form_request=item,
+            devices=workflow_devices,
+            updated_by=admin_user.id,
+        )
+        delivery_case_payload = {
+            "delivery_case_id": delivery_case.id,
+            "grenke_contract_end_id": contract_end.id,
+            "grenke_contract_end_status": contract_end.status,
+        }
+        response_message_parts.append("Przekazano sprawę do modułu obsługi dostaw.")
 
     if normalized_status == WORKFLOW_BUSINESS_STATUS_CLOSED_NOT_REALIZED:
         resources_release_result = await _release_workflow_resources_for_case(
@@ -3061,6 +3093,7 @@ async def contracts_form_workflow_status(
                 if resources_release_result
                 else None
             ),
+            "delivery": delivery_case_payload,
         },
     )
     await session.commit()
@@ -3085,6 +3118,7 @@ async def contracts_form_workflow_status(
             if resources_release_result
             else None
         ),
+        "delivery": delivery_case_payload,
         "archive_state": {
             "archive_due_at": _to_iso(item.archive_due_at),
             "days_to_archive": _days_until(item.archive_due_at),

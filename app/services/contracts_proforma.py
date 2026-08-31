@@ -1167,18 +1167,17 @@ def _build_line_item(cursor, *, device: dict[str, Any], form_request_id: int) ->
             )
         warehouse = _fetch_warehouse_details(cursor, warehouse_match.id_magazyn_table)
 
-    available_qty = _decimal_or_zero(warehouse.ilosc)
-    if available_qty <= 0:
-        raise ValueError(
-            f"Urzadzenie z wiersza {source_row or '?'} nie ma dodatniego stanu magazynowego."
-        )
-
     vat_rate_value = _parse_vat_rate(warehouse.vat_stawka)
     net_price, gross_price = _resolve_line_prices(
         device,
         warehouse=warehouse,
         vat_rate=vat_rate_value,
     )
+    available_qty = _decimal_or_zero(warehouse.ilosc)
+    if available_qty <= 0:
+        raise ValueError(
+            f"Urzadzenie z wiersza {source_row or '?'} nie ma dodatniego stanu magazynowego."
+        )
     quantity = Decimal("1.0000")
     net_value = _quantize_money(net_price * quantity)
     gross_value = _quantize_money(gross_price * quantity)

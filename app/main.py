@@ -18,6 +18,10 @@ from app.services.contracts_workflow_maintenance import (
     start_contracts_workflow_maintenance_scheduler,
     stop_contracts_workflow_maintenance_scheduler,
 )
+from app.services.delivery_notifications import (
+    start_delivery_notifications_scheduler,
+    stop_delivery_notifications_scheduler,
+)
 from app.services.device_audit_worker import (
     start_device_audit_scheduler,
     stop_device_audit_scheduler,
@@ -38,6 +42,7 @@ from app.services.workflow_sheet_status_cache import (
 from app.web.admin_ui import router as admin_ui_router
 from app.web.assistant_ui import router as assistant_ui_router
 from app.web.contracts_ui import router as contracts_ui_router
+from app.web.delivery_ui import router as delivery_ui_router
 from app.web.device_ui import router as device_ui_router
 from app.web.flow_ui import router as flow_ui_router
 from app.web.form_ui import router as form_ui_router
@@ -58,6 +63,7 @@ async def _app_lifespan(_: FastAPI):
     device_sheet_outbox_scheduler_started = False
     device_audit_scheduler_started = False
     dpd_infoservices_scheduler_started = False
+    delivery_notifications_scheduler_started = False
     await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
@@ -79,6 +85,9 @@ async def _app_lifespan(_: FastAPI):
     if settings.shipping_enabled and settings.dpd_info_enabled:
         await start_dpd_infoservices_scheduler()
         dpd_infoservices_scheduler_started = True
+    if settings.delivery_notifications_scheduler_enabled:
+        await start_delivery_notifications_scheduler()
+        delivery_notifications_scheduler_started = True
     try:
         yield
     finally:
@@ -96,6 +105,8 @@ async def _app_lifespan(_: FastAPI):
             await stop_device_audit_scheduler()
         if dpd_infoservices_scheduler_started:
             await stop_dpd_infoservices_scheduler()
+        if delivery_notifications_scheduler_started:
+            await stop_delivery_notifications_scheduler()
 
 
 def create_app() -> FastAPI:
@@ -139,6 +150,7 @@ def create_app() -> FastAPI:
                 "/choice",
                 "/operator",
                 "/shipping",
+                "/delivery",
             )
         ):
             response.headers.setdefault("Cache-Control", "no-store")
@@ -148,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(assistant_ui_router)
     app.include_router(admin_ui_router)
     app.include_router(contracts_ui_router)
+    app.include_router(delivery_ui_router)
     app.include_router(device_ui_router)
     app.include_router(flow_ui_router)
     app.include_router(form_ui_router)

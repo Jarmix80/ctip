@@ -531,7 +531,9 @@ CREATE TABLE ctip.admin_user (
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT admin_user_pkey PRIMARY KEY (id),
-    CONSTRAINT admin_user_role_check CHECK (role = ANY (ARRAY['admin'::text, 'operator'::text])),
+    CONSTRAINT admin_user_role_check CHECK (
+        role = ANY (ARRAY['admin'::text, 'operator'::text, 'serwisant'::text])
+    ),
     CONSTRAINT admin_user_device_theme_check CHECK (device_theme = ANY (ARRAY['blue'::text, 'graphite'::text, 'mint'::text]))
 );
 

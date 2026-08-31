@@ -191,7 +191,7 @@ def collect_sms_log_entries(
     now: datetime | None = None,
 ) -> tuple[list[SmsLogEntry], str | None, datetime]:
     """Zwraca listę wpisów logu sms_sender wraz ze ścieżką pliku."""
-    now = now or datetime.now(UTC)
+    now = now or datetime.now()
     lines = read_log_tail("sms", "sms_sender", limit=limit, now=now)
     path = daily_log_path("sms", "sms_sender", now).as_posix()
     entries = [parse_sms_log_line(line) for line in lines]

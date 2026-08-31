@@ -109,6 +109,11 @@ Szczegółowy runbook DNS, NAT i reverse proxy znajduje się w `docs/instal/publ
    - `-SkipTests` – pomija testy jednostkowe.
    - `-ForceStartOnFailure` – uruchamia usługi nawet przy błędzie aktualizacji.
 6. Po udanej aktualizacji skontroluj logi kolektora i status tabeli `ctip.sms_out`.
+7. Dodatkowo wykonaj szybki healthcheck uslug i logow:
+   ```powershell
+   .\scripts\windows\check_ctip_health.ps1 -InstallDir "D:\CTIP"
+   ```
+   Kod wyjscia `2` oznacza blad krytyczny (np. zatrzymana usluga, brak lacznosci TCP do PBX/PG lub bledy autoryzacji PostgreSQL w logach SMS).
 
 ### Wariant z gotowym .venv (pomijanie instalacji zależności)
 Jeżeli `.venv` oraz `pywin32_postinstall` zostały już wykonane ręcznie (np. jak w `docs/archiwum/install.txt`), możesz pominąć ponowną instalację zależności i rejestrację pywin32:
