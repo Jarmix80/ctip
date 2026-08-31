@@ -1962,7 +1962,7 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
      4 -import psycopg2
      5 -
      6 -LOG = pathlib.Path("db_probe.log")
-     7 -DB = "postgresql://appuser:Lomtjjz1@192.168.0.8:5433/ctip"
+     7 -DB = "postgresql://appuser:<USUNIĘTO_PGPASSWORD>@192.168.0.8:5433/ctip"
      8 -SCHEMA = "ctip"
      9 -
     10 -
@@ -2004,7 +2004,7 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
      13 -    port=5433,
      14 -    dbname="ctip",
      15 -    user="appuser",
-     16 -    password="Lomtjjz1",
+     16 -    password="<USUNIĘTO_PGPASSWORD>",
      17 -    options="-c search_path=ctip",
      18 -    sslmode="disable",  # serwer bez TLS
      19 -    autocommit=True,
@@ -2291,7 +2291,7 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
   │ … +74 lines
   └ Search schema_ctip*.sql in baza
 
-• Ran PGHOST=localhost PGPORT=5433 PGUSER=appuser PGPASSWORD=change_me PGDATABASE=ctip psql -d ctip -c "\dt"
+• Ran PGHOST=localhost PGPORT=5433 PGUSER=appuser PGPASSWORD=<USUNIĘTO_PGPASSWORD> PGDATABASE=ctip psql -d ctip -c "\dt"
   └ bash: line 1: psql: command not found
 
 • I’m figuring out how to create an offline Alembic migration from a large schema SQL file without database access. Using raw SQL in op.execute is possible but cumbersome, so I’m leaning toward manually creating an initial migration
@@ -3914,11 +3914,11 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
      cp .env.example .env
      Uzupełnij .env:
       - SMS_API_URL=https://api2.serwersms.pl
-      - Jeśli korzystasz z tokenu REST: SMS_API_TOKEN=...
+      - Jeśli korzystasz z tokenu REST: SMS_API_TOKEN=<USUNIĘTO_SMS_API_TOKEN>
       - W przeciwnym razie użyj loginu i hasła:
 
         SMS_API_USERNAME=twoj_login
-        SMS_API_PASSWORD=twoje_haslo
+        SMS_API_PASSWORD=<USUNIĘTO_SMS_API_PASSWORD>
 
      source .venv/bin/activate
      alembic upgrade head
@@ -4078,12 +4078,12 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
 • W próbie połączenia użyłem hasła wpisanego w .env, czyli change_me.
 
 
-› uzyj PGPASSWORD=Lomtjjz1 i wykonaj jeszcze raz
+› uzyj PGPASSWORD=<USUNIĘTO_PGPASSWORD> i wykonaj jeszcze raz
 
 
 • Ran source .venv/bin/activate && python - <<'PY'
   │ import psycopg
-  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='Lomtjjz1')
+  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='<USUNIĘTO_PGPASSWORD>')
   │ … +7 lines
   └ (no output)
 
@@ -4106,7 +4106,7 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
 • Zawartość error.txt pochodziła z wcześniejszej próby alembic upgrade head, gdy tabela ctip.sms_template była już w bazie. Migracja e0ea7dc108d6_sms_data_extensions.py próbowała ją tworzyć ponownie, więc PostgreSQL zgłosił
   DuplicateTableError i cała sekwencja migracji została przerwana.
 
-  - przywróciłem dostęp do bazy (appuser/Lomtjjz1);
+  - przywróciłem dostęp do bazy (appuser/<USUNIĘTO_PGPASSWORD>);
   - usunąłem istniejącą kolumnę sms_out.template_id, tabelę ctip.sms_template i unikalne ograniczenie ctip.contact(uq_contact_number), aby migracja mogła je utworzyć od zera.
 
 
@@ -4158,13 +4158,13 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
 
 • Ran source .venv/bin/activate && python - <<'PY'
   │ import psycopg
-  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='Lomtjjz1')
+  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='<USUNIĘTO_PGPASSWORD>')
   │ … +5 lines
   └ ['call_events', 'calls', 'contact', 'contact_device', 'ivr_map', 'sms_out']
 
 • Ran source .venv/bin/activate && python - <<'PY'
   │ import psycopg
-  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='Lomtjjz1')
+  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='<USUNIĘTO_PGPASSWORD>')
   │ … +35 lines
   └ (no output)
 
@@ -4832,9 +4832,9 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
   1. Upewnij się, że .env zawiera prawdziwe dane SerwerSMS:
 
      SMS_API_URL=https://api2.serwersms.pl
-     SMS_API_TOKEN=...        # jeśli używasz tokenu
+     SMS_API_TOKEN=<USUNIĘTO_SMS_API_TOKEN>        # jeśli używasz tokenu
      SMS_API_USERNAME=webapi_ctip
-     SMS_API_PASSWORD=HAqN508gGDEI!54SLmM#
+     SMS_API_PASSWORD=<USUNIĘTO_SMS_API_PASSWORD>
      SMS_DEFAULT_SENDER=KseroPartner  # nazwa nadawcy zatwierdzona u operatora
      SMS_TEST_MODE=false              # wyłącz tryb testowy, jeśli chcesz realną wysyłkę
   2. Wczytaj zmienne:
@@ -4896,7 +4896,7 @@ marcin@MarcinJKP:~/projects/ctip$ codexctip
   ———
 
   SMS_API_USERNAME=demo
-  SMS_API_PASSWORD=demo
+  SMS_API_PASSWORD=<USUNIĘTO_SMS_API_PASSWORD>
 
   i ponownie set -a; source .env; set +a. W trybie testowym sms_sender.py zapisze status SIMULATED, a SerwerSMS jedynie loguje żądanie.
 

@@ -1,5 +1,6 @@
      python - <<'PY'
      import asyncio
+     import os
      from sqlalchemy import text
      from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -7,6 +8,9 @@
      from app.services.security import hash_password
 
      async def main():
+         admin_password = os.getenv("TEST_ADMIN_PASSWORD", "")
+         if not admin_password:
+             raise RuntimeError("Ustaw TEST_ADMIN_PASSWORD przed utworzeniem konta.")
          engine = create_async_engine(settings.database_url, future=True)
          async with engine.begin() as conn:
              await conn.execute(
@@ -20,7 +24,7 @@
                      "first_name": "Marcin",
                      "last_name": "Jarmuszkiewicz",
                      "role": "admin",
-                     "password_hash": hash_password("Wknpis1@#!")
+                     "password_hash": hash_password(admin_password)
                  },
              )
          await engine.dispose()

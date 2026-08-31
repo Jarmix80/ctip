@@ -11,6 +11,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
 if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
     $PSNativeCommandUseErrorActionPreference = $false
@@ -219,6 +220,12 @@ Set-Location $InstallDir
 
 $envPath = Join-Path $InstallDir $EnvFile
 Import-DotEnv -Path $envPath
+$commonModule = Join-Path $PSScriptRoot "CtipDeployment.Common.psm1"
+if (-not (Test-Path -LiteralPath $commonModule)) {
+    Fail "Brak wspólnego modułu konfiguracji: $commonModule"
+}
+Import-Module $commonModule -Force
+Import-CtipRuntimeEnvironment -InstallDir $InstallDir -ServiceName "CTIP-Web" | Out-Null
 
 Require-Env -Name "PGHOST"
 Require-Env -Name "PGPORT"

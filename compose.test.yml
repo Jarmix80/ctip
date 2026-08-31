@@ -1,14 +1,22 @@
-name: ctip-prod-mirror
+name: ctip-test
 
 x-ctip-service: &ctip-service
   build:
     context: .
     dockerfile: Dockerfile.test
-  image: ctip/prod-mirror:test
+    args:
+      VCS_REF: ${CTIP_TEST_REVISION:-development}
+  image: ${CTIP_TEST_IMAGE:-ctip/test-runtime:development}
   env_file:
     - .env.test
   environment:
     CTIP_ENV_FILE: /app/.env.test
+    CTIP_RUNTIME_PROFILE: test
+    PGDATABASE: ctip_test
+    SMS_TEST_MODE: "true"
+    OUTBOUND_DELIVERY_MODE: capture
+    BLOCK_CLIENT_COMMUNICATIONS: "true"
+    FB_ALLOW_WRITES: "false"
   user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
   group_add:
     - "${LOCAL_LOG_GID:-101}"
@@ -39,9 +47,9 @@ services:
   firebird:
     image: jacobalberty/firebird:v2.5.9-sc
     environment:
-      ISC_PASSWORD: masterkey
+      ISC_PASSWORD: ${FB_PASSWORD:?Ustaw testowe FB_PASSWORD w .env.test}
     volumes:
-      - ./runtime/firebird:/data
+      - ${CTIP_TEST_FIREBIRD_DIR:-./runtime/firebird}:/data
       - ./ops/firebird/aliases.test.conf:/firebird/etc/aliases.conf:ro
     networks:
       - ctip_test_internal
@@ -91,8 +99,6 @@ services:
       - "0.0.0.0:8000:8000"
       - "127.0.0.1:8100:8100"
       - "127.0.0.1:8025:8025"
-      - "127.0.0.1:5432:5432"
-      - "0.0.0.0:3050:3050"
     networks:
       - ctip_test_internal
       - ctip_test_edge
@@ -119,7 +125,7 @@ services:
       DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED: "${TEST_DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED:-false}"
     volumes:
       - .:/app
-      - ./runtime/secrets:/run/secrets:ro
+      - ${CTIP_TEST_SECRET_DIR:-./.runtime-secrets}:/run/secrets:ro
     extra_hosts:
       - "oauth2.googleapis.com:172.28.250.20"
       - "sheets.googleapis.com:172.28.250.20"

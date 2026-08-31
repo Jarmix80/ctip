@@ -14,6 +14,8 @@ param(
     [switch]$AllowNewerCommit
 )
 
+throw "Skrypt archiwalny jest zablokowany. Użyj scripts/deploy_windows_prod.py z pełnym SHA i aktualnym planem wydania."
+
 $ErrorActionPreference = "Stop"
 
 # PowerShell 7+ potrafi traktować stderr z narzędzi natywnych (git/python)

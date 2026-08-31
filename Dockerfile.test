@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+ARG VCS_REF=unknown
+
+LABEL org.opencontainers.image.title="CTIP Test Runtime" \
+      org.opencontainers.image.description="Izolowany, pełny stos testowy CTIP" \
+      org.opencontainers.image.revision="${VCS_REF}"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1

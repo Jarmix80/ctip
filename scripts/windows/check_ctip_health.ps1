@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
 if ($IncludeFormsPublic -and -not ($ServiceNames -contains "CTIP-FormsPublic")) {
     $ServiceNames += "CTIP-FormsPublic"
@@ -176,6 +177,15 @@ Write-Host ""
 Write-Host "=== Konfiguracja .env ==="
 $envPath = Join-Path $InstallDir ".env"
 $envMap = Get-EnvMapFromFile -Path $envPath
+$commonModule = Join-Path $PSScriptRoot "CtipDeployment.Common.psm1"
+if (Test-Path -LiteralPath $commonModule) {
+    Import-Module $commonModule -Force
+    $nssmEnvironment = Get-CtipNssmEnvironment -ServiceName "CTIP-Web"
+    foreach ($name in $nssmEnvironment.Keys) {
+        $envMap[$name] = $nssmEnvironment[$name]
+    }
+    Add-Ok "Konfiguracja NSSM CTIP-Web ma pierwszeństwo przed .env; wartości poufne są ukryte."
+}
 if ($envMap.Count -eq 0) {
     Add-Warning "Nie udalo sie odczytac .env lub plik jest pusty."
 } else {

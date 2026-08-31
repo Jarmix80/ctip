@@ -37,6 +37,7 @@ scripts/windows/collector_service_config.json
 Thumbs.db
 logs/
 runtime/
+.runtime-secrets/
 *:Zone.Identifier
 .cache/
 docs/archiwum/

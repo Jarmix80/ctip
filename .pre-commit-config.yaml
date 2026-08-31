@@ -1,4 +1,11 @@
 repos:
+  - repo: local
+    hooks:
+      - id: ctip-secret-scan
+        name: skan sekretów CTIP
+        entry: python scripts/secret_scan.py
+        language: python
+        pass_filenames: false
   - repo: https://github.com/psf/black
     rev: 25.9.0
     hooks:

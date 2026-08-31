@@ -408,7 +408,7 @@ Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11`
 | `FB_PORT` | `3050` | Port usługi Firebird. |
 | `FB_MODE` | `local` | Domyślny tryb pracy lokalnej kopii Firebird. |
 | `FB_DATABASE` | `/tmp/test_ms.fdb` | Ścieżka lokalnej bazy Firebird dla testów. |
-| `FB_USER`, `FB_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania Firebird. |
+| `FB_USER`, `FB_PASSWORD` | `SYSDBA`, `ctip-test-only` | Dane logowania Firebird. |
 | `FB_CHARSET` | `UTF8` | Kodowanie sesji Firebird. |
 | `FB_ROLE` | *(puste)* | Rola Firebird (opcjonalnie). |
 | `FB_LOCAL_COPY_PATH` | `inbox/firebird/test_ms_local.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
@@ -528,7 +528,7 @@ Budowę, podmianę i rollback opisuje
 | `FB_V_HOST` | `127.0.0.1` | Host lokalnej kopii bazy v-maintenance. |
 | `FB_V_PORT` | `3050` | Port usługi Firebird v-maintenance. |
 | `FB_V_DATABASE` | `/tmp/test_vmaintenance.fdb` | Ścieżka lokalnej bazy v-maintenance. |
-| `FB_V_USER`, `FB_V_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania do bazy v-maintenance. |
+| `FB_V_USER`, `FB_V_PASSWORD` | `SYSDBA`, `ctip-test-only` | Dane logowania do bazy v-maintenance. |
 | `FB_V_CHARSET` | `UTF8` | Kodowanie sesji Firebird v-maintenance. |
 | `FB_V_ROLE` | *(puste)* | Rola Firebird v-maintenance (opcjonalnie). |
 

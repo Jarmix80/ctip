@@ -95,10 +95,10 @@ services:
 networks:
   ctip_test_edge:
     external: true
-    name: ctip-prod-mirror_ctip_test_edge
+    name: ctip-test_ctip_test_edge
   ctip_test_internal:
     external: true
-    name: ctip-prod-mirror_ctip_test_internal
+    name: ctip-test_ctip_test_internal
   chat_kp:
     external: true
     name: chat_kp_chat_kp

@@ -4,8 +4,19 @@ set -euo pipefail
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"
 PYTHON_BIN="${WORKDIR}/.venv/bin/python"
-COMPOSE=(docker compose --project-directory "${WORKDIR}" --env-file "${ENV_FILE}" -f "${WORKDIR}/compose.test.yml")
+COMPOSE_RUNNER="${WORKDIR}/scripts/docker_compose.sh"
+BUILD_RUNNER="${WORKDIR}/scripts/docker_build.sh"
+COMPOSE=("${COMPOSE_RUNNER}" --project-directory "${WORKDIR}" --env-file "${ENV_FILE}" -f "${WORKDIR}/compose.test.yml")
+COMPOSE_SERVER=("${COMPOSE[@]}" -f "${WORKDIR}/compose.test.server.yml")
 ACTION="${1:-start}"
+
+full_revision() {
+    git -C "${WORKDIR}" rev-parse HEAD
+}
+
+server_image() {
+    printf '%s\n' "${CTIP_TEST_IMAGE:-ctip/test-runtime:$(full_revision)}"
+}
 
 run_preflight() {
     if [[ ! -x "${PYTHON_BIN}" ]]; then
@@ -16,42 +27,194 @@ run_preflight() {
         echo "Brak konfiguracji testowej ${ENV_FILE}." >&2
         exit 1
     fi
-    set -a
-    # shellcheck disable=SC1090
-    source "${ENV_FILE}"
-    set +a
-    export CTIP_ENV_FILE="${ENV_FILE}"
-    "${PYTHON_BIN}" "${WORKDIR}/scripts/test_env_preflight.py"
+    CTIP_ENV_FILE="${ENV_FILE}" "${PYTHON_BIN}" "${WORKDIR}/scripts/test_env_preflight.py"
 }
 
-wait_for_web() {
+validate_server_compose() {
+    local image="$1"
+    CTIP_TEST_IMAGE="${image}" "${COMPOSE_SERVER[@]}" config --format json \
+        | "${PYTHON_BIN}" "${WORKDIR}/scripts/test_server_compose_check.py" \
+            --expected-image "${image}" --check-filesystem
+}
+
+validate_image() {
+    local image="$1"
+    local expected_revision actual_revision
+    expected_revision="$(full_revision)"
+    docker image inspect "${image}" >/dev/null
+    actual_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image}")"
+    if [[ "${actual_revision}" != "${expected_revision}" ]]; then
+        echo "Obraz ${image} ma rewizję ${actual_revision}, oczekiwano ${expected_revision}." >&2
+        exit 1
+    fi
+}
+
+verify_test_database() {
+    local image="$1"
+    docker run --rm \
+        --network ctip-prod-mirror_ctip_test_internal \
+        --env-file "${ENV_FILE}" \
+        -e CTIP_ENV_FILE=/app/.env.test \
+        -e CTIP_RUNTIME_PROFILE=test \
+        -e PGHOST=postgres \
+        -e PGDATABASE=ctip_test \
+        -e SMS_TEST_MODE=true \
+        -e OUTBOUND_DELIVERY_MODE=capture \
+        -e BLOCK_CLIENT_COMMUNICATIONS=true \
+        -e FB_ALLOW_WRITES=false \
+        "${image}" python scripts/verify_alembic_state.py
+}
+
+wait_for_url() {
+    local url="$1"
+    local label="$2"
     for _ in $(seq 1 60); do
-        if curl --fail --silent --max-time 2 http://127.0.0.1:8000/health >/dev/null; then
+        if curl --fail --silent --max-time 2 "${url}" >/dev/null; then
             return 0
         fi
         sleep 2
     done
-    echo "Aplikacja nie zgłosiła gotowości w ciągu 120 sekund." >&2
-    "${COMPOSE[@]}" logs --tail=120 web
+    echo "${label} nie zgłosił gotowości w ciągu 120 sekund." >&2
     return 1
+}
+
+wait_for_stack() {
+    wait_for_url "http://127.0.0.1:8000/health" "CTIP"
+    wait_for_url "http://192.168.0.9:8001/health" "CRM"
+    wait_for_url "http://192.168.0.9:8790/health" "LAB"
+    CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" exec -T bot-identity-api \
+        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3).read()"
+}
+
+backup_test_data() {
+    local timestamp backup_dir postgres_container firebird_file
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    backup_dir="${CTIP_TEST_BACKUP_DIR:-${WORKDIR}/backups/test-cutover}/${timestamp}"
+    mkdir -p "${backup_dir}"
+    postgres_container="$(docker ps --filter label=com.docker.compose.project=ctip-prod-mirror --filter label=com.docker.compose.service=postgres --format '{{.ID}}' | head -n 1)"
+    if [[ -z "${postgres_container}" ]]; then
+        echo "Nie znaleziono działającego testowego PostgreSQL projektu ctip-prod-mirror." >&2
+        return 1
+    fi
+    docker exec "${postgres_container}" pg_dump -U ctip_test -d ctip_test -Fc \
+        >"${backup_dir}/ctip_test.dump"
+    firebird_file="$(CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" config --format json \
+        | "${PYTHON_BIN}" "${WORKDIR}/scripts/test_server_compose_check.py" --print-firebird-file)"
+    cp --reflink=auto --preserve=timestamps "${firebird_file}" "${backup_dir}/BAZAMS_TEST.FDB"
+    (cd "${backup_dir}" && sha256sum ctip_test.dump BAZAMS_TEST.FDB >SHA256SUMS)
+    printf '%s\n' "${backup_dir}"
+}
+
+legacy_running_containers() {
+    local project
+    for project in ctip-prod-mirror ctip-bot-identity ctip-crm-lab-test; do
+        docker ps --filter "label=com.docker.compose.project=${project}" --format '{{.ID}}'
+    done | sort -u
+}
+
+prepare_cutover_state() {
+    local state_dir
+    state_dir="${WORKDIR}/runtime/deployments/test-cutover-$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "${state_dir}"
+    legacy_running_containers >"${state_dir}/legacy-containers.txt"
+    if [[ ! -s "${state_dir}/legacy-containers.txt" ]]; then
+        echo "Brak uruchomionych kontenerów poprzednich stosów testowych." >&2
+        return 1
+    fi
+    printf '%s\n' "${state_dir}"
+}
+
+stop_container_list() {
+    local file="$1"
+    if [[ -s "${file}" ]]; then
+        xargs --no-run-if-empty docker stop <"${file}" >/dev/null
+    fi
+}
+
+start_container_list() {
+    local file="$1"
+    if [[ -s "${file}" ]]; then
+        xargs --no-run-if-empty docker start <"${file}" >/dev/null
+    fi
+}
+
+rollback_cutover() {
+    local state_dir="$1"
+    CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" stop || true
+    start_container_list "${state_dir}/legacy-containers.txt"
+    echo "Przywrócono poprzedni stos testowy; stan: ${state_dir}."
 }
 
 case "${ACTION}" in
     start)
         run_preflight
-        if [[ ! -f "${WORKDIR}/runtime/firebird/BAZAMS_TEST.FDB" ]]; then
-            echo "Brak roboczej bazy runtime/firebird/BAZAMS_TEST.FDB." >&2
-            exit 1
-        fi
+        export CTIP_TEST_REVISION="$(full_revision)"
+        export CTIP_TEST_IMAGE="ctip/test-runtime:development"
         "${COMPOSE[@]}" build
         "${COMPOSE[@]}" up -d --force-recreate
-        wait_for_web
+        wait_for_url "http://127.0.0.1:8000/health" "CTIP"
         "${COMPOSE[@]}" exec -T web python scripts/test_env_preflight.py --check-network
-        echo "Test CTIP działa pod http://127.0.0.1:8000/."
-        echo "Mailpit: http://127.0.0.1:8025/."
+        ;;
+    server-build)
+        run_preflight
+        image="$(server_image)"
+        "${BUILD_RUNNER}" \
+            --build-arg "VCS_REF=$(full_revision)" \
+            --label "org.opencontainers.image.revision=$(full_revision)" \
+            --tag "${image}" \
+            --file "${WORKDIR}/Dockerfile.test" \
+            "${WORKDIR}"
+        validate_image "${image}"
+        echo "Zbudowano niezmienny obraz testowy ${image}."
+        ;;
+    server-check)
+        run_preflight
+        image="$(server_image)"
+        validate_image "${image}"
+        validate_server_compose "${image}"
+        verify_test_database "${image}"
+        ;;
+    server-cutover)
+        run_preflight
+        image="$(server_image)"
+        validate_image "${image}"
+        validate_server_compose "${image}"
+        verify_test_database "${image}"
+        backup_dir="$(backup_test_data)"
+        state_dir="$(prepare_cutover_state)"
+        printf '%s\n' "${backup_dir}" >"${state_dir}/backup-path.txt"
+        stop_container_list "${state_dir}/legacy-containers.txt"
+        if ! CTIP_TEST_IMAGE="${image}" "${COMPOSE_SERVER[@]}" up -d --force-recreate; then
+            rollback_cutover "${state_dir}"
+            exit 1
+        fi
+        if ! wait_for_stack; then
+            CTIP_TEST_IMAGE="${image}" "${COMPOSE_SERVER[@]}" logs --tail=160
+            rollback_cutover "${state_dir}"
+            exit 1
+        fi
+        printf '%s\n' "${state_dir}" >"${WORKDIR}/runtime/deployments/current-test-cutover"
+        echo "Stos ctip-test działa na porcie 8000; backup: ${backup_dir}."
+        ;;
+    server-rollback)
+        state_dir="${2:-}"
+        if [[ -z "${state_dir}" && -f "${WORKDIR}/runtime/deployments/current-test-cutover" ]]; then
+            state_dir="$(cat "${WORKDIR}/runtime/deployments/current-test-cutover")"
+        fi
+        if [[ -z "${state_dir}" || ! -f "${state_dir}/legacy-containers.txt" ]]; then
+            echo "Brak poprawnego katalogu stanu rollbacku." >&2
+            exit 1
+        fi
+        rollback_cutover "${state_dir}"
+        ;;
+    server-status)
+        CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" ps
+        ;;
+    server-logs)
+        CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" logs --tail=200
         ;;
     stop)
-        "${COMPOSE[@]}" down --remove-orphans
+        "${COMPOSE[@]}" stop
         ;;
     status)
         "${COMPOSE[@]}" ps
@@ -66,7 +229,7 @@ case "${ACTION}" in
         "${WORKDIR}/scripts/rollback_test_environment.sh" "${2:-}"
         ;;
     *)
-        echo "Użycie: ./ctiptest start|stop|status|logs|reset-firebird|rollback [archiwum]" >&2
+        echo "Użycie: ./ctiptest start|server-build|server-check|server-cutover|server-rollback [stan]|server-status|server-logs|stop|status|logs|reset-firebird|rollback [archiwum]" >&2
         exit 2
         ;;
 esac

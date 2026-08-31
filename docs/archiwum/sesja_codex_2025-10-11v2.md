@@ -69,7 +69,7 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
   │ … +74 lines
   └ Search schema_ctip*.sql in baza
 
-• Ran PGHOST=localhost PGPORT=5433 PGUSER=appuser PGPASSWORD=change_me PGDATABASE=ctip psql -d ctip -c "\dt"
+• Ran PGHOST=localhost PGPORT=5433 PGUSER=appuser PGPASSWORD=<USUNIĘTO_PGPASSWORD> PGDATABASE=ctip psql -d ctip -c "\dt"
   └ bash: line 1: psql: command not found
 
 • I’m figuring out how to create an offline Alembic migration from a large schema SQL file without database access. Using raw SQL in op.execute is possible but cumbersome, so I’m leaning toward manually creating an initial migration
@@ -1692,11 +1692,11 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
      cp .env.example .env
      Uzupełnij .env:
       - SMS_API_URL=https://api2.serwersms.pl
-      - Jeśli korzystasz z tokenu REST: SMS_API_TOKEN=...
+      - Jeśli korzystasz z tokenu REST: SMS_API_TOKEN=<USUNIĘTO_SMS_API_TOKEN>
       - W przeciwnym razie użyj loginu i hasła:
 
         SMS_API_USERNAME=twoj_login
-        SMS_API_PASSWORD=twoje_haslo
+        SMS_API_PASSWORD=<USUNIĘTO_SMS_API_PASSWORD>
 
      source .venv/bin/activate
      alembic upgrade head
@@ -1856,12 +1856,12 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
 • W próbie połączenia użyłem hasła wpisanego w .env, czyli change_me.
 
 
-› uzyj PGPASSWORD=Lomtjjz1 i wykonaj jeszcze raz
+› uzyj PGPASSWORD=<USUNIĘTO_PGPASSWORD> i wykonaj jeszcze raz
 
 
 • Ran source .venv/bin/activate && python - <<'PY'
   │ import psycopg
-  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='Lomtjjz1')
+  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='<USUNIĘTO_PGPASSWORD>')
   │ … +7 lines
   └ (no output)
 
@@ -1884,7 +1884,7 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
 • Zawartość error.txt pochodziła z wcześniejszej próby alembic upgrade head, gdy tabela ctip.sms_template była już w bazie. Migracja e0ea7dc108d6_sms_data_extensions.py próbowała ją tworzyć ponownie, więc PostgreSQL zgłosił
   DuplicateTableError i cała sekwencja migracji została przerwana.
 
-  - przywróciłem dostęp do bazy (appuser/Lomtjjz1);
+  - przywróciłem dostęp do bazy (appuser/<USUNIĘTO_PGPASSWORD>);
   - usunąłem istniejącą kolumnę sms_out.template_id, tabelę ctip.sms_template i unikalne ograniczenie ctip.contact(uq_contact_number), aby migracja mogła je utworzyć od zera.
 
 
@@ -1936,13 +1936,13 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
 
 • Ran source .venv/bin/activate && python - <<'PY'
   │ import psycopg
-  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='Lomtjjz1')
+  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='<USUNIĘTO_PGPASSWORD>')
   │ … +5 lines
   └ ['call_events', 'calls', 'contact', 'contact_device', 'ivr_map', 'sms_out']
 
 • Ran source .venv/bin/activate && python - <<'PY'
   │ import psycopg
-  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='Lomtjjz1')
+  │ conn = psycopg.connect(host='192.168.0.8', port=5433, dbname='ctip', user='appuser', password='<USUNIĘTO_PGPASSWORD>')
   │ … +35 lines
   └ (no output)
 
@@ -2610,9 +2610,9 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
   1. Upewnij się, że .env zawiera prawdziwe dane SerwerSMS:
 
      SMS_API_URL=https://api2.serwersms.pl
-     SMS_API_TOKEN=...        # jeśli używasz tokenu
+     SMS_API_TOKEN=<USUNIĘTO_SMS_API_TOKEN>        # jeśli używasz tokenu
      SMS_API_USERNAME=webapi_ctip
-     SMS_API_PASSWORD=HAqN508gGDEI!54SLmM#
+     SMS_API_PASSWORD=<USUNIĘTO_SMS_API_PASSWORD>
      SMS_DEFAULT_SENDER=KseroPartner  # nazwa nadawcy zatwierdzona u operatora
      SMS_TEST_MODE=false              # wyłącz tryb testowy, jeśli chcesz realną wysyłkę
   2. Wczytaj zmienne:
@@ -2674,7 +2674,7 @@ Ran source .venv/bin/activate && python -m unittest discover -s tests -p "test*.
   ———
 
   SMS_API_USERNAME=demo
-  SMS_API_PASSWORD=demo
+  SMS_API_PASSWORD=<USUNIĘTO_SMS_API_PASSWORD>
 
   i ponownie set -a; source .env; set +a. W trybie testowym sms_sender.py zapisze status SIMULATED, a SerwerSMS jedynie loguje żądanie.
 
@@ -8070,7 +8070,7 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
   print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())
   PY
 
-  Skopiuj wynik do .env jako ADMIN_SECRET_KEY=.... Dzięki temu panel zaszyfruje poufne wartości (hasła, tokeny) w tabeli ctip.admin_setting.
+  Skopiuj wynik do .env jako ADMIN_SECRET_KEY=<USUNIĘTO_ADMIN_SECRET_KEY> Dzięki temu panel zaszyfruje poufne wartości (hasła, tokeny) w tabeli ctip.admin_setting.
 
 
 › sprobuj wygenerowac
@@ -8080,11 +8080,11 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
   │ import base64, secrets
   │ print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())
   │ … +1 lines
-  └ WIhihceDcH4lgOWSbs9Qxa4rTS0LojBVxOEeQHD_u8g=
+  └ <USUNIĘTO_ADMIN_SECRET_KEY>
 
 ─ Worked for 15s ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-• Gotowy klucz: WIhihceDcH4lgOWSbs9Qxa4rTS0LojBVxOEeQHD_u8g= – wstaw go do .env jako wartość ADMIN_SECRET_KEY. Dzięki temu panel będzie mógł szyfrować wrażliwe ustawienia.
+• Gotowy klucz: <USUNIĘTO_ADMIN_SECRET_KEY> – wstaw go do .env jako wartość ADMIN_SECRET_KEY. Dzięki temu panel będzie mógł szyfrować wrażliwe ustawienia.
 
 
 › ZAPISZ GO GDZIES ABY ZAPAMIETAC
@@ -8092,12 +8092,12 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
 
 • Edited docs/projekt/panel_admin_ui.md (+1 -0)
      9  - Ekran logowania dostępny przed głównym layoutem; po udanym logowaniu token `X-Admin-Session` zapisywany jest w `localStorage`, a HTMX dołącza go do kolejnych żądań.
-    10 +- Domyślny klucz szyfrujący (`ADMIN_SECRET_KEY`) można wygenerować poleceniem `python - <<'PY' ...` – aktualne środowisko: `WIhihceDcH4lgOWSbs9Qxa4rTS0LojBVxOEeQHD_u8g=` (docelowo trzymać w `.env`).
+    10 +- Domyślny klucz szyfrujący (`ADMIN_SECRET_KEY`) można wygenerować poleceniem `python - <<'PY' ...` – aktualne środowisko: `<USUNIĘTO_ADMIN_SECRET_KEY>` (docelowo trzymać w `.env`).
     11
 
 ─ Worked for 10s ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-• Klucz ADMIN_SECRET_KEY zapisany w dokumentacji (docs/projekt/panel_admin_ui.md) jako WIhihceDcH4lgOWSbs9Qxa4rTS0LojBVxOEeQHD_u8g=. Wstaw go także do .env, aby panel szyfrował poufne ustawienia.
+• Klucz ADMIN_SECRET_KEY zapisany w dokumentacji (docs/projekt/panel_admin_ui.md) jako <USUNIĘTO_ADMIN_SECRET_KEY>. Wstaw go także do .env, aby panel szyfrował poufne ustawienia.
 
 
 
@@ -8275,7 +8275,7 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
 
             'Jarmuszkiewicz',
             'admin',
-            'Wknpis1@#',
+            '<USUNIĘTO_EMAIL_PASSWORD>',
             true
 
 ⚠ Heads up, you've used over 75% of your weekly limit. Run /status for a breakdown.
@@ -8285,10 +8285,10 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
 
 ─ Worked for 7s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-• password_hash musi zawierać skrót PBKDF2, a nie surowe hasło. W tej chwili w bazie masz wpisane „Wknpis1@#”, więc logowanie się nie powiedzie.
+• password_hash musi zawierać skrót PBKDF2, a nie surowe hasło. W tej chwili w bazie masz wpisane „<USUNIĘTO_EMAIL_PASSWORD>”, więc logowanie się nie powiedzie.
      python - <<'PY'
      from app.services.security import hash_password
-     print(hash_password("Wknpis1@#"))
+     print(hash_password("<USUNIĘTO_EMAIL_PASSWORD>"))
      PY
      Zwróci coś w stylu pbkdf2_sha256$480000$….
      UPDATE ctip.admin_user
@@ -8438,7 +8438,7 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
     INFO:     Application startup complete.
     INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
 
-• Ran curl -s -o /tmp/login.json -w '%{http_code}' -X POST http://127.0.0.1:8001/admin/auth/login -H 'Content-Type: application/json' -d '{"email":"marcin@ksero-partner.com.pl","password":"Wknpis1@#"}'
+• Ran curl -s -o /tmp/login.json -w '%{http_code}' -X POST http://127.0.0.1:8001/admin/auth/login -H 'Content-Type: application/json' -d '{"email":"marcin@ksero-partner.com.pl","password":"<USUNIĘTO_EMAIL_PASSWORD>"}'
 
 • I'm exploring why the uvicorn server process gets abruptly terminated, suspecting environment limits or concurrency issues with async DB connections; to debug, I'll try running uvicorn interactively with controlled timeouts and
   concurrently trigger requests or run a focused async script to isolate errors from load_sms_config.
@@ -8749,7 +8749,7 @@ To continue this session, run codex resume 0199cfc9-1426-7d40-a8bb-45f570179fb6
   4. Po poprawce odświeżyć twardo (Ctrl+Shift+R) i obserwować docs/LOG/java.md.
   5. Jeśli to nie pomoże, kolejnym krokiem jest prosty test Playwright/starlette.TestClient, który wejdzie na /admin, przechwyci HTML i upewni się, że Alpine inicjuje się bez błędów.
 
-  Przypominam też o wpisaniu omawianego klucza ADMIN_SECRET_KEY do .env (WIhihceDcH4lgOWSbs9Qxa4rTS0LojBVxOEeQHD_u8g=), aby ustawienia były szyfrowane.
+  Przypominam też o wpisaniu omawianego klucza ADMIN_SECRET_KEY do .env (<USUNIĘTO_ADMIN_SECRET_KEY>), aby ustawienia były szyfrowane.
 
 • [2025-10-13 20:45] Rozszerzono moduł statusów panelu administracyjnego.
   - `/admin/status/ctip` zwraca teraz ostatni znany znacznik czasu zdarzenia, liczbę ramek z ostatniej godziny i szczegóły konfiguracji host/port/PIN.

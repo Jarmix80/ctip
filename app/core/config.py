@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     fb_mode: str = Field(default="local", alias="FB_MODE")
     fb_database: str = Field(default="/tmp/test_ms.fdb", alias="FB_DATABASE")
     fb_user: str = Field(default="SYSDBA", alias="FB_USER")
-    fb_password: str = Field(default="masterkey", alias="FB_PASSWORD")
+    fb_password: str = Field(default="", alias="FB_PASSWORD")
     fb_charset: str = Field(default="UTF8", alias="FB_CHARSET")
     fb_role: str | None = Field(default=None, alias="FB_ROLE")
     bot_identity_enabled: bool = Field(default=False, alias="BOT_IDENTITY_ENABLED")
@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     fb_v_port: int = Field(default=3050, alias="FB_V_PORT")
     fb_v_database: str = Field(default="/tmp/test_vmaintenance.fdb", alias="FB_V_DATABASE")
     fb_v_user: str = Field(default="SYSDBA", alias="FB_V_USER")
-    fb_v_password: str = Field(default="masterkey", alias="FB_V_PASSWORD")
+    fb_v_password: str = Field(default="", alias="FB_V_PASSWORD")
     fb_v_charset: str = Field(default="UTF8", alias="FB_V_CHARSET")
     fb_v_role: str | None = Field(default=None, alias="FB_V_ROLE")
 

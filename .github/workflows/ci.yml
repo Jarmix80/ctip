@@ -28,6 +28,9 @@ jobs:
       - name: Ruff (lint)
         run: ruff check --output-format=github .
 
+      - name: Skan sekretów
+        run: python scripts/secret_scan.py --env-file /dev/null
+
       - name: Black (format check)
         run: black --check .
 

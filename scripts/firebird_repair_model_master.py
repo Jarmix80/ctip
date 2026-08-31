@@ -35,7 +35,7 @@ DEFAULT_MODE = os.getenv("FB_MODE", "local").strip().lower()
 DEFAULT_HOST = "127.0.0.1" if DEFAULT_MODE == "local" else os.getenv("FB_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("FB_PORT", "3050"))
 DEFAULT_USER = os.getenv("FB_USER", "SYSDBA")
-DEFAULT_PASSWORD = os.getenv("FB_PASSWORD", "masterkey")
+DEFAULT_PASSWORD = os.getenv("FB_PASSWORD", "")
 DEFAULT_CHARSET = os.getenv("FB_CHARSET", "WIN1250")
 DEFAULT_REPORT_DIR = REPO_ROOT / "inbox" / "audyt_model"
 REFERENCE_TABLES = ("MASZYNA", "MAGAZYN", "CENNIK", "MZ")

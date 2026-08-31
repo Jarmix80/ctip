@@ -61,4 +61,4 @@ networks:
     name: chat_kp_chat_kp
   ctip_test_internal:
     external: true
-    name: ctip-prod-mirror_ctip_test_internal
+    name: ctip-test_ctip_test_internal

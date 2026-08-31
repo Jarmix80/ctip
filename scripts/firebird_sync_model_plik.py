@@ -31,7 +31,7 @@ DEFAULT_DATABASE_ALIAS = os.getenv("FB_LOCAL_COPY_ALIAS", "BAZAMS_TEST")
 DEFAULT_MODE = os.getenv("FB_MODE", "local").strip().lower()
 DEFAULT_PORT = int(os.getenv("FB_PORT", "3050"))
 DEFAULT_USER = os.getenv("FB_USER", "SYSDBA")
-DEFAULT_PASSWORD = os.getenv("FB_PASSWORD", "masterkey")
+DEFAULT_PASSWORD = os.getenv("FB_PASSWORD", "")
 DEFAULT_CHARSET = os.getenv("FB_CHARSET", "UTF8")
 
 

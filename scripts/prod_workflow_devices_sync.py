@@ -114,7 +114,7 @@ def open_firebird(env: dict[str, str]):
         port=int(text(env.get("FB_PORT") or "3050")),
         database=text(env.get("FB_DATABASE")),
         user=text(env.get("FB_USER") or "SYSDBA"),
-        password=text(env.get("FB_PASSWORD") or "masterkey"),
+        password=text(env.get("FB_PASSWORD")),
         charset=text(env.get("FB_CHARSET") or "WIN1250"),
     )
 

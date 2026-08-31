@@ -7,6 +7,8 @@ param(
     [switch]$Apply
 )
 
+throw "Skrypt archiwalny jest zablokowany. Użyj scripts/deploy_windows_prod.py z pełnym SHA i aktualnym planem wydania."
+
 $ErrorActionPreference = "Stop"
 
 function Invoke-Checked {

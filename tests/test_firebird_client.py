@@ -10,7 +10,7 @@ def test_firebird_connection_requires_host():
         port=3050,
         database="D:/BAZA_MS_KP/BAZAMS.FDB",
         user="SYSDBA",
-        password="masterkey",
+        password="ctip-test-only",
     )
     assert result.success is False
     assert "Brak hosta Firebird" in result.message
@@ -37,7 +37,7 @@ def test_firebird_connection_fallbacks_to_firebirdsql_on_missing_fdb():
             port=3050,
             database="D:/BAZA_MS_KP/BAZAMS.FDB",
             user="SYSDBA",
-            password="masterkey",
+            password="ctip-test-only",
         )
     assert result.success is True
     assert result.engine_version == "2.5.9"
@@ -86,7 +86,7 @@ def test_firebird_connection_fallbacks_when_fbclient_is_missing():
             port=3050,
             database="D:/BAZA_MS_KP/BAZAMS.FDB",
             user="SYSDBA",
-            password="masterkey",
+            password="ctip-test-only",
         )
     assert result.success is True
     assert result.engine_version == "2.5.9"
@@ -99,7 +99,7 @@ def test_firebird_connection_reports_tcp_timeout():
             port=3050,
             database="D:/BAZA_MS_KP/BAZAMS.FDB",
             user="SYSDBA",
-            password="masterkey",
+            password="ctip-test-only",
             timeout=0.01,
         )
 
@@ -125,7 +125,7 @@ def test_firebird_connection_reports_timeout_in_firebirdsql_fallback():
             port=3050,
             database="D:/BAZA_MS_KP/BAZAMS.FDB",
             user="SYSDBA",
-            password="masterkey",
+            password="ctip-test-only",
         )
 
     assert result.success is False

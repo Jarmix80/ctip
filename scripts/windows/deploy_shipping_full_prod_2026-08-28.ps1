@@ -17,6 +17,8 @@ param(
     [switch]$KeepCandidate
 )
 
+throw "Skrypt archiwalny jest zablokowany. Użyj scripts/deploy_windows_prod.py z pełnym SHA i aktualnym planem wydania."
+
 $ErrorActionPreference = "Stop"
 
 if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {

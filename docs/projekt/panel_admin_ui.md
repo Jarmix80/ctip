@@ -7,7 +7,7 @@
 - Nagłówek górny z informacją o zalogowanym administratorze, statusem środowiska (ikony zielony/żółty/czerwony) i przyciskiem „Wyloguj”.
 - Komponenty interaktywne bazujące na lekkim frameworku JS (można wykorzystać `htmx` + `Alpine.js` lub prosty bundle Vite), aby ograniczyć zależność od dużych bibliotek.
 - Ekran logowania dostępny przed głównym layoutem; po udanym logowaniu token `X-Admin-Session` zapisywany jest w `localStorage`, a HTMX dołącza go do kolejnych żądań.
-- Domyślny klucz szyfrujący (`ADMIN_SECRET_KEY`) można wygenerować poleceniem `python - <<'PY' ...` – aktualne środowisko: `WIhihceDcH4lgOWSbs9Qxa4rTS0LojBVxOEeQHD_u8g=` (docelowo trzymać w `.env`).
+- Klucz szyfrujący `ADMIN_SECRET_KEY` należy wygenerować osobno dla środowiska i przechowywać wyłącznie w `.env` albo konfiguracji usługi NSSM.
 
 ## Nawigacja
 

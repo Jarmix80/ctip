@@ -1,0 +1,251 @@
+x-disabled-google: &disabled-google
+  GOOGLE_SHEETS_ENABLED: "false"
+  GOOGLE_APPLICATION_CREDENTIALS: ""
+  GOOGLE_SHEETS_SPREADSHEET_ID: ""
+  DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED: "false"
+
+x-isolated-runtime: &isolated-runtime
+  CTIP_ENV_FILE: /app/.env.test
+  CTIP_RUNTIME_PROFILE: test
+  PGDATABASE: ctip_test
+  SMS_TEST_MODE: "true"
+  OUTBOUND_DELIVERY_MODE: capture
+  BLOCK_CLIENT_COMMUNICATIONS: "true"
+  FB_ALLOW_WRITES: "false"
+
+x-immutable-service: &immutable-service
+  image: ${CTIP_TEST_IMAGE:?Ustaw CTIP_TEST_IMAGE na obraz oznaczony pełnym SHA commita}
+  build: !reset null
+  restart: unless-stopped
+
+services:
+  mock-ctip:
+    <<: *immutable-service
+    volumes: !reset []
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+
+  web:
+    <<: *immutable-service
+    volumes: !override
+      - ${CTIP_TEST_SECRET_DIR:?Ustaw CTIP_TEST_SECRET_DIR poza inbox i .codex}:/run/secrets:ro
+      - ctip_test_app_logs:/app/docs/LOG
+    environment:
+      <<: *isolated-runtime
+      FB_ALLOW_WRITES: ${SHIPPING_TEST_FIREBIRD_WRITES:-false}
+      GOOGLE_APPLICATION_CREDENTIALS: ${TEST_GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_SHEETS_CONFIG_LOCK: "true"
+      GOOGLE_SHEETS_ENABLED: ${TEST_GOOGLE_SHEETS_RUNTIME_ENABLED:-false}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_TEST_SPREADSHEET_ID:-}
+      DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED: ${TEST_DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED:-false}
+
+  forms-public:
+    <<: *immutable-service
+    volumes: !reset []
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+
+  collector:
+    <<: *immutable-service
+    volumes: !override
+      - ctip_test_app_logs:/app/docs/LOG
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+
+  sms-sender:
+    <<: *immutable-service
+    volumes: !override
+      - ctip_test_app_logs:/app/docs/LOG
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+
+  bot-identity-api:
+    <<: *immutable-service
+    command:
+      - python
+      - -m
+      - uvicorn
+      - app.bot_identity_api_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8082"
+      - --lifespan
+      - "off"
+    env_file:
+      - .env.test
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+      BOT_IDENTITY_ENABLED: "true"
+      CRM_ENABLED: "true"
+      CRM_LAB_MODE: "true"
+      FB_MODE: local
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      firebird:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      ctip_test_internal:
+        aliases:
+          - ctip-bot-api
+      chat_kp:
+        aliases:
+          - ctip-bot-api
+
+  bot-identity-sync:
+    <<: *immutable-service
+    command:
+      - python
+      - -m
+      - app.bot_identity_worker
+    env_file:
+      - .env.test
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+      BOT_IDENTITY_ENABLED: "true"
+      CRM_LAB_MODE: "true"
+      FB_MODE: local
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      firebird:
+        condition: service_started
+    networks:
+      - ctip_test_internal
+
+  crm:
+    <<: *immutable-service
+    command:
+      - sh
+      - -c
+      - >-
+        python -m scripts.crm_lab_test_preflight &&
+        exec python -m uvicorn app.crm_prototype_app:app
+        --host 0.0.0.0 --port 8001 --lifespan off
+    env_file:
+      - .env.test
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+      CRM_ENABLED: "true"
+      CRM_LAB_MODE: "true"
+      CRM_PUBLIC_PROTOTYPE_MODE: "true"
+      FB_MODE: local
+      SMS_API_URL: ""
+      SMS_API_TOKEN: ""
+      SMS_API_USERNAME: ""
+      SMS_API_PASSWORD: ""
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      EMAIL_USE_TLS: "false"
+      EMAIL_USE_SSL: "false"
+      PBX_HOST: mock-ctip
+    ports:
+      - "192.168.0.9:8001:8001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          data=json.load(urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3));
+          assert data.get('status') == 'ok' and data.get('safe_lab') is True
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - ctip_test_internal
+      - ctip_test_edge
+
+  lab:
+    <<: *immutable-service
+    command:
+      - sh
+      - -c
+      - >-
+        python -m scripts.crm_lab_test_preflight &&
+        exec python -m uvicorn app.lab_portal_app:app
+        --host 0.0.0.0 --port 8790 --lifespan off
+    env_file:
+      - .env.test
+    environment:
+      <<: [*isolated-runtime, *disabled-google]
+      CRM_ENABLED: "true"
+      CRM_LAB_MODE: "true"
+      CRM_PUBLIC_PROTOTYPE_MODE: "true"
+      CRM_LAB_CHAT_BASE_URL: http://chat_kp-public-1:8787
+      FB_MODE: local
+      SMS_API_URL: ""
+      SMS_API_TOKEN: ""
+      SMS_API_USERNAME: ""
+      SMS_API_PASSWORD: ""
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      EMAIL_USE_TLS: "false"
+      EMAIL_USE_SSL: "false"
+      PBX_HOST: mock-ctip
+    ports:
+      - "192.168.0.9:8790:8790"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          data=json.load(urllib.request.urlopen('http://127.0.0.1:8790/health', timeout=3));
+          assert data.get('status') == 'ok' and data.get('safe_lab') is True
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - ctip_test_internal
+      - ctip_test_edge
+      - chat_kp
+
+networks:
+  chat_kp:
+    external: true
+    name: chat_kp_chat_kp
+
+volumes:
+  ctip_mirror_postgres_data:
+    external: true
+    name: ${CTIP_TEST_POSTGRES_VOLUME:-ctip-prod-mirror_ctip_mirror_postgres_data}
+  ctip_mirror_mailpit_data:
+    external: true
+    name: ${CTIP_TEST_MAILPIT_VOLUME:-ctip-prod-mirror_ctip_mirror_mailpit_data}
+  ctip_test_app_logs:
