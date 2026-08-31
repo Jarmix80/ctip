@@ -1,5 +1,7 @@
 # Wdrożenie rejestru i archiwum mailboxa GRENKE
 
+> **Dokument archiwalny.** Nie uruchamiaj zawartych tu historycznych poleceń wdrożeniowych. Obowiązuje `scripts/deploy_windows_prod.py` i `docs/instal/windows_release_deployment.md`.
+
 ## Cel
 
 Wdrożenie migracji `a7c4e2f9b1d3`, trwałego rejestru wiadomości, archiwum historycznego oraz bezpiecznej obsługi konfliktów właściciela urządzeń. Zmiana dotyczy wyłącznie usługi `CTIP-Web`; usługi `CollectorService`, `CTIP-SMS` i `CTIP-FormsPublic` pozostają uruchomione.

@@ -494,6 +494,13 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     async def fake_record_audit(*args, **kwargs):
         captured["audit_payload"] = kwargs["payload"]
 
+    async def fake_ensure_delivery_case_for_workflow(*args, **kwargs):
+        captured["delivery_workflow_case_id"] = kwargs["workflow_case"].id
+        return (
+            SimpleNamespace(id=71),
+            SimpleNamespace(id=81, status="pending_confirmation"),
+        )
+
     class _FakeSession:
         async def flush(self) -> None:
             captured["flushed"] = True
@@ -524,6 +531,11 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
         fake_notify_binding_issues_to_admins,
     )
     monkeypatch.setattr(module, "record_audit", fake_record_audit)
+    monkeypatch.setattr(
+        module,
+        "ensure_delivery_case_for_workflow",
+        fake_ensure_delivery_case_for_workflow,
+    )
     monkeypatch.setattr(module, "persist_mail_attachments", lambda **kwargs: [])
     monkeypatch.setattr(module, "attach_mailbox_meta", lambda *args, **kwargs: None)
 
@@ -543,6 +555,7 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     assert captured["validated_device_ids"] == [19]
     assert captured["binding_actor_label"] == "Automat skrzynki GRENKE"
     assert captured["binding_device_ids"] == [19]
+    assert captured["delivery_workflow_case_id"] == 11
     assert captured["flushed"] is True
     assert device.snapshot["ms_binding_status"] == "ok"
     assert device.snapshot["ms_binding_message"] == "Powiązano urządzenie z klientem MS."
@@ -553,6 +566,7 @@ def test_apply_mail_to_workflow_runs_binding_after_mailbox_approval(monkeypatch)
     audit_payload = captured["audit_payload"]
     assert audit_payload["binding_items"][0]["workflow_device_id"] == 19
     assert audit_payload["binding_alert"] is None
+    assert audit_payload["delivery"]["delivery_case_id"] == 71
 
 
 def test_apply_mail_to_workflow_blocks_approval_for_foreign_device(monkeypatch) -> None:

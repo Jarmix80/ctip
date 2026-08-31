@@ -38,6 +38,7 @@ Thumbs.db
 logs/
 runtime/
 .runtime-secrets/
+.runtime-firebird/
 *:Zone.Identifier
 .cache/
 docs/archiwum/

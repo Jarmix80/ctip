@@ -1,5 +1,7 @@
 # Runbook awaryjny CTIP na Windows Server (`D:\CTIP`)
 
+> Runbook służy do diagnostyki awaryjnej. Nie używaj ręcznej aktualizacji Git z punktu historycznego; wydania wdraża wyłącznie `scripts/deploy_windows_prod.py` zgodnie z `docs/instal/windows_release_deployment.md`.
+
 Dokument opisuje szybka diagnostyke i naprawe po typowych awariach:
 - niedzialajacy `CTIP-Web` (`:8000`, panel i `/assistant`),
 - blad `500` na formularzach publicznych (`CTIP-FormsPublic`, `:8100`),

@@ -1,5 +1,7 @@
 # Wdrożenie produkcyjne modułu Shipping — 2026-08-27
 
+> **Dokument archiwalny.** Nie uruchamiaj opisanych tu skryptów ani commitów. Aktualne wdrożenia wykonuje wyłącznie `scripts/deploy_windows_prod.py` zgodnie z `docs/instal/windows_release_deployment.md`.
+
 ## Cel i zakres
 
 Procedura wdraża wyłącznie moduł `/shipping`, katalog zgodności części, integrację DPD, dokumenty RW/WZ/FV i Archiwum. Release bazuje na produkcyjnym commicie `e17ad41c2651039d8b00464ddc6dc86a5549b240` i zawiera jedną migrację `f9a0b1c2d3e4` po rewizji `d8f1a2b3c4e5`.

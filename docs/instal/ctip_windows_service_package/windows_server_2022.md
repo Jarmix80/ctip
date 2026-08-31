@@ -1,5 +1,7 @@
 # CTIP – wdrożenie na Windows Server 2022 (D:\CTIP)
 
+> **Pakiet archiwalny.** Nie używaj do aktualizacji kodu. Obowiązuje `scripts/deploy_windows_prod.py` i `docs/instal/windows_release_deployment.md` z głównego repozytorium.
+
 Dokument opisuje kompletną konfigurację środowiska produkcyjnego na serwerze Windows Server 2022. Maszyna utrzymuje zarówno bazę PostgreSQL (`192.168.0.8:5433`), jak i usługę `CollectorService` uruchamiającą `collector_full.py`. Wszystkie pliki aplikacji, skrypty i logi znajdują się w `D:\CTIP`.
 
 ## Wymagania wstępne

@@ -1,5 +1,7 @@
 # Runbook wyrownania konfiguracji Windows TEST/PROD do modelu `.env` (2026-05-22)
 
+> **Dokument archiwalny.** Opisuje dawną zmianę modelu konfiguracji. Kolejne wdrożenia wykonuje wyłącznie `scripts/deploy_windows_prod.py` według `docs/instal/windows_release_deployment.md`.
+
 ## Cel
 Dokument opisuje bezpieczne wdrozenie na instalacjach Windows CTIP po zmianie modelu konfiguracji:
 - dane polaczeniowe i sekrety sa utrzymywane w `.env`,

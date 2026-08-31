@@ -49,7 +49,7 @@ services:
     environment:
       ISC_PASSWORD: ${FB_PASSWORD:?Ustaw testowe FB_PASSWORD w .env.test}
     volumes:
-      - ${CTIP_TEST_FIREBIRD_DIR:-./runtime/firebird}:/data
+      - ${CTIP_TEST_FIREBIRD_DIR:-./.runtime-firebird}:/data
       - ./ops/firebird/aliases.test.conf:/firebird/etc/aliases.conf:ro
     networks:
       - ctip_test_internal

@@ -46,4 +46,5 @@ def test_compose_runs_preflight_as_module() -> None:
 
     assert compose.count("python -m scripts.crm_lab_test_preflight") == 2
     assert "python scripts/crm_lab_test_preflight.py" not in compose
-    assert "name: ctip-prod-mirror_ctip_test_edge" in compose
+    assert "name: ctip-test_ctip_test_edge" in compose
+    assert "name: ctip-test_ctip_test_internal" in compose

@@ -181,3 +181,15 @@ def test_powershell_contains_healthcheck_rollback() -> None:
     assert "Assert-Endpoints" in script
     assert '"checkout", "--detach", $expectedCurrent' in script
     assert "Start-Service -Name $serviceName" in script
+
+
+def test_legacy_update_scripts_are_blocked() -> None:
+    """Historyczne aktualizatory nie mogą ominąć kanonicznego wdrożenia."""
+    repository = Path(__file__).resolve().parents[1]
+    for relative_path in (
+        "scripts/windows/update_ctip.ps1",
+        "scripts/windows/update_ctip_easy.ps1",
+        "docs/instal/ctip_windows_service_package/scripts/windows/update_ctip.ps1",
+    ):
+        prefix = (repository / relative_path).read_text(encoding="utf-8")[:1200]
+        assert "jest zablokowany" in prefix

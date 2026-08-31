@@ -10,6 +10,8 @@ param(
     [switch]$ForceStartOnFailure
 )
 
+throw "Skrypt archiwalny jest zablokowany. Użyj scripts/deploy_windows_prod.py z pełnymi SHA i najpierw wykonaj --dry-run."
+
 $ErrorActionPreference = "Stop"
 
 # PowerShell 7+ potrafi traktować stderr z narzędzi natywnych (git/python)

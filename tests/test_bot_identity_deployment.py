@@ -39,9 +39,7 @@ def test_compose_preserves_service_names_commands_and_network_isolation() -> Non
     assert worker["networks"] == ["ctip_test_internal"]
     assert api["networks"]["chat_kp"]["aliases"] == ["ctip-bot-api"]
     assert compose["networks"]["chat_kp"]["name"] == "chat_kp_chat_kp"
-    assert compose["networks"]["ctip_test_internal"]["name"] == (
-        "ctip-prod-mirror_ctip_test_internal"
-    )
+    assert compose["networks"]["ctip_test_internal"]["name"] == ("ctip-test_ctip_test_internal")
 
 
 def test_runtime_example_enforces_test_database_and_read_only_firebird() -> None:

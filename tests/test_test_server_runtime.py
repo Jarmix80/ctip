@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts.test_server_compose_check import collect_issues
 
 
@@ -83,3 +85,15 @@ def test_server_compose_rejects_old_port_and_unsafe_secret_path() -> None:
 
     assert any("inbox ani .codex" in issue for issue in issues)
     assert any("8002" in issue for issue in issues)
+
+
+def test_server_commands_do_not_depend_on_legacy_network_name() -> None:
+    """Obsługa serwera wykrywa sieć bazy zamiast używać nazwy starego stosu."""
+    script = Path("ctiptest").read_text(encoding="utf-8")
+
+    assert "--network ctip-prod-mirror_ctip_test_internal" not in script
+    assert "test_database_network" in script
+    assert "server-migrate)" in script
+    assert "python -m alembic upgrade head" in script
+    assert "env -i" in script
+    assert 'CTIP_ENV_FILE="${ENV_FILE}"' in script

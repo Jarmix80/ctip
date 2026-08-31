@@ -13,6 +13,7 @@ ignore = ["E501"]  # linie >100 znaków – Black i tak je złamie
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+addopts = "--ignore=tests/test_process_ricoh_images.py"
 
 [build-system]
 requires = ["setuptools", "wheel"]

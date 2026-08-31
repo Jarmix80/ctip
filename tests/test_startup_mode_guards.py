@@ -92,12 +92,13 @@ def test_ctiptest_uses_compose_without_reload() -> None:
     """Domyślny start testowy ma używać Compose bez watchera reload."""
     script_content = (ROOT_DIR / "ctiptest").read_text(encoding="utf-8")
 
-    assert "COMPOSE=(docker compose" in script_content
+    assert 'COMPOSE_RUNNER="${WORKDIR}/scripts/docker_compose.sh"' in script_content
+    assert 'COMPOSE=("${COMPOSE_RUNNER}"' in script_content
     assert '"${COMPOSE[@]}" build' in script_content
     assert '"${COMPOSE[@]}" up -d --force-recreate' in script_content
     assert "scripts/test_env_preflight.py" in script_content
     assert "--check-network" in script_content
-    assert "wait_for_web" in script_content
+    assert "wait_for_url" in script_content
     assert "--reload" not in script_content
 
 
@@ -115,31 +116,13 @@ def test_ctiptest_publishes_lan_only_through_isolated_gateway() -> None:
     assert "internal: true" in compose_content
 
 
-def test_run_test_stack_tmux_publishes_lan_urls() -> None:
-    """Alternatywny skrypt testowy musi publikowac adres WWW dla LAN."""
+def test_run_test_stack_tmux_delegates_to_single_compose_stack() -> None:
+    """Historyczna nazwa skryptu deleguje do jednego stosu Compose."""
     script_content = (ROOT_DIR / "run_test_stack_tmux.sh").read_text(encoding="utf-8")
 
-    assert 'ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"' in script_content
-    assert 'TEST_UVICORN_PORT="${TEST_UVICORN_PORT:-8000}"' in script_content
-    assert 'TEST_PUBLIC_HOST="${TEST_PUBLIC_HOST:-}"' in script_content
-    assert (
-        'TEST_PUBLIC_BASE_URL="http://${TEST_PUBLIC_HOST_VALUE}:${TEST_UVICORN_PORT}"'
-        in script_content
-    )
-    assert (
-        "export ADMIN_PANEL_URL='${TEST_ADMIN_PANEL_URL}' FORM_PUBLIC_BASE_URL='${TEST_PUBLIC_BASE_URL}'"
-        in script_content
-    )
-    assert "publiczny adres WWW" in script_content
-    assert (
-        'assert_env_value_not_production "PGHOST" "${PRODUCTION_DB_HOST}" "bazę PostgreSQL"'
-        in script_content
-    )
-    assert (
-        'assert_env_value_not_production "FB_HOST" "${PRODUCTION_DB_HOST}" "bazę Firebird"'
-        in script_content
-    )
-    assert 'assert_env_value_equals "PGDATABASE" "${LOCAL_TEST_DATABASE}"' in script_content
+    assert 'exec "${WORKDIR}/ctiptest" start' in script_content
+    assert "ctip-test" in script_content
+    assert "tmux new-session" not in script_content
 
 
 def test_run_server_with_firebird_defaults_to_env_test() -> None:

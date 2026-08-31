@@ -141,3 +141,7 @@
 ## 2026-08-31
 - Rozszerzono `ctip.shipping_case` o opcjonalną kolumnę `label_text`, która przechowuje zatwierdzoną przez operatora treść drukowanych pól `ref1` i `content` etykiety DPD.
 - Istniejące sprawy pozostają zgodne z migracją dzięki wartości `NULL`; treść jest dla nich wyliczana z numeru zlecenia oraz zapisanych części przy kolejnym użyciu modułu Shipping.
+
+## 2026-09-01
+- Migracja `f7b2d4e6a810` scala gałęzie wysyłek i katalogu tożsamości w jeden kanoniczny koniec grafu Alembic.
+- Migracja scalająca nie zmienia tabel ani danych; zapewnia jednoznaczne działanie polecenia `alembic upgrade head`.

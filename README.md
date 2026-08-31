@@ -5,6 +5,9 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
+- Kanoniczny stos testowy `ctip-test`, niezmienne obrazy, migracja `ctip_test`, przełączenie portu `8000` i rollback: `docs/instal/test_server_runtime.md`.
+- Jedyny obsługiwany mechanizm wdrożeń Windows z dry-run, backupem i automatycznym rollbackiem: `docs/instal/windows_release_deployment.md`.
+- Audyt repozytorium, aktualne zabezpieczenia sekretów i plan rotacji: `docs/bezpieczenstwo/repo_i_sekrety_2026-09-01.md`.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
 - Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, izoluje środowisko testów i rozlicza polecenia Python według kodu wyjścia zamiast zapisu na stderr.
 - Procedura pełnego uruchomienia Shipping, bramki gotowości, pilota RW/WZ/FV oraz obowiązkowego sprzątania danych `Test Umowa`: `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md`.
@@ -704,54 +707,11 @@ ALTER SEQUENCE ctip.call_events_id_seq OWNER TO appuser;
 Rekomenduje się uruchomienie obu procesów pod nadzorem `systemd` lub innego menedżera usług. W przypadku `systemd` kontroluj usterki poprzez `Restart=always` oraz logowanie do `journalctl`.
 
 ## Aktualizacja produkcji na Windows Server (PowerShell)
-Środowisko produkcyjne dla tego projektu działa na Windows Server.
+Środowisko produkcyjne działa na Windows Server, zwykle w trybie detached HEAD. Wdrożenie wykonuje się z Linux/WSL jednym mechanizmem `scripts/deploy_windows_prod.py`, który pobiera dane połączenia z klucza `ssh_serv_link`, sprawdza dokładne SHA, wykonuje backupy, używa środowiska NSSM, tworzy worktree kandydata i restartuje wyłącznie usługi wskazane w planie.
 
-Wdrożenie Shipping korzysta z dedykowanego skryptu `scripts/windows/deploy_shipping_prod_2026-08-27.ps1` i runbooka `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`. Procedura restartuje wyłącznie `CTIP-Web`; usługi `CollectorService`, `CTIP-SMS` i `CTIP-FormsPublic` muszą pozostać uruchomione.
+Najpierw obowiązkowo uruchom wariant `--dry-run`. Wariant `--apply` wolno wykonać dopiero po sprawdzeniu raportu, rewizji Alembic, dozwolonych ścieżek i endpointów. Pełny przykład oraz rollback opisuje `docs/instal/windows_release_deployment.md`.
 
-1. Aktualizacja kodu:
-```powershell
-cd C:\sciezka\do\ctip
-git checkout main
-git pull --ff-only origin main
-```
-2. Przygotowanie środowiska Python:
-```powershell
-if (-not (Test-Path .venv)) { python -m venv .venv }
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-3. Backup baz przed wdrozeniem (zalecane):
-```powershell
-.\scripts\windows\backup_prod_databases.ps1 -InstallDir D:\CTIP -GbakPath "C:\Program Files\Firebird\Firebird_2_5\bin\gbak.exe"
-```
-Skrypt tworzy backup PostgreSQL (`pg_dump` + opcjonalnie `pg_dumpall --globals-only --no-role-passwords`) oraz backup Firebird (`gbak -b -g`) do katalogu `D:\CTIP\backups\prod_<timestamp>`. Dane logowania Firebird przekazuje przez `ISC_USER` i `ISC_PASSWORD`, bez umieszczania hasła w argumentach procesu.
-Każde narzędzie zapisuje osobne logi STDOUT/STDERR w `D:\CTIP\backups\prod_<timestamp>\_logs`, a skrypt po wykonaniu waliduje istnienie i rozmiar wygenerowanych plików backupu.
-Jeżeli `pg_dumpall --globals-only --no-role-passwords` nie powiedzie się, skrypt domyślnie zgłasza ostrzeżenie i kontynuuje; użyj `-FailOnPgGlobalsError`, aby traktować ten przypadek jako błąd krytyczny.
-4. Co dalej po `pip install -r requirements.txt`:
-```powershell
-# 1) Ustaw/zweryfikuj .env produkcyjne (szczególnie Firebird)
-# FB_MODE=network
-# FB_HOST, FB_PORT, FB_DATABASE, FB_USER, FB_PASSWORD, FB_CHARSET, FB_ROLE
-
-# 2) Migracje bazy PostgreSQL
-alembic upgrade head
-
-# 3) Restart usług aplikacji (produkcyjne nazwy usług)
-Restart-Service "CTIP-Web"
-Restart-Service "CollectorService"
-Restart-Service "CTIP-SMS"
-```
-5. Weryfikacja po restarcie:
-```powershell
-Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty StatusCode
-```
-6. W panelu administratora (`/admin`) przejdź do sekcji `Konfiguracja bazy`, zapisz konfigurację Firebird i wykonaj `Testuj połączenie`.
-
-Aktualne nazwy usług produkcyjnych (Windows Server):
-- `CollectorService` – Collector Service (`collector_full.py`)
-- `CTIP-SMS` – moduł wysyłki SMS
-- `CTIP-Web` – backend/panel web
+Nie należy wykonywać na produkcji ręcznego `git pull`, zmiany gałęzi, samodzielnego `alembic upgrade head` ani szerokiego restartu usług. Skrypty datowane oraz `scripts/windows/update_ctip*.ps1` są zablokowane i pozostają wyłącznie materiałem historycznym.
 
 ### Szybka diagnostyka uslug po aktualizacji (Windows)
 Po wdrozeniu uruchom jeden skrypt kontrolny:
@@ -771,7 +731,7 @@ Kod wyjscia:
 - `0` – brak bledow krytycznych,
 - `2` – wykryto blad krytyczny (wymagana interwencja).
 
-Uwaga operacyjna: `scripts/windows/update_ctip.ps1` zatrzymuje dzialajace uslugi na czas aktualizacji i domyslnie **nie** uruchomi ich ponownie, gdy aktualizacja zakonczy sie bledem (chyba ze uzyjesz `-ForceStartOnFailure`).
+Kontrola `scripts/windows/check_ctip_health.ps1` pozostaje narzędziem diagnostycznym, ale nie zastępuje walidacji wykonywanej przez kanoniczny mechanizm wdrożenia.
 
 ## Backend API (FastAPI)
 Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w katalogu `app/`. Do pracy wymaga zależności opisanych w `pyproject.toml` (`fastapi`, `uvicorn`, `sqlalchemy`, `psycopg`, `pydantic-settings`).
@@ -1080,10 +1040,9 @@ python scripts/sync_prod_forms_to_test.py --limit 200 --status SUBMITTED
 
 Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znaków), dzięki czemu Windows PowerShell 5.1 z domyślnym kodowaniem nie zgłasza błędów parsowania. Skrypty instalacyjne znajdują się w repozytorium w `scripts/windows` (także w pakiecie `docs/instal/ctip_windows_service_package.zip`) i domyślnie wymuszają `py -3.11`; na hostach z domyślnym Pythonem 3.13 uruchamiaj `install_service.ps1` z parametrem `-PythonVersion "3.11"`.
 
-Aktualizacje kodu na Windows wykonuj przez `scripts/windows/update_ctip.ps1` (zatrzymuje uslugi, `git fetch/pull`, aktualizacja zaleznosci, `pre-commit run --all-files`, testy `python -m unittest discover -s tests`, a nastepnie restart uslug). Dla srodowisk z NSSM uzyj `-ServiceNames "CollectorService","CTIP-Web","CTIP-SMS"` albo `-ServiceNames "CollectorService","CTIP-Web","CTIP-SMS","CTIP-FormsPublic"`, jeżeli aktywna jest tez subdomena formularzy.
-Szybka aktualizacja bez testow i instalacji zaleznosci: `scripts/windows/update_ctip_easy.ps1` (wykonuje `git fetch/pull --ff-only` i restartuje tylko uruchomione uslugi, a gdy brak nowych commitow - nie restartuje nic). Opcjonalnie wymusisz restart parametrem `-ForceRestart`.
+Aktualizacje kodu na Windows wykonuj wyłącznie przez `scripts/deploy_windows_prod.py`, najpierw w trybie `--dry-run`, a po zatwierdzeniu planu przez osobne polecenie `--apply`. Mechanizm używa dokładnych SHA commitów, konfiguracji NSSM, backupu, worktree kandydata, ograniczonej listy usług i automatycznego rollbacku. Skrypty `scripts/windows/update_ctip.ps1`, `scripts/windows/update_ctip_easy.ps1` oraz datowane skrypty wdrożeniowe są archiwalne i celowo zablokowane. Procedura znajduje się w `docs/instal/windows_release_deployment.md`.
 W przypadku bledu `500` na publicznym `/formularz/{token}` uzyj `scripts/windows/fix_forms_public_500.ps1`. Skrypt ma tryb diagnostyczny (bez zmian) oraz tryb naprawczy `-Apply` (git pull, `pip install -e .`, weryfikacja/korekta `AppDirectory`, wymuszenie kompletu `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE` w `AppEnvironmentExtra` uslugi `CTIP-FormsPublic`, restart uslugi i testy endpointow `/health` + `/formularz/*`). Domyslnie dla uslugi formularzy wymusza `PGHOST=127.0.0.1`, bo PostgreSQL dziala na tym samym Windows Server.
-Gotowy skrypt wdrozenia sesji AI Asystenta na Windows Server (branch `codex/fix-public-form-checkbox-422`, kontrola Alembic i healthcheck) znajduje sie w `scripts/windows/deploy_prod_ctip_assistant_2026-04-30.ps1`; uruchomienie: `.\scripts\windows\deploy_prod_ctip_assistant_2026-04-30.ps1 -Apply`. Skrypt nie blokuje wdrozenia, gdy indeks wiedzy Firebird nie istnieje przed `git pull` i po aktualizacji automatycznie probuje go wygenerowac przez `scripts/build_firebird_knowledge_index.py`. Dodatkowo przed healthcheck wymusza start wskazanych uslug, a `scripts/windows/update_ctip.ps1` obsluguje komunikaty informacyjne `git`/`python` na `stderr` bez falszywego przerwania aktualizacji (ustawienie `PSNativeCommandUseErrorActionPreference=$false` i walidacja po `LASTEXITCODE`). Parametr `-TargetCommit` jest opcjonalny (domyslnie pusty) i mozna go podac tylko wtedy, gdy chcesz wymusic konkretny hash.
+Datowane skrypty wdrożeniowe pozostają w repozytorium wyłącznie jako materiał historyczny i kończą działanie komunikatem wskazującym `scripts/deploy_windows_prod.py`.
 
 Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`. Runbook DNS/NAT/reverse proxy dla publicznych formularzy: `docs/instal/public_forms_production.md`. Stan wdrożenia produkcyjnego i opis kolejnego etapu interakcji formularza: `docs/projekt/public_forms_status_2026-04-09.md`. Dziennik domkniecia etapu formularzy, automatu MS i panelu administratora: `docs/projekt/dziennik_2026-04-09.md`.
 Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPublic`) znajduje sie w `docs/instal/ctip_windows_recovery_runbook.md`.
@@ -1111,6 +1070,9 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/centralka` – instrukcje centrali Slican (m.in. „CTIP” oraz „instrukcja programowania NCP v1.21”) ułatwiające konfigurację warstwy telekomunikacyjnej i protokołu CTIP.
 - `docs/baza` – aktualny schemat `schema_ctip.sql`; plik `ctip_plain` pozostawiono jako nieaktualny zrzut archiwalny (do wglądu historycznego, nie do odtwarzania).
 - `docs/instal/wdrozenie_mailbox_archive_2026-08-28.md` – procedura migracji, kontrolowanego backfillu i wycofania rejestru wiadomości GRENKE.
+- `docs/instal/test_server_runtime.md` – procedura budowy, kontroli, migracji i przełączenia jednego stosu testowego na porcie `8000`.
+- `docs/instal/windows_release_deployment.md` – kanoniczne wdrożenie Windows Server na dokładny commit z konfiguracją NSSM i rollbackiem.
+- `docs/bezpieczenstwo/repo_i_sekrety_2026-09-01.md` – wynik audytu sekretów, ocena wpływu prywatnego repozytorium i kolejność rotacji.
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
 - `docs/instal/bot_identity_docker_test.md` – runbook niemutowalnego obrazu, testów canary, podmiany i rollbacku usług Bot Identity dla CHAT_KP.
@@ -1134,6 +1096,8 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 
 ## Testowanie i rozwój
 Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`), klienta monitorującego (`tests/test_conect_sli.py`), kolektora CTIP (`tests/test_collector_context.py`), warstwy API (`tests/test_api_auth.py`, `tests/test_sms_schema.py`) oraz świeży zestaw weryfikacji schematu bazy (`tests/test_db_schema.py`). `tests/test_admin_backend.py` obejmuje scenariusze panelu administracyjnego, w tym logi i historię SerwerSMS (`/admin/sms/logs`, `/admin/sms/history`). Uruchom je poleceniem `python -m unittest`. W przypadku rozszerzania logiki parsowania zdarzeń oraz wysyłki SMS rekomendowane jest dopisywanie kolejnych testów (zarówno dla parsowania strumienia, jak i integracji z API SMS). Każda modyfikacja kodu powinna być od razu odzwierciedlona w dokumentacji i w sekwencjach testowych.
+
+Test `tests/test_process_ricoh_images.py` pozostaje w repozytorium, ale jest pomijany przez domyślne uruchomienie pytest, ponieważ zależy od niewersjonowanego narzędzia w `inbox/audyt_model`. Gdy lokalny plik jest dostępny, test uruchamia się jawnie poleceniem `python -m pytest -o addopts='' tests/test_process_ricoh_images.py`.
   - Zadania planowane.
 ## Zadania planowane
 Szczegółowy rejestr zadań znajduje się w pliku `docs/projekt/zadania_planowane.md`.

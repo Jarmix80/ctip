@@ -3,7 +3,8 @@ set -euo pipefail
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"
-PYTHON_BIN="${WORKDIR}/.venv/bin/python"
+VENV_DIR="${CTIP_VENV_DIR:-${WORKDIR}/.venv}"
+PYTHON_BIN="${VENV_DIR}/bin/python"
 COMPOSE_RUNNER="${WORKDIR}/scripts/docker_compose.sh"
 BUILD_RUNNER="${WORKDIR}/scripts/docker_build.sh"
 COMPOSE=("${COMPOSE_RUNNER}" --project-directory "${WORKDIR}" --env-file "${ENV_FILE}" -f "${WORKDIR}/compose.test.yml")
@@ -20,14 +21,19 @@ server_image() {
 
 run_preflight() {
     if [[ ! -x "${PYTHON_BIN}" ]]; then
-        echo "Brak środowiska ${WORKDIR}/.venv." >&2
+        echo "Brak środowiska ${VENV_DIR}." >&2
         exit 1
     fi
     if [[ ! -f "${ENV_FILE}" ]]; then
         echo "Brak konfiguracji testowej ${ENV_FILE}." >&2
         exit 1
     fi
-    CTIP_ENV_FILE="${ENV_FILE}" "${PYTHON_BIN}" "${WORKDIR}/scripts/test_env_preflight.py"
+    env -i \
+        HOME="${HOME}" \
+        PATH="${PATH}" \
+        LANG="${LANG:-C.UTF-8}" \
+        CTIP_ENV_FILE="${ENV_FILE}" \
+        "${PYTHON_BIN}" "${WORKDIR}/scripts/test_env_preflight.py"
 }
 
 validate_server_compose() {
@@ -51,8 +57,10 @@ validate_image() {
 
 verify_test_database() {
     local image="$1"
+    local network
+    network="$(test_database_network)"
     docker run --rm \
-        --network ctip-prod-mirror_ctip_test_internal \
+        --network "${network}" \
         --env-file "${ENV_FILE}" \
         -e CTIP_ENV_FILE=/app/.env.test \
         -e CTIP_RUNTIME_PROFILE=test \
@@ -63,6 +71,48 @@ verify_test_database() {
         -e BLOCK_CLIENT_COMMUNICATIONS=true \
         -e FB_ALLOW_WRITES=false \
         "${image}" python scripts/verify_alembic_state.py
+}
+
+test_postgres_container() {
+    local project container
+    for project in ctip-test ctip-prod-mirror; do
+        container="$(docker ps \
+            --filter "label=com.docker.compose.project=${project}" \
+            --filter label=com.docker.compose.service=postgres \
+            --format '{{.ID}}' | head -n 1)"
+        if [[ -n "${container}" ]]; then
+            printf '%s\n' "${container}"
+            return 0
+        fi
+    done
+    echo "Nie znaleziono działającego testowego PostgreSQL." >&2
+    return 1
+}
+
+test_database_network() {
+    local postgres_container
+    postgres_container="$(test_postgres_container)"
+    docker inspect \
+        --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
+        "${postgres_container}" | head -n 1
+}
+
+migrate_test_database() {
+    local image="$1"
+    local network
+    network="$(test_database_network)"
+    docker run --rm \
+        --network "${network}" \
+        --env-file "${ENV_FILE}" \
+        -e CTIP_ENV_FILE=/app/.env.test \
+        -e CTIP_RUNTIME_PROFILE=test \
+        -e PGHOST=postgres \
+        -e PGDATABASE=ctip_test \
+        -e SMS_TEST_MODE=true \
+        -e OUTBOUND_DELIVERY_MODE=capture \
+        -e BLOCK_CLIENT_COMMUNICATIONS=true \
+        -e FB_ALLOW_WRITES=false \
+        "${image}" python -m alembic upgrade head
 }
 
 wait_for_url() {
@@ -91,11 +141,7 @@ backup_test_data() {
     timestamp="$(date +%Y%m%d_%H%M%S)"
     backup_dir="${CTIP_TEST_BACKUP_DIR:-${WORKDIR}/backups/test-cutover}/${timestamp}"
     mkdir -p "${backup_dir}"
-    postgres_container="$(docker ps --filter label=com.docker.compose.project=ctip-prod-mirror --filter label=com.docker.compose.service=postgres --format '{{.ID}}' | head -n 1)"
-    if [[ -z "${postgres_container}" ]]; then
-        echo "Nie znaleziono działającego testowego PostgreSQL projektu ctip-prod-mirror." >&2
-        return 1
-    fi
+    postgres_container="$(test_postgres_container)"
     docker exec "${postgres_container}" pg_dump -U ctip_test -d ctip_test -Fc \
         >"${backup_dir}/ctip_test.dump"
     firebird_file="$(CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" config --format json \
@@ -113,13 +159,17 @@ legacy_running_containers() {
 }
 
 prepare_cutover_state() {
-    local state_dir
+    local state_dir current_container previous_image
     state_dir="${WORKDIR}/runtime/deployments/test-cutover-$(date +%Y%m%d_%H%M%S)"
     mkdir -p "${state_dir}"
     legacy_running_containers >"${state_dir}/legacy-containers.txt"
-    if [[ ! -s "${state_dir}/legacy-containers.txt" ]]; then
-        echo "Brak uruchomionych kontenerów poprzednich stosów testowych." >&2
-        return 1
+    current_container="$(docker ps \
+        --filter label=com.docker.compose.project=ctip-test \
+        --filter label=com.docker.compose.service=web \
+        --format '{{.ID}}' | head -n 1)"
+    if [[ -n "${current_container}" ]]; then
+        previous_image="$(docker inspect --format '{{.Config.Image}}' "${current_container}")"
+        printf '%s\n' "${previous_image}" >"${state_dir}/previous-image.txt"
     fi
     printf '%s\n' "${state_dir}"
 }
@@ -139,9 +189,14 @@ start_container_list() {
 }
 
 rollback_cutover() {
-    local state_dir="$1"
+    local state_dir="$1" previous_image
     CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" stop || true
-    start_container_list "${state_dir}/legacy-containers.txt"
+    if [[ -s "${state_dir}/previous-image.txt" ]]; then
+        previous_image="$(cat "${state_dir}/previous-image.txt")"
+        CTIP_TEST_IMAGE="${previous_image}" "${COMPOSE_SERVER[@]}" up -d --force-recreate
+    else
+        start_container_list "${state_dir}/legacy-containers.txt"
+    fi
     echo "Przywrócono poprzedni stos testowy; stan: ${state_dir}."
 }
 
@@ -173,6 +228,16 @@ case "${ACTION}" in
         validate_image "${image}"
         validate_server_compose "${image}"
         verify_test_database "${image}"
+        ;;
+    server-migrate)
+        run_preflight
+        image="$(server_image)"
+        validate_image "${image}"
+        validate_server_compose "${image}"
+        backup_dir="$(backup_test_data)"
+        migrate_test_database "${image}"
+        verify_test_database "${image}"
+        echo "Baza ctip_test jest na głowie grafu; backup: ${backup_dir}."
         ;;
     server-cutover)
         run_preflight
@@ -229,7 +294,7 @@ case "${ACTION}" in
         "${WORKDIR}/scripts/rollback_test_environment.sh" "${2:-}"
         ;;
     *)
-        echo "Użycie: ./ctiptest start|server-build|server-check|server-cutover|server-rollback [stan]|server-status|server-logs|stop|status|logs|reset-firebird|rollback [archiwum]" >&2
+        echo "Użycie: ./ctiptest start|server-build|server-check|server-migrate|server-cutover|server-rollback [stan]|server-status|server-logs|stop|status|logs|reset-firebird|rollback [archiwum]" >&2
         exit 2
         ;;
 esac

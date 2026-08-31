@@ -6,6 +6,8 @@ param(
     [switch]$SkipPip
 )
 
+throw "Skrypt z archiwalnego pakietu jest zablokowany. Użyj scripts/deploy_windows_prod.py z głównego repozytorium."
+
 $ErrorActionPreference = "Stop"
 
 function Assert-Admin {

@@ -1,5 +1,7 @@
 # Pełne uruchomienie produkcyjne modułu Shipping
 
+> **Dokument archiwalny.** Zachowuje przebieg pilota, ale nie jest instrukcją aktualizacji kodu. Użyj `scripts/deploy_windows_prod.py` i `docs/instal/windows_release_deployment.md`.
+
 ## Cel
 
 Procedura ustawia funkcjonalny wariant V2 jako główny widok `/shipping`, zachowuje poprzedni interfejs pod `/shipping/legacy` i przygotowuje produkcję do kontrolowanego pilota RW, WZ oraz FV z WZ. Uruchomienie jest rozdzielone na fazę gotowości i późniejszy pilot. Przed jawnym komunikatem o gotowości nie wolno tworzyć zleceń pilotażowych.

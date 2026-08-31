@@ -1,47 +1,34 @@
 {
-  "timestamp": "2026-08-29T05:24:25+02:00",
+  "timestamp": "2026-09-01T01:45:33+02:00",
   "summary": [
-    "Na produkcji 192.168.0.8 ustawiono DPD_INFO_ENABLED=true po potwierdzeniu kompletnego DPD_INFO_CHANNEL; SHIPPING_COMPATIBILITY_WEB_ENABLED pozostawiono false zgodnie z decyzją użytkownika.",
-    "Pierwsza ręczna synchronizacja kanału DPD InfoServices zakończyła się statusem success: pobrano 87 zdarzeń, zapisano 86 nowych, potwierdzono odbiór partii.",
-    "Wykonano kontrolowany backfill dwóch produkcyjnych listów: pobrano i zapisano po 2 zdarzenia; ponowienie po wdrożeniu poprawki pobrało 2 zdarzenia i zapisało 0, potwierdzając idempotencję.",
-    "Rejestr Status przesyłek zawiera 18 przesyłek, w tym 9 aktywnych i 0 wymagających uwagi; szczegóły przykładowej przesyłki zwracają pełną oś czterech zdarzeń.",
-    "Harmonogram InfoServices działa co 300 sekund, a konfiguracja API raportuje enabled=true, api_ready=true i channel_configured=true.",
-    "Naprawiono uruchamianie scripts/dpd_infoservices_backfill.py na Windows przez ustawienie zgodnej polityki pętli asyncio przed asyncio.run; dodano test i dokumentację.",
-    "Poprawkę wdrożono z commitu c5861b72baed66e3bf556d1ec594e1b0818b8977 bez restartu usług; backup plików zapisano w D:\\CTIP\\backups\\patch_20260829_052149.",
-    "Uporządkowano wszystkie 12 lokalnych worktree: każde jest czyste, a wszystkie aktywne gałęzie z worktree są zgodne z GitHubem.",
-    "Pierwotny prototyp Shipping i oryginalną dokumentację DPD zachowano bez łączenia z produkcją na gałęzi archive/root-shipping-prototype-2026-08-29 w commicie 50cce44.",
-    "Zapisano i wypchnięto zaległe stany sesji mailboxa i Shipping oraz konfigurację testowego Firebirda; port backendu 127.0.0.1:3051 jest aktywny i zgodny z compose.test.yml.",
-    "Produkcja pozostaje czysta na commicie 15ed0ae4149b6abfa305b2ca8ea9521a6bc0fb07; cztery usługi działają, a health, Shipping i FormsPublic zwracają HTTP 200."
+    "Utworzono kanoniczną gałąź integracyjną z modułami Shipping, Delivery, Bot Identity, CRM i LAB oraz jednym końcem grafu Alembic f7b2d4e6a810.",
+    "Przygotowano jeden niezmienny stos testowy ctip-test: główny panel na porcie 8000, bez portu 8002 i bez montowania kodu z aktywnego worktree.",
+    "Dodano bezpieczne polecenia server-build, server-check, server-migrate, server-cutover i server-rollback z backupem PostgreSQL oraz Firebird.",
+    "Wdrożenia Windows ujednolicono przez scripts/deploy_windows_prod.py; stare aktualizatory są zablokowane, a konfiguracja NSSM ma pierwszeństwo przed .env.",
+    "Dodano skanowanie sekretów w pre-commit i CI; aktywne wartości usunięto z bieżącego drzewa, bez przepisywania historii Git.",
+    "Repozytorium GitHub jest prywatne i miało jednego użytkownika, co ogranicza ekspozycję; nadal zalecana jest kontrolowana rotacja historycznie ujawnionych danych.",
+    "Domyślny pytest pomija test process_ricoh_images zależny od niewersjonowanego katalogu inbox; test pozostaje dostępny do jawnego uruchomienia.",
+    "Pre-commit przeszedł, testy krytyczne zakończyły się 216 passed, a pełny zestaw bez znanego test_admin_backend.py zakończył się 573 passed."
   ],
   "follow_up": [
-    "Monitorować zakładkę Status przesyłek podczas pierwszych rzeczywistych doręczeń i zwrotów DPD.",
-    "Nie włączać SHIPPING_COMPATIBILITY_WEB_ENABLED bez osobnej decyzji i kontroli limitów.",
-    "Stary izolowany mirror WWW na porcie 8000 ma zatrzymany kontener web; bieżący test Shipping działa poprawnie na porcie 8002."
+    "Zbudować obraz testowy z końcowego commita, wykonać backup i migrację wyłącznie ctip_test, a następnie przełączyć serwer testowy na projekt ctip-test.",
+    "Nie usuwać starych kontenerów, wolumenów, baz ani kopii bez osobnej zgody właściciela.",
+    "Nie wykonywać wdrożenia produkcyjnego ani push bez osobnego, jawnego polecenia.",
+    "Po zakończeniu przedstawić niewykonywany plan optymalizacji szybkości i możliwości rozwoju całego systemu."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "feature/shipping-full-rollout-2026-08-28",
-    "venv": ".venv",
-    "focus": "shipping-dpd-infoservices-production-enabled-and-git-trees-clean",
+    "branch_local": "integration/repo-runtime-repair-2026-09-01",
+    "venv": "/home/marcin/projects/ctip/.venv",
+    "focus": "repo-runtime-security-test-stack-windows-deployment",
     "verification": [
       "pre-commit run --all-files: passed",
-      "pytest -q tests/test_dpd_infoservices_backfill.py tests/test_dpd_infoservices.py: 8 passed",
-      "authenticated /admin/shipping/config: HTTP 200, InfoServices ready",
-      "authenticated /admin/shipping/tracking: HTTP 200, total 18",
-      "native Windows backfill after fix: success, inserted 0 on repeated run",
-      "production /health, /shipping and FormsPublic /health: HTTP 200",
-      "latest web log tail: 0 Traceback/CRITICAL/ModuleNotFoundError",
-      "12 lokalnych worktree: clean",
-      "wszystkie aktywne gałęzie worktree: 0 ahead, 0 behind względem GitHub",
-      "test Shipping 127.0.0.1:8002 /health i /shipping: HTTP 200",
-      "test Firebird 127.0.0.1:3051: aktywny",
-      "produkcja Git: clean i zgodna z origin"
-    ],
-    "services": [
-      "CollectorService: Running",
-      "CTIP-Web: Running",
-      "CTIP-SMS: Running",
-      "CTIP-FormsPublic: Running"
+      "alembic heads: f7b2d4e6a810",
+      "testy krytyczne: 216 passed",
+      "pełny pytest bez tests/test_admin_backend.py: 573 passed",
+      "tests/test_admin_backend.py: znana niestabilność, timeout 180 sekund",
+      "import app.main, app.bot_identity_api_app i app.bot_identity_worker: passed",
+      "skan aktywnych sekretów bieżącego drzewa: passed"
     ]
   }
 }
