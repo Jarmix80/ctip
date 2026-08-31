@@ -1,0 +1,104 @@
+services:
+  crm:
+    image: ${CRM_LAB_IMAGE:?Ustaw CRM_LAB_IMAGE na zweryfikowany tag obrazu}
+    container_name: ctip-crm-prototype
+    command:
+      - sh
+      - -c
+      - >-
+        python -m scripts.crm_lab_test_preflight &&
+        exec python -m uvicorn app.crm_prototype_app:app
+        --host 0.0.0.0 --port 8001 --lifespan off
+    env_file:
+      - ${CRM_LAB_ENV_FILE:-.env.crm-lab.runtime}
+    environment: &safe_test_environment
+      APP_PROFILE: test
+      CRM_ENABLED: "true"
+      CRM_LAB_MODE: "true"
+      CRM_PUBLIC_PROTOTYPE_MODE: "true"
+      BLOCK_CLIENT_COMMUNICATIONS: "true"
+      PGDATABASE: ctip_test
+      FB_MODE: local
+      FB_ALLOW_WRITES: "false"
+      SMS_TEST_MODE: "true"
+      SMS_API_URL: ""
+      SMS_API_TOKEN: ""
+      SMS_API_USERNAME: ""
+      SMS_API_PASSWORD: ""
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      EMAIL_USE_TLS: "false"
+      EMAIL_USE_SSL: "false"
+      PBX_HOST: mock-ctip
+    ports:
+      - "192.168.0.9:8001:8001"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          data=json.load(urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3));
+          assert data.get('status') == 'ok' and data.get('safe_lab') is True
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - ctip_test_edge
+      - ctip_test_internal
+
+  lab:
+    image: ${CRM_LAB_IMAGE:?Ustaw CRM_LAB_IMAGE na zweryfikowany tag obrazu}
+    container_name: ctip-lab-portal
+    command:
+      - sh
+      - -c
+      - >-
+        python -m scripts.crm_lab_test_preflight &&
+        exec python -m uvicorn app.lab_portal_app:app
+        --host 0.0.0.0 --port 8790 --lifespan off
+    env_file:
+      - ${CRM_LAB_ENV_FILE:-.env.crm-lab.runtime}
+    environment:
+      <<: *safe_test_environment
+      CRM_LAB_CHAT_BASE_URL: http://chat_kp-public-1:8787
+    ports:
+      - "192.168.0.9:8790:8790"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          data=json.load(urllib.request.urlopen('http://127.0.0.1:8790/health', timeout=3));
+          assert data.get('status') == 'ok' and data.get('safe_lab') is True
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - ctip_test_edge
+      - ctip_test_internal
+      - chat_kp
+
+networks:
+  ctip_test_edge:
+    external: true
+    name: ctip-prod-mirror_ctip_test_edge
+  ctip_test_internal:
+    external: true
+    name: ctip-prod-mirror_ctip_test_internal
+  chat_kp:
+    external: true
+    name: chat_kp_chat_kp

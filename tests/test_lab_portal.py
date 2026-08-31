@@ -20,6 +20,7 @@ def _enable_safe_lab(monkeypatch) -> None:
     monkeypatch.setattr(settings, "crm_public_prototype_mode", True)
     monkeypatch.setattr(settings, "pg_database", "ctip_test")
     monkeypatch.setattr(settings, "sms_test_mode", True)
+    monkeypatch.setattr(settings, "block_client_communications", True)
     monkeypatch.setattr(settings, "fb_host", "127.0.0.1")
     monkeypatch.setattr(settings, "fb_database", "/tmp/test_ms.fdb")
     monkeypatch.setattr(settings, "fb_mode", "local")
@@ -108,6 +109,23 @@ def test_signed_iframe_ticket_creates_session(monkeypatch) -> None:
     assert allowed.status_code == 200
     assert "ctip_lab_portal" in allowed.cookies
     assert session.status_code == 200
+
+
+def test_health_does_not_require_iframe_ticket(monkeypatch) -> None:
+    _enable_safe_lab(monkeypatch)
+    monkeypatch.setattr(settings, "block_client_communications", True)
+    monkeypatch.setattr(settings, "crm_lab_iframe_secret", "wspoldzielony-sekret-testowy")
+    client = TestClient(create_lab_portal_app())
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "ctip-lab-portal",
+        "safe_lab": True,
+        "chat_proxy": "configured",
+    }
 
 
 def test_chat_entry_redirects_to_local_proxy(monkeypatch) -> None:

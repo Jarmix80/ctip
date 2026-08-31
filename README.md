@@ -484,6 +484,15 @@ wymagane, bez uruchamiania migracji podczas startu kontenera.
 Procedurę budowy, testów canary, podmiany oraz rollbacku opisuje
 `docs/instal/bot_identity_docker_test.md`.
 
+Izolowane usługi `ctip-crm-prototype` i `ctip-lab-portal` korzystają z
+`Dockerfile.crm-lab` oraz `compose.crm-lab.test.yml`. Obraz zawiera cały pakiet
+`app` i nie montuje kodu z aktywnego worktree. Preflight zatrzymuje start, jeżeli
+konfiguracja nie wskazuje `ctip_test`, lokalnego Firebird bez zapisu,
+`SMS_TEST_MODE=true` i `BLOCK_CLIENT_COMMUNICATIONS=true`. Healthcheck LAB jest
+dostępny bez biletu iframe, ale nadal wymaga bezpiecznej konfiguracji testowej.
+Budowę, podmianę i rollback opisuje
+`docs/instal/crm_lab_docker_test.md`.
+
 ### Zmienne środowiskowe Google Sheets
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
@@ -1099,6 +1108,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
 - `docs/instal/bot_identity_docker_test.md` – runbook niemutowalnego obrazu, testów canary, podmiany i rollbacku usług Bot Identity dla CHAT_KP.
+- `docs/instal/crm_lab_docker_test.md` – runbook niemutowalnego testowego obrazu, healthchecków i rollbacku usług CRM/LAB.
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).
 - `docs/instal/wdrozenie_shipping_prod_2026-08-27.md` – etapowe wdrożenie Shipping na Windows Server, backupy, kontrola migracji, faza odczytowa, pilot, nadanie uprawnień i rollback kodu.
 - `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md` – pełne uruchomienie Shipping, V2 jako widok główny, bramka tworzenia zleceń pilotażowych oraz kontrola usuwania klienta, umowy, urządzenia, dokumentów i odtworzenia stanów magazynowych.

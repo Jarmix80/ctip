@@ -41,6 +41,7 @@ def _safe_lab_environment() -> bool:
         and settings.crm_public_prototype_mode
         and settings.pg_database == "ctip_test"
         and settings.sms_test_mode
+        and settings.block_client_communications
         and settings.is_safe_test_firebird
     )
 
@@ -172,6 +173,11 @@ def create_lab_portal_app() -> FastAPI:
                 },
                 headers={"Cache-Control": "no-store"},
             )
+
+        if request.url.path == "/health":
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "no-store"
+            return response
 
         secret = settings.crm_lab_iframe_secret or ""
         set_session = False

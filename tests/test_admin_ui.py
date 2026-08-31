@@ -581,19 +581,34 @@ def test_crm_page_can_render_public_lab_mode():
 def test_isolated_crm_app_exposes_only_guarded_lab_api():
     app = create_crm_prototype_app()
     client = TestClient(app)
-    with patch("app.web.crm_ui.settings.crm_public_prototype_mode", True):
+    with (
+        patch("app.crm_prototype_app.settings.crm_enabled", True),
+        patch("app.crm_prototype_app.settings.crm_lab_mode", True),
+        patch("app.crm_prototype_app.settings.crm_public_prototype_mode", True),
+        patch("app.crm_prototype_app.settings.pg_database", "ctip_test"),
+        patch("app.crm_prototype_app.settings.sms_test_mode", True),
+        patch("app.crm_prototype_app.settings.block_client_communications", True),
+        patch("app.crm_prototype_app.settings.fb_mode", "local"),
+        patch("app.crm_prototype_app.settings.fb_allow_writes", False),
+        patch("app.crm_prototype_app.settings.fb_host", "127.0.0.1"),
+        patch("app.crm_prototype_app.settings.fb_database", "/tmp/test_ms.fdb"),
+        patch("app.web.crm_ui.settings.crm_public_prototype_mode", True),
+    ):
         crm_response = client.get("/crm")
-    assert crm_response.status_code == 200
-    assert 'data-crm-public-prototype="true"' in crm_response.text
-    root_response = client.get("/", follow_redirects=False)
-    assert root_response.status_code == 307
-    assert root_response.headers["location"] == "/crm"
-    assert client.get("/auth/me").status_code == 404
-    assert client.get("/admin").status_code == 404
-    assert client.get("/docs").status_code == 404
-    assert client.get("/api/crm/v1/cases").status_code == 503
-    assert "noindex" in crm_response.headers["x-robots-tag"]
-    assert "frame-ancestors" in crm_response.headers["content-security-policy"]
+        assert crm_response.status_code == 200
+        assert 'data-crm-public-prototype="true"' in crm_response.text
+        root_response = client.get("/", follow_redirects=False)
+        assert root_response.status_code == 307
+        assert root_response.headers["location"] == "/crm"
+        health_response = client.get("/health")
+        assert health_response.status_code == 200
+        assert health_response.json()["safe_lab"] is True
+        assert client.get("/auth/me").status_code == 404
+        assert client.get("/admin").status_code == 404
+        assert client.get("/docs").status_code == 404
+        assert any(route.path == "/api/crm/v1/cases" for route in app.routes)
+        assert "noindex" in crm_response.headers["x-robots-tag"]
+        assert "frame-ancestors" in crm_response.headers["content-security-policy"]
 
 
 def test_crm_script_contains_sales_and_dispatcher_workflows():

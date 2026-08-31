@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="$ROOT_DIR/compose.crm-lab.test.yml"
+ENV_FILE="${CRM_LAB_ENV_FILE:-$ROOT_DIR/.env.crm-lab.runtime}"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Brak pliku środowiskowego: $ENV_FILE" >&2
+  exit 1
+fi
+
+if [[ -z "${CRM_LAB_IMAGE:-}" ]]; then
+  echo "Ustaw CRM_LAB_IMAGE na zweryfikowany tag obrazu." >&2
+  exit 1
+fi
+
+export CRM_LAB_ENV_FILE="$ENV_FILE"
+exec "$ROOT_DIR/scripts/docker_compose.sh" \
+  --project-name ctip-crm-lab-test \
+  --file "$COMPOSE_FILE" \
+  "$@"
