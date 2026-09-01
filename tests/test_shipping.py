@@ -2704,10 +2704,16 @@ class ShippingSchemaTests(unittest.TestCase):
             _extract_phone_from_order_text("kontakt 790742957"),
             "+48790742957",
         )
+        self.assertEqual(
+            _extract_phone_from_order_text("toner test x 1 880123456"),
+            "+48880123456",
+        )
 
     def test_parser_nie_myli_indeksu_ani_numeru_zlecenia_z_telefonem(self) -> None:
         self.assertIsNone(_extract_phone_from_order_text("Zlecenie 18425/2026"))
         self.assertIsNone(_extract_phone_from_order_text("Indeks 2021400211764"))
+        self.assertIsNone(_extract_phone_from_order_text("Indeks: 880123456"))
+        self.assertIsNone(_extract_phone_from_order_text("880123456 i 790123456"))
 
     def test_autor_zlecenia_mobilnego_jest_dopasowany_do_kontaktu(self) -> None:
         contact = {

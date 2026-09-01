@@ -32,6 +32,11 @@ ORDER_PHONE_CUE_PATTERN = re.compile(
     r"(?:tel(?:efon)?|kom(?:órkowy|orkowy)?|kontakt)\s*[:.]?\s*$",
     flags=re.IGNORECASE,
 )
+ORDER_PHONE_BLOCK_CUE_PATTERN = re.compile(
+    r"(?:indeks|symbol|kod(?:\s+towaru)?|nr\s*(?:kat(?:alogowy)?|części|czesci|towaru))"
+    r"\s*[:.#-]?\s*$",
+    flags=re.IGNORECASE,
+)
 SHIPPING_MILESTONE_FIELDS = (
     "DATA_PRZES",
     "WYKONANIE",
@@ -379,19 +384,33 @@ def _display_phone(value: Any) -> str | None:
 
 
 def _extract_phone_from_order_text(value: Any) -> str | None:
-    """Wyodrębnia wiarygodny numer telefonu z treści zlecenia."""
+    """Wyodrębnia opisany telefon albo pojedynczy zwarty numer mobilny z treści."""
     text = _text(value) or ""
+    matches = list(ORDER_PHONE_PATTERN.finditer(text))
+    compact_mobile_matches = [
+        match
+        for match in matches
+        if (phone_key := _phone_key(match.group(0)))
+        and match.group(0) == phone_key
+        and phone_key[0] in "45678"
+    ]
     best_candidate: tuple[int, int, str] | None = None
-    for match in ORDER_PHONE_PATTERN.finditer(text):
+    for match in matches:
         raw_phone = match.group(0)
         phone_key = _phone_key(raw_phone)
         if len(phone_key) != 9:
             continue
         context = text[max(0, match.start() - 24) : match.start()]
         has_cue = bool(ORDER_PHONE_CUE_PATTERN.search(context))
+        has_block_cue = bool(ORDER_PHONE_BLOCK_CUE_PATTERN.search(context))
         has_separator = bool(re.search(r"\d[\s.-]+\d", raw_phone))
         has_country_prefix = bool(re.match(r"\s*(?:\+\s*48|00\s*48)", raw_phone))
-        if not (has_cue or has_separator or has_country_prefix):
+        is_unique_compact_mobile = (
+            len(compact_mobile_matches) == 1
+            and compact_mobile_matches[0] is match
+            and not has_block_cue
+        )
+        if not (has_cue or has_separator or has_country_prefix or is_unique_compact_mobile):
             continue
         score = (3 if has_cue else 0) + (2 if has_country_prefix else 0)
         score += 1 if has_separator else 0
