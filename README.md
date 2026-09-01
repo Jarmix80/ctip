@@ -1018,6 +1018,7 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
 - Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
 - `compose.test.yml` uruchamia PostgreSQL 17, Firebird 2.5, Mailpit, mock CTIP, panel WWW, formularze publiczne, kolektor i sender SMS. Kontenery aplikacyjne działają w sieci `internal` bez trasy domyślnej. Porty udostępnia wyłącznie statyczna brama HAProxy; e-mail trafia do Mailpit, SMS jest raportowany jako `SIMULATED`, a pełny audyt komunikacji jest przechowywany przez 14 dni w `logs/outbound_test/`. Osobna brama `google-egress` przepuszcza wyłącznie TLS do API Google, dzięki czemu outbox `/device` może zapisywać tylko do chronionego skoroszytu `Zerowki_test`, bez otwierania aplikacji na pozostałe zasoby sieciowe. Usługi aplikacyjne otrzymują dodatkowo grupę katalogu logów przez `LOCAL_LOG_GID` (domyślnie `101`), aby kolektor mógł zapisywać dzienne logi przy montowaniu repozytorium z hosta.
 - `./ctiptest start` wymusza ponowne utworzenie kontenerów, dzięki czemu usługi zawsze otrzymują aktualną konfigurację z `.env.test`.
+- Serwerowy stos testowy publikuje Firebirda wyłącznie jako `192.168.0.9:3050`; brama HAProxy dopuszcza połączenia lokalne oraz klienta MS `192.168.0.126`. Klient używa aliasu `BAZAMS_TEST` albo ścieżki `BAZAMS_TEST\\BazaMS.fdb`.
 - Aby zasilić `ctip_test` realnymi formularzami workflow przed testami mailbox/GRENKE, można uruchomić:
 
 ```bash

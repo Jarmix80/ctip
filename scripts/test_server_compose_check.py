@@ -19,7 +19,7 @@ APPLICATION_SERVICES = (
     "crm",
     "lab",
 )
-ALLOWED_PUBLISHED_PORTS = {8000, 8001, 8790, 8100, 8025}
+ALLOWED_PUBLISHED_PORTS = {3050, 8000, 8001, 8790, 8100, 8025}
 
 
 def _is_true(value: object) -> bool:
@@ -33,6 +33,24 @@ def _is_false(value: object) -> bool:
 def _published_port(entry: object) -> int | None:
     if isinstance(entry, dict):
         value = entry.get("published")
+    else:
+        value = str(entry).rsplit(":", maxsplit=1)[-1].split("/", maxsplit=1)[0]
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _published_host_ip(entry: object) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("host_ip") or "")
+    parts = str(entry).split(":")
+    return parts[0] if len(parts) >= 3 else ""
+
+
+def _target_port(entry: object) -> int | None:
+    if isinstance(entry, dict):
+        value = entry.get("target")
     else:
         value = str(entry).rsplit(":", maxsplit=1)[-1].split("/", maxsplit=1)[0]
     try:
@@ -186,6 +204,7 @@ def collect_issues(
                         )
 
     published_8000: list[str] = []
+    published_3050: list[tuple[str, str, int | None]] = []
     for name, service in services.items():
         for port in service.get("ports") or []:
             published = _published_port(port)
@@ -193,10 +212,14 @@ def collect_issues(
                 issues.append(f"Usługa {name} publikuje niedozwolony port {published}.")
             if published == 8000:
                 published_8000.append(name)
+            if published == 3050:
+                published_3050.append((name, _published_host_ip(port), _target_port(port)))
             if published == 8002:
                 issues.append(f"Usługa {name} nie może publikować historycznego portu 8002.")
     if published_8000 != ["test-gateway"]:
         issues.append("Port 8000 może publikować wyłącznie usługa test-gateway.")
+    if published_3050 != [("test-gateway", "192.168.0.9", 3050)]:
+        issues.append("Port 3050 musi publikować wyłącznie test-gateway na 192.168.0.9:3050.")
 
     if check_filesystem:
         try:

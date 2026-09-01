@@ -72,7 +72,12 @@ def _config() -> dict:
         "volumes": [{"type": "volume", "source": "firebird-config", "target": "/firebird"}]
     }
     services["postgres"] = {"networks": {"ctip_test_internal": {"aliases": ["ctip-test-postgres"]}}}
-    services["test-gateway"] = {"ports": [{"published": "8000", "target": 8000}]}
+    services["test-gateway"] = {
+        "ports": [
+            {"host_ip": "0.0.0.0", "published": "8000", "target": 8000},
+            {"host_ip": "192.168.0.9", "published": "3050", "target": 3050},
+        ]
+    }
     return {"name": "ctip-test", "services": services}
 
 
@@ -133,6 +138,19 @@ def test_server_compose_rejects_old_port_and_unsafe_secret_path() -> None:
 
     assert any("inbox ani .codex" in issue for issue in issues)
     assert any("8002" in issue for issue in issues)
+
+
+def test_server_compose_rejects_firebird_published_on_wrong_interface() -> None:
+    """Kontrola nie pozwala wystawić testowego Firebirda na wszystkich interfejsach."""
+    config = _config()
+    config["services"]["test-gateway"]["ports"][1]["host_ip"] = "0.0.0.0"
+
+    issues = collect_issues(
+        config,
+        expected_image="ctip/test-runtime:0123456789abcdef0123456789abcdef01234567",
+    )
+
+    assert any("192.168.0.9:3050" in issue for issue in issues)
 
 
 def test_server_compose_rejects_unsafe_shipping_and_missing_bot_secret() -> None:
