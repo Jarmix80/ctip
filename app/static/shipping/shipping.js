@@ -3,6 +3,8 @@ const SHIPPING_ORDER_STATE_REFRESH_MS = 30000;
 
 const shippingState = {
   token: null,
+  layout: document.body.dataset.shippingLayout || "v2",
+  defaultEntry: document.body.dataset.shippingDefaultEntry === "true",
   config: null,
   queue: [],
   selectedOrderId: null,
@@ -83,6 +85,29 @@ function shippingRequestUuid() {
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function shippingLayoutDestination(layout) {
+  const pathname = layout === "legacy" ? "/shipping/legacy" : "/shipping/v2";
+  return `${pathname}${window.location.search}${window.location.hash}`;
+}
+
+async function chooseShippingLayout(event) {
+  event.preventDefault();
+  const link = event.currentTarget;
+  const layout = link.dataset.shippingLayoutChoice;
+  if (!["v2", "legacy"].includes(layout) || layout === shippingState.layout) return;
+  link.setAttribute("aria-busy", "true");
+  try {
+    const result = await shippingJson("/auth/preferences/shipping-layout", {
+      method: "PUT",
+      body: JSON.stringify({ layout }),
+    });
+    window.location.assign(shippingLayoutDestination(result.layout));
+  } catch (error) {
+    link.removeAttribute("aria-busy");
+    shippingAlert(`Nie zapisano wyboru wyglądu. ${error.message}`, true);
+  }
 }
 
 function escapeShippingHtml(value) {
@@ -2305,6 +2330,12 @@ async function initializeShipping() {
   try {
     const user = await shippingJson("/auth/me");
     if (!Array.isArray(user.sections) || !user.sections.includes("shipping")) throw new Error("Brak uprawnień do wysyłek.");
+    const preferredLayout = user.shipping_layout === "legacy" ? "legacy" : "v2";
+    if (shippingState.defaultEntry && preferredLayout !== shippingState.layout) {
+      window.location.replace(shippingLayoutDestination(preferredLayout));
+      return;
+    }
+    document.body.classList.remove("shipping-layout-resolving");
     document.getElementById("shipping-user").textContent = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
     shippingState.config = await shippingJson("/admin/shipping/config");
     const config = shippingState.config;
@@ -2338,6 +2369,7 @@ async function initializeShipping() {
     await applyShippingDeepLink();
     startShippingAutoRefresh();
   } catch (error) {
+    document.body.classList.remove("shipping-layout-resolving");
     shippingAlert(error.message, true);
   }
 }
@@ -2349,6 +2381,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const manualModelsDebounced = shippingDebounce(loadManualModels);
   const archiveSearchDebounced = shippingDebounce(() => loadShippingArchive(true), 300);
   const trackingSearchDebounced = shippingDebounce(() => loadShippingTracking(true), 300);
+  document.querySelectorAll("[data-shipping-layout-choice]").forEach((link) => link.addEventListener("click", chooseShippingLayout));
   document.querySelectorAll("[data-shipping-view]").forEach((button) => button.addEventListener("click", () => switchShippingView(button.dataset.shippingView)));
   document.getElementById("shipping-refresh").addEventListener("click", () => {
     const archiveActive = document.querySelector('[data-shipping-view="archive"]')?.classList.contains("active");

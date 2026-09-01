@@ -14,10 +14,14 @@ from app.services.section_permissions import default_sections_for_role, normaliz
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
-    def test_tresc_etykiety_jest_jedynym_headem_alembic(self) -> None:
+    def test_preferencja_shipping_jest_jedynym_headem_alembic(self) -> None:
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["e4a8c1d9f2b7"])
+        self.assertEqual(scripts.get_heads(), ["a1c3e5f7b9d2"])
+        preference_revision = scripts.get_revision("a1c3e5f7b9d2")
+        self.assertIsNotNone(preference_revision)
+        self.assertEqual(preference_revision.down_revision, "e4a8c1d9f2b7")
+
         revision = scripts.get_revision("e4a8c1d9f2b7")
         self.assertIsNotNone(revision)
         self.assertEqual(revision.down_revision, "c3d5e7f9a1b2")

@@ -18,6 +18,7 @@ from app.schemas.admin import (
     PortalPasswordChangeRequest,
     PortalProfile,
     PortalProfileUpdate,
+    PortalShippingLayoutPreference,
     PortalUserInfo,
 )
 from app.services import operator_settings, section_permissions
@@ -143,6 +144,7 @@ async def portal_me(
         role=admin_user.role,
         is_salesperson=bool(admin_user.is_salesperson),
         device_theme=admin_user.device_theme,
+        shipping_layout=admin_user.shipping_layout,
         sections=sections,
     )
 
@@ -169,6 +171,30 @@ async def portal_update_device_theme(
     )
     await session.commit()
     return PortalDeviceThemePreference(theme=admin_user.device_theme)
+
+
+@router.put(
+    "/preferences/shipping-layout",
+    response_model=PortalShippingLayoutPreference,
+    summary="Zapisz wygląd modułu wysyłek",
+)
+async def portal_update_shipping_layout(
+    payload: PortalShippingLayoutPreference,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> PortalShippingLayoutPreference:
+    """Zapisuje domyślny wygląd Shipping na koncie zalogowanego użytkownika."""
+    admin_session, admin_user = admin_context
+    admin_user.shipping_layout = payload.layout
+    await record_audit(
+        session,
+        user_id=admin_user.id,
+        action="portal_shipping_layout_update",
+        client_ip=admin_session.client_ip,
+        payload={"layout": payload.layout},
+    )
+    await session.commit()
+    return PortalShippingLayoutPreference(layout=admin_user.shipping_layout)
 
 
 @router.get("/profile", response_model=PortalProfile, summary="Profil użytkownika")

@@ -100,3 +100,5 @@
 ## 2026-08-31
 - Rozszerzono `ctip.shipping_case` o opcjonalną kolumnę `label_text`, która przechowuje zatwierdzoną przez operatora treść drukowanych pól `ref1` i `content` etykiety DPD.
 - Istniejące sprawy pozostają zgodne z migracją dzięki wartości `NULL`; treść jest dla nich wyliczana z numeru zlecenia oraz zapisanych części przy kolejnym użyciu modułu Shipping.
+## 2026-09-01
+- Migracja `a1c3e5f7b9d2` dodaje do `ctip.admin_user` kontrolowaną preferencję `shipping_layout` (`v2`, `legacy`) z domyślną wartością `v2`, dzięki czemu wybór wyglądu Shipping pozostaje przypisany do konta użytkownika.

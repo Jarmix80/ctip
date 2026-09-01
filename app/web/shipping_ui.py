@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core.config import settings
@@ -23,21 +23,29 @@ def _require_shipping_enabled() -> None:
 
 @router.get("/shipping", response_class=HTMLResponse)
 async def shipping_page(request: Request) -> HTMLResponse:
-    """Renderuje docelowy interfejs V2 realizacji wysyłek."""
+    """Renderuje wejście Shipping rozstrzygające preferencję zalogowanego użytkownika."""
     _require_shipping_enabled()
-    return templates.TemplateResponse(request, "shipping/v2.html")
+    return templates.TemplateResponse(
+        request,
+        "shipping/v2.html",
+        {"shipping_default_entry": True},
+    )
 
 
-@router.get("/shipping/v2", response_class=RedirectResponse)
-async def shipping_v2_page() -> RedirectResponse:
-    """Przekierowuje dotychczasowy adres V2 do głównego widoku Shipping."""
+@router.get("/shipping/v2", response_class=HTMLResponse)
+async def shipping_v2_page(request: Request) -> HTMLResponse:
+    """Renderuje jawnie wybrany interfejs V2 niezależnie od preferencji konta."""
     _require_shipping_enabled()
-    return RedirectResponse(url="/shipping", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    return templates.TemplateResponse(
+        request,
+        "shipping/v2.html",
+        {"shipping_default_entry": False},
+    )
 
 
 @router.get("/shipping/legacy", response_class=HTMLResponse)
 async def shipping_legacy_page(request: Request) -> HTMLResponse:
-    """Renderuje poprzedni interfejs jako bezpieczny widok pomocniczy."""
+    """Renderuje jawnie wybrany poprzedni wygląd z pełnym procesem Shipping."""
     _require_shipping_enabled()
     return templates.TemplateResponse(request, "shipping/index.html")
 

@@ -215,6 +215,126 @@ input.invalid:focus { outline-color: #fecdca; }
 .shipping-model-option input { width: 18px; min-height: 18px; }
 .shipping-model-option span { display: grid; gap: 3px; }
 
+.shipping-legacy-queue-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.shipping-tab b { display: inline-flex; min-width: 22px; justify-content: center; margin-left: 4px; padding: 2px 6px; border-radius: 999px; color: #1849a9; background: #eaf2ff; font-size: 10px; }
+.shipping-tab.active b { color: #175cd3; background: #fff; }
+.shipping-legacy-register-view { display: grid; gap: 14px; }
+.shipping-legacy-register-view[hidden] { display: none; }
+.shipping-v2-tracking-intro,
+.shipping-v2-archive-intro { display: flex; justify-content: space-between; gap: 24px; align-items: center; padding: 20px; }
+.shipping-v2-tracking-intro h1,
+.shipping-v2-archive-intro h1 { margin: 4px 0 6px; font-size: 28px; }
+.shipping-v2-tracking-intro p:last-child,
+.shipping-v2-archive-intro p:last-child { margin: 0; }
+.shipping-v2-tracking-sync { display: grid; gap: 8px; justify-items: end; color: var(--muted); font-size: 12px; }
+.shipping-v2-tracking-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.shipping-v2-tracking-summary article { display: grid; gap: 5px; padding: 14px 16px; }
+.shipping-v2-tracking-summary small { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.shipping-v2-tracking-summary strong { font-size: 24px; }
+.shipping-v2-tracking-summary .attention { border-color: #fda29b; background: #fef3f2; }
+.shipping-v2-tracking-summary .attention strong { color: #b42318; }
+.shipping-v2-tracking-filters,
+.shipping-v2-archive-filters { display: grid; grid-template-columns: minmax(320px, 2fr) repeat(4, minmax(140px, 1fr)); gap: 10px; align-items: end; padding: 14px; }
+.shipping-v2-tracking-filters label,
+.shipping-v2-archive-filters label { display: grid; gap: 5px; min-width: 0; color: #475467; font-size: 12px; font-weight: 700; }
+.shipping-v2-tracking-search,
+.shipping-v2-archive-search { grid-column: span 2; }
+.shipping-v2-search-control { position: relative; display: flex; align-items: center; }
+.shipping-v2-search-control b { position: absolute; left: 12px; z-index: 1; color: #667085; }
+.shipping-v2-search-control input { padding-left: 34px; }
+.shipping-v2-tracking-filters .shipping-check-row { min-height: 42px; margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: #f8fafc; }
+.shipping-v2-tracking-layout,
+.shipping-v2-archive-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.shipping-v2-tracking-layout:has(.shipping-v2-tracking-detail:not([hidden])),
+.shipping-v2-archive-layout:has(.shipping-v2-archive-detail:not([hidden])) { grid-template-columns: minmax(700px, 1.35fr) minmax(390px, .65fr); }
+.shipping-v2-tracking-register,
+.shipping-v2-archive-register { min-width: 0; overflow: hidden; }
+.shipping-v2-tracking-head,
+.shipping-v2-tracking-row { display: grid; grid-template-columns: 140px minmax(150px, .8fr) minmax(190px, 1fr) minmax(210px, 1.1fr) minmax(170px, .8fr); gap: 12px; align-items: center; }
+.shipping-v2-tracking-head,
+.shipping-v2-archive-ledger-head { padding: 11px 16px; border-bottom: 1px solid var(--line); color: #667085; background: #f8fafc; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.shipping-v2-tracking-row,
+.shipping-v2-archive-row { width: 100%; padding: 14px 16px; border: 0; border-bottom: 1px solid #eaecf0; color: var(--ink); background: #fff; cursor: pointer; text-align: left; }
+.shipping-v2-tracking-row:hover,
+.shipping-v2-tracking-row.active,
+.shipping-v2-archive-row:hover,
+.shipping-v2-archive-row.active { background: #eff8ff; box-shadow: inset 3px 0 #175cd3; }
+.shipping-v2-tracking-row > span,
+.shipping-v2-archive-row > span { display: grid; gap: 4px; min-width: 0; }
+.shipping-v2-tracking-row strong,
+.shipping-v2-archive-row > span > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.shipping-v2-tracking-row small,
+.shipping-v2-archive-row > span > small { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.shipping-v2-tracking-row time { color: #175cd3; font-size: 11px; }
+.shipping-v2-tracking-row em,
+.shipping-v2-archive-row em { width: fit-content; color: #b54708; font-size: 10px; font-style: normal; font-weight: 800; }
+.shipping-dpd-state { display: inline-flex; width: fit-content; padding: 4px 7px; border-radius: 999px; color: #175cd3; background: #d1e9ff; font-size: 10px; font-weight: 800; }
+.shipping-dpd-state.registered,
+.shipping-dpd-state.other { color: #475467; background: #eaecf0; }
+.shipping-dpd-state.pickup_ready,
+.shipping-dpd-state.out_for_delivery { color: #026aa2; background: #e0f2fe; }
+.shipping-dpd-state.delivered { color: #05603a; background: #d1fadf; }
+.shipping-dpd-state.redirected { color: #93370d; background: #fef0c7; }
+.shipping-dpd-state.undelivered,
+.shipping-dpd-state.returning,
+.shipping-dpd-state.critical { color: #b42318; background: #fee4e2; }
+.shipping-v2-tracking-empty,
+.shipping-v2-archive-empty { display: grid; gap: 5px; place-items: center; min-height: 150px; padding: 24px; color: var(--muted); text-align: center; }
+.shipping-v2-tracking-empty.error,
+.shipping-v2-archive-empty.error { color: #b42318; }
+.shipping-v2-tracking-pagination,
+.shipping-v2-archive-pagination { background: #f8fafc; }
+.shipping-v2-tracking-detail,
+.shipping-v2-archive-detail { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.shipping-v2-tracking-detail > header,
+.shipping-v2-archive-detail > header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 17px 18px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .97); }
+.shipping-v2-tracking-detail h2,
+.shipping-v2-archive-detail h2 { margin: 4px 0; font-size: 22px; }
+.shipping-v2-tracking-detail p,
+.shipping-v2-archive-detail p { margin: 5px 0 0; color: #475467; line-height: 1.5; }
+.shipping-v2-tracking-current,
+.shipping-v2-archive-summary { display: grid; grid-template-columns: repeat(2, 1fr); border-bottom: 1px solid var(--line); background: #f8fafc; }
+.shipping-v2-tracking-current > span,
+.shipping-v2-archive-summary > span { display: grid; gap: 4px; padding: 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.shipping-v2-tracking-current small,
+.shipping-v2-tracking-section > header small,
+.shipping-v2-archive-summary small,
+.shipping-v2-archive-section > header small,
+.shipping-v2-archive-operators small { color: #175cd3; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.shipping-v2-tracking-section,
+.shipping-v2-archive-section { margin: 12px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.shipping-v2-tracking-section > header,
+.shipping-v2-archive-section > header { margin: -13px -13px 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.shipping-v2-tracking-links,
+.shipping-v2-archive-operators { display: grid; gap: 8px; }
+.shipping-v2-tracking-links a,
+.shipping-v2-archive-operators > span { display: grid; gap: 4px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fff; text-decoration: none; }
+.shipping-v2-tracking-events,
+.shipping-v2-archive-events { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.shipping-v2-tracking-events li,
+.shipping-v2-archive-events li { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid #eaecf0; }
+.shipping-v2-tracking-events li.cancelled { opacity: .55; text-decoration: line-through; }
+.shipping-v2-tracking-events time,
+.shipping-v2-archive-events time { color: var(--muted); font-size: 10px; }
+.shipping-v2-tracking-event-data { margin-top: 3px; color: #b54708 !important; white-space: normal; }
+.shipping-v2-archive-ledger-head,
+.shipping-v2-archive-row { display: grid; grid-template-columns: 75px minmax(210px, 1.35fr) minmax(165px, .8fr) minmax(220px, 1fr) minmax(200px, .9fr); gap: 13px; align-items: center; }
+.shipping-v2-archive-ledger { display: grid; }
+.shipping-v2-archive-row > time { display: grid; grid-template-columns: auto 1fr; gap: 0 5px; align-items: center; color: #175cd3; }
+.shipping-v2-archive-row > time b { grid-row: 1 / 3; font-size: 28px; }
+.shipping-v2-archive-row > time span,
+.shipping-v2-archive-row > time small { font-size: 10px; }
+.shipping-v2-archive-row > time small { color: var(--muted); }
+.shipping-v2-archive-documents { display: flex; flex-wrap: wrap; gap: 6px; }
+.shipping-v2-archive-doc { display: inline-flex; width: fit-content; padding: 4px 7px; border-radius: 5px; color: #05603a; background: #d1fadf; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 800; }
+.shipping-v2-archive-doc.wz { color: #175cd3; background: #d1e9ff; }
+.shipping-v2-archive-doc.invoice { color: #93370d; background: #fef0c7; }
+.shipping-v2-archive-problem { color: #1d2939 !important; font-size: 15px !important; font-weight: 650; white-space: pre-wrap; }
+.shipping-v2-archive-section .shipping-table-wrap { margin: 0; }
+.shipping-v2-archive-section > small { display: block; margin-top: 9px; color: var(--muted); }
+.shipping-v2-archive-operators { grid-template-columns: repeat(3, 1fr); }
+.shipping-v2-archive-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 14px; }
+
 @media (max-width: 980px) {
   .shipping-status-grid { grid-template-columns: repeat(2, 1fr); }
   .shipping-workspace { grid-template-columns: 1fr; }
@@ -226,6 +346,16 @@ input.invalid:focus { outline-color: #fecdca; }
   .shipping-model-relation { grid-template-columns: auto minmax(140px, 1fr) minmax(110px, auto); }
   .shipping-model-relation .shipping-evidence { grid-column: 2 / -1; }
   .shipping-overdue-invoices article { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+  .shipping-v2-tracking-summary { grid-template-columns: repeat(3, 1fr); }
+  .shipping-v2-tracking-filters, .shipping-v2-archive-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shipping-v2-tracking-search, .shipping-v2-archive-search { grid-column: 1 / -1; }
+  .shipping-v2-tracking-layout:has(.shipping-v2-tracking-detail:not([hidden])), .shipping-v2-archive-layout:has(.shipping-v2-archive-detail:not([hidden])) { grid-template-columns: 1fr; }
+  .shipping-v2-tracking-detail, .shipping-v2-archive-detail { position: static; max-height: none; }
+  .shipping-v2-tracking-head, .shipping-v2-archive-ledger-head { display: none; }
+  .shipping-v2-tracking-row { grid-template-columns: 120px 1fr 1fr; }
+  .shipping-v2-tracking-row > span:nth-of-type(4), .shipping-v2-tracking-row > span:nth-of-type(5) { grid-column: 2 / -1; }
+  .shipping-v2-archive-row { grid-template-columns: 70px 1fr 1fr; }
+  .shipping-v2-archive-row > span:nth-of-type(3), .shipping-v2-archive-row > span:nth-of-type(4) { grid-column: 2 / -1; }
 }
 
 @media (max-width: 680px) {
@@ -243,4 +373,13 @@ input.invalid:focus { outline-color: #fecdca; }
   .shipping-model-relation { grid-template-columns: auto 1fr; }
   .shipping-model-relation .shipping-evidence, .shipping-model-relation > span:nth-of-type(2) { grid-column: 2; }
   .shipping-overdue-invoices article { grid-template-columns: 1fr; }
+  .shipping-v2-tracking-intro, .shipping-v2-archive-intro { align-items: stretch; flex-direction: column; }
+  .shipping-v2-tracking-sync { justify-items: stretch; }
+  .shipping-v2-tracking-summary, .shipping-v2-tracking-filters, .shipping-v2-archive-filters { grid-template-columns: 1fr; }
+  .shipping-v2-tracking-search, .shipping-v2-archive-search { grid-column: auto; }
+  .shipping-v2-tracking-row, .shipping-v2-archive-row { display: grid; grid-template-columns: 1fr; }
+  .shipping-v2-tracking-row > span:nth-of-type(4), .shipping-v2-tracking-row > span:nth-of-type(5), .shipping-v2-archive-row > span:nth-of-type(3), .shipping-v2-archive-row > span:nth-of-type(4) { grid-column: auto; }
+  .shipping-v2-archive-row > time { width: fit-content; }
+  .shipping-v2-tracking-events li, .shipping-v2-archive-events li { grid-template-columns: 1fr; }
+  .shipping-v2-archive-operators { grid-template-columns: 1fr; }
 }

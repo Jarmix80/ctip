@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 PanelSection = Literal["admin", "operator", "generator", "delivery", "device", "shipping"]
 PanelRole = Literal["admin", "operator", "serwisant"]
 DeviceTheme = Literal["blue", "graphite", "mint"]
+ShippingLayout = Literal["v2", "legacy"]
 
 
 class EnvBackedConfigMetadata(BaseModel):
@@ -612,6 +613,7 @@ class PortalUserInfo(BaseModel):
     role: str
     is_salesperson: bool = False
     device_theme: DeviceTheme = "blue"
+    shipping_layout: ShippingLayout = "v2"
     sections: list[PanelSection] = Field(default_factory=list)
 
 
@@ -619,6 +621,12 @@ class PortalDeviceThemePreference(BaseModel):
     """Preferencja kolorystyki modułu urządzeń."""
 
     theme: DeviceTheme
+
+
+class PortalShippingLayoutPreference(BaseModel):
+    """Preferencja wyglądu modułu wysyłek."""
+
+    layout: ShippingLayout
 
 
 class PortalProfile(BaseModel):
