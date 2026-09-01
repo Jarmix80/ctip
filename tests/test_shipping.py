@@ -1713,7 +1713,7 @@ class ShippingSchemaTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Wysyłki i dokumenty", response.text)
-        self.assertIn("Poprzedni wygląd", response.text)
+        self.assertIn(">Jasny</a>", response.text)
         self.assertIn('href="/shipping/legacy"', response.text)
         self.assertIn("Archiwum", response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
@@ -1775,6 +1775,7 @@ class ShippingSchemaTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Wysyłki części i tonerów", response.text)
+        self.assertIn(">Ciemny</a>", response.text)
         self.assertIn('href="/shipping/v2"', response.text)
         self.assertIn('data-shipping-layout-choice="v2"', response.text)
         self.assertIn('id="shipping-tracking-view"', response.text)
