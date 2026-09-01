@@ -257,6 +257,10 @@ def materialize_remote_file_script(
         "Expand-Archive -LiteralPath $zip -DestinationPath $out -Force;"
         "$src=Join-Path $out $path;if(!(Test-Path -LiteralPath $src)){throw 'archive path missing'};"
         "Copy-Item -LiteralPath $src -Destination $dst -Force;"
+        "$strict=New-Object Text.UTF8Encoding($false,$true);"
+        '$text=[IO.File]::ReadAllText($dst,$strict).Replace("`r`n","`n").Replace("`r","`n");'
+        '$text=$text.TrimEnd("`n")+"`n";'
+        "$utf8=New-Object Text.UTF8Encoding($false);[IO.File]::WriteAllText($dst,$text,$utf8);"
         "$sha=(Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant();"
         "if($sha-ne $expected){throw 'SHA-256 mismatch'}"
     )
@@ -359,7 +363,7 @@ def execute(
                 revision=args.release,
                 repository_path=repository_path,
                 destination=destination,
-                expected_hash=hashlib.sha256(payload).hexdigest(),
+                expected_hash=normalized_sha256(payload),
             )
             _require_success(
                 run_remote_powershell(runner, ssh_command, materialize),

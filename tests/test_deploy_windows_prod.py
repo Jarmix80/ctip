@@ -106,6 +106,8 @@ def test_materializacja_git_jest_binarna_i_miesci_sie_w_limicie() -> None:
     )
 
     assert "archive --format=zip" in script
+    assert "Text.UTF8Encoding($false,$true)" in script
+    assert '.Replace("`r`n","`n")' in script
     assert "Get-FileHash" in script
     assert "git show" not in script
     encode_powershell(script)
