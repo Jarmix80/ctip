@@ -245,19 +245,20 @@ def materialize_remote_file_script(
     destination: str,
     expected_hash: str,
 ) -> str:
-    """Buduje krótki skrypt pobierający plik przez `git show` i sprawdzający SHA-256."""
+    """Buduje krótki skrypt pobierający plik binarnie i sprawdzający SHA-256."""
     return (
         "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';"
-        "$OutputEncoding=[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false);"
         f"$repo={_powershell_quoted(install_dir)};$dst={_powershell_quoted(destination)};"
-        f"$spec={_powershell_quoted(f'{revision}:{repository_path}')};"
-        "$lines=@(& git -C $repo show $spec);if($LASTEXITCODE-ne 0){throw 'git show failed'};"
-        '$text=(($lines-join "`n").TrimEnd("`n")+"`n");'
+        f"$rev={_powershell_quoted(revision)};$path={_powershell_quoted(repository_path)};"
+        f'$expected={_powershell_quoted(expected_hash)};$zip="$dst.zip";$out="$dst.out";'
         "$dir=Split-Path -Parent $dst;New-Item -ItemType Directory -Path $dir -Force|Out-Null;"
-        "$utf8=New-Object Text.UTF8Encoding($false);[IO.File]::WriteAllText($dst,$text,$utf8);"
-        "$hasher=[Security.Cryptography.SHA256]::Create();try{$hash=$hasher.ComputeHash($utf8.GetBytes($text))}finally{$hasher.Dispose()};"
-        "$sha=[BitConverter]::ToString($hash).Replace('-','').ToLower();"
-        f"if($sha-ne {_powershell_quoted(expected_hash)}){{throw 'SHA-256 mismatch'}}"
+        '& git.exe -C $repo archive --format=zip "--output=$zip" $rev -- $path;'
+        "if($LASTEXITCODE-ne 0){throw 'git archive failed'};"
+        "Expand-Archive -LiteralPath $zip -DestinationPath $out -Force;"
+        "$src=Join-Path $out $path;if(!(Test-Path -LiteralPath $src)){throw 'archive path missing'};"
+        "Copy-Item -LiteralPath $src -Destination $dst -Force;"
+        "$sha=(Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant();"
+        "if($sha-ne $expected){throw 'SHA-256 mismatch'}"
     )
 
 
@@ -358,7 +359,7 @@ def execute(
                 revision=args.release,
                 repository_path=repository_path,
                 destination=destination,
-                expected_hash=normalized_sha256(payload),
+                expected_hash=hashlib.sha256(payload).hexdigest(),
             )
             _require_success(
                 run_remote_powershell(runner, ssh_command, materialize),

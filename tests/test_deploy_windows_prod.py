@@ -95,8 +95,8 @@ def test_normalize_text_bytes_unifies_crlf_and_lf() -> None:
     assert normalize_text_bytes(b"\xef\xbb\xbfa\nb") == b"a\nb\n"
 
 
-def test_materializacja_git_wymusza_utf8_i_miesci_sie_w_limicie() -> None:
-    """Polskie znaki z `git show` nie mogą zmieniać kontrolnego SHA-256."""
+def test_materializacja_git_jest_binarna_i_miesci_sie_w_limicie() -> None:
+    """Plik z commita nie może przechodzić przez dekodowanie konsoli Windows."""
     script = materialize_remote_file_script(
         install_dir=r"D:\CTIP",
         revision=RELEASE,
@@ -105,8 +105,9 @@ def test_materializacja_git_wymusza_utf8_i_miesci_sie_w_limicie() -> None:
         expected_hash="a" * 64,
     )
 
-    assert "$OutputEncoding=[Console]::OutputEncoding" in script
-    assert "Text.UTF8Encoding($false)" in script
+    assert "archive --format=zip" in script
+    assert "Get-FileHash" in script
+    assert "git show" not in script
     encode_powershell(script)
 
 
