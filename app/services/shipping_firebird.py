@@ -13,6 +13,9 @@ DELIVERY_TYPE_ID = 8
 DELIVERY_TYPE_NAME = "dowóz materiałów"
 SHIPPING_TECHNICIAN_NAME = "Wysyłka Wysyłka"
 QUEUE_STATUSES = ("O", "ZR")
+KSEF_NUMERIC_VAT_RATES = frozenset(
+    Decimal(value) for value in ("23", "22", "8", "7", "5", "4", "3")
+)
 INVOICE_DOCUMENT_KIND = "KPSK"
 OVERDUE_INVOICE_BATCH_SIZE = 200
 ORDER_STATUS_LABELS = {
@@ -56,6 +59,23 @@ def _vat_rate(value: Any) -> Decimal:
         return Decimal(normalized or "0")
     except InvalidOperation as exc:
         raise RuntimeError(f"Niepoprawna stawka VAT w kartotece magazynowej: {value!r}.") from exc
+
+
+def _ms_vat_rate_text(value: Any) -> str:
+    """Zapisuje liczbową stawkę VAT w kanonicznym formacie Menadżera Serwisu."""
+    rate = _vat_rate(value)
+    if rate < 0 or rate != rate.to_integral_value():
+        raise RuntimeError(f"Nieobsługiwana ułamkowa stawka VAT dla dokumentu MS: {value!r}.")
+    return f"{rate.quantize(Decimal('1')):f} %"
+
+
+def _validate_ksef_numeric_vat_rate(value: Decimal) -> None:
+    """Blokuje utworzenie FV dla stawki bez jednoznacznego mapowania FA(3)."""
+    if value not in KSEF_NUMERIC_VAT_RATES:
+        raise RuntimeError(
+            "Stawka VAT nie ma bezpiecznego mapowania do KSeF FA(3). "
+            "Wystaw fakturę ręcznie w Menadżerze Serwisu."
+        )
 
 
 def _money(value: Decimal) -> Decimal:
@@ -1281,7 +1301,7 @@ def _legacy_create_rw_and_close_order(
                     _text(unit) or "szt.",
                     net_value,
                     purchase_value,
-                    f"{vat_rate_value:g} %",
+                    _ms_vat_rate_text(vat_rate_value),
                     vat_value,
                     vat_id,
                     gross_value,
@@ -1647,6 +1667,8 @@ def finalize_shipping_order(
                 str(payload.get("purchase_price_net") or current_purchase_price or 0)
             )
             vat_rate_value = _vat_rate(payload.get("vat_rate") or current_vat_rate)
+            if document_mode == "invoice_wz":
+                _validate_ksef_numeric_vat_rate(vat_rate_value)
             net_value = _money(selected_price * quantity)
             purchase_value = _money(purchase_price * quantity)
             vat_value = _money(net_value * vat_rate_value / Decimal("100"))
@@ -1813,7 +1835,7 @@ def finalize_shipping_order(
                         item["net_value"],
                         item["purchase_price_net"],
                         item["purchase_value"],
-                        f"{item['vat_rate']:g} %",
+                        _ms_vat_rate_text(item["vat_rate"]),
                         item["vat_value"],
                         item["vat_id"],
                         item["gross_value"],
@@ -1925,7 +1947,7 @@ def finalize_shipping_order(
                         item["net_value"],
                         item["purchase_price_net"],
                         item["purchase_value"],
-                        f"{item['vat_rate']:g} %",
+                        _ms_vat_rate_text(item["vat_rate"]),
                         item["vat_value"],
                         item["vat_id"],
                         item["gross_value"],
@@ -2025,7 +2047,7 @@ def finalize_shipping_order(
                         item["unit"],
                         item["net_value"],
                         item["purchase_value"],
-                        f"{item['vat_rate']:g} %",
+                        _ms_vat_rate_text(item["vat_rate"]),
                         item["vat_value"],
                         item["vat_id"],
                         item["gross_value"],

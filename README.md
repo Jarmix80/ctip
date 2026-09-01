@@ -10,6 +10,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, izoluje środowisko testów i rozlicza polecenia Python według kodu wyjścia zamiast zapisu na stderr.
 - Procedura pełnego uruchomienia Shipping, bramki gotowości, pilota RW/WZ/FV oraz obowiązkowego sprzątania danych `Test Umowa`: `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md`.
 - Rejestr identyfikatorów, scenariuszy dokumentowych i początkowych stanów magazynowych pilota Shipping: `docs/instal/pilot_shipping_2026-08-28.md`.
+- Awaryjna korekta stawki VAT faktury Shipping odrzuconej przez KSeF oraz trwały hotfix formattera MS: `docs/instal/hotfix_shipping_ksef_vat_2026-09-01.md`.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.

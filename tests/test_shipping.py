@@ -83,8 +83,10 @@ from app.services.shipping_firebird import (
     _created_from_mobile_app,
     _extract_phone_from_order_text,
     _match_shipping_mobile_contact,
+    _ms_vat_rate_text,
     _phone_key,
     _search_terms,
+    _validate_ksef_numeric_vat_rate,
     _vat_rate,
     finalize_shipping_order,
     load_shipping_order,
@@ -1848,6 +1850,17 @@ class ShippingSchemaTests(unittest.TestCase):
     def test_tekstowa_stawka_vat_z_firebirda_jest_normalizowana(self) -> None:
         self.assertEqual(_vat_rate("23 %"), Decimal("23"))
 
+    def test_stawka_vat_ms_nie_zawiera_zbednej_czesci_dziesietnej(self) -> None:
+        for value in (23, 23.0, Decimal("23.000"), "23.0 %"):
+            with self.subTest(value=value):
+                self.assertEqual(_ms_vat_rate_text(value), "23 %")
+
+    def test_stawka_ulamkowa_i_zerowa_nie_moga_utworzyc_fv_ksef(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "ułamkowa"):
+            _ms_vat_rate_text(Decimal("23.5"))
+        with self.assertRaisesRegex(RuntimeError, "bezpiecznego mapowania"):
+            _validate_ksef_numeric_vat_rate(Decimal("0"))
+
     def test_tryb_dokumentow_rozroznia_umowe_wz_i_fakture(self) -> None:
         self.assertEqual(
             shipping_document_mode(order_kind="Umowa", invoice_required=False),
@@ -2046,7 +2059,7 @@ class ShippingSchemaTests(unittest.TestCase):
                         "quantity": 1,
                         "price_net": 60,
                         "purchase_price_net": 60,
-                        "vat_rate": 23,
+                        "vat_rate": 23.0,
                     }
                 ],
                 invoice_required=False,
@@ -2167,6 +2180,16 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertEqual(document_link_calls[0].args[1], ("5318/KPSK/2026", 38791))
         self.assertIn("POBRANO, ILOSCWZ, PARAGON", executed_queries)
         self.assertIn("?, ?, ?, 0)", executed_queries)
+        wz_insert = next(
+            call
+            for call in cursor.execute.call_args_list
+            if "INSERT INTO ZAKPOZYCJA" in call.args[0]
+        )
+        invoice_insert = next(
+            call for call in cursor.execute.call_args_list if "INSERT INTO FPOZYCJA" in call.args[0]
+        )
+        self.assertEqual(wz_insert.args[1][16], "23 %")
+        self.assertEqual(invoice_insert.args[1][21], "23 %")
         connection.commit.assert_called_once()
 
     def test_ponowienie_fv_z_wz_odtwarza_numer_fv_w_dokumencie_zewnetrznym(
