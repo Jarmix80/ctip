@@ -97,10 +97,12 @@ Moduł `/delivery` obsługujący dowozy urządzeń i workflow GRENKE pozostaje o
 - `shipping_day_close` — idempotentne zamknięcie dnia.
 - `shipping_event` — niemodyfikowalny dziennik etapów i błędów.
 - `shipping_tracking_parcel` — wyliczony bieżący stan numeru listu, kategoria, ostatnie zdarzenie i ewentualny numer zastępczy.
-- `shipping_tracking_event` — pełna, idempotentna historia zdarzeń InfoServices wraz z obsługą operacji `CANCEL`.
-- `shipping_tracking_sync_run` — audyt przebiegów automatycznych, ręcznych i backfillu wraz ze stanem potwierdzenia partii DPD.
+- `shipping_tracking_event` — pełna, idempotentna historia techniczna zdarzeń InfoServices wraz z obsługą operacji `CANCEL`; `semantic_event_key` i `canonical_event_id` łączą kopie tego samego zdarzenia zwracane przez różne metody SOAP bez ich usuwania.
+- `shipping_tracking_sync_run` — audyt przebiegów automatycznych, ręcznych i backfillu wraz ze stanem potwierdzenia partii DPD oraz liczbą wykrytych aliasów semantycznych.
 
-Produkcyjna migracja `f9a0b1c2d3e4` tworzy podstawowe tabele Shipping, addytywna migracja `c3d5e7f9a1b2` dodaje trzy tabele InfoServices i indeks łączenia numeru listu, a `d6e8f0a2b4c7` dodaje znaczniki synchronizacji z MS. Migracje nie modyfikują historycznych zleceń Firebird ani snapshotów Archiwum.
+Produkcyjna migracja `f9a0b1c2d3e4` tworzy podstawowe tabele Shipping, addytywna migracja `c3d5e7f9a1b2` dodaje trzy tabele InfoServices i indeks łączenia numeru listu, `d6e8f0a2b4c7` dodaje znaczniki synchronizacji z MS, a `f2b7c9d4e6a1` wprowadza semantyczną deduplikację historii DPD. Migracje nie modyfikują historycznych zleceń Firebird ani snapshotów Archiwum.
+
+Identyfikator techniczny pozostaje zależny od kanału i `objectId`, dlatego chroni przed ponownym zapisem tej samej odpowiedzi DPD. Drugi, semantyczny klucz wykorzystuje numer listu, kod biznesowy, czas, opis, oddział, referencje i dane dodatkowe. Oś czasu, bieżący status oraz kamienie milowe MS uwzględniają wyłącznie kanoniczny rekord `INSERT`, natomiast rekordy aliasów i `CANCEL` pozostają dostępne do audytu technicznego. Anulowanie dowolnego aliasu oznacza całą grupę logiczną jako anulowaną.
 
 Tabele `shipping_address` i `shipping_case` przechowują `location_source`, `location_text_snapshot` i `location_fingerprint`. `shipping_case.invoice_required` zapisuje decyzję o wariancie RW, WZ albo FV + WZ. `shipping_item.allow_negative_stock`, `catalog_price_net` i `price_source` przechowują jawną zgodę na wyjątek magazynowy oraz pełny snapshot ceny. `shipping_shipment` zawiera identyfikatory dokumentów Firebird, operatora zamknięcia i niezmienny snapshot Archiwum. Nowe snapshoty powstają w tej samej transakcji co finalizacja dokumentów, dlatego odczyt Archiwum nie wymaga połączenia z Firebirdem.
 

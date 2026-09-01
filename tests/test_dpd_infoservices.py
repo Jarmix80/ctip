@@ -39,6 +39,11 @@ from app.services.dpd_infoservices_sync import (
     is_dpd_pickup_confirmation,
     persist_dpd_info_events,
 )
+from app.services.dpd_tracking_dedupe import (
+    apply_dpd_tracking_dedupe,
+    preview_dpd_tracking_dedupe,
+    rollback_dpd_tracking_dedupe,
+)
 from app.services.shipping_milestones import (
     PILOT_APPLIED_EVENT,
     PILOT_ROLLED_BACK_EVENT,
@@ -317,6 +322,158 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event_count, 2)
         self.assertEqual(parcel.status_category, "other")
         self.assertIsNone(parcel.latest_business_code)
+
+    async def test_rozne_identyfikatory_soap_tworzace_jeden_status_sa_grupowane(self) -> None:
+        first_event = self._event(object_id="obiekt-kanal")
+        alias_event = replace(
+            first_event,
+            event_id="id-historia",
+            object_id="obiekt-historia",
+        )
+        alias_cancel = replace(
+            alias_event,
+            event_id="cancel-historia",
+            waybill="",
+            business_code="",
+            description="Anulowanie zdarzenia",
+            operation_type="CANCEL",
+        )
+        async with self.session_factory() as session:
+            first = await persist_dpd_info_events(
+                session,
+                events=(first_event,),
+                channel="kanal-klienta",
+            )
+            await session.commit()
+            alias = await persist_dpd_info_events(
+                session,
+                events=(alias_event,),
+                channel="historia-listu",
+            )
+            await session.commit()
+
+            rows = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(ShippingTrackingEvent.operation_type == "INSERT")
+                        .order_by(ShippingTrackingEvent.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            detail_before = await get_shipping_tracking_detail(
+                session,
+                waybill=first_event.waybill,
+            )
+            cancellation = await persist_dpd_info_events(
+                session,
+                events=(alias_cancel,),
+                channel="historia-listu",
+            )
+            await session.commit()
+            detail_after = await get_shipping_tracking_detail(
+                session,
+                waybill=first_event.waybill,
+            )
+
+        self.assertEqual(first["duplicates"], 0)
+        self.assertEqual(alias["duplicates"], 1)
+        self.assertEqual(len(rows), 2)
+        self.assertIsNone(rows[0].canonical_event_id)
+        self.assertEqual(rows[1].canonical_event_id, rows[0].id)
+        self.assertEqual(rows[0].semantic_event_key, rows[1].semantic_event_key)
+        self.assertEqual(len(detail_before["events"]), 1)
+        self.assertEqual(cancellation["cancelled"], 1)
+        self.assertEqual(len(detail_after["events"]), 2)
+        self.assertTrue(all(row.is_cancelled for row in rows))
+        self.assertTrue(
+            next(item for item in detail_after["events"] if item["operation_type"] == "INSERT")[
+                "is_cancelled"
+            ]
+        )
+
+    async def test_historyczna_kanonizacja_ma_dry_run_apply_i_rollback(self) -> None:
+        first_event = self._event(object_id="historyczny-1")
+        alias_event = replace(
+            first_event,
+            event_id="historyczny-alias",
+            object_id="historyczny-2",
+        )
+        async with self.session_factory() as session:
+            await persist_dpd_info_events(
+                session,
+                events=(first_event,),
+                channel="kanal-klienta",
+            )
+            await persist_dpd_info_events(
+                session,
+                events=(alias_event,),
+                channel="historia-listu",
+            )
+            await session.flush()
+            rows = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent).where(
+                            ShippingTrackingEvent.operation_type == "INSERT"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                row.semantic_event_key = None
+                row.canonical_event_id = None
+            await session.commit()
+
+            preview = await preview_dpd_tracking_dedupe(session)
+            applied = await apply_dpd_tracking_dedupe(
+                session,
+                expected_state_token=preview["state_token"],
+            )
+            await session.commit()
+            canonicalized = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(ShippingTrackingEvent.operation_type == "INSERT")
+                        .order_by(ShippingTrackingEvent.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            canonical_links = [row.canonical_event_id for row in canonicalized]
+            rolled_back = await rollback_dpd_tracking_dedupe(
+                session,
+                run_id=applied["run_id"],
+                rollback_state=applied["rollback_state"],
+            )
+            await session.commit()
+            restored = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(ShippingTrackingEvent.operation_type == "INSERT")
+                        .order_by(ShippingTrackingEvent.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        self.assertEqual(preview["technical_insert_count"], 2)
+        self.assertEqual(preview["logical_event_count"], 1)
+        self.assertEqual(preview["duplicate_count"], 1)
+        self.assertEqual(applied["change_count"], 2)
+        self.assertIsNone(canonical_links[0])
+        self.assertEqual(canonical_links[1], canonicalized[0].id)
+        self.assertEqual(rolled_back["restored_count"], 2)
+        self.assertTrue(all(row.semantic_event_key is None for row in restored))
+        self.assertTrue(all(row.canonical_event_id is None for row in restored))
 
     async def test_przenumerowanie_i_wspolna_paczka_sa_widoczne_w_rejestrze(self) -> None:
         replacement = "0000999988887B"
@@ -762,7 +919,7 @@ class DpdInfoSynchronizationTests(unittest.IsolatedAsyncioTestCase):
 
         async def persist(*_args, **_kwargs) -> dict[str, int]:
             steps.append("persist")
-            return {"inserted": 1, "cancelled": 0}
+            return {"inserted": 1, "duplicates": 0, "cancelled": 0}
 
         with (
             patch.object(settings, "dpd_info_channel", "123456"),

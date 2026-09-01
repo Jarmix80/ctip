@@ -949,6 +949,7 @@ async def shipping_tracking_sync(
             "status": result["status"],
             "fetched_count": result["fetched_count"],
             "inserted_count": result["inserted_count"],
+            "duplicate_count": result["duplicate_count"],
         },
     )
     await session.commit()

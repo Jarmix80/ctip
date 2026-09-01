@@ -399,7 +399,7 @@ class ShippingTrackingParcel(Base):
 
 
 class ShippingTrackingEvent(Base):
-    """Znormalizowane i idempotentne zdarzenie listu przewozowego z DPD."""
+    """Techniczne zdarzenie DPD z powiązaniem do zdarzenia kanonicznego."""
 
     __tablename__ = "shipping_tracking_event"
     __table_args__ = (
@@ -415,6 +415,10 @@ class ShippingTrackingEvent(Base):
         ForeignKey("ctip.shipping_tracking_parcel.id", ondelete="CASCADE"), nullable=True
     )
     source_event_key: Mapped[str] = mapped_column(Text, nullable=False)
+    semantic_event_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canonical_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ctip.shipping_tracking_event.id", ondelete="SET NULL"), nullable=True
+    )
     waybill: Mapped[str | None] = mapped_column(Text, nullable=True)
     dpd_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     object_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -459,6 +463,7 @@ class ShippingTrackingSyncRun(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, default="processing")
     fetched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     inserted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cancelled_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     batch_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     confirm_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -519,6 +524,14 @@ Index(
 Index(
     "idx_shipping_tracking_event_object",
     ShippingTrackingEvent.object_id,
+)
+Index(
+    "idx_shipping_tracking_event_semantic",
+    ShippingTrackingEvent.semantic_event_key,
+)
+Index(
+    "idx_shipping_tracking_event_canonical",
+    ShippingTrackingEvent.canonical_event_id,
 )
 Index(
     "idx_shipping_tracking_sync_started",

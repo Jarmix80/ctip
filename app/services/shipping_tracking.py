@@ -354,7 +354,13 @@ async def get_shipping_tracking_detail(
         (
             await session.execute(
                 select(ShippingTrackingEvent)
-                .where(ShippingTrackingEvent.parcel_id == parcel.id)
+                .where(
+                    ShippingTrackingEvent.parcel_id == parcel.id,
+                    or_(
+                        ShippingTrackingEvent.operation_type == "CANCEL",
+                        ShippingTrackingEvent.canonical_event_id.is_(None),
+                    ),
+                )
                 .order_by(
                     ShippingTrackingEvent.event_time.asc().nullsfirst(),
                     ShippingTrackingEvent.id.asc(),

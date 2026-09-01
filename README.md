@@ -927,6 +927,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/instal/wdrozenie_shipping_prod_2026-08-27.md` – etapowe wdrożenie Shipping na Windows Server, backupy, kontrola migracji, faza odczytowa, pilot, nadanie uprawnień i rollback kodu.
 - `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md` – pełne uruchomienie Shipping, V2 jako widok główny, bramka tworzenia zleceń pilotażowych oraz kontrola usuwania klienta, umowy, urządzenia, dokumentów i odtworzenia stanów magazynowych.
 - `docs/instal/wdrozenie_shipping_pola_przesylki_geokoder_2026-09-01.md` – dwa niezależne wydania: idempotentne pola przesyłki MS na podstawie etykiety i InfoServices oraz ręczny geokoder Adresy.app bez danych kontaktowych.
+- `docs/instal/deduplikacja_dpd_infoservices_2026-09-01.md` – bezpieczna procedura semantycznego grupowania zdarzeń DPD zwracanych przez różne metody SOAP wraz z dry-run, tokenem stanu i rollbackiem bez usuwania historii technicznej.
 - `docs/instal/pilot_shipping_2026-08-28.md` – identyfikatory trzech zleceń pilota, przypisane części, ceny oraz początkowe stany `ILOSC` i `IL_REZ` wymagane do końcowej kontroli sprzątania.
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).

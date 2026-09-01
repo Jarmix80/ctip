@@ -71,7 +71,11 @@ def shipping_milestone_description(event: ShippingTrackingEvent) -> str:
 
 def _active_events(events: list[ShippingTrackingEvent]) -> list[ShippingTrackingEvent]:
     return [
-        event for event in events if event.operation_type == "INSERT" and not event.is_cancelled
+        event
+        for event in events
+        if event.operation_type == "INSERT"
+        and event.canonical_event_id is None
+        and not event.is_cancelled
     ]
 
 
