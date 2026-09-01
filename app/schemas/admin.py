@@ -344,6 +344,7 @@ class EmailConfigResponse(EnvBackedConfigMetadata):
     use_tls: bool
     use_ssl: bool
     password_set: bool
+    reply_to_address: str | None = None
 
 
 class EmailConfigUpdate(BaseModel):

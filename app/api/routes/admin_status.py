@@ -296,7 +296,10 @@ async def _email_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[st
 
     if config.host and config.sender_address:
         status = f"{config.host}:{config.port}"
-        details = f"Nadawca: {config.sender_address} • {encryption}"
+        details = (
+            f"Nadawca: {config.sender_address} • Reply-To: "
+            f"{config.reply_to_address or 'brak'} • {encryption}"
+        )
         state = "ok"
         variant = "success"
         if config.username and not password_present:
@@ -326,6 +329,7 @@ async def _email_metrics(session: AsyncSession) -> tuple[dict[str, Any], dict[st
         "username": config.username,
         "sender_name": config.sender_name,
         "sender_address": config.sender_address,
+        "reply_to_address": config.reply_to_address,
         "use_tls": config.use_tls,
         "use_ssl": config.use_ssl,
         "password_present": password_present,

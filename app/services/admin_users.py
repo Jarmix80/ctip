@@ -251,7 +251,7 @@ async def resolve_email_delivery_settings(session: AsyncSession) -> EmailDeliver
         {} if settings.is_test_runtime else await _settings_store.get_namespace(session, "email")
     )
     host = (stored.get("host") or settings.email_host or "").strip()
-    sender_address = (stored.get("sender_address") or settings.email_sender_address or "").strip()
+    sender_address = (settings.email_sender_address or "").strip()
     if not host or not sender_address:
         return None
 

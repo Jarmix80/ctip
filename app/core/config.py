@@ -232,6 +232,7 @@ class Settings(BaseSettings):
     email_password: str | None = Field(default=None, alias="EMAIL_PASSWORD")
     email_sender_name: str | None = Field(default=None, alias="EMAIL_SENDER_NAME")
     email_sender_address: str | None = Field(default=None, alias="EMAIL_SENDER_ADDRESS")
+    email_reply_to_address: str | None = Field(default=None, alias="EMAIL_REPLY_TO_ADDRESS")
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
     email_use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
     block_client_communications: bool = Field(
@@ -328,10 +329,6 @@ class Settings(BaseSettings):
     mailbox_email_password: str | None = Field(default=None, alias="MAILBOX_EMAIL_PASSWORD")
     mailbox_imap_host: str | None = Field(default=None, alias="MAILBOX_IMAP_HOST")
     mailbox_imap_port: int = Field(default=993, alias="MAILBOX_IMAP_PORT")
-    mailbox_smtp_host: str | None = Field(default=None, alias="MAILBOX_SMTP_HOST")
-    mailbox_smtp_port: int = Field(default=465, alias="MAILBOX_SMTP_PORT")
-    mailbox_smtp_use_ssl: bool = Field(default=True, alias="MAILBOX_SMTP_USE_SSL")
-    mailbox_smtp_use_starttls: bool = Field(default=False, alias="MAILBOX_SMTP_USE_STARTTLS")
     contracts_mailbox_scheduler_enabled: bool = Field(
         default=True,
         alias="CONTRACTS_MAILBOX_SCHEDULER_ENABLED",

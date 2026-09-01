@@ -7,11 +7,12 @@ import io
 import json
 import re
 import unittest
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -27,7 +28,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-from app.api.routes.admin_shipping import _require_catalog_mutations, _require_fulfillment
+from app.api.routes.admin_shipping import (
+    _require_catalog_mutations,
+    _require_fulfillment,
+    shipping_day_close_execute,
+    shipping_order_close_execute,
+)
 from app.core.config import settings
 from app.main import create_app
 from app.models import (
@@ -50,6 +56,8 @@ from app.schemas.shipping import (
     ShippingBulkCreateRequest,
     ShippingCompatibilityManualBatchRequest,
     ShippingConsolidatedCreateRequest,
+    ShippingDayCloseRequest,
+    ShippingOrderCloseRequest,
     ShippingReviewRequest,
 )
 from app.services.dpd_shipping import (
@@ -118,6 +126,10 @@ from app.services.shipping_workflow import (
     review_shipping_order,
     shipping_location_context,
     shipping_shipment_consolidation,
+)
+from scripts.backfill_shipping_close_audit_2026_09_01 import (
+    INCIDENT_ID,
+    backfill_shipping_close_audit,
 )
 
 
@@ -1384,6 +1396,51 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(shipment.notification_sms_status, "simulated")
             self.assertEqual(shipment.notification_email_status, "simulated")
 
+    async def test_czesciowe_zamkniecie_dnia_jest_terminalne_i_zachowuje_podsumowanie(
+        self,
+    ) -> None:
+        business_date = datetime.now(ZoneInfo("Europe/Warsaw")).date()
+        summary = {
+            "shipment_count": 9,
+            "closed_count": 9,
+            "manual_billing_count": 0,
+            "rw_count": 9,
+            "wz_count": 0,
+            "invoice_count": 0,
+            "error_count": 8,
+            "errors": [{"stage": "notification", "error": "SMTP 553"}],
+        }
+        async with self.session_factory() as session:
+            day_close = ShippingDayClose(
+                business_date=business_date,
+                status="partial",
+                shipment_count=9,
+                closed_count=9,
+                error_count=8,
+                summary=summary,
+                closed_by=1,
+                created_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+            session.add(day_close)
+            await session.commit()
+
+            with patch("app.services.shipping_workflow._finalize_shipping_shipment") as finalize:
+                result = await close_shipping_day(
+                    session,
+                    business_date=business_date,
+                    user_id=1,
+                )
+
+            finalize.assert_not_called()
+            self.assertEqual(result["status"], "partial")
+            self.assertTrue(result["idempotent_replay"])
+            self.assertEqual(result["shipment_count"], 9)
+            self.assertEqual(result["closed_count"], 9)
+            self.assertEqual(result["error_count"], 8)
+            stored = await session.get(ShippingDayClose, day_close.id)
+            self.assertEqual(stored.summary, summary)
+
     async def test_pojedyncze_zamkniecie_uzywa_tego_samego_procesu(self) -> None:
         async with self.session_factory() as session:
             with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
@@ -1443,6 +1500,79 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 user_id=1,
             )
             self.assertEqual(repeated["status"], "already_closed")
+            self.assertTrue(repeated["idempotent_replay"])
+
+    async def test_backfill_audytu_jest_jawny_i_idempotentny(self) -> None:
+        async with self.session_factory() as session:
+            with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
+                await review_shipping_order(
+                    session,
+                    order=_order(),
+                    payload=_review_payload(),
+                    user_id=1,
+                )
+            await create_shipping_shipment(
+                session,
+                order=_order(),
+                order_table_id=1001,
+                idempotency_key=str(uuid4()),
+                user_id=1,
+            )
+            await close_shipping_order(session, order_table_id=1001, user_id=1)
+            session.add(
+                ShippingDayClose(
+                    id=2,
+                    business_date=date(2026, 8, 31),
+                    status="partial",
+                    shipment_count=9,
+                    closed_count=9,
+                    error_count=8,
+                    summary={
+                        "shipment_count": 9,
+                        "closed_count": 9,
+                        "error_count": 8,
+                        "errors": [],
+                    },
+                    closed_by=1,
+                    created_at=datetime.now(UTC),
+                    completed_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
+            preview = await backfill_shipping_close_audit(
+                session,
+                apply=False,
+                order_table_id=1001,
+                day_close_id=2,
+                expected_operator_id=1,
+            )
+            self.assertEqual(preview["would_create_count"], 2)
+
+            applied = await backfill_shipping_close_audit(
+                session,
+                apply=True,
+                order_table_id=1001,
+                day_close_id=2,
+                expected_operator_id=1,
+            )
+            repeated = await backfill_shipping_close_audit(
+                session,
+                apply=True,
+                order_table_id=1001,
+                day_close_id=2,
+                expected_operator_id=1,
+            )
+
+            self.assertEqual(applied["created_count"], 2)
+            self.assertEqual(repeated["created_count"], 0)
+            self.assertEqual(repeated["existing_count"], 2)
+            audit_rows = (await session.execute(select(AdminAuditLog))).scalars().all()
+            incident_rows = [
+                row for row in audit_rows if (row.payload or {}).get("incident_id") == INCIDENT_ID
+            ]
+            self.assertEqual(len(incident_rows), 2)
+            self.assertTrue(all((row.payload or {}).get("backfill") for row in incident_rows))
 
     def test_normalizacja_archiwum_obsluguje_polskie_znaki_i_numery(self) -> None:
         self.assertEqual(
@@ -1678,6 +1808,121 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     user_id=1,
                 )
             self.assertIsNone(await session.scalar(select(ShippingCase)))
+
+
+class ShippingCloseRouteTests(unittest.IsolatedAsyncioTestCase):
+    class ExpiringAdminSession:
+        def __init__(self) -> None:
+            self.expired = False
+
+        @property
+        def client_ip(self) -> str:
+            if self.expired:
+                raise RuntimeError("Sesja administratora została wygaszona")
+            return "192.168.0.23"
+
+    async def test_zamkniecie_dnia_zapamietuje_ip_przed_commitem_biznesowym(self) -> None:
+        admin_session = self.ExpiringAdminSession()
+        user = SimpleNamespace(id=18, role="operator")
+        session = AsyncMock()
+
+        async def close_day(*_args, **_kwargs) -> dict:
+            admin_session.expired = True
+            return {
+                "id": 2,
+                "business_date": "2026-09-01",
+                "status": "partial",
+                "closed_count": 9,
+                "error_count": 8,
+                "idempotent_replay": True,
+            }
+
+        with (
+            patch(
+                "app.api.routes.admin_shipping._require_shipping_access",
+                new=AsyncMock(return_value=user),
+            ),
+            patch("app.api.routes.admin_shipping._require_fulfillment"),
+            patch(
+                "app.api.routes.admin_shipping.load_firebird_runtime_config",
+                new=AsyncMock(return_value=SimpleNamespace()),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.use_firebird_runtime_config",
+                return_value=nullcontext(),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.close_shipping_day",
+                new=AsyncMock(side_effect=close_day),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.record_audit",
+                new=AsyncMock(),
+            ) as audit,
+        ):
+            result = await shipping_day_close_execute(
+                ShippingDayCloseRequest(
+                    business_date=date(2026, 9, 1),
+                    confirm_handover=True,
+                ),
+                admin_context=(admin_session, user),
+                session=session,
+            )
+
+        self.assertEqual(result["audit_status"], "recorded")
+        self.assertEqual(result["warnings"], [])
+        self.assertEqual(audit.await_args.kwargs["client_ip"], "192.168.0.23")
+
+    async def test_blad_audytu_nie_zmienia_wyniku_zamkniecia_zlecenia(self) -> None:
+        admin_session = self.ExpiringAdminSession()
+        user = SimpleNamespace(id=18, role="operator")
+        session = AsyncMock()
+        session.commit.side_effect = RuntimeError("Brak zapisu audytu")
+        business_result = {
+            "status": "closed",
+            "documents": {"document_mode": "rw"},
+            "case": {"status": "closed"},
+            "consolidated": False,
+            "closed_count": 1,
+            "newly_closed_count": 1,
+            "idempotent_replay": False,
+            "order_results": [],
+        }
+
+        with (
+            patch(
+                "app.api.routes.admin_shipping._require_shipping_access",
+                new=AsyncMock(return_value=user),
+            ),
+            patch("app.api.routes.admin_shipping._require_fulfillment"),
+            patch(
+                "app.api.routes.admin_shipping.load_firebird_runtime_config",
+                new=AsyncMock(return_value=SimpleNamespace()),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.use_firebird_runtime_config",
+                return_value=nullcontext(),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.close_shipping_order",
+                new=AsyncMock(return_value=business_result),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.record_audit",
+                new=AsyncMock(),
+            ),
+        ):
+            result = await shipping_order_close_execute(
+                83540,
+                ShippingOrderCloseRequest(confirm_handover=True),
+                admin_context=(admin_session, user),
+                session=session,
+            )
+
+        self.assertEqual(result["status"], "closed")
+        self.assertEqual(result["audit_status"], "failed")
+        self.assertEqual(len(result["warnings"]), 1)
+        session.rollback.assert_awaited_once()
 
 
 class ShippingSchemaTests(unittest.TestCase):

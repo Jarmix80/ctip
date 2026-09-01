@@ -7970,7 +7970,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "username": "user",
             "password": "pass",
             "sender_name": "CTIP",
-            "sender_address": "noreply@example.com",
+            "sender_address": settings.email_sender_address,
             "test_recipient": "dest@example.com",
             "test_subject": "Temat testowy",
             "test_body": "Wiadomość testowa",
@@ -8556,6 +8556,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(read_response.status_code, 200)
         self.assertEqual(read_response.json()["source"], "env")
         self.assertFalse(read_response.json()["editable"])
+        self.assertEqual(
+            read_response.json()["reply_to_address"],
+            settings.email_reply_to_address,
+        )
 
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "email.host")
@@ -8867,7 +8871,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 "use_ssl": True,
                 "username": "tester",
                 "password": "NoweHaslo!",
-                "sender_address": "alerts@example.com",
+                "sender_address": settings.email_sender_address,
             },
             headers={"X-Admin-Session": token},
         )
@@ -8882,6 +8886,16 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["password"], "NoweHaslo!")
         self.assertFalse(kwargs["use_tls"])
         self.assertTrue(kwargs["use_ssl"])
+
+    async def test_email_test_endpoint_odrzuca_innego_nadawce(self):
+        token, _ = await self._login()
+        response = await self.client.post(
+            "/admin/email/test",
+            json={"sender_address": "umowy@ksero-partner.com.pl"},
+            headers={"X-Admin-Session": token},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("kanoniczny nadawca", response.text)
 
     async def test_ctip_events_endpoint_returns_recent_entries(self):
         token, _ = await self._login()

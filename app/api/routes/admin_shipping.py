@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from uuid import uuid4
@@ -122,6 +123,42 @@ from app.services.shipping_workflow import (
 
 router = APIRouter(prefix="/admin/shipping", tags=["admin-shipping"])
 WARSAW = ZoneInfo("Europe/Warsaw")
+logger = logging.getLogger(__name__)
+
+
+async def _record_shipping_close_audit(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    action: str,
+    client_ip: str | None,
+    payload: dict[str, Any],
+    audit_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Zapisuje audyt po commicie biznesowym bez fałszowania wyniku operacji."""
+    response = dict(payload)
+    warnings = list(response.get("warnings") or [])
+    try:
+        await record_audit(
+            session,
+            user_id=user_id,
+            action=action,
+            client_ip=client_ip,
+            payload=audit_payload or payload,
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "Nie udało się zapisać audytu %s po zatwierdzeniu operacji Shipping.",
+            action,
+        )
+        warnings.append("Operacja została wykonana, ale nie udało się zapisać wpisu audytowego.")
+        response["audit_status"] = "failed"
+    else:
+        response["audit_status"] = "recorded"
+    response["warnings"] = warnings
+    return response
 
 
 async def _require_shipping_access(
@@ -1872,6 +1909,8 @@ async def shipping_order_close_execute(
     """Potwierdza odbiór jednej paczki i uruchamia właściwy proces RW, WZ albo FV."""
     admin_session, _ = admin_context
     user = await _require_shipping_access(admin_context, session)
+    user_id = int(user.id)
+    client_ip = admin_session.client_ip
     _require_fulfillment()
     if not payload.confirm_handover:
         raise HTTPException(
@@ -1884,7 +1923,7 @@ async def shipping_order_close_execute(
             result = await close_shipping_order(
                 session,
                 order_table_id=order_table_id,
-                user_id=user.id,
+                user_id=user_id,
             )
     except ShippingConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -1893,15 +1932,14 @@ async def shipping_order_close_execute(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
-    await record_audit(
+    return await _record_shipping_close_audit(
         session,
-        user_id=user.id,
+        user_id=user_id,
         action="shipping_order_close",
-        client_ip=admin_session.client_ip,
-        payload={"order_table_id": order_table_id, **result},
+        client_ip=client_ip,
+        payload=result,
+        audit_payload={"order_table_id": order_table_id, **result},
     )
-    await session.commit()
-    return result
 
 
 @router.post("/day-close", summary="Potwierdź odbiór paczek przez kuriera")
@@ -1913,6 +1951,8 @@ async def shipping_day_close_execute(
     """Finalizuje paczki, generuje RW dla umów i uruchamia powiadomienia."""
     admin_session, _ = admin_context
     user = await _require_shipping_access(admin_context, session)
+    user_id = int(user.id)
+    client_ip = admin_session.client_ip
     _require_fulfillment()
     if not payload.confirm_handover:
         raise HTTPException(
@@ -1925,21 +1965,19 @@ async def shipping_day_close_execute(
             result = await close_shipping_day(
                 session,
                 business_date=payload.business_date,
-                user_id=user.id,
+                user_id=user_id,
             )
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
-    await record_audit(
+    return await _record_shipping_close_audit(
         session,
-        user_id=user.id,
+        user_id=user_id,
         action="shipping_day_close",
-        client_ip=admin_session.client_ip,
+        client_ip=client_ip,
         payload=result,
     )
-    await session.commit()
-    return result
 
 
 __all__ = ["router"]

@@ -1722,7 +1722,9 @@ async function closeShippingDay() {
       method: "POST",
       body: JSON.stringify({ business_date: new Date().toLocaleDateString("sv-SE"), confirm_handover: true }),
     });
-    window.alert(`Zamknięcie dnia: ${shippingDayCloseStatusLabel(result.status)}. Zamknięto: ${result.closed_count}, RW: ${result.rw_count || 0}, WZ: ${result.wz_count || 0}, FV: ${result.invoice_count || 0}, błędy: ${result.error_count}.`);
+    const replayText = result.idempotent_replay ? " Zwrócono zachowane podsumowanie bez ponawiania operacji." : "";
+    const warningText = Array.isArray(result.warnings) && result.warnings.length ? ` Ostrzeżenia: ${result.warnings.join(" ")}` : "";
+    window.alert(`Zamknięcie dnia: ${shippingDayCloseStatusLabel(result.status)}. Zamknięto: ${result.closed_count}, RW: ${result.rw_count || 0}, WZ: ${result.wz_count || 0}, FV: ${result.invoice_count || 0}, błędy: ${result.error_count}.${replayText}${warningText}`);
     shippingState.archive.loaded = false;
     await loadShippingQueue(true);
   } catch (error) {
@@ -1761,7 +1763,8 @@ async function closeShippingOrder() {
     const closedText = result.consolidated
       ? `Zamknięto ${shippingOrdersCountLabel(result.closed_count)} wspólnej paczki`
       : "Zlecenie zakończone";
-    shippingFeedback(`${closedText}${labels.length ? ` — ${labels.join(", ")}` : ""}.`);
+    const warningText = Array.isArray(result.warnings) && result.warnings.length ? ` Ostrzeżenie: ${result.warnings.join(" ")}` : "";
+    shippingFeedback(`${closedText}${labels.length ? ` — ${labels.join(", ")}` : ""}.${warningText}`, result.audit_status === "failed");
     shippingState.archive.loaded = false;
     await loadShippingQueue(false);
     await refreshShippingOrderState();

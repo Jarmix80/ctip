@@ -12,6 +12,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Dwuetapowe wdrożenie pól przesyłki MS oraz ręcznego geokodera Adresy.app, z osobnymi flagami, pilotem i rollbackiem: `docs/instal/wdrozenie_shipping_pola_przesylki_geokoder_2026-09-01.md`.
 - Rejestr identyfikatorów, scenariuszy dokumentowych i początkowych stanów magazynowych pilota Shipping: `docs/instal/pilot_shipping_2026-08-28.md`.
 - Awaryjna korekta stawki VAT faktury Shipping odrzuconej przez KSeF oraz trwały hotfix formattera MS: `docs/instal/hotfix_shipping_ksef_vat_2026-09-01.md`.
+- Hotfix fałszywego błędu zamknięcia Shipping, idempotencji dnia, audytu i kanonicznego nadawcy SMTP: `docs/instal/hotfix_shipping_close_email_2026-09-01.md`.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.
@@ -33,7 +34,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/web/flow_ui.py` + `app/templates/flow/` + `app/static/flow/` – widok `/flow` z bocznym menu dla sekcji „Obsługa umów”, „Obsługa urządzeń” i „Harmonogram dowozów”, nagłówkiem użytkownika, podglądem danych formularza z kopiowaniem pojedynczych pól, osobnym modalem workflow do prowadzenia sprawy klienta i wyboru urządzeń po stronie CTIP oraz stronami wizualizacji proformy `/flow/proforma-wizualizacja` i `/flow/proforma-wizualizacja1`.
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + usługi `device_*` – moduł `/device` ze stałym lewym menu, półprzezroczystym nagłówkiem oraz przypisanym do konta wyborem motywu niebieskiego, grafitowego lub miętowego; osobne ekrany obejmują stronę główną, przyjęcie PZ, wykup BNP, scalony magazyn, audyt, historię i synchronizacje. Każdy fizyczny egzemplarz ma osobną kartotekę `MAGAZYN`, rekord `MASZYNA`, rejestr CTIP, historię uwag/rezerwacji oraz niezawodną kolejkę Google Sheets. Widok magazynu pokazuje szybką obecność w źródłach `Arkusz/Magazyn/Urządzenie/CTIP`, ma przewijaną wewnętrznie tabelę z naprzemiennymi wierszami i otwieraniem szczegółów przez dwuklik całego wiersza lub klawiaturę; usunięto osobną kolumnę akcji. Moduł udostępnia też trwały, ręczny audyt tylko do odczytu z historią 20 przebiegów. Domyślny widok audytu jest operacyjny (aktywny arkusz lub dostępny magazyn 28), a filtry źródła udostępniają także pełne zbiory arkusza, magazynu, `MASZYNA`, CTIP i całej unii.
-- `app/web/shipping_ui.py` + `app/templates/shipping/` + `app/static/shipping/` + `app/api/routes/admin_shipping.py` + `app/services/shipping_*` – moduł `/shipping` w docelowym układzie V2 do katalogu zgodności części, realizacji wysyłek DPD, dokumentów RW/WZ/FV i przeszukiwalnego Archiwum; poprzedni interfejs pozostaje pod `/shipping/legacy`, operacje są chronione niezależnymi flagami etapowego wdrożenia, zbiorczy wydruk składa cztery natywne pola etykiet DPD na jednym arkuszu A4 bez skalowania kodów, a wspólne edytowalne pole etykiety łączy pojemność `ref1` i `content` do 81 znaków, automatycznie wpisując numer zlecenia, ilości i nazwy części. Wspólna paczka wysyła jeden komplet powiadomień SMS/e-mail niezależnie od liczby powiązanych zleceń, a gotowe zlecenia o identycznym adresie można przed przekazaniem kurierowi dołączyć do jednej istniejącej etykiety po potwierdzeniu rzeczywistej wagi paczki; WZ utworzony razem z FV zapisuje numer faktury w `ZAKUPY.DOK_ZEW`, pozycja FV ustawia `FPOZYCJA.PARAGON=0`, aby ręczne usunięcie dokumentu poprawnie odtworzyło stan magazynowy, a dane klienta, kontaktów i urządzenia są łączone po globalnych identyfikatorach MS, ponieważ `ZLECENIE.ID_FIRMA` nie musi odpowiadać wartości w kartotekach `KLIENT` i `MASZYNA`.
+- `app/web/shipping_ui.py` + `app/templates/shipping/` + `app/static/shipping/` + `app/api/routes/admin_shipping.py` + `app/services/shipping_*` – moduł `/shipping` w docelowym układzie V2 do katalogu zgodności części, realizacji wysyłek DPD, dokumentów RW/WZ/FV i przeszukiwalnego Archiwum; poprzedni interfejs pozostaje pod `/shipping/legacy`, operacje są chronione niezależnymi flagami etapowego wdrożenia, zbiorczy wydruk składa cztery natywne pola etykiet DPD na jednym arkuszu A4 bez skalowania kodów, a wspólne edytowalne pole etykiety łączy pojemność `ref1` i `content` do 81 znaków, automatycznie wpisując numer zlecenia, ilości i nazwy części. Wspólna paczka wysyła jeden komplet powiadomień SMS/e-mail niezależnie od liczby powiązanych zleceń, a gotowe zlecenia o identycznym adresie można przed przekazaniem kurierowi dołączyć do jednej istniejącej etykiety po potwierdzeniu rzeczywistej wagi paczki. Zakończone lub częściowe zamknięcie dnia jest terminalne: ponowienie zwraca zachowane podsumowanie bez ponownego zapisu Firebirda i bez ponownej wysyłki powiadomień; błąd późniejszego audytu jest prezentowany jako ostrzeżenie i nie fałszuje wyniku zatwierdzonej operacji. WZ utworzony razem z FV zapisuje numer faktury w `ZAKUPY.DOK_ZEW`, pozycja FV ustawia `FPOZYCJA.PARAGON=0`, aby ręczne usunięcie dokumentu poprawnie odtworzyło stan magazynowy, a dane klienta, kontaktów i urządzenia są łączone po globalnych identyfikatorach MS, ponieważ `ZLECENIE.ID_FIRMA` nie musi odpowiadać wartości w kartotekach `KLIENT` i `MASZYNA`.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
 - `app/services/grenke_launch.py` – integracja API-only do przycisku `Wniosek GRENKE` w `/genform`: budowa `calculationKey`, prefill kalkulacji (`setSession.php`, `calculate.php`, `saveCalculation.php`) i fallback URL `partial` z query kodowanym pod parser `decodeURI` po stronie GRENKE (bez formatu `+` dla spacji); w trybie pełnym usługa uzupełnia dane dostawcy (`provider*`) na podstawie sprzedawcy z zapisanej proformy Firebird, zapisuje pole `rate` jako listę opcji (`kwartalna`, `miesieczna`) kompatybilną z frontendem GRENKE, ustawia opłatę początkową `0%`, odczytuje limity `default/min/maxMonths` po `setSession.php` i wybiera najwyższy poprawny okres leasingu w granicach tych limitów.
 - `app/services/workflow_machine_binding.py` – automat dla statusu `APPROVED_ORDER`: przed zapisem całego pakietu wymaga, aby istniejąca kartoteka `MASZYNA` należała do klienta magazynowego `FB_WAREHOUSE_CLIENT_ID` (domyślnie `656`), a następnie wiąże urządzenia workflow z klientem w `MASZYNA.ID_KLIENT`, wymusza `AKTYWNA=TAK` i `SYNWP=1`, próbuje znormalizować `MASZYNA.EWIDENCJA` do `KP/<numer>/GRENKE/<reszta>` oraz tworzy brakujące rekordy `MASZYNA` z mapowaniem danych z tabeli `MODEL`; właściciel inny niż magazyn, brak `ID_KLIENT` albo wieloznaczne dopasowanie blokuje całą operację bez częściowego zapisu. Dla źródła `firebird_magazyn_28` automat dociąga bieżący rekord `MAGAZYN`, parsuje techniczne `NAZWA` (`S/N`, `nr.wew`) i normalizuje warianty modeli Ricoh (`IMC` -> `IM C`, `MPC` -> `MP C`) zanim dopasuje `MODEL`; status zwracany do `/genform` pokazuje też licznik `powiązane/wszystkie` i skrót pierwszych błędów z identyfikatorem urządzenia (`producent`, `model`, `serial` albo `ewidencja`).
@@ -178,8 +179,8 @@ Uwagi operacyjne:
 - jezeli dokument jest pustym wzorem (bez wypelnionych pol), wynik moze nie zawierac `nip` i/lub `contract_number`,
 - lista wszystkich wykrytych kandydatow jest zapisywana w polach `nips_found` i `contract_number_candidates`.
 
-### Test połączenia skrzynki umów (IMAP + SMTP SSL)
-Pierwszy krok automatyzacji obsługi umów to test połączenia skrzynki e-mail przez IMAP (odbiór) oraz SMTP (wysyłka). W repo dostępny jest skrypt `scripts/mailbox_connection_check.py`.
+### Test połączenia skrzynki umów (wyłącznie IMAP SSL)
+Pierwszy krok automatyzacji obsługi umów to test odbiorczego połączenia IMAP. Adres `umowy@ksero-partner.com.pl` nie jest używany do wysyłki. W repo dostępny jest skrypt `scripts/mailbox_connection_check.py`.
 
 Uruchomienie testu:
 ```bash
@@ -188,7 +189,7 @@ set -a && source .env.test && set +a
 python scripts/mailbox_connection_check.py
 ```
 
-Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP SSL i test logowania SMTP SSL/STARTTLS.
+Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP SSL i nie otwiera połączenia SMTP.
 
 ### Synchronizacja wiadomości umów z FLOW
 Skrypt `scripts/contracts_mailbox_sync.py` analizuje wiadomości z `INBOX`, rozpoznaje temat i treść wiadomości:
@@ -452,22 +453,19 @@ Historyczna akcja synchronizacji urządzenia z arkusza w `/contracts` jest wył�
 | `EMAIL_USERNAME` | *(puste)* | Login do serwera SMTP (opcjonalnie). |
 | `EMAIL_PASSWORD` | *(puste)* | Hasło do serwera SMTP (opcjonalnie). |
 | `EMAIL_SENDER_NAME` | *(puste)* | Nazwa nadawcy w wiadomościach e-mail. |
-| `EMAIL_SENDER_ADDRESS` | *(puste)* | Adres nadawcy (From). |
+| `EMAIL_SENDER_ADDRESS` | *(puste)* | Kanoniczny adres nagłówka From i koperty SMTP; produkcyjnie `system@ksero-partner.com.pl`. |
+| `EMAIL_REPLY_TO_ADDRESS` | *(puste)* | Wymuszony adres Reply-To wszystkich wiadomości; produkcyjnie `marcin@ksero-partner.com.pl`. |
 | `EMAIL_USE_TLS` | `true` | Włącza STARTTLS. |
 | `EMAIL_USE_SSL` | `false` | Połączenie przez SSL/TLS (port 465). |
 | `BLOCK_CLIENT_COMMUNICATIONS` | `false` | Tymczasowo blokuje wysyłkę powiadomień dla klientów (SMS z linkiem i e-maile informacyjne). |
 
-### Zmienne środowiskowe skrzynki automatyzacji umów (IMAP/SMTP)
+### Zmienne środowiskowe skrzynki automatyzacji umów (wyłącznie IMAP)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
-| `MAILBOX_EMAIL_ADDRESS` | *(puste)* | Adres skrzynki używanej przez automatyzację umów. |
+| `MAILBOX_EMAIL_ADDRESS` | *(puste)* | Odbiorczy adres skrzynki automatyzacji umów; produkcyjnie `umowy@ksero-partner.com.pl`. |
 | `MAILBOX_EMAIL_PASSWORD` | *(puste)* | Hasło do skrzynki automatyzacji. |
 | `MAILBOX_IMAP_HOST` | *(puste)* | Host IMAP skrzynki (odbiór). |
 | `MAILBOX_IMAP_PORT` | `993` | Port IMAP SSL. |
-| `MAILBOX_SMTP_HOST` | *(puste)* | Host SMTP skrzynki (wysyłka). |
-| `MAILBOX_SMTP_PORT` | `465` | Port SMTP SSL. |
-| `MAILBOX_SMTP_USE_SSL` | `true` | Wymusza połączenie SMTP przez SSL. |
-| `MAILBOX_SMTP_USE_STARTTLS` | `false` | Włącza STARTTLS dla SMTP (nie łączyć z SSL). |
 | `CONTRACTS_MAILBOX_SCHEDULER_ENABLED` | `true` | Włącza automatyczny scheduler synchronizacji mailbox -> FLOW przy starcie backendu. |
 | `CONTRACTS_MAILBOX_SYNC_INTERVAL_SECONDS` | `300` | Interwał (sekundy) cyklicznego uruchamiania synchronizacji mailboxa. |
 | `CONTRACTS_MAILBOX_SYNC_LIMIT` | `60` | Limit liczby najnowszych wiadomości analizowanych w jednym przebiegu automatu. |
@@ -926,6 +924,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).
 - `docs/instal/wdrozenie_shipping_prod_2026-08-27.md` – etapowe wdrożenie Shipping na Windows Server, backupy, kontrola migracji, faza odczytowa, pilot, nadanie uprawnień i rollback kodu.
 - `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md` – pełne uruchomienie Shipping, V2 jako widok główny, bramka tworzenia zleceń pilotażowych oraz kontrola usuwania klienta, umowy, urządzenia, dokumentów i odtworzenia stanów magazynowych.
+- `docs/instal/hotfix_shipping_close_email_2026-09-01.md` – naprawa zamknięcia dnia i audytu Shipping, kanoniczny nadawca SMTP, backfill dwóch wpisów oraz procedura wdrożenia i rollbacku.
 - `docs/instal/wdrozenie_shipping_pola_przesylki_geokoder_2026-09-01.md` – dwa niezależne wydania: idempotentne pola przesyłki MS na podstawie etykiety i InfoServices oraz ręczny geokoder Adresy.app bez danych kontaktowych.
 - `docs/instal/deduplikacja_dpd_infoservices_2026-09-01.md` – bezpieczna procedura semantycznego grupowania zdarzeń DPD zwracanych przez różne metody SOAP wraz z dry-run, tokenem stanu i rollbackiem bez usuwania historii technicznej.
 - `docs/instal/pilot_shipping_2026-08-28.md` – identyfikatory trzech zleceń pilota, przypisane części, ceny oraz początkowe stany `ILOSC` i `IL_REZ` wymagane do końcowej kontroli sprzątania.

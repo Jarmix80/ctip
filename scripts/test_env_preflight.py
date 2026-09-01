@@ -96,7 +96,6 @@ def collect_issues(*, check_network: bool = False) -> list[str]:
             settings.mailbox_email_address,
             settings.mailbox_email_password,
             settings.mailbox_imap_host,
-            settings.mailbox_smtp_host,
         )
     ):
         issues.append("Integracja mailbox musi być całkowicie wyłączona.")

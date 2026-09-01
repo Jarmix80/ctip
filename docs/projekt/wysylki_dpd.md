@@ -94,7 +94,7 @@ Moduł `/delivery` obsługujący dowozy urządzeń i workflow GRENKE pozostaje o
 - `shipping_case` — stan obsługi zlecenia MS, snapshot zaakceptowanych danych, edytowalna treść etykiety `label_text` oraz jawny wybór `invoice_required` dla rozliczenia przez FV.
 - `shipping_item` — wybrane pozycje, cena zaakceptowana, ceny źródłowe sprzedaży i zakupu, źródło ceny, miękkie rezerwacje oraz zgoda `allow_negative_stock` na kontrolowany wyjątek dla stanu zerowego.
 - `shipping_shipment` — identyfikatory DPD, numer listu, etykieta, metadane wspólnej paczki, znaczniki idempotencji zapisu pól przesyłki MS, statusy uzgodnienia oraz identyfikatory i numery wynikowych dokumentów RW, WZ i FV. Pola `closed_by`, `archive_snapshot` i `archive_search_text` przechowują operatora zamknięcia, niezmienny stan końcowy oraz znormalizowaną treść wyszukiwarki. Wspólna paczka ma jeden numer DPD, ale osobny rekord dla każdego zlecenia, aby zachować niezależne dokumenty MS.
-- `shipping_day_close` — idempotentne zamknięcie dnia.
+- `shipping_day_close` — idempotentne zamknięcie dnia; statusy `completed` i `partial` są terminalne, dlatego ponowienie zwraca zapisane podsumowanie bez kolejnych dokumentów i powiadomień.
 - `shipping_event` — niemodyfikowalny dziennik etapów i błędów.
 - `shipping_tracking_parcel` — wyliczony bieżący stan numeru listu, kategoria, ostatnie zdarzenie i ewentualny numer zastępczy.
 - `shipping_tracking_event` — pełna, idempotentna historia techniczna zdarzeń InfoServices wraz z obsługą operacji `CANCEL`; `semantic_event_key` i `canonical_event_id` łączą kopie tego samego zdarzenia zwracane przez różne metody SOAP bez ich usuwania.
@@ -134,7 +134,7 @@ Tabele `shipping_address` i `shipping_case` przechowują `location_source`, `loc
 - `POST /admin/shipping/shipments/consolidated` — utworzenie jednej przesyłki i etykiety dla 2–20 gotowych zleceń tego samego klienta na identyczny adres.
 - `POST /admin/shipping/shipments/bulk` — sekwencyjne utworzenie etykiet dla wybranych albo wszystkich gotowych spraw.
 - `POST /admin/shipping/shipments/manual-tracking` — rejestracja wyjątku wykonanego w panelu DPD.
-- `POST /admin/shipping/orders/{id}/close` — potwierdzenie odbioru i finalizacja pojedynczego zlecenia albo wszystkich zleceń jego wspólnej paczki tym samym procesem RW, WZ albo FV + WZ co zamknięcie dnia.
+- `POST /admin/shipping/orders/{id}/close` — potwierdzenie odbioru i finalizacja pojedynczego zlecenia albo wszystkich zleceń jego wspólnej paczki tym samym procesem RW, WZ albo FV + WZ co zamknięcie dnia. Odpowiedzi obu operacji zawierają `audit_status`, `warnings` i `idempotent_replay`; niepowodzenie audytu po zatwierdzeniu dokumentów nie zmienia wykonanego wyniku biznesowego na HTTP 500.
 - `GET /admin/shipping/shipments/{id}/label` — ponowny wydruk zapisanej etykiety A4.
 - `GET /admin/shipping/shipments/packing-list` — osobne zestawienie zleceń i części na zwykły papier A4.
 - `GET /admin/shipping/shipments/labels-sheet` — arkusz A4 2×2 z natywnych pól etykiet DPD dla wybranych numerów listów albo równoważny arkusz w trybie `mock`.

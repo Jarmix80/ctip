@@ -69,12 +69,8 @@ MAILBOX_EMAIL_ADDRESS=umowy@ksero-partner.com.pl
 MAILBOX_EMAIL_PASSWORD=<haslo_skrzynki>
 MAILBOX_IMAP_HOST=<host_imap>
 MAILBOX_IMAP_PORT=993
-MAILBOX_SMTP_HOST=<host_smtp>
-MAILBOX_SMTP_PORT=465
-MAILBOX_SMTP_USE_SSL=true
-MAILBOX_SMTP_USE_STARTTLS=false
 ```
-2. Przetestuj połączenie IMAP/SMTP:
+2. Przetestuj odbiorcze połączenie IMAP. Skrzynka `umowy@ksero-partner.com.pl` nie służy do wysyłania:
 ```bash
 source .venv/bin/activate
 set -a; source .env; set +a
@@ -86,9 +82,11 @@ python scripts/contracts_mailbox_sync.py --limit 10 --dry-run
 ```
 
 ## Krok 5. Konfiguracja SMTP dla wiadomości z GENFORM
-1. W panelu: `Admin -> Konfiguracja -> E-mail` ustaw:
-- `Adres nadawcy (From)`: `umowy@ksero-partner.com.pl`
-- poprawny host/port/login/hasło SMTP.
+1. W pliku `.env` ustaw systemową skrzynkę wychodzącą:
+- `EMAIL_USERNAME=system@ksero-partner.com.pl`;
+- `EMAIL_SENDER_ADDRESS=system@ksero-partner.com.pl`;
+- `EMAIL_REPLY_TO_ADDRESS=marcin@ksero-partner.com.pl`;
+- poprawny host/port/hasło SMTP konta systemowego.
 2. Wykonaj `Wyślij test` z panelu lub:
 ```bash
 curl -X POST "http://127.0.0.1:8000/admin/email/test" \
