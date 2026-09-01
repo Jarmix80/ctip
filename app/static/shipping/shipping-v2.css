@@ -4,6 +4,9 @@
 
 [hidden] { display: none !important; }
 
+.shipping-layout-resolving .shipping-v2-shell { visibility: hidden; }
+.shipping-layout-resolving::before { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; color: #b7c5d4; background: #0d1726; content: "Wczytywanie domyślnego wyglądu Shipping…"; font-size: 14px; font-weight: 800; }
+
 .shipping-v2-body {
   --ink: #dce6f2;
   --muted: #8fa0b4;
@@ -266,6 +269,19 @@
 .shipping-v2-audit section { padding: 14px; border: 1px solid #2b3e54; border-radius: 7px; background: rgba(17, 30, 48, .94); box-shadow: 0 10px 24px rgba(0, 0, 0, .16); }
 .shipping-v2-audit section > strong { display: block; margin-top: 7px; font-size: 13px; }
 .shipping-v2-audit section > p:last-child { margin: 7px 0 0; color: #8292a7; font-size: 11px; line-height: 1.45; }
+.shipping-v2-audit-address > p:not(.shipping-step),
+.shipping-v2-audit-status > p:not(.shipping-step) { margin: 6px 0 0; color: #a9bacb; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.shipping-v2-audit-address #shipping-v2-audit-contact { color: #dce6f2; font-weight: 700; }
+.shipping-v2-audit-problem #shipping-v2-audit-problem { margin: 8px 0 0; color: #eef4fa; font-size: 14px; font-weight: 650; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+.shipping-v2-audit-status > strong { width: fit-content; padding: 4px 7px; border-radius: 4px; }
+.shipping-v2-audit-status > strong.status-review_pending { color: #8cc8ff; background: #17314a; }
+.shipping-v2-audit-status > strong.status-ready { color: #59d9a6; background: #17302f; }
+.shipping-v2-audit-status > strong.status-shipment_created { color: #ffd27a; background: #30291c; }
+.shipping-v2-audit-status > strong.status-reconcile_required { color: #fda29b; background: #2b1e27; }
+.shipping-v2-audit-status > strong.status-handed_over,
+.shipping-v2-audit-status > strong.status-closed { color: #a9bacb; background: #26384e; }
+.shipping-v2-audit-status > strong.status-manual_billing { color: #ffd27a; background: #30291c; }
+.shipping-v2-audit-status #shipping-v2-audit-dpd-status { display: inline-flex; width: fit-content; }
 .shipping-v2-progress { height: 4px; margin: 10px 0 15px; overflow: hidden; border-radius: 99px; background: #26384e; }
 .shipping-v2-progress i { display: block; width: 0; height: 100%; background: #59d9a6; transition: width .25s ease; }
 .shipping-v2-audit ol { display: grid; gap: 11px; margin: 0; padding: 0; list-style: none; }

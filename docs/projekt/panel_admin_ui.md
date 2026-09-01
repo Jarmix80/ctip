@@ -146,6 +146,7 @@
 - Strona główna (`/`) zawiera wyłącznie formularz logowania (`/auth/login`).
 - Po poprawnym logowaniu użytkownik trafia na `/choice`, gdzie widzi sekcje przypisane do konta.
 - Lista sekcji jest przechowywana per użytkownik jako zestaw `admin`, `operator`, `generator`, `delivery`, `device` i zwracana przez `/auth/me`; dla roli `admin` backend zawsze zwraca pełny zestaw, także przy starszym niepełnym wpisie.
+- `/auth/me` zwraca również `shipping_layout`, a `PUT /auth/preferences/shipping-layout` zapisuje na koncie wartość `v2` albo `legacy`; wejście przez `/shipping` używa tej preferencji niezależnie od komputera operatora.
 - Widok `/choice` udostępnia dodatkowy formularz edycji własnego profilu (`/auth/profile`) z polami: imię, nazwisko, e-mail, numer wewnętrzny i telefon komórkowy.
 - Widok `/choice` udostępnia również formularz zmiany hasła (`/auth/profile/change-password`) z polityką: minimum 9 znaków, co najmniej jedna duża litera, jedna cyfra i jeden znak specjalny.
 - Wylogowanie strony głównej realizuje endpoint `/auth/logout`.

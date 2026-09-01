@@ -1730,6 +1730,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("Etap pracy (domyślne)", response.text)
         self.assertIn('id="shipping-phone-note"', response.text)
         self.assertIn("Zezwól na część ze stanem zerowym", response.text)
+        self.assertIn('data-shipping-default-entry="true"', response.text)
+        self.assertIn('data-shipping-layout-choice="legacy"', response.text)
         javascript = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
         required_ids = set(re.findall(r'getElementById\("([^"]+)"\)', javascript))
         rendered_ids = set(re.findall(r'id="([^"]+)"', response.text))
@@ -1747,17 +1749,23 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("MutationObserver", enhancer)
         self.assertIn("selectedPackageItems", enhancer)
         self.assertIn("shipping-v2-package-items", response.text)
+        self.assertIn('id="shipping-v2-audit-company"', response.text)
+        self.assertIn('id="shipping-v2-audit-problem"', response.text)
+        self.assertIn('id="shipping-v2-audit-status"', response.text)
+        self.assertIn('id="shipping-v2-audit-dpd-status"', response.text)
+        self.assertNotIn('id="shipping-v2-audit-user"', response.text)
         self.assertIn("refreshShippingQueueManually", javascript)
         self.assertIn("usunięte z kolejki", javascript)
 
-    def test_dotychczasowy_adres_v2_przekierowuje_do_glownego_widoku(self) -> None:
+    def test_jawny_adres_v2_renderuje_nowy_wyglad(self) -> None:
         app = create_app()
-        client = TestClient(app, follow_redirects=False)
+        client = TestClient(app)
         with patch.object(settings, "shipping_enabled", True):
             response = client.get("/shipping/v2")
 
-        self.assertEqual(response.status_code, 307)
-        self.assertEqual(response.headers["location"], "/shipping")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-shipping-layout="v2"', response.text)
+        self.assertIn('data-shipping-default-entry="false"', response.text)
 
     def test_poprzedni_widok_pozostaje_dostepny_pod_osobnym_adresem(self) -> None:
         app = create_app()
@@ -1767,7 +1775,16 @@ class ShippingSchemaTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Wysyłki części i tonerów", response.text)
-        self.assertIn('href="/shipping"', response.text)
+        self.assertIn('href="/shipping/v2"', response.text)
+        self.assertIn('data-shipping-layout-choice="v2"', response.text)
+        self.assertIn('id="shipping-tracking-view"', response.text)
+        self.assertIn('id="shipping-archive-view"', response.text)
+        javascript = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
+        required_ids = set(re.findall(r'getElementById\("([^"]+)"\)', javascript))
+        rendered_ids = set(re.findall(r'id="([^"]+)"', response.text))
+        self.assertFalse(required_ids - rendered_ids)
+        self.assertIn("/auth/preferences/shipping-layout", javascript)
+        self.assertIn("shippingLayoutDestination", javascript)
 
     def test_strona_prototypow_pokazuje_siedem_niefunkcjonalnych_wariantow(
         self,

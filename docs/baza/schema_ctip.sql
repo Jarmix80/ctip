@@ -532,13 +532,15 @@ CREATE TABLE ctip.admin_user (
     firebird_app_user_login text,
     can_withdraw_device_pz boolean DEFAULT false NOT NULL,
     device_theme text DEFAULT 'blue'::text NOT NULL,
+    shipping_layout text DEFAULT 'v2'::text NOT NULL,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT admin_user_pkey PRIMARY KEY (id),
     CONSTRAINT admin_user_role_check CHECK (
         role = ANY (ARRAY['admin'::text, 'operator'::text, 'serwisant'::text])
     ),
-    CONSTRAINT admin_user_device_theme_check CHECK (device_theme = ANY (ARRAY['blue'::text, 'graphite'::text, 'mint'::text]))
+    CONSTRAINT admin_user_device_theme_check CHECK (device_theme = ANY (ARRAY['blue'::text, 'graphite'::text, 'mint'::text])),
+    CONSTRAINT admin_user_shipping_layout_check CHECK (shipping_layout = ANY (ARRAY['v2'::text, 'legacy'::text]))
 );
 
 ALTER TABLE ctip.admin_user OWNER TO postgres;
@@ -1967,3 +1969,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 -- alembic/versions/d6f1a8c3e740_merge_device_and_contract_heads.py
 -- Kanoniczne scalenie gałęzi wysyłek oraz katalogu tożsamości i CRM:
 -- alembic/versions/f7b2d4e6a810_merge_shipping_and_bot_heads.py
+-- alembic/versions/a1c3e5f7b9d2_add_shipping_layout_to_admin_user.py

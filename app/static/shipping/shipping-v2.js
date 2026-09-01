@@ -19,6 +19,18 @@
     if (node && node.textContent !== value) node.textContent = value;
   }
 
+  function setOptionalText(node, value) {
+    if (!node) return;
+    const normalized = String(value || "").trim();
+    setText(node, normalized);
+    node.hidden = !normalized;
+  }
+
+  function hasSelectedOrder() {
+    const detail = element("shipping-detail");
+    return Boolean(detail && !detail.hidden);
+  }
+
   function currentStatus() {
     const badge = element("shipping-case-status");
     const statusClass = [...(badge?.classList || [])].find((name) => name.startsWith("status-"));
@@ -94,10 +106,72 @@
 
   function updateLocation() {
     const location = element("shipping-location")?.textContent?.trim() || "Brak lokalizacji";
-    const message = element("shipping-location-message")?.textContent?.trim() || "System porówna lokalizację z Menadżerem Serwisu.";
     setText(element("shipping-v2-location-short"), location);
-    setText(element("shipping-v2-audit-location"), location);
-    setText(element("shipping-v2-audit-location-note"), message);
+  }
+
+  function updateDeliveryAddress() {
+    const selected = hasSelectedOrder();
+    const company = element("shipping-company")?.value?.trim();
+    const contact = element("shipping-contact")?.value?.trim();
+    const phone = element("shipping-phone")?.value?.trim();
+    const email = element("shipping-email")?.value?.trim();
+    const street = element("shipping-street")?.value?.trim();
+    const postal = element("shipping-postal")?.value?.trim();
+    const city = element("shipping-city")?.value?.trim();
+    setText(
+      element("shipping-v2-audit-company"),
+      selected ? company || "Brak nazwy firmy" : "Brak wybranego zlecenia",
+    );
+    setOptionalText(element("shipping-v2-audit-contact"), selected && contact ? `Osoba kontaktowa: ${contact}` : "");
+    const communication = [
+      phone ? `tel. ${phone}` : "telefon nieuzupełniony",
+      email || null,
+    ].filter(Boolean).join(" • ");
+    setOptionalText(element("shipping-v2-audit-communication"), selected ? communication : "");
+    setText(
+      element("shipping-v2-audit-street"),
+      selected ? street || "Brak ulicy i numeru" : "Wybierz zlecenie z kolejki.",
+    );
+    setOptionalText(
+      element("shipping-v2-audit-city"),
+      selected ? [postal, city].filter(Boolean).join(" ") || "Brak kodu i miejscowości" : "",
+    );
+  }
+
+  function updateOrderContent() {
+    const problem = hasSelectedOrder()
+      ? element("shipping-order-problem")?.textContent?.trim() || "Brak treści zlecenia."
+      : "Wybierz zlecenie z kolejki.";
+    setText(element("shipping-v2-audit-problem"), problem);
+  }
+
+  function updateStatus() {
+    const selected = hasSelectedOrder();
+    const badge = element("shipping-case-status");
+    const status = selected ? badge?.textContent?.trim() || "Nieznany etap" : "Wybierz zlecenie";
+    const statusValue = element("shipping-v2-audit-status");
+    setText(statusValue, status);
+    if (statusValue) {
+      const statusClass = [...(badge?.classList || [])].find((name) => name.startsWith("status-"));
+      statusValue.className = statusClass || "";
+    }
+    const trackingNumber = selected ? element("shipping-tracking-open")?.dataset.waybill?.trim() : "";
+    setText(
+      element("shipping-v2-audit-tracking"),
+      trackingNumber ? `Numer DPD: ${trackingNumber}` : "Etykieta DPD nie została jeszcze utworzona.",
+    );
+    const sourceDpdStatus = document.querySelector("#shipping-queue .shipping-queue-item.active .shipping-dpd-state");
+    const dpdStatus = element("shipping-v2-audit-dpd-status");
+    setOptionalText(
+      dpdStatus,
+      trackingNumber
+        ? sourceDpdStatus?.textContent?.trim() || "Status DPD nie został jeszcze pobrany."
+        : "",
+    );
+    if (dpdStatus) {
+      const category = [...(sourceDpdStatus?.classList || [])].find((name) => name !== "shipping-dpd-state");
+      dpdStatus.className = category ? `shipping-dpd-state ${category}` : "";
+    }
   }
 
   function updatePackage() {
@@ -130,17 +204,14 @@
     }
   }
 
-  function updateOperator() {
-    const user = element("shipping-user")?.textContent?.trim() || "—";
-    setText(element("shipping-v2-audit-user"), user);
-  }
-
   function updateV2Context() {
     updateProgress();
     updateLocation();
+    updateDeliveryAddress();
+    updateOrderContent();
     updatePackage();
+    updateStatus();
     updateQueueSummary();
-    updateOperator();
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -149,8 +220,8 @@
       element("shipping-queue"),
       element("shipping-case-status"),
       element("shipping-location"),
-      element("shipping-location-message"),
-      element("shipping-user"),
+      element("shipping-order-problem"),
+      element("shipping-tracking-open"),
     ].filter(Boolean);
     const observer = new MutationObserver(updateV2Context);
     observedNodes.forEach((node) => observer.observe(node, {

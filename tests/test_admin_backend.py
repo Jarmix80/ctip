@@ -612,6 +612,48 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(invalid_response.status_code, 422)
 
+    async def test_portal_shipping_layout_is_saved_on_user_account(self):
+        login_response = await self.client.post(
+            "/auth/login",
+            json={
+                "email": "operator@example.com",
+                "password": "Operator123!",
+                "remember_me": True,
+            },
+        )
+        self.assertEqual(login_response.status_code, 200)
+
+        initial_me_response = await self.client.get("/auth/me")
+        self.assertEqual(initial_me_response.status_code, 200)
+        self.assertEqual(initial_me_response.json()["shipping_layout"], "v2")
+
+        update_response = await self.client.put(
+            "/auth/preferences/shipping-layout",
+            json={"layout": "legacy"},
+        )
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["layout"], "legacy")
+
+        me_response = await self.client.get("/auth/me")
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.json()["shipping_layout"], "legacy")
+
+        async with self.session_factory() as session:
+            audit_entry = (
+                await session.execute(
+                    select(AdminAuditLog).where(
+                        AdminAuditLog.action == "portal_shipping_layout_update"
+                    )
+                )
+            ).scalar_one()
+        self.assertEqual(audit_entry.payload["layout"], "legacy")
+
+        invalid_response = await self.client.put(
+            "/auth/preferences/shipping-layout",
+            json={"layout": "compact"},
+        )
+        self.assertEqual(invalid_response.status_code, 422)
+
     async def test_operator_login_requires_operator_section(self):
         async with self.session_factory() as session:
             user = (await session.execute(select(AdminUser).where(AdminUser.id == 2))).scalar_one()

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-label-text-01">
     <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-label-text-01"></script>
   </head>
-  <body>
+  <body data-shipping-layout="legacy" data-shipping-default-entry="false">
     <main class="shipping-shell">
       <header class="shipping-header">
         <div>
@@ -18,7 +18,7 @@
         </div>
         <div class="shipping-header-actions">
           <span id="shipping-user" class="shipping-chip">Użytkownik</span>
-          <a href="/shipping" class="shipping-button primary">Nowy wygląd</a>
+          <a href="/shipping/v2" class="shipping-button primary" data-shipping-layout-choice="v2">Nowy wygląd</a>
           <a href="/choice" class="shipping-button secondary">Wybór sekcji</a>
           <button id="shipping-refresh" type="button" class="shipping-button secondary">Odśwież</button>
           <button id="shipping-logout" type="button" class="shipping-button secondary">Wyloguj</button>
@@ -29,7 +29,9 @@
 
       <nav class="shipping-tabs" aria-label="Sekcje wysyłek">
         <button type="button" class="shipping-tab active" data-shipping-view="dispatch">Realizacja wysyłek</button>
+        <button type="button" class="shipping-tab" data-shipping-view="tracking">Status przesyłek <b id="shipping-tracking-tab-count">0</b></button>
         <button type="button" class="shipping-tab" data-shipping-view="catalog">Katalog zgodności</button>
+        <button type="button" class="shipping-tab" data-shipping-view="archive">Archiwum <b id="shipping-archive-tab-count">0</b></button>
       </nav>
 
       <section id="shipping-dispatch-view">
@@ -72,7 +74,7 @@
         <section class="shipping-card shipping-queue-card">
           <div class="shipping-card-head">
             <div><p class="shipping-step">KROK 1</p><h2>Kolejka MS</h2></div>
-            <span id="shipping-loading" class="shipping-muted" hidden>Wczytywanie…</span>
+            <div class="shipping-legacy-queue-actions"><span id="shipping-loading" class="shipping-muted" hidden>Wczytywanie…</span><button id="shipping-queue-refresh" type="button" class="shipping-button secondary compact">Odśwież kolejkę ↻</button></div>
           </div>
           <div class="shipping-bulk-panel">
             <strong id="shipping-selected-count">0 wybranych</strong>
@@ -213,6 +215,9 @@
             <a id="shipping-label" class="shipping-button dark" href="#" target="_blank" hidden>
               Otwórz etykietę A4
             </a>
+            <button id="shipping-tracking-open" type="button" class="shipping-button secondary" hidden>
+              Status przesyłki
+            </button>
           </div>
           <p id="shipping-feedback" class="shipping-feedback" hidden></p>
         </section>
@@ -222,6 +227,50 @@
           <p>System podpowie adres, kontakt i potwierdzone części zgodne z urządzeniem.</p>
         </section>
       </div>
+      </section>
+
+      <section id="shipping-tracking-view" class="shipping-v2-tracking-view shipping-legacy-register-view" hidden>
+        <section class="shipping-card shipping-v2-tracking-intro">
+          <div>
+            <p class="shipping-step">DPD INFOSERVICES / CAŁY KANAŁ</p>
+            <h1>Status przesyłek</h1>
+            <p class="shipping-muted">Aktualne statusy, zdarzenia DPD oraz powiązania z realizacją i archiwum CTIP.</p>
+          </div>
+          <div class="shipping-v2-tracking-sync"><span id="shipping-tracking-sync-status">Brak synchronizacji</span><button id="shipping-tracking-sync" type="button" class="shipping-button primary">Synchronizuj teraz</button></div>
+        </section>
+
+        <section class="shipping-v2-tracking-summary">
+          <article class="shipping-card"><small>WSZYSTKIE</small><strong id="shipping-tracking-total">0</strong></article>
+          <article class="shipping-card"><small>AKTYWNE</small><strong id="shipping-tracking-active">0</strong></article>
+          <article class="shipping-card"><small>W DORĘCZENIU</small><strong id="shipping-tracking-delivery">0</strong></article>
+          <article class="shipping-card"><small>DORĘCZONE</small><strong id="shipping-tracking-delivered">0</strong></article>
+          <article class="shipping-card attention"><small>WYMAGAJĄ UWAGI</small><strong id="shipping-tracking-attention">0</strong></article>
+        </section>
+
+        <section class="shipping-card shipping-v2-tracking-filters">
+          <label class="shipping-v2-tracking-search"><span>Szukaj przesyłki</span><span class="shipping-v2-search-control"><b>⌕</b><input id="shipping-tracking-query" type="search" maxlength="200" placeholder="Numer listu, zlecenie, klient, referencja lub zdarzenie"></span></label>
+          <label><span>Status</span><select id="shipping-tracking-category"><option value="">Wszystkie statusy</option><option value="registered">Zarejestrowana</option><option value="in_transit">W drodze</option><option value="out_for_delivery">W doręczeniu</option><option value="pickup_ready">Gotowa do odbioru</option><option value="delivered">Doręczona</option><option value="undelivered">Niedoręczona</option><option value="redirected">Przekierowana</option><option value="returning">Zwrot</option><option value="critical">Problem krytyczny</option><option value="other">Inny status</option></select></label>
+          <label><span>Powiązanie</span><select id="shipping-tracking-linked"><option value="">Wszystkie</option><option value="true">Powiązane z CTIP</option><option value="false">Spoza CTIP</option></select></label>
+          <label><span>Etap</span><select id="shipping-tracking-terminal"><option value="">Aktywne i zakończone</option><option value="false">Tylko aktywne</option><option value="true">Tylko zakończone</option></select></label>
+          <label><span>Od daty</span><input id="shipping-tracking-date-from" type="date"></label>
+          <label><span>Do daty</span><input id="shipping-tracking-date-to" type="date"></label>
+          <label><span>Sortowanie</span><select id="shipping-tracking-sort"><option value="newest">Najnowsze zdarzenie</option><option value="oldest">Najstarsze zdarzenie</option><option value="waybill">Numer listu</option><option value="status">Status</option></select></label>
+          <label class="shipping-check-row compact"><input id="shipping-tracking-attention-only" type="checkbox"><span>Tylko wymagające uwagi</span></label>
+          <button id="shipping-tracking-clear" type="button" class="shipping-button secondary">Wyczyść filtry</button>
+        </section>
+
+        <div class="shipping-v2-tracking-layout">
+          <section class="shipping-card shipping-v2-tracking-register">
+            <div class="shipping-v2-tracking-head"><span>Ostatnie zdarzenie</span><span>Numer listu</span><span>Status DPD</span><span>Powiązane zlecenia</span><span>Oddział / referencja</span></div>
+            <div id="shipping-tracking-loading" class="shipping-v2-tracking-empty" hidden>Wczytywanie statusów…</div>
+            <div id="shipping-tracking-rows" class="shipping-v2-tracking-rows"></div>
+            <div class="shipping-pagination shipping-v2-tracking-pagination"><button id="shipping-tracking-prev" type="button" class="shipping-button secondary">Poprzednia</button><span id="shipping-tracking-page">Strona 1</span><button id="shipping-tracking-next" type="button" class="shipping-button secondary">Następna</button></div>
+          </section>
+          <aside id="shipping-tracking-detail" class="shipping-card shipping-v2-tracking-detail" hidden>
+            <header><div><p class="shipping-step">KARTA PRZESYŁKI</p><h2 id="shipping-tracking-detail-title">Numer DPD</h2><p id="shipping-tracking-detail-subtitle" class="shipping-muted"></p></div><button id="shipping-tracking-detail-close" type="button" class="shipping-button secondary compact">Zamknij</button></header>
+            <div id="shipping-tracking-detail-content"></div>
+          </aside>
+        </div>
       </section>
 
       <section id="shipping-catalog-view" hidden>
@@ -312,6 +361,43 @@
           <p id="shipping-manual-selected" class="shipping-manual-selected">Nie wybrano nowych modeli.</p>
           <div id="shipping-manual-models" class="shipping-model-picker"></div>
         </section>
+      </section>
+
+      <section id="shipping-archive-view" class="shipping-v2-archive-view shipping-legacy-register-view" hidden>
+        <section class="shipping-card shipping-v2-archive-intro">
+          <div>
+            <p class="shipping-step">REJESTR WYSYŁEK</p>
+            <h1>Archiwum dokumentów</h1>
+            <p class="shipping-muted">Zakończone zlecenia, części, operatorzy oraz dokumenty RW, WZ i FV zapisane bez zależności od dostępności MS.</p>
+          </div>
+          <span id="shipping-archive-count" class="shipping-chip">0 rekordów</span>
+        </section>
+
+        <section class="shipping-card shipping-v2-archive-filters">
+          <label class="shipping-v2-archive-search"><span>Szukaj w całym Archiwum</span><span class="shipping-v2-search-control"><b>⌕</b><input id="shipping-archive-query" type="search" maxlength="200" placeholder="Zlecenie, klient, część, RW, WZ, FV lub DPD"></span></label>
+          <label><span>Od daty</span><input id="shipping-archive-date-from" type="date"></label>
+          <label><span>Do daty</span><input id="shipping-archive-date-to" type="date"></label>
+          <label><span>Operator</span><select id="shipping-archive-operator"><option value="">Wszyscy operatorzy</option></select></label>
+          <label><span>Dokument</span><select id="shipping-archive-document"><option value="">RW, WZ i FV</option><option value="rw">Tylko RW</option><option value="wz">Tylko WZ</option><option value="invoice">Tylko FV</option></select></label>
+          <label><span>Źródło</span><select id="shipping-archive-source"><option value="">Każde źródło</option><option value="mobile">Aplikacja mobilna</option><option value="manual">Ręcznie w MS</option></select></label>
+          <label><span>Tryb przesyłki</span><select id="shipping-archive-provider"><option value="">Każdy tryb</option><option value="production">DPD produkcja</option><option value="demo">DPD Demo</option><option value="mock">Symulacja lokalna</option><option value="manual">Numer ręczny</option></select></label>
+          <label><span>Pakowanie</span><select id="shipping-archive-consolidated"><option value="">Wszystkie paczki</option><option value="true">Wspólne paczki</option><option value="false">Osobne paczki</option></select></label>
+          <label><span>Sortowanie</span><select id="shipping-archive-sort"><option value="newest">Najnowsze najpierw</option><option value="oldest">Najstarsze najpierw</option><option value="order">Numer zlecenia</option><option value="client">Klient A–Z</option></select></label>
+          <button id="shipping-archive-clear" type="button" class="shipping-button secondary">Wyczyść filtry</button>
+        </section>
+
+        <div class="shipping-v2-archive-layout">
+          <section class="shipping-card shipping-v2-archive-register">
+            <div class="shipping-v2-archive-ledger-head" aria-hidden="true"><span>Data</span><span>Zlecenie i odbiorca</span><span>Odpowiedzialny</span><span>Zawartość paczki</span><span>Dokumenty</span></div>
+            <div id="shipping-archive-loading" class="shipping-v2-archive-empty" hidden>Wczytywanie Archiwum…</div>
+            <div id="shipping-archive-rows" class="shipping-v2-archive-ledger"></div>
+            <div class="shipping-pagination shipping-v2-archive-pagination"><button id="shipping-archive-prev" type="button" class="shipping-button secondary">Poprzednia</button><span id="shipping-archive-page">Strona 1</span><button id="shipping-archive-next" type="button" class="shipping-button secondary">Następna</button></div>
+          </section>
+          <aside id="shipping-archive-detail" class="shipping-card shipping-v2-archive-detail" hidden>
+            <header><div><p class="shipping-step">KARTA ARCHIWALNA</p><h2 id="shipping-archive-detail-title">Zlecenie</h2><p id="shipping-archive-detail-subtitle" class="shipping-muted"></p></div><button id="shipping-archive-detail-close" type="button" class="shipping-button secondary compact">Zamknij</button></header>
+            <div id="shipping-archive-detail-content"></div>
+          </aside>
+        </div>
       </section>
 
       <dialog id="shipping-consolidated-label-dialog" class="shipping-label-dialog">

@@ -10,7 +10,7 @@
     <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-label-text-01"></script>
     <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-tracking-02"></script>
   </head>
-  <body class="shipping-v2-body">
+  <body class="shipping-v2-body{% if shipping_default_entry %} shipping-layout-resolving{% endif %}" data-shipping-layout="v2" data-shipping-default-entry="{{ 'true' if shipping_default_entry else 'false' }}">
     <main class="shipping-v2-shell">
       <header class="shipping-v2-header">
         <div class="shipping-v2-brand">
@@ -24,7 +24,7 @@
           <button type="button" class="shipping-v2-tab" data-shipping-view="archive">Archiwum <b id="shipping-archive-tab-count">0</b></button>
         </nav>
         <div class="shipping-v2-user">
-          <a href="/shipping/legacy">Poprzedni wygląd</a>
+          <a href="/shipping/legacy" data-shipping-layout-choice="legacy">Poprzedni wygląd</a>
           <a href="/choice">Wybór sekcji</a>
           <button id="shipping-refresh" type="button">Odśwież ↻</button>
           <span id="shipping-user">Użytkownik</span>
@@ -201,9 +201,25 @@
                 <li data-v2-step="4"><span>4</span><div><strong>Odbiór kuriera</strong><small>RW, WZ albo FV + WZ</small></div></li>
               </ol>
             </section>
-            <section><p class="shipping-step">BIEŻĄCA LOKALIZACJA</p><strong id="shipping-v2-audit-location">Brak wybranego zlecenia</strong><p id="shipping-v2-audit-location-note">System porówna lokalizację z Menadżerem Serwisu.</p></section>
+            <section class="shipping-v2-audit-address">
+              <p class="shipping-step">ADRES DOSTAWY</p>
+              <strong id="shipping-v2-audit-company">Brak wybranego zlecenia</strong>
+              <p id="shipping-v2-audit-contact" hidden></p>
+              <p id="shipping-v2-audit-communication" hidden></p>
+              <p id="shipping-v2-audit-street">Wybierz zlecenie z kolejki.</p>
+              <p id="shipping-v2-audit-city" hidden></p>
+            </section>
+            <section class="shipping-v2-audit-problem">
+              <p class="shipping-step">TREŚĆ ZLECENIA</p>
+              <p id="shipping-v2-audit-problem">Wybierz zlecenie z kolejki.</p>
+            </section>
             <section><p class="shipping-step">PAKOWANIE</p><strong id="shipping-v2-audit-package">Brak wybranych części</strong><p id="shipping-v2-audit-billing">Dokument zostanie określony po wyborze zlecenia.</p></section>
-            <section><p class="shipping-step">OPERATOR</p><strong id="shipping-v2-audit-user">—</strong><p>Osoba obsługująca bieżącą sesję CTIP.</p></section>
+            <section class="shipping-v2-audit-status">
+              <p class="shipping-step">STATUS</p>
+              <strong id="shipping-v2-audit-status">Wybierz zlecenie</strong>
+              <p id="shipping-v2-audit-tracking">Brak numeru przesyłki DPD.</p>
+              <p id="shipping-v2-audit-dpd-status" hidden></p>
+            </section>
           </aside>
         </div>
       </section>

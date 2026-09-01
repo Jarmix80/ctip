@@ -39,6 +39,10 @@ class AdminUser(Base):
             "device_theme in ('blue','graphite','mint')",
             name="admin_user_device_theme_check",
         ),
+        CheckConstraint(
+            "shipping_layout in ('v2','legacy')",
+            name="admin_user_shipping_layout_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -65,6 +69,12 @@ class AdminUser(Base):
         nullable=False,
         default="blue",
         server_default="blue",
+    )
+    shipping_layout: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="v2",
+        server_default="v2",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.timezone("utc", func.now())

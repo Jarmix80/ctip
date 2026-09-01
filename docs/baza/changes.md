@@ -153,3 +153,4 @@
 - Migracja `f7b2d4e6a810` scala gałęzie wysyłek oraz katalogu tożsamości i CRM w jeden kanoniczny koniec grafu Alembic.
 - Migracja scalająca nie zmienia tabel ani danych; zapewnia jednoznaczne działanie polecenia `alembic upgrade head`.
 - Narzędzie `scripts/reconcile_test_alembic_state.py` pozwala jednorazowo uzgodnić wyłącznie znacznik historycznej bazy `ctip_test`, ale dopiero po walidacji całego schematu modeli, danych krytycznych oraz sum backupu PostgreSQL i Firebird.
+- Migracja `a1c3e5f7b9d2` dodaje do `ctip.admin_user` kontrolowaną preferencję `shipping_layout` (`v2`, `legacy`) z domyślną wartością `v2`, dzięki czemu wybór wyglądu Shipping pozostaje przypisany do konta użytkownika.
