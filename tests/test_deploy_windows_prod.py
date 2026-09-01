@@ -235,6 +235,16 @@ def test_powershell_native_runner_does_not_promote_stderr_to_failure() -> None:
     assert "$ErrorActionPreference = $previousErrorActionPreference" in module
 
 
+def test_canonical_powershell_files_have_utf8_bom() -> None:
+    """Windows PowerShell 5.1 musi poprawnie czytać polskie komunikaty po checkoutcie."""
+    repository = Path(__file__).resolve().parents[1]
+    for relative_path in (
+        "scripts/windows/CtipDeployment.Common.psm1",
+        "scripts/windows/deploy_windows_release.ps1",
+    ):
+        assert (repository / relative_path).read_bytes().startswith(b"\xef\xbb\xbf")
+
+
 def test_legacy_update_scripts_are_blocked() -> None:
     """Historyczne aktualizatory nie mogą ominąć kanonicznego wdrożenia."""
     repository = Path(__file__).resolve().parents[1]
