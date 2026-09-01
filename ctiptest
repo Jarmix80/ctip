@@ -63,6 +63,7 @@ verify_test_database() {
         --network "${network}" \
         --env-file "${ENV_FILE}" \
         -e CTIP_ENV_FILE=/app/.env.test \
+        -e PYTHONPATH=/app \
         -e CTIP_RUNTIME_PROFILE=test \
         -e PGHOST=postgres \
         -e PGDATABASE=ctip_test \
@@ -124,6 +125,7 @@ reconcile_test_database() {
         --network "${network}" \
         --env-file "${ENV_FILE}" \
         -e CTIP_ENV_FILE=/app/.env.test \
+        -e PYTHONPATH=/app \
         -e CTIP_RUNTIME_PROFILE=test \
         -e PGHOST=postgres \
         -e PGDATABASE=ctip_test \
