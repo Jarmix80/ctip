@@ -64,6 +64,21 @@ def dpd_event_group(business_code: str | None) -> str:
     return str(_catalog().get("groups", {}).get(str(business_code or ""), "")).strip()
 
 
+def is_dpd_pickup_confirmation(
+    business_code: str | None,
+    description: str | None,
+) -> bool:
+    """Rozpoznaje zdarzenie potwierdzające fizyczne przejęcie paczki przez DPD."""
+    group = dpd_event_group(business_code)
+    if group in {"Nadanie", "Przyjęta do Oddziału"}:
+        return True
+    normalized = unicodedata.normalize("NFKD", (description or "").casefold()).replace("ł", "l")
+    normalized = "".join(
+        character for character in normalized if not unicodedata.combining(character)
+    )
+    return "odebrana przez kuriera" in normalized
+
+
 def _description_category(description: str) -> TrackingCategory:
     normalized = unicodedata.normalize("NFKD", description.casefold()).replace("ł", "l")
     normalized = "".join(
@@ -335,7 +350,7 @@ async def persist_dpd_info_events(
     *,
     events: tuple[DpdInfoEvent, ...],
     channel: str,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Zapisuje partię zdarzeń bez duplikatów i przelicza stan listów."""
     inserted = 0
     cancelled = 0
@@ -435,7 +450,23 @@ async def persist_dpd_info_events(
     await session.flush()
     for parcel_id in affected_parcels:
         await _recompute_parcel(session, parcel_id)
-    return {"inserted": inserted, "cancelled": cancelled}
+    return {
+        "inserted": inserted,
+        "cancelled": cancelled,
+        "affected_parcel_ids": sorted(affected_parcels),
+    }
+
+
+async def _reconcile_firebird_milestones() -> dict[str, int]:
+    """Ponawia niezależne zapisy kamieni milowych po trwałym zapisie zdarzeń DPD."""
+    if not settings.shipping_dpd_firebird_milestones_enabled:
+        return {"eligible": 0, "written": 0, "failed": 0, "conflicts": 0}
+    from app.services.shipping_milestones import reconcile_shipping_milestones
+
+    async with AsyncSessionLocal() as session:
+        result = await reconcile_shipping_milestones(session)
+        await session.commit()
+        return result
 
 
 @asynccontextmanager
@@ -535,6 +566,7 @@ async def synchronize_dpd_infoservices(
                 if not acknowledgement_confirmed:
                     raise RuntimeError("DPD nie potwierdziło odebrania zapisanej partii zdarzeń.")
             reached_limit = batches >= max_batches
+            milestone_result = await _reconcile_firebird_milestones()
             status = "partial" if reached_limit else "success"
             error_text = (
                 "Osiągnięto limit partii jednego cyklu; backlog zostanie pobrany później."
@@ -561,6 +593,7 @@ async def synchronize_dpd_infoservices(
                 "cancelled_count": cancelled,
                 "batch_count": batches,
                 "acknowledgement_confirmed": acknowledgement_confirmed,
+                "firebird_milestones": milestone_result,
                 "message": error_text or "Synchronizacja InfoServices zakończona poprawnie.",
             }
         except Exception as exc:
@@ -608,6 +641,7 @@ async def backfill_dpd_waybills(
                     await session.commit()
                 inserted += result["inserted"]
                 cancelled += result["cancelled"]
+            milestone_result = await _reconcile_firebird_milestones()
             await _update_sync_run(
                 run_id,
                 status="success",
@@ -625,6 +659,7 @@ async def backfill_dpd_waybills(
                 "fetched_count": fetched,
                 "inserted_count": inserted,
                 "cancelled_count": cancelled,
+                "firebird_milestones": milestone_result,
             }
         except Exception as exc:
             await _update_sync_run(
@@ -758,6 +793,7 @@ __all__ = [
     "backfill_dpd_waybills",
     "classify_dpd_event",
     "dpd_event_group",
+    "is_dpd_pickup_confirmation",
     "latest_dpd_info_sync_status",
     "persist_dpd_info_events",
     "start_dpd_infoservices_scheduler",

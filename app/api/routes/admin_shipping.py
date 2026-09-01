@@ -31,6 +31,7 @@ from app.schemas.shipping import (
     ShippingConsolidatedCreateRequest,
     ShippingCreateRequest,
     ShippingDayCloseRequest,
+    ShippingGeocoderRequest,
     ShippingManualTrackingRequest,
     ShippingOrderCloseRequest,
     ShippingReviewRequest,
@@ -88,6 +89,11 @@ from app.services.shipping_firebird import (
     load_shipping_queue,
     shipping_order_state_payload,
     validate_shipping_dictionary,
+)
+from app.services.shipping_geocoder import (
+    ShippingGeocoderClient,
+    ShippingGeocoderConfigurationError,
+    ShippingGeocoderTransportError,
 )
 from app.services.shipping_tracking import (
     get_shipping_tracking_detail,
@@ -322,6 +328,9 @@ async def shipping_config(
     dpd_info_status = DpdInfoServicesClient().configuration_status()
     dpd_info_status["last_sync"] = await latest_dpd_info_sync_status(session)
     dpd_info_status["counts"] = await tracking_counts(session)
+    dpd_info_status["firebird_milestones_enabled"] = (
+        settings.shipping_dpd_firebird_milestones_enabled
+    )
     return {
         "shipping": {
             "enabled": settings.shipping_enabled,
@@ -330,6 +339,7 @@ async def shipping_config(
         },
         "dpd": DpdShippingClient().configuration_status(),
         "dpd_info": dpd_info_status,
+        "geocoder": ShippingGeocoderClient().configuration_status(),
         "firebird": {
             "write_ready": firebird_write_ready,
             "write_block_reason": None if firebird_write_ready else firebird_write_reason,
@@ -347,6 +357,40 @@ async def shipping_config(
             "daily_limit": settings.shipping_compatibility_web_daily_limit,
         },
     }
+
+
+@router.post("/geocoder/match", summary="Dopasuj adres dostawy w Adresy.app")
+async def shipping_geocoder_match(
+    payload: ShippingGeocoderRequest,
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Dopasowuje wyłącznie ulicę, kod i miasto bez wysyłania danych kontaktowych."""
+    admin_session, _ = admin_context
+    user = await _require_shipping_access(admin_context, session)
+    try:
+        result = await ShippingGeocoderClient().match(
+            street=payload.street,
+            postal_code=payload.postal_code,
+            city=payload.city,
+        )
+    except ShippingGeocoderConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ShippingGeocoderTransportError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await record_audit(
+        session,
+        user_id=user.id,
+        action="shipping_geocoder_match",
+        client_ip=admin_session.client_ip,
+        payload={
+            "matched": bool(result["matched"]),
+            "candidate_count": len(result["candidates"]),
+            "provider": "Adresy.app",
+        },
+    )
+    await session.commit()
+    return result
 
 
 @router.get("/dpd/status", summary="Stan połączenia DPD Services REST")

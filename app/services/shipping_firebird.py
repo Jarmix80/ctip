@@ -6,6 +6,7 @@ import re
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.services.firebird_runtime import firebird_connection, firebird_writes_enabled
 
@@ -15,6 +16,7 @@ SHIPPING_TECHNICIAN_NAME = "Wysyłka Wysyłka"
 QUEUE_STATUSES = ("O", "ZR")
 INVOICE_DOCUMENT_KIND = "KPSK"
 OVERDUE_INVOICE_BATCH_SIZE = 200
+WARSAW = ZoneInfo("Europe/Warsaw")
 ORDER_STATUS_LABELS = {
     "O": "otwarte",
     "ZR": "przygotowane do realizacji",
@@ -66,6 +68,53 @@ def _money(value: Decimal) -> Decimal:
 def _shipping_execution_note(*, shipped_on: date, tracking_number: str) -> str:
     """Buduje wpis wykonania wymagany dla wysyłki zlecenia MS."""
     return f"Wysłana paczka {shipped_on.strftime('%d.%m.%Y')} {tracking_number.strip()}"
+
+
+def _shipping_label_note(
+    *,
+    generated_on: date,
+    tracking_number: str,
+    tracking_source: str,
+) -> str:
+    """Buduje wpis wykonania opisujący pochodzenie numeru przesyłki."""
+    source_labels = {
+        "manual": "numer wpisany ręcznie",
+        "mock": "numer testowy CTIP",
+        "existing": "dołączono do istniejącej etykiety DPD",
+    }
+    source = source_labels.get(tracking_source, "numer nadany przez API DPD")
+    return (
+        f"Utworzono przesyłkę DPD {generated_on.strftime('%d.%m.%Y')}, "
+        f"nr: {tracking_number.strip()} ({source})."
+    )
+
+
+def _shipping_local_date(value: datetime | date | None) -> date:
+    """Zwraca datę operacyjną w polskiej strefie czasowej."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.date()
+        return value.astimezone(WARSAW).date()
+    if isinstance(value, date):
+        return value
+    return datetime.now(WARSAW).date()
+
+
+def _shipping_address_text(address: dict[str, Any] | None) -> str | None:
+    """Składa odbiorcę i adres pocztowy do pola `ADRES_PRZES` MS."""
+    if not address:
+        return None
+    company = _text(address.get("company_name"))
+    contact = _text(address.get("contact_name"))
+    if contact and company and contact.casefold() == company.casefold():
+        contact = None
+    postal_city = " ".join(
+        value for value in (_text(address.get("postal_code")), _text(address.get("city"))) if value
+    )
+    result = " | ".join(
+        value for value in (company, contact, _text(address.get("street")), postal_city) if value
+    )
+    return result[:500] or None
 
 
 def _append_execution_note(existing: Any, note: str) -> str:
@@ -926,8 +975,11 @@ def write_shipment_to_order(
     order_table_id: int,
     tracking_number: str,
     items: list[dict[str, Any]],
+    shipping_address: dict[str, Any] | None = None,
+    tracking_source: str = "dpd",
+    generated_at: datetime | date | None = None,
 ) -> dict[str, Any]:
-    """Dodaje pozycje, numer przesyłki i oznacza zlecenie jako przygotowane (`ZR`)."""
+    """Dodaje pozycje, dane etykiety i oznacza zlecenie jako przygotowane (`ZR`)."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
@@ -938,7 +990,7 @@ def write_shipment_to_order(
         cursor.execute(
             """
             SELECT ID_KLIENT, ID_MASZYNA, ID_ZLECENIE, ROK, STAN, PRZESYLKA,
-                   TECHNIK, TECHNIK2
+                   TECHNIK, TECHNIK2, WYKONANIE, ADRES_PRZES
             FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
             WITH LOCK
             """,
@@ -956,6 +1008,8 @@ def write_shipment_to_order(
             existing_tracking,
             technician,
             secondary_technician,
+            existing_execution,
+            existing_shipping_address,
         ) = order
         order_state = shipping_order_state_payload(
             {
@@ -984,6 +1038,22 @@ def write_shipment_to_order(
             raise ShippingOrderStateConflict(
                 "Zlecenie ma już inny numer przesyłki; wymagane jest uzgodnienie ręczne."
             )
+
+        address_text = _shipping_address_text(shipping_address)
+        if (
+            address_text
+            and _text(existing_shipping_address)
+            and _text(existing_shipping_address) != address_text
+        ):
+            raise ShippingOrderStateConflict(
+                "Zlecenie ma już inny adres przesyłki; wymagane jest uzgodnienie ręczne."
+            )
+        label_note = _shipping_label_note(
+            generated_on=_shipping_local_date(generated_at),
+            tracking_number=tracking_number,
+            tracking_source=tracking_source,
+        )
+        execution = _append_execution_note(existing_execution, label_note)
 
         for item in items:
             warehouse_item_id = int(item["firebird_warehouse_item_id"])
@@ -1079,17 +1149,117 @@ def write_shipment_to_order(
         cursor.execute(
             """
             UPDATE ZLECENIE
-            SET PRZESYLKA = ?, STAN = 'ZR'
+            SET PRZESYLKA = ?, WYKONANIE = ?,
+                ADRES_PRZES = COALESCE(?, ADRES_PRZES), STAN = 'ZR'
             WHERE ID_ZLECENIE_TABLE = ?
             """,
-            (tracking_number, int(order_table_id)),
+            (tracking_number, execution, address_text, int(order_table_id)),
         )
         connection.commit()
         return {
             "status": "written",
             "previous_order_status": _text(order_status),
             "created_position_ids": created_position_ids,
+            "label_note": label_note,
+            "shipping_address": address_text,
         }
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+
+def write_shipping_milestones_to_order(
+    *,
+    order_table_id: int,
+    tracking_number: str,
+    pickup_date: date | None = None,
+    pickup_note: str | None = None,
+    delivery_date: date | None = None,
+    description_text: str | None = None,
+    expected_description_text: str | None = None,
+) -> dict[str, Any]:
+    """Zapisuje potwierdzone przez DPD daty i ostatni istotny opis przesyłki."""
+    enabled, reason = firebird_writes_enabled()
+    if not enabled:
+        raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
+    connection = firebird_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT PRZESYLKA, DATA_PRZES, WYKONANIE, DATA_PRZES_WE, PRZESYLKA_WE
+            FROM ZLECENIE
+            WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
+            WITH LOCK
+            """,
+            (int(order_table_id), DELIVERY_TYPE_ID),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("Nie znaleziono zlecenia do aktualizacji statusu przesyłki.")
+        existing_tracking, existing_pickup, existing_execution, existing_delivery, existing_text = (
+            row
+        )
+        if _text(existing_tracking) != _text(tracking_number):
+            raise ShippingOrderStateConflict(
+                "Numer przesyłki w MS różni się od numeru zdarzenia DPD."
+            )
+
+        assignments: list[str] = []
+        parameters: list[Any] = []
+        changed_fields: list[str] = []
+        if pickup_date is not None:
+            current_pickup = _date_value(existing_pickup)
+            if current_pickup not in {None, pickup_date}:
+                raise ShippingOrderStateConflict(
+                    "Data nadania w MS została wcześniej ustawiona na inną wartość."
+                )
+            if current_pickup != pickup_date:
+                assignments.append("DATA_PRZES = ?")
+                parameters.append(pickup_date)
+                changed_fields.append("DATA_PRZES")
+            if pickup_note:
+                execution = _append_execution_note(existing_execution, pickup_note)
+                if execution != (_text(existing_execution) or ""):
+                    assignments.append("WYKONANIE = ?")
+                    parameters.append(execution)
+                    changed_fields.append("WYKONANIE")
+        if delivery_date is not None:
+            current_delivery = _date_value(existing_delivery)
+            if current_delivery not in {None, delivery_date}:
+                raise ShippingOrderStateConflict(
+                    "Data odebrania przesyłki w MS została wcześniej ustawiona na inną wartość."
+                )
+            if current_delivery != delivery_date:
+                assignments.append("DATA_PRZES_WE = ?")
+                parameters.append(delivery_date)
+                changed_fields.append("DATA_PRZES_WE")
+        if description_text is not None:
+            normalized_description = description_text.strip()[:250]
+            current_text = _text(existing_text)
+            expected_text = _text(expected_description_text)
+            allowed_current = {None, normalized_description}
+            if expected_text:
+                allowed_current.add(expected_text)
+            if current_text not in allowed_current:
+                raise ShippingOrderStateConflict(
+                    "Opis przesyłki odebranej w MS został zmieniony ręcznie."
+                )
+            if current_text != normalized_description:
+                assignments.append("PRZESYLKA_WE = ?")
+                parameters.append(normalized_description)
+                changed_fields.append("PRZESYLKA_WE")
+        if assignments:
+            parameters.append(int(order_table_id))
+            cursor.execute(
+                f"UPDATE ZLECENIE SET {', '.join(assignments)} WHERE ID_ZLECENIE_TABLE = ?",
+                tuple(parameters),
+            )
+        connection.commit()
+        return {"status": "written", "changed_fields": changed_fields}
     except Exception:
         connection.rollback()
         raise
@@ -1341,8 +1511,8 @@ def finalize_shipping_order(
             """
             SELECT ID_FIRMA, ID_ODDZIAL, ID_KLIENT, ID_MASZYNA, ID_ZLECENIE, ROK,
                    NAZWA, ADRES, KOD, POCZTA, NIP, RODZAJ_US,
-                   ID_FAKTURA, ID_WZ, ID_RW, FAKTURA, WYKONANIE,
-                   PRZESYLKA, DATA_PRZES, MARKA, MODEL, STAN, TECHNIK, TECHNIK2
+                   ID_FAKTURA, ID_WZ, ID_RW, FAKTURA,
+                   PRZESYLKA, MARKA, MODEL, STAN, TECHNIK, TECHNIK2
             FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
             WITH LOCK
             """,
@@ -1368,9 +1538,7 @@ def finalize_shipping_order(
             existing_wz_id,
             existing_rw_id,
             existing_document_text,
-            existing_execution,
             existing_tracking,
-            existing_shipped_on,
             device_brand,
             device_model,
             order_status,
@@ -1410,11 +1578,6 @@ def finalize_shipping_order(
         normalized_tracking = requested_tracking or order_state["tracking_number"]
         if not normalized_tracking:
             raise RuntimeError("Brak numeru przesyłki do zamknięcia zlecenia.")
-        execution_note = _shipping_execution_note(
-            shipped_on=document_date,
-            tracking_number=normalized_tracking,
-        )
-        execution = _append_execution_note(existing_execution, execution_note)
 
         cursor.execute(
             """
@@ -1490,15 +1653,13 @@ def finalize_shipping_order(
                 """
                 UPDATE ZLECENIE
                 SET ID_FAKTURA = ?, ID_WZ = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, DATA_PRZES = ?, WYKONANIE = ?, STAN = 'Z'
+                    PRZESYLKA = ?, STAN = 'Z'
                 WHERE ID_ZLECENIE_TABLE = ?
                 """,
                 (
                     int(invoice_id),
                     _text(invoice_number),
                     normalized_tracking,
-                    existing_shipped_on or document_date,
-                    execution,
                     int(order_table_id),
                 ),
             )
@@ -1520,15 +1681,13 @@ def finalize_shipping_order(
                 """
                 UPDATE ZLECENIE
                 SET ID_RW = ?, ID_WZ = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, DATA_PRZES = ?, WYKONANIE = ?, STAN = 'Z'
+                    PRZESYLKA = ?, STAN = 'Z'
                 WHERE ID_ZLECENIE_TABLE = ?
                 """,
                 (
                     int(rw_id),
                     _text(rw_number) or _text(existing_document_text),
                     normalized_tracking,
-                    existing_shipped_on or document_date,
-                    execution,
                     int(order_table_id),
                 ),
             )
@@ -1550,15 +1709,13 @@ def finalize_shipping_order(
                 """
                 UPDATE ZLECENIE
                 SET ID_WZ = ?, ID_FAKTURA = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, DATA_PRZES = ?, WYKONANIE = ?, STAN = 'Z'
+                    PRZESYLKA = ?, STAN = 'Z'
                 WHERE ID_ZLECENIE_TABLE = ?
                 """,
                 (
                     int(wz_id),
                     _text(wz_number),
                     normalized_tracking,
-                    existing_shipped_on or document_date,
-                    execution,
                     int(order_table_id),
                 ),
             )
@@ -2055,15 +2212,13 @@ def finalize_shipping_order(
                 """
                 UPDATE ZLECENIE
                 SET ID_RW = ?, ID_WZ = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, DATA_PRZES = ?, WYKONANIE = ?, STAN = 'Z'
+                    PRZESYLKA = ?, STAN = 'Z'
                 WHERE ID_ZLECENIE_TABLE = ?
                 """,
                 (
                     order_values[0],
                     order_values[1],
                     normalized_tracking,
-                    existing_shipped_on or document_date,
-                    execution,
                     int(order_table_id),
                 ),
             )
@@ -2072,15 +2227,13 @@ def finalize_shipping_order(
                 """
                 UPDATE ZLECENIE
                 SET ID_WZ = ?, ID_RW = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, DATA_PRZES = ?, WYKONANIE = ?, STAN = 'Z'
+                    PRZESYLKA = ?, STAN = 'Z'
                 WHERE ID_ZLECENIE_TABLE = ?
                 """,
                 (
                     wz_id,
                     wz_number,
                     normalized_tracking,
-                    existing_shipped_on or document_date,
-                    execution,
                     int(order_table_id),
                 ),
             )
@@ -2089,15 +2242,13 @@ def finalize_shipping_order(
                 """
                 UPDATE ZLECENIE
                 SET ID_FAKTURA = ?, ID_WZ = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, DATA_PRZES = ?, WYKONANIE = ?, STAN = 'Z'
+                    PRZESYLKA = ?, STAN = 'Z'
                 WHERE ID_ZLECENIE_TABLE = ?
                 """,
                 (
                     invoice_id,
                     invoice_number,
                     normalized_tracking,
-                    existing_shipped_on or document_date,
-                    execution,
                     int(order_table_id),
                 ),
             )
@@ -2111,8 +2262,6 @@ def finalize_shipping_order(
             "wz_number": wz_number,
             "invoice_id": invoice_id,
             "invoice_number": invoice_number,
-            "execution_note": execution_note,
-            "shipped_on": (existing_shipped_on or document_date).isoformat(),
         }
     except Exception:
         connection.rollback()
@@ -2139,4 +2288,5 @@ __all__ = [
     "shipping_order_state_payload",
     "validate_shipping_dictionary",
     "write_shipment_to_order",
+    "write_shipping_milestones_to_order",
 ]

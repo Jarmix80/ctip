@@ -200,6 +200,11 @@
 .shipping-v2-body .shipping-address-candidate small { color: #8292a7; }
 .shipping-v2-body .shipping-address-candidate .warning { color: #fda29b; }
 .shipping-v2-body .shipping-address-candidate .warning.partial { color: #ffd27a; }
+.shipping-v2-body .shipping-geocoder-results { border-color: #3e6588; color: #dce6f2; background: #152943; }
+.shipping-v2-body .shipping-geocoder-summary { color: #8cc8ff; }
+.shipping-v2-body .shipping-geocoder-summary small,
+.shipping-v2-body .shipping-geocoder-candidate small { color: #9dafc2; }
+.shipping-v2-body .shipping-geocoder-candidate { border-color: #334960; background: #111e30; }
 
 .shipping-v2-body .shipping-form-grid { padding: 0; }
 .shipping-v2-body .shipping-form-grid label { color: #9dafc2; font-size: 13px; }
@@ -282,6 +287,7 @@
 .shipping-v2-audit-status > strong.status-closed { color: #a9bacb; background: #26384e; }
 .shipping-v2-audit-status > strong.status-manual_billing { color: #ffd27a; background: #30291c; }
 .shipping-v2-audit-status #shipping-v2-audit-dpd-status { display: inline-flex; width: fit-content; }
+.shipping-v2-audit-status #shipping-v2-audit-tracking.milestone-error { color: #fda29b; font-weight: 750; }
 .shipping-v2-progress { height: 4px; margin: 10px 0 15px; overflow: hidden; border-radius: 99px; background: #26384e; }
 .shipping-v2-progress i { display: block; width: 0; height: 100%; background: #59d9a6; transition: width .25s ease; }
 .shipping-v2-audit ol { display: grid; gap: 11px; margin: 0; padding: 0; list-style: none; }

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from sqlalchemy import func, select
@@ -19,6 +19,7 @@ from app.models import (
     AdminUser,
     Base,
     ShippingCase,
+    ShippingEvent,
     ShippingShipment,
     ShippingTrackingEvent,
     ShippingTrackingParcel,
@@ -33,7 +34,12 @@ from app.services.dpd_infoservices import (
     DpdInfoServicesClient,
     DpdInfoTransportError,
 )
-from app.services.dpd_infoservices_sync import classify_dpd_event, persist_dpd_info_events
+from app.services.dpd_infoservices_sync import (
+    classify_dpd_event,
+    is_dpd_pickup_confirmation,
+    persist_dpd_info_events,
+)
+from app.services.shipping_milestones import reconcile_shipping_milestones
 from app.services.shipping_tracking import (
     get_shipping_tracking_detail,
     list_shipping_tracking,
@@ -127,6 +133,10 @@ class DpdInfoServicesClientTests(unittest.TestCase):
         self.assertTrue(failed_pickup["requires_attention"])
         self.assertEqual(sorting["category"], "in_transit")
 
+    def test_gotowa_do_nadania_nie_jest_potwierdzeniem_odbioru(self) -> None:
+        self.assertFalse(is_dpd_pickup_confirmation("030103", "Gotowa do nadania"))
+        self.assertTrue(is_dpd_pickup_confirmation("040101", "Przesyłka odebrana przez Kuriera"))
+
 
 class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
@@ -143,6 +153,7 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
                     AdminUser.__table__,
                     ShippingCase.__table__,
                     ShippingShipment.__table__,
+                    ShippingEvent.__table__,
                     ShippingTrackingParcel.__table__,
                     ShippingTrackingEvent.__table__,
                     ShippingTrackingSyncRun.__table__,
@@ -314,6 +325,119 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(by_operation["INSERT"]["is_cancelled"])
         self.assertFalse(by_operation["CANCEL"]["is_cancelled"])
         self.assertEqual(detail["parcel"]["category"], "other")
+
+    async def test_kamienie_milowe_sa_zapisywane_raz_i_anulowanie_wymaga_uzgodnienia(
+        self,
+    ) -> None:
+        now = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
+        waybill = "0000111122223A"
+        async with self.session_factory() as session:
+            case = ShippingCase(
+                firebird_order_table_id=83416,
+                firebird_order_id=18416,
+                firebird_order_year=2026,
+                firebird_client_id=15,
+                order_kind="Umowa",
+                invoice_required=False,
+                status="closed",
+                address_snapshot={},
+                source_snapshot={},
+                weight_kg=Decimal("2.000"),
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(case)
+            await session.flush()
+            shipment = ShippingShipment(
+                shipping_case_id=case.id,
+                idempotency_key="kamienie-milowe-18416",
+                provider="dpd",
+                provider_mode="production",
+                provider_shipment_id="sesja-1",
+                tracking_number=waybill,
+                status="closed",
+                provider_request={},
+                firebird_status="written",
+                firebird_label_metadata_synced_at=now,
+                created_at=now,
+                updated_at=now,
+                closed_at=now,
+            )
+            pickup = ShippingTrackingEvent(
+                source_event_key="pickup-1",
+                waybill=waybill,
+                business_code="040101",
+                operation_type="INSERT",
+                description="Przesyłka odebrana przez Kuriera",
+                event_time=datetime(2026, 9, 2, 9, 15, tzinfo=UTC),
+                event_data=[],
+                raw_payload={},
+                received_at=now,
+            )
+            delivery = ShippingTrackingEvent(
+                source_event_key="delivery-1",
+                waybill=waybill,
+                business_code="190101",
+                operation_type="INSERT",
+                description="Przesyłka doręczona odbiorcy",
+                event_time=datetime(2026, 9, 3, 12, 30, tzinfo=UTC),
+                event_data=[],
+                raw_payload={},
+                received_at=now,
+            )
+            session.add_all([shipment, pickup, delivery])
+            await session.commit()
+
+            writer = MagicMock(
+                return_value={
+                    "status": "written",
+                    "changed_fields": [
+                        "DATA_PRZES",
+                        "WYKONANIE",
+                        "DATA_PRZES_WE",
+                        "PRZESYLKA_WE",
+                    ],
+                }
+            )
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", True),
+                patch(
+                    "app.services.shipping_milestones.write_shipping_milestones_to_order",
+                    writer,
+                ),
+            ):
+                first = await reconcile_shipping_milestones(session)
+                await session.commit()
+                second = await reconcile_shipping_milestones(session)
+                await session.commit()
+
+            self.assertEqual(first["written"], 1)
+            self.assertEqual(second["written"], 0)
+            writer.assert_called_once()
+            arguments = writer.call_args.kwargs
+            self.assertEqual(arguments["order_table_id"], 83416)
+            self.assertEqual(arguments["pickup_date"].isoformat(), "2026-09-02")
+            self.assertEqual(arguments["delivery_date"].isoformat(), "2026-09-03")
+            self.assertIn("Doręczona", arguments["description_text"])
+            self.assertEqual(shipment.firebird_pickup_event_key, "pickup-1")
+            self.assertEqual(shipment.firebird_delivery_event_key, "delivery-1")
+            self.assertEqual(shipment.firebird_description_event_key, "delivery-1")
+
+            pickup.is_cancelled = True
+            await session.commit()
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", True),
+                patch(
+                    "app.services.shipping_milestones.write_shipping_milestones_to_order",
+                    MagicMock(),
+                ) as cancelled_writer,
+            ):
+                conflict = await reconcile_shipping_milestones(session)
+                await session.commit()
+
+            self.assertEqual(conflict["conflicts"], 1)
+            self.assertIn("anulowane", shipment.firebird_milestone_error)
+            cancelled_writer.assert_not_called()
 
 
 class DpdInfoSynchronizationTests(unittest.IsolatedAsyncioTestCase):

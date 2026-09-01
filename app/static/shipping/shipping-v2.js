@@ -156,10 +156,17 @@
       statusValue.className = statusClass || "";
     }
     const trackingNumber = selected ? element("shipping-tracking-open")?.dataset.waybill?.trim() : "";
+    const milestoneError = selected
+      ? element("shipping-tracking-open")?.dataset.msMilestoneError?.trim()
+      : "";
+    const trackingText = trackingNumber
+      ? `Numer DPD: ${trackingNumber}${milestoneError ? ` • MS wymaga uzgodnienia: ${milestoneError}` : ""}`
+      : "Etykieta DPD nie została jeszcze utworzona.";
     setText(
       element("shipping-v2-audit-tracking"),
-      trackingNumber ? `Numer DPD: ${trackingNumber}` : "Etykieta DPD nie została jeszcze utworzona.",
+      trackingText,
     );
+    element("shipping-v2-audit-tracking")?.classList.toggle("milestone-error", Boolean(milestoneError));
     const sourceDpdStatus = document.querySelector("#shipping-queue .shipping-queue-item.active .shipping-dpd-state");
     const dpdStatus = element("shipping-v2-audit-dpd-status");
     setOptionalText(

@@ -181,6 +181,14 @@ class DatabaseSchemaTest(unittest.TestCase):
             "firebird_wz_number",
             "firebird_invoice_id",
             "firebird_invoice_number",
+            "firebird_label_metadata_synced_at",
+            "firebird_pickup_event_key",
+            "firebird_pickup_synced_at",
+            "firebird_delivery_event_key",
+            "firebird_delivery_synced_at",
+            "firebird_description_event_key",
+            "firebird_description_synced_at",
+            "firebird_milestone_error",
         }
         rows = self._fetchall(
             "SELECT column_name FROM information_schema.columns "
