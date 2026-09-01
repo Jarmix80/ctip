@@ -262,7 +262,8 @@ def materialize_remote_file_script(
         '$text=$text.TrimEnd("`n")+"`n";'
         "$utf8=New-Object Text.UTF8Encoding($false);[IO.File]::WriteAllText($dst,$text,$utf8);"
         "$sha=(Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant();"
-        "if($sha-ne $expected){throw 'SHA-256 mismatch'}"
+        "if($sha-ne $expected){throw 'SHA-256 mismatch'};"
+        "$bom=New-Object Text.UTF8Encoding($true);[IO.File]::WriteAllText($dst,$text,$bom)"
     )
 
 
