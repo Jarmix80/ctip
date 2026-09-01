@@ -63,7 +63,7 @@ function Get-AlembicRevisions {
 
 function Assert-AlembicRevision {
     param([string]$Expected, [string]$WorkingDirectory, [string]$Label)
-    $current = Get-AlembicRevisions -Arguments @("current") -WorkingDirectory $WorkingDirectory -Label $Label
+    $current = @(Get-AlembicRevisions -Arguments @("current") -WorkingDirectory $WorkingDirectory -Label $Label)
     if ($current.Count -ne 1 -or $current[0] -ne $Expected.ToLowerInvariant()) {
         throw "Nieoczekiwana rewizja Alembic: $($current -join ', '); oczekiwano $Expected."
     }
@@ -209,7 +209,7 @@ try {
 
     $pythonPath = Join-Path $InstallDir ".venv\Scripts\python.exe"
     Invoke-CtipNative -FilePath $pythonPath -ArgumentList @("-m", "compileall", "-q", (Join-Path $candidatePath "app"), (Join-Path $candidatePath "scripts")) -Label "Compileall kandydata" | Out-Null
-    $heads = Get-AlembicRevisions -Arguments @("heads") -WorkingDirectory $candidatePath -Label "Głowy Alembic kandydata"
+    $heads = @(Get-AlembicRevisions -Arguments @("heads") -WorkingDirectory $candidatePath -Label "Głowy Alembic kandydata")
     if ($heads.Count -ne 1 -or $heads[0] -ne $alembicAfter) {
         throw "Kandydat ma głowy Alembic $($heads -join ', '), oczekiwano $alembicAfter."
     }

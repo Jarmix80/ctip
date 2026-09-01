@@ -211,6 +211,8 @@ def test_powershell_contains_healthcheck_rollback() -> None:
     assert "Start-Service -Name $serviceName" in script
     assert '$rollbackServices = $services -join ","' in script
     assert "Start-Service $rollbackServices" in script
+    assert '$current = @(Get-AlembicRevisions -Arguments @("current")' in script
+    assert '$heads = @(Get-AlembicRevisions -Arguments @("heads")' in script
 
 
 def test_powershell_healthcheck_message_delimits_variable_before_colon() -> None:
