@@ -1965,5 +1965,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 -- alembic/versions/b5c7d9e1f302_add_device_counters_and_pz_withdrawal.py
 -- alembic/versions/c4d8e2f6a1b3_add_device_theme_to_admin_user.py
 -- alembic/versions/d6f1a8c3e740_merge_device_and_contract_heads.py
--- Kanoniczne scalenie gałęzi wysyłek i katalogu tożsamości:
+-- Kanoniczne scalenie gałęzi wysyłek oraz katalogu tożsamości i CRM:
 -- alembic/versions/f7b2d4e6a810_merge_shipping_and_bot_heads.py

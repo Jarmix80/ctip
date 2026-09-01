@@ -115,6 +115,27 @@ migrate_test_database() {
         "${image}" python -m alembic upgrade head
 }
 
+reconcile_test_database() {
+    local image="$1"
+    local backup_dir="$2"
+    local network
+    network="$(test_database_network)"
+    docker run --rm \
+        --network "${network}" \
+        --env-file "${ENV_FILE}" \
+        -e CTIP_ENV_FILE=/app/.env.test \
+        -e CTIP_RUNTIME_PROFILE=test \
+        -e PGHOST=postgres \
+        -e PGDATABASE=ctip_test \
+        -e SMS_TEST_MODE=true \
+        -e OUTBOUND_DELIVERY_MODE=capture \
+        -e BLOCK_CLIENT_COMMUNICATIONS=true \
+        -e FB_ALLOW_WRITES=false \
+        --mount "type=bind,src=${backup_dir},dst=/backup,readonly" \
+        "${image}" python scripts/reconcile_test_alembic_state.py \
+            --apply --backup-manifest /backup/SHA256SUMS
+}
+
 wait_for_url() {
     local url="$1"
     local label="$2"
@@ -239,6 +260,16 @@ case "${ACTION}" in
         verify_test_database "${image}"
         echo "Baza ctip_test jest na głowie grafu; backup: ${backup_dir}."
         ;;
+    server-reconcile)
+        run_preflight
+        image="$(server_image)"
+        validate_image "${image}"
+        validate_server_compose "${image}"
+        backup_dir="$(backup_test_data)"
+        reconcile_test_database "${image}" "${backup_dir}"
+        verify_test_database "${image}"
+        echo "Uzgodniono historię testowej bazy; backup: ${backup_dir}."
+        ;;
     server-cutover)
         run_preflight
         image="$(server_image)"
@@ -294,7 +325,7 @@ case "${ACTION}" in
         "${WORKDIR}/scripts/rollback_test_environment.sh" "${2:-}"
         ;;
     *)
-        echo "Użycie: ./ctiptest start|server-build|server-check|server-migrate|server-cutover|server-rollback [stan]|server-status|server-logs|stop|status|logs|reset-firebird|rollback [archiwum]" >&2
+        echo "Użycie: ./ctiptest start|server-build|server-check|server-migrate|server-reconcile|server-cutover|server-rollback [stan]|server-status|server-logs|stop|status|logs|reset-firebird|rollback [archiwum]" >&2
         exit 2
         ;;
 esac

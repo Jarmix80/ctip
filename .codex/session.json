@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-01T01:45:33+02:00",
+  "timestamp": "2026-09-01T02:06:12+02:00",
   "summary": [
     "Utworzono kanoniczną gałąź integracyjną z modułami Shipping, Delivery, Bot Identity, CRM i LAB oraz jednym końcem grafu Alembic f7b2d4e6a810.",
     "Przygotowano jeden niezmienny stos testowy ctip-test: główny panel na porcie 8000, bez portu 8002 i bez montowania kodu z aktywnego worktree.",
@@ -8,10 +8,12 @@
     "Dodano skanowanie sekretów w pre-commit i CI; aktywne wartości usunięto z bieżącego drzewa, bez przepisywania historii Git.",
     "Repozytorium GitHub jest prywatne i miało jednego użytkownika, co ogranicza ekspozycję; nadal zalecana jest kontrolowana rotacja historycznie ujawnionych danych.",
     "Domyślny pytest pomija test process_ricoh_images zależny od niewersjonowanego katalogu inbox; test pozostaje dostępny do jawnego uruchomienia.",
-    "Pre-commit przeszedł, testy krytyczne zakończyły się 216 passed, a pełny zestaw bez znanego test_admin_backend.py zakończył się 573 passed."
+    "Przywrócono brakujący commit integracji formularzy WWW z CRM, w tym token serwerowy, cztery kolejki, kategorie spraw i ustawienia powiadomień użytkowników.",
+    "Dodano kontrolowane uzgodnienie historycznej bazy ctip_test: pełna walidacja modeli i danych oraz zmiana wyłącznie alembic_version po sprawdzonym backupie.",
+    "Pre-commit przeszedł, testy krytyczne zakończyły się 112 passed, a pełny zestaw bez znanego test_admin_backend.py zakończył się 581 passed."
   ],
   "follow_up": [
-    "Zbudować obraz testowy z końcowego commita, wykonać backup i migrację wyłącznie ctip_test, a następnie przełączyć serwer testowy na projekt ctip-test.",
+    "Zbudować obraz testowy z końcowego commita, wykonać kontrolę i uzgodnienie wyłącznie ctip_test, a następnie przełączyć serwer testowy na projekt ctip-test.",
     "Nie usuwać starych kontenerów, wolumenów, baz ani kopii bez osobnej zgody właściciela.",
     "Nie wykonywać wdrożenia produkcyjnego ani push bez osobnego, jawnego polecenia.",
     "Po zakończeniu przedstawić niewykonywany plan optymalizacji szybkości i możliwości rozwoju całego systemu."
@@ -24,8 +26,8 @@
     "verification": [
       "pre-commit run --all-files: passed",
       "alembic heads: f7b2d4e6a810",
-      "testy krytyczne: 216 passed",
-      "pełny pytest bez tests/test_admin_backend.py: 573 passed",
+      "testy krytyczne po integracji CRM: 112 passed",
+      "pełny pytest bez tests/test_admin_backend.py: 581 passed",
       "tests/test_admin_backend.py: znana niestabilność, timeout 180 sekund",
       "import app.main, app.bot_identity_api_app i app.bot_identity_worker: passed",
       "skan aktywnych sekretów bieżącego drzewa: passed"

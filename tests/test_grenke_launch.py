@@ -2,8 +2,26 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from app.models import FormRequest, FormWorkflowCase, FormWorkflowDevice
 from app.services import grenke_launch
+
+
+@pytest.fixture(autouse=True)
+def _stable_grenke_urls(monkeypatch):
+    """Uniezależnia kontrakt URL od bezpiecznych nadpisań lokalnego `.env.test`."""
+
+    monkeypatch.setattr(
+        grenke_launch.settings,
+        "grenke_app_base_url",
+        "https://newonline.leasingoptymalny.pl",
+    )
+    monkeypatch.setattr(
+        grenke_launch.settings,
+        "grenke_api_base_url",
+        "https://newonline.leasingoptymalny.pl/API",
+    )
 
 
 def test_build_legacy_query_koduje_tylko_niezbedne_separatory():

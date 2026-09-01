@@ -95,5 +95,8 @@ def test_server_commands_do_not_depend_on_legacy_network_name() -> None:
     assert "test_database_network" in script
     assert "server-migrate)" in script
     assert "python -m alembic upgrade head" in script
+    assert "server-reconcile)" in script
+    assert "scripts/reconcile_test_alembic_state.py" in script
+    assert "--backup-manifest /backup/SHA256SUMS" in script
     assert "env -i" in script
     assert 'CTIP_ENV_FILE="${ENV_FILE}"' in script

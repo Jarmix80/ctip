@@ -32,6 +32,21 @@ export ENV_FILE=/home/marcin/projects/ctip/.env.test
 
 `server-build` buduje obraz `ctip/test-runtime:<pełny_sha>`. `server-check` sprawdza etykietę obrazu, izolację, montowania, porty i zgodność migracji. `server-migrate` najpierw wykonuje backup PostgreSQL i Firebird, a następnie aktualizuje wyłącznie `ctip_test`. `server-cutover` ponownie wykonuje backup, zatrzymuje stare testowe kontenery bez ich usuwania i uruchamia projekt `ctip-test`.
 
+Jeżeli historyczna baza ma znacznik `e4a8c1d9f2b7`, ale fizycznie zawiera już
+również tabele i kolumny gałęzi dostaw, Bot Identity oraz CRM, zwykła migracja
+zatrzyma się na próbie ponownego utworzenia istniejących obiektów. W takim
+jednorazowym przypadku zamiast `server-migrate` należy wykonać:
+
+```bash
+./ctiptest server-reconcile
+```
+
+Polecenie tworzy i sprawdza sumy backupu PostgreSQL oraz Firebird, porównuje
+wszystkie tabele i kolumny z 59 modelami ORM, sprawdza krytyczne ograniczenia i
+dane CRM/Bot Identity, a następnie zmienia wyłącznie wpis `alembic_version`.
+Nie wykonuje DDL ani migracji danych biznesowych. Każda niezgodność przerywa
+operację bez zapisu; po uzgodnieniu `server-check` musi zakończyć się sukcesem.
+
 Preflight jest uruchamiany w wyczyszczonym środowisku procesu. Zmienne sesji administratora, narzędzi CI lub Codex nie mogą nadpisać `.env.test` i przypadkowo aktywować produkcyjnych integracji.
 
 ## Rollback

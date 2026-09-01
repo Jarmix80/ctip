@@ -22,7 +22,7 @@ class ShippingReleaseTests(unittest.TestCase):
         self.assertIsNotNone(merge_revision)
         self.assertEqual(
             set(merge_revision.down_revision),
-            {"a6f3c8d2e910", "e4a8c1d9f2b7"},
+            {"f3a7c9e2d610", "e4a8c1d9f2b7"},
         )
 
         revision = scripts.get_revision("e4a8c1d9f2b7")
