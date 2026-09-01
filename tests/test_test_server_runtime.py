@@ -42,16 +42,19 @@ def _config() -> dict:
     ]
     services["web"]["environment"].update(
         {
+            "ADDRESY_APP_API_URL": "https://api.adresy.app/api/v1",
             "DPD_ENABLED": "true",
             "DPD_MODE": "mock",
             "DPD_INFO_ENABLED": "false",
             "SHIPPING_ENABLED": "true",
             "SHIPPING_CATALOG_MUTATIONS_ENABLED": "true",
             "SHIPPING_FULFILLMENT_ENABLED": "true",
+            "SHIPPING_GEOCODER_ENABLED": "true",
             "SHIPPING_COMPATIBILITY_WEB_ENABLED": "false",
             "SHIPPING_TEST_FIREBIRD_WRITES": "false",
         }
     )
+    services["web"]["extra_hosts"] = {"api.adresy.app": "172.28.252.21"}
     for name in ("bot-identity-api", "bot-identity-sync"):
         services[name]["environment"].update(
             {
@@ -68,6 +71,18 @@ def _config() -> dict:
     }
     for name in ("web", "collector", "sms-sender"):
         services[name]["depends_on"] = {"log-init": {"condition": "service_completed_successfully"}}
+    services["web"]["depends_on"]["addresy-egress"] = {"condition": "service_started"}
+    services["addresy-egress"] = {
+        "image": "haproxy:3.0-alpine",
+        "networks": {"ctip_test_internal": {}, "ctip_test_edge": {}},
+        "volumes": [
+            {
+                "type": "bind",
+                "source": "/srv/ctip-test/ops/addresy-egress/haproxy.cfg",
+                "target": "/usr/local/etc/haproxy/haproxy.cfg",
+            }
+        ],
+    }
     services["firebird"] = {
         "volumes": [{"type": "volume", "source": "firebird-config", "target": "/firebird"}]
     }
@@ -168,6 +183,23 @@ def test_server_compose_rejects_unsafe_shipping_and_missing_bot_secret() -> None
     assert any("DPD_MODE=mock" in issue for issue in issues)
     assert any("SHIPPING_ENABLED=true" in issue for issue in issues)
     assert any("bot-identity-sync" in issue and "SECRET_KEY" in issue for issue in issues)
+
+
+def test_server_compose_rejects_geocoder_outside_dedicated_gateway() -> None:
+    """Kontrola blokuje zmianę endpointu i ominięcie bramy Adresy.app."""
+    config = _config()
+    config["services"]["web"]["environment"]["ADDRESY_APP_API_URL"] = "https://example.com"
+    config["services"]["web"]["extra_hosts"] = {}
+    config["services"]["addresy-egress"]["ports"] = [{"published": "443", "target": 443}]
+
+    issues = collect_issues(
+        config,
+        expected_image="ctip/test-runtime:0123456789abcdef0123456789abcdef01234567",
+    )
+
+    assert any("oficjalny endpoint" in issue for issue in issues)
+    assert any("kierowane wyłącznie przez bramę" in issue for issue in issues)
+    assert any("nie może publikować portów" in issue for issue in issues)
 
 
 def test_server_commands_do_not_depend_on_legacy_network_name() -> None:

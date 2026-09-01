@@ -161,6 +161,10 @@ def collect_issues(
             issues.append(f"Usługa web wymaga {key}=true w środowisku testowym.")
     if web_environment.get("DPD_MODE") != "mock":
         issues.append("Usługa web wymaga DPD_MODE=mock w środowisku testowym.")
+    if not _is_true(web_environment.get("SHIPPING_GEOCODER_ENABLED")):
+        issues.append("Usługa web wymaga SHIPPING_GEOCODER_ENABLED=true.")
+    if web_environment.get("ADDRESY_APP_API_URL") != "https://api.adresy.app/api/v1":
+        issues.append("Usługa web musi wskazywać oficjalny endpoint Adresy.app.")
     for key in (
         "DPD_INFO_ENABLED",
         "SHIPPING_COMPATIBILITY_WEB_ENABLED",
@@ -168,6 +172,41 @@ def collect_issues(
     ):
         if not _is_false(web_environment.get(key)):
             issues.append(f"Usługa web wymaga {key}=false w środowisku testowym.")
+
+    addresy_egress = services.get("addresy-egress") or {}
+    if addresy_egress.get("image") != "haproxy:3.0-alpine":
+        issues.append("Brama Adresy.app musi używać przypiętego obrazu HAProxy 3.0.")
+    if addresy_egress.get("ports"):
+        issues.append("Brama Adresy.app nie może publikować portów hosta.")
+    addresy_networks = set((addresy_egress.get("networks") or {}).keys())
+    if addresy_networks != {"ctip_test_internal", "ctip_test_edge"}:
+        issues.append("Brama Adresy.app musi łączyć wyłącznie sieć wewnętrzną i brzegową.")
+    addresy_mounts = [
+        mount
+        for mount in addresy_egress.get("volumes") or []
+        if _mount_target(mount) == "/usr/local/etc/haproxy/haproxy.cfg"
+    ]
+    if len(addresy_mounts) != 1 or not _mount_source(addresy_mounts[0]).replace("\\", "/").endswith(
+        "/ops/addresy-egress/haproxy.cfg"
+    ):
+        issues.append("Brama Adresy.app nie używa dedykowanej konfiguracji HAProxy.")
+    extra_hosts = web.get("extra_hosts") or []
+    if isinstance(extra_hosts, dict):
+        addresy_host = extra_hosts.get("api.adresy.app")
+    else:
+        addresy_host = next(
+            (
+                str(entry).split("=", maxsplit=1)[-1].split(":", maxsplit=1)[-1]
+                for entry in extra_hosts
+                if str(entry).startswith(("api.adresy.app=", "api.adresy.app:"))
+            ),
+            None,
+        )
+    if addresy_host != "172.28.252.21":
+        issues.append("api.adresy.app musi być kierowane wyłącznie przez bramę testową.")
+    addresy_dependency = (web.get("depends_on") or {}).get("addresy-egress") or {}
+    if addresy_dependency.get("condition") != "service_started":
+        issues.append("Usługa web musi czekać na uruchomienie bramy Adresy.app.")
 
     for name in ("bot-identity-api", "bot-identity-sync"):
         environment = (services.get(name) or {}).get("environment") or {}

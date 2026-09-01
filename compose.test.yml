@@ -114,6 +114,16 @@ services:
       ctip_test_edge:
     restart: unless-stopped
 
+  addresy-egress:
+    image: haproxy:3.0-alpine
+    volumes:
+      - ./ops/addresy-egress/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      ctip_test_internal:
+        ipv4_address: 172.28.252.21
+      ctip_test_edge:
+    restart: unless-stopped
+
   web:
     <<: *ctip-service
     environment:
@@ -130,6 +140,7 @@ services:
       - "oauth2.googleapis.com:172.28.252.20"
       - "sheets.googleapis.com:172.28.252.20"
       - "www.googleapis.com:172.28.252.20"
+      - "api.adresy.app:172.28.252.21"
     command: >-
       sh -lc "python scripts/test_env_preflight.py --check-network &&
       python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -143,6 +154,8 @@ services:
       mock-ctip:
         condition: service_started
       google-egress:
+        condition: service_started
+      addresy-egress:
         condition: service_started
 
   forms-public:

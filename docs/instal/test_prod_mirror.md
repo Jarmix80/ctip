@@ -22,8 +22,9 @@ Stos `compose.test.yml` uruchamia:
 | `sms-sender` | obsługa kolejki w trybie symulacji | tylko sieć wewnętrzna |
 | `test-gateway` | statyczna brama HAProxy do wskazanych portów | sieć wewnętrzna i brzegowa |
 | `google-egress` | brama TLS ograniczona do API Google używanego przez arkusz testowy | sieć wewnętrzna i brzegowa |
+| `addresy-egress` | brama TLS ograniczona do `api.adresy.app` dla ręcznego geokodera | sieć wewnętrzna i brzegowa |
 
-Kontenery aplikacyjne są podłączone wyłącznie do sieci `ctip_test_internal` (`172.28.250.0/24`) oznaczonej jako `internal`. Nie mają trasy domyślnej, dlatego nie mogą połączyć się z Internetem, produkcyjnym PostgreSQL, Firebird ani centralą Slican. Brama `test-gateway` nie uruchamia kodu CTIP i przekazuje tylko pięć jawnie skonfigurowanych portów. Brama `google-egress` przyjmuje wyłącznie ruch TLS z nazwą SNI `oauth2.googleapis.com`, `sheets.googleapis.com` albo `www.googleapis.com`; pozostałe cele są odrzucane.
+Kontenery aplikacyjne są podłączone wyłącznie do sieci `ctip_test_internal` (`172.28.252.0/24`) oznaczonej jako `internal`. Nie mają trasy domyślnej, dlatego nie mogą połączyć się z Internetem, produkcyjnym PostgreSQL, Firebird ani centralą Slican. Brama `test-gateway` nie uruchamia kodu CTIP i przekazuje tylko jawnie skonfigurowane porty. Brama `google-egress` przyjmuje wyłącznie ruch TLS z nazwą SNI `oauth2.googleapis.com`, `sheets.googleapis.com` albo `www.googleapis.com`, a brama `addresy-egress` wyłącznie ruch TLS do `api.adresy.app`; pozostałe cele są odrzucane.
 
 Testowy Firebird wczytuje aliasy z `ops/firebird/aliases.test.conf`. Menadżer Serwisu uruchomiony na tym samym hoście należy kierować na pełną ścieżkę `127.0.0.1:BAZAMS_TEST`, a z innego komputera w sieci firmowej na `192.168.0.9:BAZAMS_TEST`. Jeżeli formularz posiada osobne pola, port wynosi `3050`, a baza `BAZAMS_TEST`. Alias obsługuje również warianty `BAZAMS_TEST\BazaMS.fdb` i `BAZAMS_TEST/BazaMS.fdb`, które klient MS może zbudować automatycznie. Brama HAProxy odrzuca połączenia spoza hosta lokalnego oraz podsieci `192.168.0.0/24`.
 

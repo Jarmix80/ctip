@@ -31,11 +31,12 @@ Plik `.env.test` musi także zawierać odrębne testowe wartości
 `BOT_IDENTITY_VOICE_TOKEN`. Kod `BOT_IDENTITY_TEST_SMS_CODE=123456` jest
 dozwolony wyłącznie przy `CRM_LAB_MODE=true`. Moduł Shipping działa testowo z
 `DPD_MODE=mock`, `DPD_INFO_ENABLED=false`,
-`SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED=false`, `SHIPPING_GEOCODER_ENABLED=false`,
+`SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED=false`, `SHIPPING_GEOCODER_ENABLED=true`,
 `SHIPPING_COMPATIBILITY_WEB_ENABLED=false` oraz
 `SHIPPING_TEST_FIREBIRD_WRITES=false`. Taki zestaw udostępnia pełny interfejs
-Shipping, ale nie nadaje rzeczywistej przesyłki, nie uruchamia wyszukiwania
-internetowego i nie zapisuje do Firebirda.
+Shipping, nie nadaje rzeczywistej przesyłki i nie zapisuje do Firebirda. Ręczny
+geokoder może łączyć się wyłącznie z `api.adresy.app` przez dedykowaną bramę TLS
+`addresy-egress`; kontener `web` nadal nie ma trasy domyślnej.
 
 ## Procedura wydania testowego
 

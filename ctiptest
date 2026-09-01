@@ -154,7 +154,7 @@ wait_for_url() {
 wait_for_persistent_services() {
     local services service container state stable_passes
     services=(
-        postgres firebird mailpit mock-ctip google-egress web forms-public
+        postgres firebird mailpit mock-ctip google-egress addresy-egress web forms-public
         collector sms-sender bot-identity-api bot-identity-sync crm lab test-gateway
     )
     stable_passes=0
