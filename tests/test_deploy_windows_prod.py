@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -191,6 +192,13 @@ def test_dry_run_does_not_request_apply_or_fetch(tmp_path: Path) -> None:
     invocation = next(command for command in runner.commands if "-File" in command)
     assert "-Apply" not in invocation
     assert not any("fetch" in command for command in runner.commands)
+    encoded_scripts = [
+        base64.b64decode(command[command.index("-EncodedCommand") + 1]).decode("utf-16-le")
+        for command in runner.commands
+        if "-EncodedCommand" in command
+    ]
+    assert any(r"D:\CTIP\.git\ctip-release-" in script for script in encoded_scripts)
+    assert not any(r"D:\CTIP\.deploy\ctip-release-" in script for script in encoded_scripts)
 
 
 def test_powershell_contains_healthcheck_rollback() -> None:

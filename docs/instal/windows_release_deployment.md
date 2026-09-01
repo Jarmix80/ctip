@@ -6,6 +6,8 @@ Jedynym obsługiwanym mechanizmem wdrożenia produkcyjnego jest lokalne poleceni
 
 Duży kod PowerShell jest pobierany na serwer z konkretnego commita jako binarne archiwum `git archive`, rozpakowywany do pliku tymczasowego, dekodowany rygorystycznie jako UTF-8, normalizowany do `LF` i weryfikowany przez SHA-256. Po kontroli integralności plik otrzymuje BOM wymagany przez Windows PowerShell 5.1 i jest uruchamiany przez `powershell -File`. Dzięki temu polskie znaki nie przechodzą przez dekodowanie konsoli Windows, a ustawienie `core.autocrlf` nie wpływa na kontrolę integralności. `EncodedCommand` służy wyłącznie do krótkich poleceń kontrolnych.
 
+Pliki transportowe są umieszczane tymczasowo wewnątrz katalogu administracyjnego `.git`, dlatego nie zanieczyszczają wyniku `git status`. Orkiestrator usuwa je w bloku końcowym niezależnie od wyniku dry-run lub wdrożenia.
+
 ## Przygotowanie planu
 
 Administrator ustala:
