@@ -226,6 +226,22 @@ legacy_running_containers() {
     done | sort -u
 }
 
+capture_previous_compose_overlay() {
+    local image="$1" state_dir="$2" revision overlay
+    revision="$(docker image inspect \
+        --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+        "${image}")"
+    if [[ ! "${revision}" =~ ^[0-9a-f]{40}$ ]] \
+        || ! git -C "${WORKDIR}" cat-file -e "${revision}:compose.test.server.yml"; then
+        echo "Nie można odtworzyć konfiguracji Compose poprzedniego obrazu ${image}." >&2
+        return 1
+    fi
+    overlay="${state_dir}/previous-compose.test.server.yml"
+    git -C "${WORKDIR}" show "${revision}:compose.test.server.yml" >"${overlay}"
+    (cd "${state_dir}" && sha256sum previous-compose.test.server.yml \
+        >previous-compose.SHA256SUM)
+}
+
 prepare_cutover_state() {
     local state_dir current_container previous_image
     state_dir="${WORKDIR}/runtime/deployments/test-cutover-$(date +%Y%m%d_%H%M%S)"
@@ -238,6 +254,7 @@ prepare_cutover_state() {
     if [[ -n "${current_container}" ]]; then
         previous_image="$(docker inspect --format '{{.Config.Image}}' "${current_container}")"
         printf '%s\n' "${previous_image}" >"${state_dir}/previous-image.txt"
+        capture_previous_compose_overlay "${previous_image}" "${state_dir}" || return 1
     fi
     printf '%s\n' "${state_dir}"
 }
@@ -257,12 +274,22 @@ start_container_list() {
 }
 
 rollback_cutover() {
-    local state_dir="$1" previous_image
-    CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" stop || true
+    local state_dir="$1" previous_image rollback_overlay
     if [[ -s "${state_dir}/previous-image.txt" ]]; then
         previous_image="$(cat "${state_dir}/previous-image.txt")"
-        CTIP_TEST_IMAGE="${previous_image}" "${COMPOSE_SERVER[@]}" up -d --force-recreate
+        rollback_overlay="${state_dir}/previous-compose.test.server.yml"
+        if [[ ! -f "${rollback_overlay}" ]] \
+            || ! (cd "${state_dir}" && sha256sum -c previous-compose.SHA256SUM >/dev/null); then
+            echo "Brak poprawnej konfiguracji Compose poprzedniego obrazu." >&2
+            return 1
+        fi
+        CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" stop || true
+        CTIP_TEST_IMAGE="${previous_image}" "${COMPOSE[@]}" \
+            -f "${rollback_overlay}" up -d --force-recreate
+        wait_for_url "http://127.0.0.1:8000/health" "CTIP po rollbacku" || return 1
+        wait_for_persistent_services || return 1
     else
+        CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" stop || true
         start_container_list "${state_dir}/legacy-containers.txt"
     fi
     echo "Przywrócono poprzedni stos testowy; stan: ${state_dir}."
@@ -324,7 +351,10 @@ case "${ACTION}" in
         validate_server_compose "${image}"
         verify_test_database "${image}"
         backup_dir="$(backup_test_data)"
-        state_dir="$(prepare_cutover_state)"
+        if ! state_dir="$(prepare_cutover_state)"; then
+            echo "Nie przygotowano kompletnego stanu rollbacku; cutover przerwany." >&2
+            exit 1
+        fi
         printf '%s\n' "${backup_dir}" >"${state_dir}/backup-path.txt"
         stop_container_list "${state_dir}/legacy-containers.txt"
         if ! CTIP_TEST_IMAGE="${image}" "${COMPOSE_SERVER[@]}" up -d --force-recreate; then

@@ -75,7 +75,7 @@ Preflight jest uruchamiany w wyczyszczonym środowisku procesu. Zmienne sesji ad
 ./ctiptest server-rollback
 ```
 
-Przy pierwszym przełączeniu polecenie uruchamia zachowane kontenery poprzednich stosów. Przy kolejnym wydaniu odtwarza poprzedni niezmienny obraz projektu `ctip-test`. Katalog stanu i ścieżka backupu znajdują się w `runtime/deployments/`.
+Przy pierwszym przełączeniu polecenie uruchamia zachowane kontenery poprzednich stosów. Przy kolejnym wydaniu odtwarza poprzedni niezmienny obraz projektu `ctip-test` razem z plikiem `compose.test.server.yml` pobranym z commita tego obrazu. Kopia konfiguracji otrzymuje sumę SHA-256, a brak commita lub poprawnej sumy zatrzymuje cutover przed wyłączeniem działającego stosu. Po rollbacku automat wymaga odpowiedzi `/health` i stabilności wszystkich procesów trwałych. Katalog stanu i ścieżka backupu znajdują się w `runtime/deployments/`.
 
 Rollback kodu nie cofa automatycznie migracji. Migracje testowe muszą być wstecznie zgodne; przy zmianie destrukcyjnej bazę należy odtworzyć ręcznie z backupu po osobnej decyzji administratora.
 

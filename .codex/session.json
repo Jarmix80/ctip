@@ -12,7 +12,8 @@
     "Dodano kontrolowane uzgodnienie historycznej bazy ctip_test: pełna walidacja modeli i danych oraz zmiana wyłącznie alembic_version po sprawdzonym backupie.",
     "Pre-commit przeszedł, testy celowane zakończyły się 130 passed, a pełny zestaw bez znanego test_admin_backend.py zakończył się 571 passed i 14 skipped.",
     "Odbiór stosu wymaga teraz bezpiecznego trybu Shipping DPD mock, kompletnej konfiguracji Bot Identity, uwierzytelnionego kontraktu ctip-v1, świeżej synchronizacji oraz braku nowych błędów startowych.",
-    "PostgreSQL stosu testowego ma unikalny alias ctip-test-postgres, aby Bot Identity podłączony równocześnie do sieci CHAT_KP nie rozwiązywał obcej usługi o ogólnej nazwie postgres."
+    "PostgreSQL stosu testowego ma unikalny alias ctip-test-postgres, aby Bot Identity podłączony równocześnie do sieci CHAT_KP nie rozwiązywał obcej usługi o ogólnej nazwie postgres.",
+    "Rollback stosu testowego przechowuje zweryfikowaną sumą SHA-256 konfigurację Compose z commita poprzedniego obrazu i sprawdza zdrowie procesów po odtworzeniu."
   ],
   "follow_up": [
     "Każde kolejne wydanie testowe budować z pełnego SHA i przełączać wyłącznie przez server-check oraz server-cutover.",

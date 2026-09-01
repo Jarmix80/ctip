@@ -169,5 +169,9 @@ def test_server_commands_do_not_depend_on_legacy_network_name() -> None:
     assert "ensure_no_recent_runtime_errors" in script
     assert "wait_for_persistent_services || return 1" in script
     assert "ensure_no_recent_runtime_errors || return 1" in script
+    assert "capture_previous_compose_overlay" in script
+    assert 'git -C "${WORKDIR}" show' in script
+    assert "previous-compose.SHA256SUM" in script
+    assert 'wait_for_url "http://127.0.0.1:8000/health" "CTIP po rollbacku"' in script
     assert "env -i" in script
     assert 'CTIP_ENV_FILE="${ENV_FILE}"' in script
