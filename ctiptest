@@ -181,13 +181,27 @@ wait_for_persistent_services() {
     return 1
 }
 
+ensure_no_recent_runtime_errors() {
+    local services service container recent_logs
+    services=(web forms-public collector sms-sender bot-identity-sync)
+    for service in "${services[@]}"; do
+        container="$(CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" ps -q "${service}")"
+        recent_logs="$(docker logs --since 5m "${container}" 2>&1 || true)"
+        if rg -q 'Traceback|[[:space:]]ERROR[[:space:]]' <<<"${recent_logs}"; then
+            echo "Usługa ${service} zgłosiła świeży błąd podczas bieżącego startu." >&2
+            return 1
+        fi
+    done
+}
+
 wait_for_stack() {
     wait_for_url "http://127.0.0.1:8000/health" "CTIP"
     wait_for_url "http://192.168.0.9:8001/health" "CRM"
     wait_for_url "http://192.168.0.9:8790/health" "LAB"
-    CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" exec -T bot-identity-api \
-        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3).read()"
     wait_for_persistent_services
+    CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" exec -T bot-identity-api \
+        python scripts/check_bot_identity_test_runtime.py --max-wait-seconds 120
+    ensure_no_recent_runtime_errors
 }
 
 backup_test_data() {

@@ -23,6 +23,16 @@ oba zestawy sieci nie kolidują nawet wtedy, gdy stare kontenery są zatrzymane.
 
 W `.env.test` należy ustawić bezwzględne ścieżki `CTIP_TEST_FIREBIRD_DIR` i `CTIP_TEST_SECRET_DIR`, jeśli polecenia są wykonywane z dodatkowego worktree.
 
+Plik `.env.test` musi także zawierać odrębne testowe wartości
+`BOT_IDENTITY_SECRET_KEY`, `BOT_IDENTITY_CHAT_TOKEN` i
+`BOT_IDENTITY_VOICE_TOKEN`. Kod `BOT_IDENTITY_TEST_SMS_CODE=123456` jest
+dozwolony wyłącznie przy `CRM_LAB_MODE=true`. Moduł Shipping działa testowo z
+`DPD_MODE=mock`, `DPD_INFO_ENABLED=false`,
+`SHIPPING_COMPATIBILITY_WEB_ENABLED=false` oraz
+`SHIPPING_TEST_FIREBIRD_WRITES=false`. Taki zestaw udostępnia pełny interfejs
+Shipping, ale nie nadaje rzeczywistej przesyłki, nie uruchamia wyszukiwania
+internetowego i nie zapisuje do Firebirda.
+
 ## Procedura wydania testowego
 
 ```bash
@@ -37,7 +47,7 @@ export ENV_FILE=/home/marcin/projects/ctip/.env.test
 ./ctiptest server-status
 ```
 
-`server-build` buduje obraz `ctip/test-runtime:<pełny_sha>`. `server-check` sprawdza etykietę obrazu, izolację, montowania, porty i zgodność migracji. `server-migrate` najpierw wykonuje backup PostgreSQL i Firebird, a następnie aktualizuje wyłącznie `ctip_test`. `server-cutover` ponownie wykonuje backup, zatrzymuje stare testowe kontenery bez ich usuwania i uruchamia projekt `ctip-test`. Odbiór wymaga nie tylko odpowiedzi HTTP, ale też stabilnego przez co najmniej 10 sekund stanu wszystkich procesów trwałych, w tym Firebird, kolektora oraz sendera SMS.
+`server-build` buduje obraz `ctip/test-runtime:<pełny_sha>`. `server-check` sprawdza etykietę obrazu, izolację, montowania, porty, bezpieczne flagi Shipping i kompletność konfiguracji Bot Identity. `server-migrate` najpierw wykonuje backup PostgreSQL i Firebird, a następnie aktualizuje wyłącznie `ctip_test`. `server-cutover` ponownie wykonuje backup, zatrzymuje stare testowe kontenery bez ich usuwania i uruchamia projekt `ctip-test`. Odbiór wymaga nie tylko odpowiedzi HTTP, ale też stabilnego przez co najmniej 10 sekund stanu wszystkich procesów trwałych, w tym Firebird, kolektora oraz sendera SMS. Dodatkowo sprawdza uwierzytelniony kontrakt `ctip-v1`, świeżo zakończoną synchronizację Bot Identity i brak nowych błędów w logach bieżącego startu.
 
 Jeżeli historyczna baza ma znacznik `e4a8c1d9f2b7`, ale fizycznie zawiera już
 również tabele i kolumny gałęzi dostaw, Bot Identity oraz CRM, zwykła migracja
@@ -75,4 +85,4 @@ curl --fail http://192.168.0.9:8000/shipping
 ./ctiptest server-logs
 ```
 
-Odbiór obejmuje również stabilność usług `collector`, `sms-sender`, `forms-public`, Bot Identity, CRM i LAB, potwierdzenie `SMS_TEST_MODE=true`, `BLOCK_CLIENT_COMMUNICATIONS=true`, `FB_ALLOW_WRITES=false` oraz brak publikacji portu `8002`.
+Odbiór obejmuje również stabilność usług `collector`, `sms-sender`, `forms-public`, Bot Identity, CRM i LAB, potwierdzenie `SMS_TEST_MODE=true`, `BLOCK_CLIENT_COMMUNICATIONS=true`, `FB_ALLOW_WRITES=false`, trybu DPD `mock`, świeżej synchronizacji katalogu oraz brak publikacji portu `8002`. Kontrola nie wypisuje wartości tokenów ani klucza szyfrującego.

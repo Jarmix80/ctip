@@ -26,6 +26,10 @@ def _is_true(value: object) -> bool:
     return value is True or str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_false(value: object) -> bool:
+    return value is False or str(value).strip().lower() in {"0", "false", "no", "off"}
+
+
 def _published_port(entry: object) -> int | None:
     if isinstance(entry, dict):
         value = entry.get("published")
@@ -120,6 +124,37 @@ def collect_issues(
         issues.append("Firebird musi używać stabilnego nazwanego wolumenu konfiguracji.")
 
     web = services.get("web") or {}
+    web_environment = web.get("environment") or {}
+    for key in (
+        "DPD_ENABLED",
+        "SHIPPING_ENABLED",
+        "SHIPPING_CATALOG_MUTATIONS_ENABLED",
+        "SHIPPING_FULFILLMENT_ENABLED",
+    ):
+        if not _is_true(web_environment.get(key)):
+            issues.append(f"Usługa web wymaga {key}=true w środowisku testowym.")
+    if web_environment.get("DPD_MODE") != "mock":
+        issues.append("Usługa web wymaga DPD_MODE=mock w środowisku testowym.")
+    for key in (
+        "DPD_INFO_ENABLED",
+        "SHIPPING_COMPATIBILITY_WEB_ENABLED",
+        "SHIPPING_TEST_FIREBIRD_WRITES",
+    ):
+        if not _is_false(web_environment.get(key)):
+            issues.append(f"Usługa web wymaga {key}=false w środowisku testowym.")
+
+    for name in ("bot-identity-api", "bot-identity-sync"):
+        environment = (services.get(name) or {}).get("environment") or {}
+        for key in (
+            "BOT_IDENTITY_SECRET_KEY",
+            "BOT_IDENTITY_CHAT_TOKEN",
+            "BOT_IDENTITY_VOICE_TOKEN",
+        ):
+            if not str(environment.get(key) or "").strip():
+                issues.append(f"Usługa {name} nie ma wymaganej zmiennej {key}.")
+        if environment.get("BOT_IDENTITY_TEST_SMS_CODE") != "123456":
+            issues.append(f"Usługa {name} wymaga kodu LAB BOT_IDENTITY_TEST_SMS_CODE=123456.")
+
     secret_mounts = [
         mount for mount in web.get("volumes") or [] if _mount_target(mount) == "/run/secrets"
     ]
