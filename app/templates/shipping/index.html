@@ -7,6 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
     <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-label-text-01">
     <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-label-text-01"></script>
+    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-legacy-audit-01"></script>
   </head>
   <body data-shipping-layout="legacy" data-shipping-default-entry="false">
     <main class="shipping-shell">
@@ -226,6 +227,43 @@
           <strong>Wybierz zlecenie z kolejki</strong>
           <p>System podpowie adres, kontakt i potwierdzone części zgodne z urządzeniem.</p>
         </section>
+
+        <aside id="shipping-v2-audit" class="shipping-legacy-audit" aria-label="Podsumowanie realizacji zlecenia">
+          <section>
+            <p class="shipping-step">POSTĘP REALIZACJI</p>
+            <strong id="shipping-v2-progress-label">Wybierz zlecenie</strong>
+            <div class="shipping-legacy-progress"><i id="shipping-v2-progress-bar"></i></div>
+            <ol>
+              <li data-v2-step="1"><span>1</span><div><strong>Weryfikacja</strong><small>Adres i kontakt</small></div></li>
+              <li data-v2-step="2"><span>2</span><div><strong>Kompletacja</strong><small>Części i ilości</small></div></li>
+              <li data-v2-step="3"><span>3</span><div><strong>Etykieta DPD</strong><small>Nadanie przesyłki</small></div></li>
+              <li data-v2-step="4"><span>4</span><div><strong>Odbiór kuriera</strong><small>RW, WZ albo FV + WZ</small></div></li>
+            </ol>
+          </section>
+          <section class="shipping-legacy-audit-address">
+            <p class="shipping-step">ADRES DOSTAWY</p>
+            <strong id="shipping-v2-audit-company">Brak wybranego zlecenia</strong>
+            <p id="shipping-v2-audit-contact" hidden></p>
+            <p id="shipping-v2-audit-communication" hidden></p>
+            <p id="shipping-v2-audit-street">Wybierz zlecenie z kolejki.</p>
+            <p id="shipping-v2-audit-city" hidden></p>
+          </section>
+          <section class="shipping-legacy-audit-problem">
+            <p class="shipping-step">TREŚĆ ZLECENIA</p>
+            <p id="shipping-v2-audit-problem">Wybierz zlecenie z kolejki.</p>
+          </section>
+          <section>
+            <p class="shipping-step">PAKOWANIE</p>
+            <strong id="shipping-v2-audit-package">Brak wybranych części</strong>
+            <p id="shipping-v2-audit-billing">Dokument zostanie określony po wyborze zlecenia.</p>
+          </section>
+          <section class="shipping-legacy-audit-status">
+            <p class="shipping-step">STATUS</p>
+            <strong id="shipping-v2-audit-status">Wybierz zlecenie</strong>
+            <p id="shipping-v2-audit-tracking">Brak numeru przesyłki DPD.</p>
+            <p id="shipping-v2-audit-dpd-status" hidden></p>
+          </section>
+        </aside>
       </div>
       </section>
 
