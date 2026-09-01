@@ -98,10 +98,18 @@ function Invoke-CtipNative {
         [switch]$AllowFailure
     )
     Write-CtipStatus -Level "INFO" -Message $Label
-    $output = @(& $FilePath @ArgumentList 2>&1)
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& $FilePath @ArgumentList 2>&1)
+        $nativeSucceeded = $?
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($null -eq $exitCode) {
-        $exitCode = 0
+        $exitCode = if ($nativeSucceeded) { 0 } else { 1 }
     }
     if ($exitCode -ne 0 -and -not $AllowFailure) {
         $safeTail = @($output | Select-Object -Last 20) -join [Environment]::NewLine
