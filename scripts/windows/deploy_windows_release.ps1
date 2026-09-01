@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$InstallDir = "D:\CTIP",
     [Parameter(Mandatory = $true)][string]$PlanJsonBase64,
     [switch]$Apply
