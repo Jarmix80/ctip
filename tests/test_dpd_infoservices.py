@@ -36,6 +36,7 @@ from app.services.dpd_infoservices import (
 )
 from app.services.dpd_infoservices_sync import (
     classify_dpd_event,
+    dpd_semantic_event_key,
     is_dpd_pickup_confirmation,
     persist_dpd_info_events,
 )
@@ -329,6 +330,12 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             first_event,
             event_id="id-historia",
             object_id="obiekt-historia",
+            description="Opis zwracany tylko przez historię listu",
+            depot="1326",
+            depot_name="Poznań",
+            country="PL",
+            package_reference="",
+            parcel_reference="",
         )
         alias_cancel = replace(
             alias_event,
@@ -393,6 +400,53 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
                 "is_cancelled"
             ]
         )
+
+    def test_klucz_semantyczny_ignoruje_opisy_danych_ale_rozroznia_wartosci(self) -> None:
+        event = self._event(
+            code="170310",
+            description="Wysłano powiadomienie",
+            event_data=(
+                DpdInfoEventData(code="01", description=None, value="test@example.com"),
+                DpdInfoEventData(code="03", description=None, value="SENT"),
+            ),
+        )
+        alias = replace(
+            event,
+            description="Powiadomienie mail",
+            depot="1305",
+            depot_name="Warszawa",
+            parcel_reference="",
+            event_data=(
+                DpdInfoEventData(code="01", description="Adresat", value="test@example.com"),
+                DpdInfoEventData(code="03", description="Status", value="SENT"),
+            ),
+        )
+        different_recipient = replace(
+            alias,
+            event_data=(
+                DpdInfoEventData(code="01", description="Adresat", value="other@example.com"),
+                DpdInfoEventData(code="03", description="Status", value="SENT"),
+            ),
+        )
+
+        def key(value: DpdInfoEvent) -> str:
+            return dpd_semantic_event_key(
+                source_event_key=str(value.object_id),
+                operation_type=value.operation_type,
+                waybill=value.waybill,
+                business_code=value.business_code,
+                description=value.description,
+                event_time=value.event_time,
+                depot=value.depot,
+                depot_name=value.depot_name,
+                country=value.country,
+                package_reference=value.package_reference,
+                parcel_reference=value.parcel_reference,
+                event_data=value.event_data,
+            )
+
+        self.assertEqual(key(event), key(alias))
+        self.assertNotEqual(key(event), key(different_recipient))
 
     async def test_historyczna_kanonizacja_ma_dry_run_apply_i_rollback(self) -> None:
         first_event = self._event(object_id="historyczny-1")

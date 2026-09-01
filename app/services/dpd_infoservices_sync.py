@@ -220,13 +220,12 @@ def _semantic_event_data(values: list[dict[str, Any]] | tuple[Any, ...] | None) 
         normalized.append(
             {
                 "code": _semantic_text(payload.get("code")),
-                "description": _semantic_text(payload.get("description")),
                 "value": _semantic_text(payload.get("value")),
             }
         )
     return sorted(
         normalized,
-        key=lambda item: (item["code"], item["description"], item["value"]),
+        key=lambda item: (item["code"], item["value"]),
     )
 
 
@@ -254,13 +253,7 @@ def dpd_semantic_event_key(
     payload = {
         "waybill": normalized_waybill,
         "business_code": _semantic_text(business_code),
-        "description": _semantic_text(description),
         "event_time": _semantic_time(event_time),
-        "depot": _semantic_text(depot),
-        "depot_name": _semantic_text(depot_name),
-        "country": _semantic_text(country),
-        "package_reference": _semantic_text(package_reference),
-        "parcel_reference": _semantic_text(parcel_reference),
         "event_data": _semantic_event_data(event_data),
     }
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

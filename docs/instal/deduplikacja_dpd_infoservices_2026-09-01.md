@@ -2,7 +2,7 @@
 
 ## Cel i zakres
 
-DPD może zwrócić to samo logiczne zdarzenie przez kanał klienta i zapytanie historii listu z różnymi wartościami `id` oraz `objectId`. CTIP zachowuje oba rekordy techniczne, ale migracja `f2b7c9d4e6a1` oznacza jeden z nich jako kanoniczny. Interfejs, status przesyłki i kamienie milowe Menadżera Serwisu nie pokazują dzięki temu zdarzenia podwójnie.
+DPD może zwrócić to samo logiczne zdarzenie przez kanał klienta i zapytanie historii listu z różnymi wartościami `id`, `objectId`, opisem, oddziałem, referencją i opisami danych dodatkowych. CTIP zachowuje oba rekordy techniczne, ale migracja `f2b7c9d4e6a1` oznacza jeden z nich jako kanoniczny na podstawie numeru listu, kodu biznesowego, dokładnego czasu i wartości danych dodatkowych. Interfejs, status przesyłki i kamienie milowe Menadżera Serwisu nie pokazują dzięki temu zdarzenia podwójnie.
 
 Operacja nie usuwa rekordów, nie łączy się z Firebirdem i nie zmienia zleceń, RW, WZ ani FV. Modyfikuje wyłącznie pola `semantic_event_key`, `canonical_event_id`, a w grupie objętej `CANCEL` także spójne znaczniki anulowania.
 
