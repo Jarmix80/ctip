@@ -39,7 +39,15 @@ from app.services.dpd_infoservices_sync import (
     is_dpd_pickup_confirmation,
     persist_dpd_info_events,
 )
-from app.services.shipping_milestones import reconcile_shipping_milestones
+from app.services.shipping_milestones import (
+    PILOT_APPLIED_EVENT,
+    PILOT_ROLLED_BACK_EVENT,
+    ShippingMilestonePilotValidationError,
+    apply_archived_shipping_milestone_pilot,
+    preview_archived_shipping_milestone_pilot,
+    reconcile_shipping_milestones,
+    rollback_archived_shipping_milestone_pilot,
+)
 from app.services.shipping_tracking import (
     get_shipping_tracking_detail,
     list_shipping_tracking,
@@ -191,6 +199,84 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             parcel_reference="MS-18495",
             operation_type=operation_type,
             event_data=event_data,
+        )
+
+    async def _add_archived_pilot_target(
+        self,
+        session: AsyncSession,
+        *,
+        order_id: int = 18517,
+        order_table_id: int = 83517,
+        waybill: str = "1050059395731U",
+    ) -> ShippingShipment:
+        now = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+        case = ShippingCase(
+            firebird_order_table_id=order_table_id,
+            firebird_order_id=order_id,
+            firebird_order_year=2026,
+            firebird_client_id=15,
+            order_kind="Umowa",
+            invoice_required=False,
+            status="closed",
+            address_snapshot={},
+            source_snapshot={},
+            weight_kg=Decimal("2.000"),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(case)
+        await session.flush()
+        shipment = ShippingShipment(
+            shipping_case_id=case.id,
+            idempotency_key=f"pilot-{order_id}",
+            provider="dpd",
+            provider_mode="production",
+            provider_shipment_id=f"sesja-{order_id}",
+            tracking_number=waybill,
+            status="closed",
+            provider_request={},
+            firebird_status="written",
+            firebird_label_metadata_synced_at=None,
+            created_at=now,
+            updated_at=now,
+            closed_at=now,
+        )
+        session.add(shipment)
+        await session.flush()
+        return shipment
+
+    async def _add_pilot_events(
+        self,
+        session: AsyncSession,
+        *,
+        waybill: str = "1050059395731U",
+    ) -> None:
+        now = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+        session.add_all(
+            [
+                ShippingTrackingEvent(
+                    source_event_key=f"pickup-{waybill}",
+                    waybill=waybill,
+                    business_code="040101",
+                    operation_type="INSERT",
+                    description="Przesyłka odebrana przez Kuriera",
+                    event_time=datetime(2026, 8, 31, 12, 42, tzinfo=UTC),
+                    event_data=[],
+                    raw_payload={},
+                    received_at=now,
+                ),
+                ShippingTrackingEvent(
+                    source_event_key=f"delivery-{waybill}",
+                    waybill=waybill,
+                    business_code="190101",
+                    operation_type="INSERT",
+                    description="Przesyłka doręczona",
+                    event_time=datetime(2026, 9, 1, 8, 1, tzinfo=UTC),
+                    event_data=[],
+                    raw_payload={},
+                    received_at=now,
+                ),
+            ]
         )
 
     async def test_zapis_jest_idempotentny_i_cancel_przelicza_status(self) -> None:
@@ -438,6 +524,209 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(conflict["conflicts"], 1)
             self.assertIn("anulowane", shipment.firebird_milestone_error)
             cancelled_writer.assert_not_called()
+
+    async def test_pilot_archiwalny_obejmuje_tylko_wskazane_zlecenie_wspolnego_listu(
+        self,
+    ) -> None:
+        waybill = "1050059395731U"
+        firebird_preview = {
+            "state_token": "firebird-token",
+            "order": {
+                "order_table_id": 83517,
+                "order_id": 18517,
+                "order_year": 2026,
+                "status": "Z",
+                "tracking_number": waybill,
+            },
+            "changed_fields": ["DATA_PRZES_WE", "PRZESYLKA_WE"],
+            "before": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": f"Wysłana paczka 31.08.2026 {waybill}",
+                "DATA_PRZES_WE": None,
+                "PRZESYLKA_WE": None,
+            },
+            "after": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": f"Wysłana paczka 31.08.2026 {waybill}",
+                "DATA_PRZES_WE": "2026-09-01",
+                "PRZESYLKA_WE": "01.09.2026 10:01 — Doręczona: Przesyłka doręczona",
+            },
+        }
+        async with self.session_factory() as session:
+            target = await self._add_archived_pilot_target(session, waybill=waybill)
+            other = await self._add_archived_pilot_target(
+                session,
+                order_id=18518,
+                order_table_id=83518,
+                waybill=waybill,
+            )
+            await self._add_pilot_events(session, waybill=waybill)
+            await session.commit()
+            writer = MagicMock(
+                return_value={
+                    "status": "written",
+                    "changed_fields": ["DATA_PRZES_WE", "PRZESYLKA_WE"],
+                    "state_token_before": "firebird-token",
+                }
+            )
+            restorer = MagicMock(
+                return_value={
+                    "status": "restored",
+                    "changed_fields": ["DATA_PRZES_WE", "PRZESYLKA_WE"],
+                }
+            )
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", False),
+                patch(
+                    "app.services.shipping_milestones.preview_shipping_milestones_to_order",
+                    return_value=firebird_preview,
+                ) as previewer,
+                patch(
+                    "app.services.shipping_milestones.write_shipping_milestones_to_order",
+                    writer,
+                ),
+                patch(
+                    "app.services.shipping_milestones.restore_shipping_milestones_to_order",
+                    restorer,
+                ),
+            ):
+                preview = await preview_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                )
+                writer.assert_not_called()
+                applied = await apply_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                    expected_state_token=preview["state_token"],
+                )
+                await session.commit()
+                await session.refresh(target)
+                await session.refresh(other)
+                applied_events = list(
+                    (
+                        await session.execute(
+                            select(ShippingEvent).where(
+                                ShippingEvent.event_type == PILOT_APPLIED_EVENT
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                self.assertEqual(target.firebird_pickup_event_key, f"pickup-{waybill}")
+                self.assertEqual(target.firebird_delivery_event_key, f"delivery-{waybill}")
+                self.assertIsNone(other.firebird_pickup_event_key)
+                self.assertIsNone(other.firebird_delivery_event_key)
+                self.assertEqual(len(applied_events), 1)
+                self.assertEqual(applied_events[0].payload["pilot_run_id"], applied["pilot_run_id"])
+                previewer.assert_called()
+                writer.assert_called_once()
+                self.assertEqual(writer.call_args.kwargs["expected_state_token"], "firebird-token")
+
+                rolled_back = await rollback_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                    pilot_run_id=applied["pilot_run_id"],
+                )
+                await session.commit()
+                await session.refresh(target)
+
+            self.assertEqual(rolled_back["status"], "restored")
+            self.assertIsNone(target.firebird_pickup_event_key)
+            self.assertIsNone(target.firebird_delivery_event_key)
+            restorer.assert_called_once()
+            rollback_count = await session.scalar(
+                select(func.count(ShippingEvent.id)).where(
+                    ShippingEvent.event_type == PILOT_ROLLED_BACK_EVENT
+                )
+            )
+            self.assertEqual(rollback_count, 1)
+
+    async def test_pilot_archiwalny_blokuje_nieaktualny_token(self) -> None:
+        waybill = "1050059395731U"
+        firebird_preview = {
+            "state_token": "firebird-token",
+            "order": {
+                "order_table_id": 83517,
+                "order_id": 18517,
+                "order_year": 2026,
+                "status": "Z",
+                "tracking_number": waybill,
+            },
+            "changed_fields": ["DATA_PRZES_WE"],
+            "before": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": None,
+                "DATA_PRZES_WE": None,
+                "PRZESYLKA_WE": None,
+            },
+            "after": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": None,
+                "DATA_PRZES_WE": "2026-09-01",
+                "PRZESYLKA_WE": None,
+            },
+        }
+        async with self.session_factory() as session:
+            await self._add_archived_pilot_target(session, waybill=waybill)
+            await self._add_pilot_events(session, waybill=waybill)
+            await session.commit()
+            writer = MagicMock()
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", False),
+                patch(
+                    "app.services.shipping_milestones.preview_shipping_milestones_to_order",
+                    return_value=firebird_preview,
+                ),
+                patch(
+                    "app.services.shipping_milestones.write_shipping_milestones_to_order",
+                    writer,
+                ),
+                self.assertRaisesRegex(
+                    ShippingMilestonePilotValidationError,
+                    "Ponów podgląd",
+                ),
+            ):
+                await apply_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                    expected_state_token="nieaktualny-token",
+                )
+
+            writer.assert_not_called()
+            event_count = await session.scalar(select(func.count(ShippingEvent.id)))
+            self.assertEqual(event_count, 0)
+
+    async def test_pilot_archiwalny_wymaga_wylaczonej_globalnej_synchronizacji(
+        self,
+    ) -> None:
+        async with self.session_factory() as session:
+            await self._add_archived_pilot_target(session)
+            await self._add_pilot_events(session)
+            await session.commit()
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", True),
+                self.assertRaisesRegex(
+                    ShippingMilestonePilotValidationError,
+                    "Globalna synchronizacja",
+                ),
+            ):
+                await preview_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill="1050059395731U",
+                )
 
 
 class DpdInfoSynchronizationTests(unittest.IsolatedAsyncioTestCase):

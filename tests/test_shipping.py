@@ -93,7 +93,9 @@ from app.services.shipping_firebird import (
     load_shipping_overdue_invoices,
     load_shipping_overdue_summaries,
     load_shipping_queue,
+    restore_shipping_milestones_to_order,
     shipping_document_mode,
+    shipping_milestone_state_token,
     shipping_order_state_payload,
     write_shipment_to_order,
     write_shipping_milestones_to_order,
@@ -2055,7 +2057,17 @@ class ShippingSchemaTests(unittest.TestCase):
     def test_statusy_dpd_uzupelniaja_datowanie_i_opis_bez_kosztow(self) -> None:
         connection = MagicMock()
         cursor = connection.cursor.return_value
-        cursor.fetchone.return_value = ("0000111122223A", None, "test1", None, None)
+        cursor.fetchone.return_value = (
+            1001,
+            77,
+            2026,
+            "Z",
+            "0000111122223A",
+            None,
+            "test1",
+            None,
+            None,
+        )
         with (
             patch(
                 "app.services.shipping_firebird.firebird_writes_enabled",
@@ -2088,6 +2100,108 @@ class ShippingSchemaTests(unittest.TestCase):
             result["changed_fields"],
             ["DATA_PRZES", "WYKONANIE", "DATA_PRZES_WE", "PRZESYLKA_WE"],
         )
+        connection.commit.assert_called_once()
+
+    def test_statusy_dpd_blokuja_zapis_po_zmianie_stanu_od_dry_run(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (
+            1001,
+            77,
+            2026,
+            "Z",
+            "0000111122223A",
+            date(2026, 9, 2),
+            "Zmieniona ręcznie treść",
+            None,
+            None,
+        )
+        stale_token = shipping_milestone_state_token(
+            {
+                "order_table_id": 1001,
+                "order_id": 77,
+                "order_year": 2026,
+                "status": "Z",
+                "tracking_number": "0000111122223A",
+                "pickup_date": date(2026, 9, 2),
+                "execution_text": "Poprzednia treść",
+                "delivery_date": None,
+                "description_text": None,
+            }
+        )
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+            self.assertRaisesRegex(ShippingOrderStateConflict, "zmieniły się"),
+        ):
+            write_shipping_milestones_to_order(
+                order_table_id=1001,
+                tracking_number="0000111122223A",
+                delivery_date=date(2026, 9, 3),
+                expected_state_token=stale_token,
+            )
+
+        executed_queries = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertNotIn("UPDATE ZLECENIE SET", executed_queries)
+        connection.rollback.assert_called_once()
+
+    def test_rollback_pilota_przywraca_tylko_pola_faktycznie_zmienione(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (
+            1001,
+            77,
+            2026,
+            "Z",
+            "0000111122223A",
+            date(2026, 9, 2),
+            "Wysłana paczka 02.09.2026 0000111122223A",
+            date(2026, 9, 3),
+            "03.09.2026 12:00 — Doręczona: Przesyłka doręczona",
+        )
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+        ):
+            result = restore_shipping_milestones_to_order(
+                order_table_id=1001,
+                tracking_number="0000111122223A",
+                changed_fields=["DATA_PRZES_WE", "PRZESYLKA_WE"],
+                before={
+                    "DATA_PRZES": "2026-09-02",
+                    "WYKONANIE": "Wysłana paczka 02.09.2026 0000111122223A",
+                    "DATA_PRZES_WE": None,
+                    "PRZESYLKA_WE": None,
+                },
+                expected_after={
+                    "DATA_PRZES": "2026-09-02",
+                    "WYKONANIE": "Wysłana paczka 02.09.2026 0000111122223A",
+                    "DATA_PRZES_WE": "2026-09-03",
+                    "PRZESYLKA_WE": ("03.09.2026 12:00 — Doręczona: Przesyłka doręczona"),
+                },
+            )
+
+        update_call = next(
+            call for call in cursor.execute.call_args_list if "UPDATE ZLECENIE SET" in call.args[0]
+        )
+        self.assertIn("DATA_PRZES_WE = ?", update_call.args[0])
+        self.assertIn("PRZESYLKA_WE = ?", update_call.args[0])
+        self.assertNotIn("DATA_PRZES = ?", update_call.args[0])
+        self.assertNotIn("WYKONANIE = ?", update_call.args[0])
+        self.assertEqual(update_call.args[1], (None, None, 1001))
+        self.assertEqual(result["changed_fields"], ["DATA_PRZES_WE", "PRZESYLKA_WE"])
         connection.commit.assert_called_once()
 
     def test_rw_powstaje_w_zakupy_z_kolejnym_numerem_magazynowym(self) -> None:

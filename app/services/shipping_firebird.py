@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -30,6 +32,18 @@ ORDER_PHONE_CUE_PATTERN = re.compile(
     r"(?:tel(?:efon)?|kom(?:órkowy|orkowy)?|kontakt)\s*[:.]?\s*$",
     flags=re.IGNORECASE,
 )
+SHIPPING_MILESTONE_FIELDS = (
+    "DATA_PRZES",
+    "WYKONANIE",
+    "DATA_PRZES_WE",
+    "PRZESYLKA_WE",
+)
+SHIPPING_MILESTONE_STATE_KEYS = {
+    "DATA_PRZES": "pickup_date",
+    "WYKONANIE": "execution_text",
+    "DATA_PRZES_WE": "delivery_date",
+    "PRZESYLKA_WE": "description_text",
+}
 
 
 def _text(value: Any) -> str | None:
@@ -169,6 +183,177 @@ def _date_value(value: Any) -> date | None:
     if isinstance(value, datetime):
         return value.date()
     return value if isinstance(value, date) else None
+
+
+def _date_from_payload(value: Any) -> date | None:
+    """Odtwarza datę z raportu pilota bez akceptowania innych formatów."""
+    if value is None or isinstance(value, date):
+        return _date_value(value)
+    normalized = str(value).strip()
+    return date.fromisoformat(normalized) if normalized else None
+
+
+def _load_shipping_milestone_state(
+    cursor: Any,
+    *,
+    order_table_id: int,
+    with_lock: bool,
+) -> dict[str, Any]:
+    lock_clause = " WITH LOCK" if with_lock else ""
+    cursor.execute(
+        f"""
+        SELECT ID_ZLECENIE_TABLE, ID_ZLECENIE, ROK, STAN, PRZESYLKA,
+               DATA_PRZES, WYKONANIE, DATA_PRZES_WE, PRZESYLKA_WE
+        FROM ZLECENIE
+        WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?{lock_clause}
+        """,
+        (int(order_table_id), DELIVERY_TYPE_ID),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise ValueError("Nie znaleziono zlecenia do aktualizacji statusu przesyłki.")
+    return {
+        "order_table_id": int(row[0]),
+        "order_id": int(row[1]),
+        "order_year": int(row[2]),
+        "status": (_text(row[3]) or "").upper(),
+        "tracking_number": _text(row[4]),
+        "pickup_date": _date_value(row[5]),
+        "execution_text": _text(row[6]),
+        "delivery_date": _date_value(row[7]),
+        "description_text": _text(row[8]),
+    }
+
+
+def shipping_milestone_field_snapshot(state: dict[str, Any]) -> dict[str, Any]:
+    """Zwraca cztery pola MS w formacie bezpiecznym dla raportu i audytu."""
+    return {
+        field: _json_value(state.get(state_key))
+        for field, state_key in SHIPPING_MILESTONE_STATE_KEYS.items()
+    }
+
+
+def shipping_milestone_state_token(state: dict[str, Any]) -> str:
+    """Wylicza token współbieżności dla pól przesyłki jednego zlecenia MS."""
+    payload = {
+        "order_table_id": int(state["order_table_id"]),
+        "order_id": int(state["order_id"]),
+        "order_year": int(state["order_year"]),
+        "status": _text(state.get("status")),
+        "tracking_number": _text(state.get("tracking_number")),
+        "fields": shipping_milestone_field_snapshot(state),
+    }
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def load_shipping_milestone_state(order_table_id: int) -> dict[str, Any]:
+    """Odczytuje pola przesyłki MS bez blokady i bez wykonywania zapisu."""
+    connection = firebird_connection()
+    cursor = connection.cursor()
+    try:
+        return _load_shipping_milestone_state(
+            cursor,
+            order_table_id=order_table_id,
+            with_lock=False,
+        )
+    finally:
+        cursor.close()
+        connection.close()
+
+
+def _shipping_milestone_updates(
+    state: dict[str, Any],
+    *,
+    tracking_number: str,
+    pickup_date: date | None,
+    pickup_note: str | None,
+    delivery_date: date | None,
+    description_text: str | None,
+    expected_description_text: str | None,
+) -> dict[str, Any]:
+    if _text(state.get("tracking_number")) != _text(tracking_number):
+        raise ShippingOrderStateConflict("Numer przesyłki w MS różni się od numeru zdarzenia DPD.")
+
+    updates: dict[str, Any] = {}
+    if pickup_date is not None:
+        current_pickup = _date_value(state.get("pickup_date"))
+        if current_pickup not in {None, pickup_date}:
+            raise ShippingOrderStateConflict(
+                "Data nadania w MS została wcześniej ustawiona na inną wartość."
+            )
+        if current_pickup != pickup_date:
+            updates["DATA_PRZES"] = pickup_date
+        if pickup_note:
+            execution = _append_execution_note(state.get("execution_text"), pickup_note)
+            if execution != (_text(state.get("execution_text")) or ""):
+                updates["WYKONANIE"] = execution
+    if delivery_date is not None:
+        current_delivery = _date_value(state.get("delivery_date"))
+        if current_delivery not in {None, delivery_date}:
+            raise ShippingOrderStateConflict(
+                "Data odebrania przesyłki w MS została wcześniej ustawiona na inną wartość."
+            )
+        if current_delivery != delivery_date:
+            updates["DATA_PRZES_WE"] = delivery_date
+    if description_text is not None:
+        normalized_description = description_text.strip()[:250]
+        current_text = _text(state.get("description_text"))
+        expected_text = _text(expected_description_text)
+        allowed_current = {None, normalized_description}
+        if expected_text:
+            allowed_current.add(expected_text)
+        if current_text not in allowed_current:
+            raise ShippingOrderStateConflict(
+                "Opis przesyłki odebranej w MS został zmieniony ręcznie."
+            )
+        if current_text != normalized_description:
+            updates["PRZESYLKA_WE"] = normalized_description
+    return updates
+
+
+def preview_shipping_milestones_to_order(
+    *,
+    order_table_id: int,
+    tracking_number: str,
+    pickup_date: date | None = None,
+    pickup_note: str | None = None,
+    delivery_date: date | None = None,
+    description_text: str | None = None,
+    expected_description_text: str | None = None,
+) -> dict[str, Any]:
+    """Buduje podgląd zmian pól przesyłki bez blokady i bez zapisu."""
+    state = load_shipping_milestone_state(order_table_id)
+    updates = _shipping_milestone_updates(
+        state,
+        tracking_number=tracking_number,
+        pickup_date=pickup_date,
+        pickup_note=pickup_note,
+        delivery_date=delivery_date,
+        description_text=description_text,
+        expected_description_text=expected_description_text,
+    )
+    after = shipping_milestone_field_snapshot(state)
+    for field, value in updates.items():
+        after[field] = _json_value(value)
+    return {
+        "state_token": shipping_milestone_state_token(state),
+        "order": {
+            "order_table_id": state["order_table_id"],
+            "order_id": state["order_id"],
+            "order_year": state["order_year"],
+            "status": state["status"],
+            "tracking_number": state["tracking_number"],
+        },
+        "changed_fields": list(updates),
+        "before": shipping_milestone_field_snapshot(state),
+        "after": after,
+    }
 
 
 def _empty_overdue_invoice_summary() -> dict[str, Any]:
@@ -1200,6 +1385,7 @@ def write_shipping_milestones_to_order(
     delivery_date: date | None = None,
     description_text: str | None = None,
     expected_description_text: str | None = None,
+    expected_state_token: str | None = None,
 ) -> dict[str, Any]:
     """Zapisuje potwierdzone przez DPD daty i ostatni istotny opis przesyłki."""
     enabled, reason = firebird_writes_enabled()
@@ -1208,78 +1394,98 @@ def write_shipping_milestones_to_order(
     connection = firebird_connection()
     cursor = connection.cursor()
     try:
-        cursor.execute(
-            """
-            SELECT PRZESYLKA, DATA_PRZES, WYKONANIE, DATA_PRZES_WE, PRZESYLKA_WE
-            FROM ZLECENIE
-            WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
-            WITH LOCK
-            """,
-            (int(order_table_id), DELIVERY_TYPE_ID),
+        state = _load_shipping_milestone_state(
+            cursor,
+            order_table_id=order_table_id,
+            with_lock=True,
         )
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError("Nie znaleziono zlecenia do aktualizacji statusu przesyłki.")
-        existing_tracking, existing_pickup, existing_execution, existing_delivery, existing_text = (
-            row
-        )
-        if _text(existing_tracking) != _text(tracking_number):
+        current_state_token = shipping_milestone_state_token(state)
+        if expected_state_token and current_state_token != expected_state_token:
             raise ShippingOrderStateConflict(
-                "Numer przesyłki w MS różni się od numeru zdarzenia DPD."
+                "Pola przesyłki w MS zmieniły się po wykonaniu dry-run. "
+                "Ponów podgląd przed zapisem."
             )
-
-        assignments: list[str] = []
-        parameters: list[Any] = []
-        changed_fields: list[str] = []
-        if pickup_date is not None:
-            current_pickup = _date_value(existing_pickup)
-            if current_pickup not in {None, pickup_date}:
-                raise ShippingOrderStateConflict(
-                    "Data nadania w MS została wcześniej ustawiona na inną wartość."
-                )
-            if current_pickup != pickup_date:
-                assignments.append("DATA_PRZES = ?")
-                parameters.append(pickup_date)
-                changed_fields.append("DATA_PRZES")
-            if pickup_note:
-                execution = _append_execution_note(existing_execution, pickup_note)
-                if execution != (_text(existing_execution) or ""):
-                    assignments.append("WYKONANIE = ?")
-                    parameters.append(execution)
-                    changed_fields.append("WYKONANIE")
-        if delivery_date is not None:
-            current_delivery = _date_value(existing_delivery)
-            if current_delivery not in {None, delivery_date}:
-                raise ShippingOrderStateConflict(
-                    "Data odebrania przesyłki w MS została wcześniej ustawiona na inną wartość."
-                )
-            if current_delivery != delivery_date:
-                assignments.append("DATA_PRZES_WE = ?")
-                parameters.append(delivery_date)
-                changed_fields.append("DATA_PRZES_WE")
-        if description_text is not None:
-            normalized_description = description_text.strip()[:250]
-            current_text = _text(existing_text)
-            expected_text = _text(expected_description_text)
-            allowed_current = {None, normalized_description}
-            if expected_text:
-                allowed_current.add(expected_text)
-            if current_text not in allowed_current:
-                raise ShippingOrderStateConflict(
-                    "Opis przesyłki odebranej w MS został zmieniony ręcznie."
-                )
-            if current_text != normalized_description:
-                assignments.append("PRZESYLKA_WE = ?")
-                parameters.append(normalized_description)
-                changed_fields.append("PRZESYLKA_WE")
-        if assignments:
-            parameters.append(int(order_table_id))
+        updates = _shipping_milestone_updates(
+            state,
+            tracking_number=tracking_number,
+            pickup_date=pickup_date,
+            pickup_note=pickup_note,
+            delivery_date=delivery_date,
+            description_text=description_text,
+            expected_description_text=expected_description_text,
+        )
+        if updates:
+            assignments = [f"{field} = ?" for field in updates]
+            parameters = [*updates.values(), int(order_table_id)]
             cursor.execute(
                 f"UPDATE ZLECENIE SET {', '.join(assignments)} WHERE ID_ZLECENIE_TABLE = ?",
                 tuple(parameters),
             )
         connection.commit()
-        return {"status": "written", "changed_fields": changed_fields}
+        return {
+            "status": "written",
+            "changed_fields": list(updates),
+            "state_token_before": current_state_token,
+        }
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+        connection.close()
+
+
+def restore_shipping_milestones_to_order(
+    *,
+    order_table_id: int,
+    tracking_number: str,
+    changed_fields: list[str],
+    before: dict[str, Any],
+    expected_after: dict[str, Any],
+) -> dict[str, Any]:
+    """Przywraca wyłącznie pola zmienione przez wskazany przebieg pilota."""
+    enabled, reason = firebird_writes_enabled()
+    if not enabled:
+        raise RuntimeError(reason or "Zapis do Firebirda jest zablokowany.")
+    normalized_fields = list(dict.fromkeys(str(field) for field in changed_fields))
+    if not normalized_fields or any(
+        field not in SHIPPING_MILESTONE_FIELDS for field in normalized_fields
+    ):
+        raise ValueError("Raport pilota zawiera niepoprawną listę pól do wycofania.")
+    if any(field not in before or field not in expected_after for field in normalized_fields):
+        raise ValueError("Raport pilota nie zawiera pełnego stanu przed i po operacji.")
+
+    connection = firebird_connection()
+    cursor = connection.cursor()
+    try:
+        state = _load_shipping_milestone_state(
+            cursor,
+            order_table_id=order_table_id,
+            with_lock=True,
+        )
+        if _text(state.get("tracking_number")) != _text(tracking_number):
+            raise ShippingOrderStateConflict("Numer przesyłki w MS różni się od raportu pilota.")
+        current = shipping_milestone_field_snapshot(state)
+        for field in normalized_fields:
+            if current[field] != expected_after[field]:
+                raise ShippingOrderStateConflict(
+                    f"Pole {field} zmieniło się po pilocie; automatyczny rollback jest zabroniony."
+                )
+
+        assignments = [f"{field} = ?" for field in normalized_fields]
+        parameters: list[Any] = []
+        for field in normalized_fields:
+            value = before[field]
+            if field in {"DATA_PRZES", "DATA_PRZES_WE"}:
+                value = _date_from_payload(value)
+            parameters.append(value)
+        parameters.append(int(order_table_id))
+        cursor.execute(
+            f"UPDATE ZLECENIE SET {', '.join(assignments)} WHERE ID_ZLECENIE_TABLE = ?",
+            tuple(parameters),
+        )
+        connection.commit()
+        return {"status": "restored", "changed_fields": normalized_fields}
     except Exception:
         connection.rollback()
         raise
