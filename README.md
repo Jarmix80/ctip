@@ -5,6 +5,7 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
+- Kanoniczny mechanizm wdrożenia produkcji Windows, backupu i rollbacku: `docs/instal/windows_release_deployment.md`.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
 - Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, izoluje środowisko testów i rozlicza polecenia Python według kodu wyjścia zamiast zapisu na stderr.
 - Procedura pełnego uruchomienia Shipping, bramki gotowości, pilota RW/WZ/FV oraz obowiązkowego sprzątania danych `Test Umowa`: `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md`.
@@ -585,54 +586,11 @@ ALTER SEQUENCE ctip.call_events_id_seq OWNER TO appuser;
 Rekomenduje się uruchomienie obu procesów pod nadzorem `systemd` lub innego menedżera usług. W przypadku `systemd` kontroluj usterki poprzez `Restart=always` oraz logowanie do `journalctl`.
 
 ## Aktualizacja produkcji na Windows Server (PowerShell)
-Środowisko produkcyjne dla tego projektu działa na Windows Server.
+Środowisko produkcyjne działa na Windows Server, zwykle w trybie detached HEAD. Wdrożenie wykonuje się z Linux/WSL jednym mechanizmem `scripts/deploy_windows_prod.py`, który pobiera dane połączenia z klucza `ssh_serv_link`, sprawdza dokładne SHA, wykonuje backupy, używa środowiska NSSM, tworzy worktree kandydata i restartuje wyłącznie usługi wskazane w planie.
 
-Wdrożenie Shipping korzysta z dedykowanego skryptu `scripts/windows/deploy_shipping_prod_2026-08-27.ps1` i runbooka `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`. Procedura restartuje wyłącznie `CTIP-Web`; usługi `CollectorService`, `CTIP-SMS` i `CTIP-FormsPublic` muszą pozostać uruchomione.
+Najpierw obowiązkowo uruchom wariant `--dry-run`. Wariant `--apply` wolno wykonać dopiero po sprawdzeniu raportu, rewizji Alembic, dozwolonych ścieżek i endpointów. Pełny przykład oraz rollback opisuje `docs/instal/windows_release_deployment.md`.
 
-1. Aktualizacja kodu:
-```powershell
-cd C:\sciezka\do\ctip
-git checkout main
-git pull --ff-only origin main
-```
-2. Przygotowanie środowiska Python:
-```powershell
-if (-not (Test-Path .venv)) { python -m venv .venv }
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-3. Backup baz przed wdrozeniem (zalecane):
-```powershell
-.\scripts\windows\backup_prod_databases.ps1 -InstallDir D:\CTIP -GbakPath "C:\Program Files\Firebird\Firebird_2_5\bin\gbak.exe"
-```
-Skrypt tworzy backup PostgreSQL (`pg_dump` + opcjonalnie `pg_dumpall --globals-only --no-role-passwords`) oraz backup Firebird (`gbak -b -g`) do katalogu `D:\CTIP\backups\prod_<timestamp>`. Dane logowania Firebird przekazuje przez `ISC_USER` i `ISC_PASSWORD`, bez umieszczania hasła w argumentach procesu.
-Każde narzędzie zapisuje osobne logi STDOUT/STDERR w `D:\CTIP\backups\prod_<timestamp>\_logs`, a skrypt po wykonaniu waliduje istnienie i rozmiar wygenerowanych plików backupu.
-Jeżeli `pg_dumpall --globals-only --no-role-passwords` nie powiedzie się, skrypt domyślnie zgłasza ostrzeżenie i kontynuuje; użyj `-FailOnPgGlobalsError`, aby traktować ten przypadek jako błąd krytyczny.
-4. Co dalej po `pip install -r requirements.txt`:
-```powershell
-# 1) Ustaw/zweryfikuj .env produkcyjne (szczególnie Firebird)
-# FB_MODE=network
-# FB_HOST, FB_PORT, FB_DATABASE, FB_USER, FB_PASSWORD, FB_CHARSET, FB_ROLE
-
-# 2) Migracje bazy PostgreSQL
-alembic upgrade head
-
-# 3) Restart usług aplikacji (produkcyjne nazwy usług)
-Restart-Service "CTIP-Web"
-Restart-Service "CollectorService"
-Restart-Service "CTIP-SMS"
-```
-5. Weryfikacja po restarcie:
-```powershell
-Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty StatusCode
-```
-6. W panelu administratora (`/admin`) przejdź do sekcji `Konfiguracja bazy`, zapisz konfigurację Firebird i wykonaj `Testuj połączenie`.
-
-Aktualne nazwy usług produkcyjnych (Windows Server):
-- `CollectorService` – Collector Service (`collector_full.py`)
-- `CTIP-SMS` – moduł wysyłki SMS
-- `CTIP-Web` – backend/panel web
+Nie należy wykonywać na produkcji ręcznego `git pull`, zmiany gałęzi, samodzielnego `alembic upgrade head` ani szerokiego restartu usług. Skrypty datowane oraz `scripts/windows/update_ctip*.ps1` są zablokowane i pozostają wyłącznie materiałem historycznym.
 
 ## Backend API (FastAPI)
 Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w katalogu `app/`. Do pracy wymaga zależności opisanych w `pyproject.toml` (`fastapi`, `uvicorn`, `sqlalchemy`, `psycopg`, `pydantic-settings`).
