@@ -110,7 +110,7 @@ services:
       - ./ops/google-egress/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks:
       ctip_test_internal:
-        ipv4_address: 172.28.250.20
+        ipv4_address: 172.28.252.20
       ctip_test_edge:
     restart: unless-stopped
 
@@ -127,9 +127,9 @@ services:
       - .:/app
       - ${CTIP_TEST_SECRET_DIR:-./.runtime-secrets}:/run/secrets:ro
     extra_hosts:
-      - "oauth2.googleapis.com:172.28.250.20"
-      - "sheets.googleapis.com:172.28.250.20"
-      - "www.googleapis.com:172.28.250.20"
+      - "oauth2.googleapis.com:172.28.252.20"
+      - "sheets.googleapis.com:172.28.252.20"
+      - "www.googleapis.com:172.28.252.20"
     command: >-
       sh -lc "python scripts/test_env_preflight.py --check-network &&
       python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -181,11 +181,11 @@ networks:
     internal: true
     ipam:
       config:
-        - subnet: 172.28.250.0/24
+        - subnet: 172.28.252.0/24
   ctip_test_edge:
     ipam:
       config:
-        - subnet: 172.28.251.0/24
+        - subnet: 172.28.253.0/24
 
 volumes:
   ctip_mirror_postgres_data:

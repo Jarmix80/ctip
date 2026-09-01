@@ -6,6 +6,11 @@ Na serwerze testowym działa jeden kanoniczny projekt Compose o nazwie `ctip-tes
 
 Kod usług aplikacyjnych pochodzi z jednego niezmiennego obrazu oznaczonego pełnym SHA commita. Kontenery nie montują katalogu `app` z aktywnego worktree, dlatego zmiana gałęzi w repozytorium nie zmienia działającego systemu.
 
+Kanoniczny projekt używa podsieci `172.28.252.0/24` dla usług wewnętrznych i
+`172.28.253.0/24` dla bramy. Historyczne podsieci `172.28.250.0/24` oraz
+`172.28.251.0/24` pozostają zarezerwowane dla zachowanego stosu rollbacku, więc
+oba zestawy sieci nie kolidują nawet wtedy, gdy stare kontenery są zatrzymane.
+
 ## Dane trwałe
 
 - PostgreSQL używa zachowanego wolumenu `ctip-prod-mirror_ctip_mirror_postgres_data`.
