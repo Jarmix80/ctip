@@ -151,7 +151,7 @@ function Test-CtipHttpEndpoint {
         }
         Start-Sleep -Seconds 3
     }
-    throw "$Label nie zwrócił oczekiwanego HTTP $ExpectedStatus: $Url"
+    throw "$Label nie zwrócił oczekiwanego HTTP ${ExpectedStatus}: $Url"
 }
 
 function Get-CtipServiceStartTime {

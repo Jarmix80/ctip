@@ -205,6 +205,15 @@ def test_powershell_contains_healthcheck_rollback() -> None:
     assert "Start-Service $rollbackServices" in script
 
 
+def test_powershell_healthcheck_message_delimits_variable_before_colon() -> None:
+    """Dwukropek po zmiennej nie może być interpretowany jako zakres PowerShell."""
+    module = (
+        Path(__file__).resolve().parents[1] / "scripts" / "windows" / "CtipDeployment.Common.psm1"
+    ).read_text(encoding="utf-8")
+    assert "${ExpectedStatus}: $Url" in module
+    assert "$ExpectedStatus: $Url" not in module
+
+
 def test_legacy_update_scripts_are_blocked() -> None:
     """Historyczne aktualizatory nie mogą ominąć kanonicznego wdrożenia."""
     repository = Path(__file__).resolve().parents[1]
