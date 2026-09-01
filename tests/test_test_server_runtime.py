@@ -24,6 +24,7 @@ def _config() -> dict:
             "image": "ctip/test-runtime:0123456789abcdef0123456789abcdef01234567",
             "environment": {
                 "CTIP_RUNTIME_PROFILE": "test",
+                "PGHOST": "ctip-test-postgres",
                 "PGDATABASE": "ctip_test",
                 "SMS_TEST_MODE": "true",
                 "OUTBOUND_DELIVERY_MODE": "capture",
@@ -70,6 +71,7 @@ def _config() -> dict:
     services["firebird"] = {
         "volumes": [{"type": "volume", "source": "firebird-config", "target": "/firebird"}]
     }
+    services["postgres"] = {"networks": {"ctip_test_internal": {"aliases": ["ctip-test-postgres"]}}}
     services["test-gateway"] = {"ports": [{"published": "8000", "target": 8000}]}
     return {"name": "ctip-test", "services": services}
 
@@ -95,6 +97,21 @@ def test_server_compose_rejects_source_mount_and_firebird_write() -> None:
 
     assert any("montuje kod źródłowy" in issue for issue in issues)
     assert any("FB_ALLOW_WRITES=false" in issue for issue in issues)
+
+
+def test_server_compose_rejects_ambiguous_postgres_dns() -> None:
+    """Kontrola blokuje nazwę bazy kolidującą z siecią CHAT_KP."""
+    config = _config()
+    config["services"]["bot-identity-api"]["environment"]["PGHOST"] = "postgres"
+    config["services"]["postgres"]["networks"]["ctip_test_internal"]["aliases"] = []
+
+    issues = collect_issues(
+        config,
+        expected_image="ctip/test-runtime:0123456789abcdef0123456789abcdef01234567",
+    )
+
+    assert any("bot-identity-api" in issue and "ctip-test-postgres" in issue for issue in issues)
+    assert any("PostgreSQL" in issue and "ctip-test-postgres" in issue for issue in issues)
 
 
 def test_server_compose_rejects_old_port_and_unsafe_secret_path() -> None:
@@ -148,7 +165,9 @@ def test_server_commands_do_not_depend_on_legacy_network_name() -> None:
     assert "--backup-manifest /backup/SHA256SUMS" in script
     assert "-e PYTHONPATH=/app" in script
     assert "wait_for_persistent_services" in script
-    assert "scripts/check_bot_identity_test_runtime.py" in script
+    assert "python -m scripts.check_bot_identity_test_runtime" in script
     assert "ensure_no_recent_runtime_errors" in script
+    assert "wait_for_persistent_services || return 1" in script
+    assert "ensure_no_recent_runtime_errors || return 1" in script
     assert "env -i" in script
     assert 'CTIP_ENV_FILE="${ENV_FILE}"' in script

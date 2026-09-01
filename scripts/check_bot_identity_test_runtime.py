@@ -9,6 +9,7 @@ import urllib.request
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal, engine
@@ -133,7 +134,7 @@ def main() -> int:
     arguments = parse_args()
     try:
         asyncio.run(run(arguments.max_wait_seconds))
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, SQLAlchemyError, ValueError) as exc:
         print(f"[BŁĄD] {exc}")
         return 1
     return 0

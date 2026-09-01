@@ -10,6 +10,9 @@ Kanoniczny projekt używa podsieci `172.28.252.0/24` dla usług wewnętrznych i
 `172.28.253.0/24` dla bramy. Historyczne podsieci `172.28.250.0/24` oraz
 `172.28.251.0/24` pozostają zarezerwowane dla zachowanego stosu rollbacku, więc
 oba zestawy sieci nie kolidują nawet wtedy, gdy stare kontenery są zatrzymane.
+PostgreSQL ma w sieci wewnętrznej unikalny alias `ctip-test-postgres`. Nie wolno
+zastępować go ogólną nazwą `postgres`, ponieważ usługa Bot Identity należy także
+do sieci CHAT_KP, w której występuje inna baza o takim aliasie.
 
 ## Dane trwałe
 

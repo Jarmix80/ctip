@@ -195,13 +195,13 @@ ensure_no_recent_runtime_errors() {
 }
 
 wait_for_stack() {
-    wait_for_url "http://127.0.0.1:8000/health" "CTIP"
-    wait_for_url "http://192.168.0.9:8001/health" "CRM"
-    wait_for_url "http://192.168.0.9:8790/health" "LAB"
-    wait_for_persistent_services
+    wait_for_url "http://127.0.0.1:8000/health" "CTIP" || return 1
+    wait_for_url "http://192.168.0.9:8001/health" "CRM" || return 1
+    wait_for_url "http://192.168.0.9:8790/health" "LAB" || return 1
+    wait_for_persistent_services || return 1
     CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" exec -T bot-identity-api \
-        python scripts/check_bot_identity_test_runtime.py --max-wait-seconds 120
-    ensure_no_recent_runtime_errors
+        python -m scripts.check_bot_identity_test_runtime --max-wait-seconds 120 || return 1
+    ensure_no_recent_runtime_errors || return 1
 }
 
 backup_test_data() {

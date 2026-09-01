@@ -101,6 +101,8 @@ def collect_issues(
             issues.append(f"Usługa {name} nie ma profilu testowego.")
         if environment.get("PGDATABASE") != "ctip_test":
             issues.append(f"Usługa {name} nie wskazuje bazy ctip_test.")
+        if environment.get("PGHOST") != "ctip-test-postgres":
+            issues.append(f"Usługa {name} nie używa jednoznacznego hosta ctip-test-postgres.")
         if not _is_true(environment.get("SMS_TEST_MODE")):
             issues.append(f"Usługa {name} nie ma SMS_TEST_MODE=true.")
         if environment.get("OUTBOUND_DELIVERY_MODE") not in ("capture", "disabled"):
@@ -122,6 +124,12 @@ def collect_issues(
     ]
     if len(firebird_config_mounts) != 1 or _mount_source(firebird_config_mounts[0]).startswith("/"):
         issues.append("Firebird musi używać stabilnego nazwanego wolumenu konfiguracji.")
+
+    postgres_network = ((services.get("postgres") or {}).get("networks") or {}).get(
+        "ctip_test_internal"
+    ) or {}
+    if "ctip-test-postgres" not in (postgres_network.get("aliases") or []):
+        issues.append("PostgreSQL nie ma jednoznacznego aliasu ctip-test-postgres.")
 
     web = services.get("web") or {}
     web_environment = web.get("environment") or {}
