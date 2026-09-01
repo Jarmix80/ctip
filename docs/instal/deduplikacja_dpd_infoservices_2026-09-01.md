@@ -31,7 +31,7 @@ python scripts/dpd_infoservices_dedupe.py --apply \
   --confirmation "ZASTOSUJ DEDUPLIKACJE DPD"
 ```
 
-Skrypt blokuje zmieniane rekordy, ponownie przelicza plan i odrzuca zapis, jeśli stan zmienił się od dry-run. Raport operacji trafia do ignorowanego katalogu `runtime/shipping_dpd_dedupe` i zawiera stan potrzebny do precyzyjnego rollbacku.
+Skrypt najpierw przejmuje tę samą blokadę PostgreSQL co harmonogram i ręczna synchronizacja InfoServices, następnie blokuje zmieniane rekordy, ponownie przelicza plan i odrzuca zapis, jeśli stan zmienił się od dry-run. Raport operacji trafia do ignorowanego katalogu `runtime/shipping_dpd_dedupe` i zawiera stan potrzebny do precyzyjnego rollbacku.
 
 ## Weryfikacja
 

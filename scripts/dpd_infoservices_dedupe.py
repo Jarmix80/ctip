@@ -64,46 +64,50 @@ def _load_apply_report(report_dir: Path, run_id: str) -> dict[str, Any]:
 async def execute(args: argparse.Namespace) -> dict[str, Any]:
     """Wykonuje podgląd, zapis albo rollback w jednej transakcji PostgreSQL."""
     from app.db.session import AsyncSessionLocal
+    from app.services.dpd_infoservices_sync import dpd_info_database_lock
     from app.services.dpd_tracking_dedupe import (
         apply_dpd_tracking_dedupe,
         preview_dpd_tracking_dedupe,
         rollback_dpd_tracking_dedupe,
     )
 
-    async with AsyncSessionLocal() as session:
-        try:
-            if args.rollback:
-                normalized_run_id = str(UUID(str(args.rollback)))
-                required = f"WYCOFAJ DEDUPLIKACJE DPD {normalized_run_id}"
-                if args.confirmation != required:
-                    raise ValueError(f"Niepoprawne potwierdzenie. Wymagana fraza: {required}")
-                report = _load_apply_report(args.report_dir, normalized_run_id)
-                result = await rollback_dpd_tracking_dedupe(
-                    session,
-                    run_id=normalized_run_id,
-                    rollback_state=report.get("rollback_state") or [],
-                )
-                await session.commit()
-                return result
-            if args.apply:
-                if args.confirmation != APPLY_CONFIRMATION:
-                    raise ValueError(
-                        f"Niepoprawne potwierdzenie. Wymagana fraza: {APPLY_CONFIRMATION}"
+    async with dpd_info_database_lock() as lock_acquired:
+        if not lock_acquired:
+            raise RuntimeError("Inny proces CTIP synchronizuje teraz InfoServices.")
+        async with AsyncSessionLocal() as session:
+            try:
+                if args.rollback:
+                    normalized_run_id = str(UUID(str(args.rollback)))
+                    required = f"WYCOFAJ DEDUPLIKACJE DPD {normalized_run_id}"
+                    if args.confirmation != required:
+                        raise ValueError(f"Niepoprawne potwierdzenie. Wymagana fraza: {required}")
+                    report = _load_apply_report(args.report_dir, normalized_run_id)
+                    result = await rollback_dpd_tracking_dedupe(
+                        session,
+                        run_id=normalized_run_id,
+                        rollback_state=report.get("rollback_state") or [],
                     )
-                if not args.state_token:
-                    raise ValueError("Tryb --apply wymaga tokenu z aktualnego dry-run.")
-                result = await apply_dpd_tracking_dedupe(
-                    session,
-                    expected_state_token=args.state_token,
-                )
-                await session.commit()
+                    await session.commit()
+                    return result
+                if args.apply:
+                    if args.confirmation != APPLY_CONFIRMATION:
+                        raise ValueError(
+                            "Niepoprawne potwierdzenie. " f"Wymagana fraza: {APPLY_CONFIRMATION}"
+                        )
+                    if not args.state_token:
+                        raise ValueError("Tryb --apply wymaga tokenu z aktualnego dry-run.")
+                    result = await apply_dpd_tracking_dedupe(
+                        session,
+                        expected_state_token=args.state_token,
+                    )
+                    await session.commit()
+                    return result
+                result = await preview_dpd_tracking_dedupe(session)
+                await session.rollback()
                 return result
-            result = await preview_dpd_tracking_dedupe(session)
-            await session.rollback()
-            return result
-        except Exception:
-            await session.rollback()
-            raise
+            except Exception:
+                await session.rollback()
+                raise
 
 
 def run() -> int:

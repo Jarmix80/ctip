@@ -652,6 +652,13 @@ async def _database_sync_lock() -> AsyncIterator[bool]:
             await connection.close()
 
 
+@asynccontextmanager
+async def dpd_info_database_lock() -> AsyncIterator[bool]:
+    """Udostępnia wspólną blokadę synchronizacji narzędziom administracyjnym DPD."""
+    async with _database_sync_lock() as acquired:
+        yield acquired
+
+
 async def _create_sync_run(
     *,
     trigger_type: Literal["scheduler", "manual", "backfill"],
@@ -962,6 +969,7 @@ __all__ = [
     "classify_dpd_event",
     "dpd_semantic_event_key",
     "dpd_event_group",
+    "dpd_info_database_lock",
     "is_dpd_pickup_confirmation",
     "latest_dpd_info_sync_status",
     "persist_dpd_info_events",
