@@ -248,6 +248,7 @@ def materialize_remote_file_script(
     """Buduje krótki skrypt pobierający plik przez `git show` i sprawdzający SHA-256."""
     return (
         "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';"
+        "$OutputEncoding=[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false);"
         f"$repo={_powershell_quoted(install_dir)};$dst={_powershell_quoted(destination)};"
         f"$spec={_powershell_quoted(f'{revision}:{repository_path}')};"
         "$lines=@(& git -C $repo show $spec);if($LASTEXITCODE-ne 0){throw 'git show failed'};"

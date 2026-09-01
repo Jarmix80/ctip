@@ -15,6 +15,7 @@ from scripts.deploy_windows_prod import (
     encode_powershell,
     execute,
     log_since_current_start,
+    materialize_remote_file_script,
     merge_environment,
     normalize_text_bytes,
     parse_ssh_command,
@@ -92,6 +93,21 @@ def test_normalize_text_bytes_unifies_crlf_and_lf() -> None:
     """Hash pliku nie zależy od zakończeń linii ani BOM."""
     assert normalize_text_bytes(b"a\r\nb\r\n") == b"a\nb\n"
     assert normalize_text_bytes(b"\xef\xbb\xbfa\nb") == b"a\nb\n"
+
+
+def test_materializacja_git_wymusza_utf8_i_miesci_sie_w_limicie() -> None:
+    """Polskie znaki z `git show` nie mogą zmieniać kontrolnego SHA-256."""
+    script = materialize_remote_file_script(
+        install_dir=r"D:\CTIP",
+        revision=RELEASE,
+        repository_path="scripts/windows/CtipDeployment.Common.psm1",
+        destination=r"D:\CTIP\.deploy\common.psm1",
+        expected_hash="a" * 64,
+    )
+
+    assert "$OutputEncoding=[Console]::OutputEncoding" in script
+    assert "Text.UTF8Encoding($false)" in script
+    encode_powershell(script)
 
 
 def test_log_since_current_start_ignores_historical_traceback() -> None:

@@ -4,7 +4,7 @@
 
 Jedynym obsługiwanym mechanizmem wdrożenia produkcyjnego jest lokalne polecenie `scripts/deploy_windows_prod.py`. Skrypt odczytuje wyłącznie klucz `ssh_serv_link` z `.env`, zachowuje cytowanie argumentów SSH i nie ujawnia wartości w logach. Historyczne skrypty aktualizacyjne i wdrożeniowe są zablokowane.
 
-Duży kod PowerShell jest pobierany na serwer z konkretnego commita poleceniem `git show`, zapisywany do pliku tymczasowego, weryfikowany po znormalizowaniu `CRLF/LF` i uruchamiany przez `powershell -File`. `EncodedCommand` służy wyłącznie do krótkich poleceń kontrolnych.
+Duży kod PowerShell jest pobierany na serwer z konkretnego commita poleceniem `git show`, z wymuszonym dekodowaniem UTF-8, zapisywany do pliku tymczasowego, weryfikowany po znormalizowaniu `CRLF/LF` i uruchamiany przez `powershell -File`. `EncodedCommand` służy wyłącznie do krótkich poleceń kontrolnych.
 
 ## Przygotowanie planu
 
