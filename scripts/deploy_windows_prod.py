@@ -349,7 +349,7 @@ def execute(
         "endpoints": args.endpoint,
     }
     plan_base64 = base64.b64encode(json.dumps(plan, separators=(",", ":")).encode()).decode()
-    remote_dir = rf"{args.install_dir}\.deploy\ctip-release-{args.release[:12]}"
+    remote_dir = rf"{args.install_dir}\.git\ctip-release-{args.release[:12]}"
     remote_module = rf"{remote_dir}\CtipDeployment.Common.psm1"
     remote_script = rf"{remote_dir}\deploy_windows_release.ps1"
     files = (
