@@ -14,10 +14,14 @@ from app.services.section_permissions import default_sections_for_role, normaliz
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
-    def test_preferencja_shipping_jest_jedynym_headem_alembic(self) -> None:
+    def test_kamienie_milowe_shipping_sa_jedynym_headem_alembic(self) -> None:
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["a1c3e5f7b9d2"])
+        self.assertEqual(scripts.get_heads(), ["d6e8f0a2b4c7"])
+        milestone_revision = scripts.get_revision("d6e8f0a2b4c7")
+        self.assertIsNotNone(milestone_revision)
+        self.assertEqual(milestone_revision.down_revision, "a1c3e5f7b9d2")
+
         preference_revision = scripts.get_revision("a1c3e5f7b9d2")
         self.assertIsNotNone(preference_revision)
         self.assertEqual(preference_revision.down_revision, "e4a8c1d9f2b7")
@@ -162,10 +166,11 @@ class ShippingReleaseTests(unittest.TestCase):
     def test_operacje_mutacyjne_maja_blokady_a_synchronizacja_jest_odczytowa(self) -> None:
         routes = Path("app/api/routes/admin_shipping.py").read_text(encoding="utf-8")
 
-        self.assertEqual(routes.count("@router.post"), 15)
+        self.assertEqual(routes.count("@router.post"), 16)
         self.assertEqual(routes.count("_require_catalog_mutations()"), 6)
         self.assertEqual(routes.count("_require_fulfillment()"), 10)
         self.assertIn('@router.post("/tracking/sync"', routes)
+        self.assertIn('@router.post("/geocoder/match"', routes)
         self.assertIn("synchronize_dpd_infoservices", routes)
 
 

@@ -100,6 +100,7 @@ input.invalid:focus { outline-color: #fecdca; }
 .shipping-legacy-audit-status > strong.status-closed { color: #5925dc; background: #e9e5ff; }
 .shipping-legacy-audit-status > strong.status-manual_billing { color: #b54708; background: #fef0c7; }
 .shipping-legacy-audit-status #shipping-v2-audit-dpd-status { display: inline-flex; width: fit-content; }
+.shipping-legacy-audit-status #shipping-v2-audit-tracking.milestone-error { color: var(--red); font-weight: 750; }
 .shipping-legacy-progress { height: 5px; margin: 11px 0 16px; overflow: hidden; border-radius: 99px; background: #e4e7ec; }
 .shipping-legacy-progress i { display: block; width: 0; height: 100%; background: var(--green); transition: width .25s ease; }
 .shipping-legacy-audit ol { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
@@ -135,6 +136,7 @@ input.invalid:focus { outline-color: #fecdca; }
 .shipping-address-sources { margin: 0 18px 18px; }
 .shipping-section-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
 .shipping-section-heading h3 { margin: 3px 0 0; }
+.shipping-address-heading-actions { display: flex; gap: 8px; align-items: center; }
 .shipping-address-candidates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .shipping-address-candidate { display: grid; gap: 6px; min-height: 112px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; text-align: left; color: var(--ink); background: #fff; }
 .shipping-address-candidate.active { border-color: #1570ef; background: #eff4ff; }
@@ -142,6 +144,14 @@ input.invalid:focus { outline-color: #fecdca; }
 .shipping-address-candidate .warning { color: #b42318; font-weight: 700; }
 .shipping-address-candidate .warning.partial { color: #b54708; }
 .shipping-address-use { justify-self: start; margin-top: auto; }
+.shipping-geocoder-results { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid #84adff; border-radius: 10px; background: #eff4ff; }
+.shipping-geocoder-results[hidden] { display: none; }
+.shipping-geocoder-summary { display: grid; gap: 3px; color: #1849a9; }
+.shipping-geocoder-summary small { color: #475467; }
+.shipping-geocoder-candidate { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px; border: 1px solid #b2ccff; border-radius: 8px; background: #fff; }
+.shipping-geocoder-candidate > span { display: grid; gap: 3px; }
+.shipping-geocoder-candidate small { color: var(--muted); }
+.shipping-geocoder-candidate > div { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .shipping-form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; padding: 0 18px; }
 .shipping-form-grid .wide { grid-column: span 2; }
 .shipping-check-row { display: flex; gap: 9px; align-items: center; margin: 14px 18px; color: #475467; }
@@ -405,6 +415,9 @@ input.invalid:focus { outline-color: #fecdca; }
   .shipping-status-grid, .shipping-form-grid { grid-template-columns: 1fr; }
   .shipping-legacy-audit { grid-template-columns: 1fr; }
   .shipping-form-grid .wide { grid-column: auto; }
+  .shipping-section-heading, .shipping-address-heading-actions, .shipping-geocoder-candidate { align-items: stretch; flex-direction: column; }
+  .shipping-geocoder-candidate > div { justify-content: stretch; }
+  .shipping-geocoder-candidate > div .shipping-button { flex: 1; }
   .shipping-stock-head { align-items: stretch; flex-direction: column; }
   .shipping-label-preview { grid-template-columns: 1fr; }
   .shipping-label-editor-head, .shipping-label-editor-actions { align-items: stretch; flex-direction: column; }

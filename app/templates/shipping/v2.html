@@ -5,10 +5,10 @@
     <title>CTIP – wysyłki części V2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-wide-layout-01">
-    <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-wide-layout-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-label-text-01"></script>
-    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-tracking-02"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-shipping-fields-01">
+    <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-shipping-fields-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-milestones-geocoder-01"></script>
+    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-milestones-01"></script>
   </head>
   <body class="shipping-v2-body{% if shipping_default_entry %} shipping-layout-resolving{% endif %}" data-shipping-layout="v2" data-shipping-default-entry="{{ 'true' if shipping_default_entry else 'false' }}">
     <main class="shipping-v2-shell">
@@ -123,8 +123,12 @@
               <section class="shipping-v2-doc-section">
                 <header><span>I</span><div><p class="shipping-step">ODBIORCA</p><h2>Adres i osoba kontaktowa</h2></div></header>
                 <div class="shipping-address-sources">
-                  <div class="shipping-section-heading"><div><p class="shipping-step">DOSTĘPNE ŹRÓDŁA</p><h3>Wybierz dane do etykiety</h3></div></div>
+                  <div class="shipping-section-heading">
+                    <div><p class="shipping-step">DOSTĘPNE ŹRÓDŁA</p><h3>Wybierz dane do etykiety</h3></div>
+                    <button id="shipping-geocoder-match" type="button" class="shipping-button secondary compact">Sprawdź adres</button>
+                  </div>
                   <div id="shipping-address-candidates" class="shipping-address-candidates"></div>
+                  <div id="shipping-geocoder-results" class="shipping-geocoder-results" hidden></div>
                 </div>
 
                 <div class="shipping-form-grid">

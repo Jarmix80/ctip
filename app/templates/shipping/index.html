@@ -5,9 +5,9 @@
     <title>CTIP – wysyłki części</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-wide-layout-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-label-text-01"></script>
-    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-legacy-audit-01"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-shipping-fields-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-milestones-geocoder-01"></script>
+    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-milestones-01"></script>
   </head>
   <body data-shipping-layout="legacy" data-shipping-default-entry="false">
     <main class="shipping-shell">
@@ -136,9 +136,13 @@
           <section class="shipping-address-sources">
             <div class="shipping-section-heading">
               <div><p class="shipping-step">ADRES ODBIORCY</p><h3>Wybierz źródło adresu</h3></div>
-              <span id="shipping-address-source-label" class="shipping-chip">Wpisano ręcznie</span>
+              <div class="shipping-address-heading-actions">
+                <span id="shipping-address-source-label" class="shipping-chip">Wpisano ręcznie</span>
+                <button id="shipping-geocoder-match" type="button" class="shipping-button secondary compact">Sprawdź adres</button>
+              </div>
             </div>
             <div id="shipping-address-candidates" class="shipping-address-candidates"></div>
+            <div id="shipping-geocoder-results" class="shipping-geocoder-results" hidden></div>
           </section>
 
           <div class="shipping-form-grid">

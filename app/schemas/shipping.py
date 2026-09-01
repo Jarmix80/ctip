@@ -48,6 +48,32 @@ class ShippingAddressRequest(StrictShippingRequest):
         return normalized
 
 
+class ShippingGeocoderRequest(StrictShippingRequest):
+    """Niepełny adres pocztowy przekazywany do serwerowego geokodera."""
+
+    street: str = Field(min_length=1, max_length=250)
+    postal_code: str | None = Field(default=None, max_length=20)
+    city: str | None = Field(default=None, max_length=150)
+
+    @field_validator("street", "postal_code", "city", mode="before")
+    @classmethod
+    def normalize_text(cls, value: str | None) -> str | None:
+        """Scala białe znaki i zamienia puste wartości opcjonalne na `None`."""
+        if value is None:
+            return None
+        normalized = " ".join(str(value).split())
+        return normalized or None
+
+    @field_validator("postal_code")
+    @classmethod
+    def validate_postal_code(cls, value: str | None) -> str | None:
+        """Normalizuje pięć cyfr, a niepełną wartość pozostawia geokoderowi."""
+        digits = "".join(character for character in value or "" if character.isdigit())
+        if len(digits) == 5:
+            return f"{digits[:2]}-{digits[2:]}"
+        return value
+
+
 class ShippingReviewItemRequest(StrictShippingRequest):
     """Wybór części, ceny netto i zgody na wydanie przy stanie zerowym."""
 
@@ -238,6 +264,7 @@ __all__ = [
     "ShippingConsolidatedCreateRequest",
     "ShippingCreateRequest",
     "ShippingDayCloseRequest",
+    "ShippingGeocoderRequest",
     "ShippingManualTrackingRequest",
     "ShippingOrderCloseRequest",
     "ShippingReviewRequest",

@@ -139,6 +139,28 @@ class Settings(BaseSettings):
         alias="DPD_INFO_MAX_BATCHES_PER_SYNC",
     )
     dpd_info_timeout_seconds: float = Field(default=30.0, alias="DPD_INFO_TIMEOUT_SECONDS")
+    shipping_dpd_firebird_milestones_enabled: bool = Field(
+        default=False,
+        alias="SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED",
+    )
+    shipping_geocoder_enabled: bool = Field(default=False, alias="SHIPPING_GEOCODER_ENABLED")
+    addresy_app_api_url: str = Field(
+        default="https://api.adresy.app/api/v1",
+        alias="ADDRESY_APP_API_URL",
+    )
+    addresy_app_api_key: str | None = Field(default=None, alias="ADDRESY_APP_API_KEY")
+    addresy_app_timeout_seconds: float = Field(
+        default=5.0,
+        alias="ADDRESY_APP_TIMEOUT_SECONDS",
+        gt=0,
+        le=30,
+    )
+    addresy_app_min_score: float = Field(
+        default=0.85,
+        alias="ADDRESY_APP_MIN_SCORE",
+        ge=0,
+        le=1,
+    )
     dpd_sender_company: str = Field(default="Ksero-Partner", alias="DPD_SENDER_COMPANY")
     dpd_sender_contact: str | None = Field(default=None, alias="DPD_SENDER_CONTACT")
     dpd_sender_street: str | None = Field(default=None, alias="DPD_SENDER_STREET")

@@ -102,3 +102,5 @@
 - Istniejące sprawy pozostają zgodne z migracją dzięki wartości `NULL`; treść jest dla nich wyliczana z numeru zlecenia oraz zapisanych części przy kolejnym użyciu modułu Shipping.
 ## 2026-09-01
 - Migracja `a1c3e5f7b9d2` dodaje do `ctip.admin_user` kontrolowaną preferencję `shipping_layout` (`v2`, `legacy`) z domyślną wartością `v2`, dzięki czemu wybór wyglądu Shipping pozostaje przypisany do konta użytkownika.
+- Migracja `d6e8f0a2b4c7` rozszerza `ctip.shipping_shipment` o znaczniki idempotentnego zapisu numeru i adresu etykiety oraz zdarzeń odbioru, doręczenia i istotnego opisu DPD do Menadżera Serwisu.
+- Pola kosztów przesyłki w Firebirdzie pozostają poza automatyzacją, ponieważ DPDServices i InfoServices nie przekazują wiarygodnego kosztu rozliczeniowego umowy przewozowej.

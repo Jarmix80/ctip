@@ -23,6 +23,7 @@ const shippingState = {
   allowNegativeStock: false,
   priceMode: null,
   selectedAddressKey: "manual",
+  geocoderCandidates: [],
   catalog: {
     mappings: [],
     page: 1,
@@ -978,6 +979,122 @@ function renderShippingAddressCandidates() {
   });
 }
 
+function clearShippingGeocoderResults() {
+  shippingState.geocoderCandidates = [];
+  const container = document.getElementById("shipping-geocoder-results");
+  if (!container) return;
+  container.hidden = true;
+  container.innerHTML = "";
+}
+
+function shippingGeocoderCandidateLine(candidate) {
+  return [
+    candidate?.street,
+    `${candidate?.postal_code || ""} ${candidate?.city || ""}`.trim(),
+  ].filter(Boolean).join(", ");
+}
+
+function applyShippingGeocoderCandidate(candidate, replaceExisting = false) {
+  if (!candidate) return;
+  const fields = [
+    ["shipping-street", "street"],
+    ["shipping-postal", "postal_code"],
+    ["shipping-city", "city"],
+  ];
+  const changedNonempty = fields.filter(([inputId, field]) => {
+    const current = document.getElementById(inputId).value.trim();
+    const incoming = String(candidate[field] || "").trim();
+    return replaceExisting && current && incoming && current !== incoming;
+  });
+  if (changedNonempty.length && !window.confirm(
+    "Adresy.app proponuje zmianę uzupełnionych pól adresu. Czy na pewno zastąpić ulicę, kod lub miasto?",
+  )) return;
+  let changed = 0;
+  fields.forEach(([inputId, field]) => {
+    const input = document.getElementById(inputId);
+    const incoming = String(candidate[field] || "").trim();
+    if (!incoming || (!replaceExisting && input.value.trim())) return;
+    if (input.value.trim() !== incoming) changed += 1;
+    input.value = incoming;
+    input.classList.remove("invalid");
+    input.removeAttribute("aria-invalid");
+  });
+  if (!changed) {
+    shippingFeedback("Adres pocztowy jest już uzupełniony tymi danymi.");
+    return;
+  }
+  shippingState.selectedAddressKey = "manual";
+  document.getElementById("shipping-address-source").value = "manual";
+  document.getElementById("shipping-address-source-label").textContent = "Sprawdzono w Adresy.app";
+  renderShippingAddressCandidates();
+  shippingFeedback(replaceExisting
+    ? "Zastąpiono pocztową część adresu danymi z Adresy.app."
+    : "Uzupełniono brakujące pola adresu danymi z Adresy.app.");
+}
+
+function renderShippingGeocoderResults(payload) {
+  const container = document.getElementById("shipping-geocoder-results");
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+  shippingState.geocoderCandidates = candidates;
+  container.hidden = false;
+  container.innerHTML = `<div class="shipping-geocoder-summary">
+      <strong>${escapeShippingHtml(payload?.message || "Wynik sprawdzenia adresu")}</strong>
+      <small>Próg zgodności: ${Math.round(Number(payload?.min_score || 0) * 100)}%. Dane firmy i kontaktu nie są wysyłane do geokodera.</small>
+    </div>${candidates.length
+    ? candidates.map((candidate, index) => `<article class="shipping-geocoder-candidate">
+        <span><strong>${escapeShippingHtml(shippingGeocoderCandidateLine(candidate))}</strong><small>Zgodność ${Math.round(Number(candidate.score || 0) * 100)}%</small></span>
+        <div>
+          <button type="button" class="shipping-button secondary compact" data-geocoder-fill="${index}">Uzupełnij braki</button>
+          <button type="button" class="shipping-button secondary compact" data-geocoder-replace="${index}">Zastąp adres</button>
+        </div>
+      </article>`).join("")
+    : '<p class="shipping-muted">Popraw ulicę, kod lub miasto i spróbuj ponownie.</p>'}`;
+  container.querySelectorAll("[data-geocoder-fill]").forEach((button) => {
+    button.addEventListener("click", () => {
+      applyShippingGeocoderCandidate(candidates[Number(button.dataset.geocoderFill)], false);
+    });
+  });
+  container.querySelectorAll("[data-geocoder-replace]").forEach((button) => {
+    button.addEventListener("click", () => {
+      applyShippingGeocoderCandidate(candidates[Number(button.dataset.geocoderReplace)], true);
+    });
+  });
+}
+
+async function geocodeShippingAddress() {
+  const button = document.getElementById("shipping-geocoder-match");
+  const street = document.getElementById("shipping-street").value.trim();
+  const postalInput = document.getElementById("shipping-postal");
+  const postalDigits = postalInput.value.replace(/\D/g, "");
+  const postalCode = postalDigits.length === 5
+    ? `${postalDigits.slice(0, 2)}-${postalDigits.slice(2)}`
+    : postalInput.value.trim();
+  if (!street) {
+    shippingFeedback("Wpisz co najmniej ulicę i numer, aby sprawdzić adres.", true);
+    return;
+  }
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    const payload = await shippingJson("/admin/shipping/geocoder/match", {
+      method: "POST",
+      body: JSON.stringify({
+        street,
+        postal_code: postalCode || null,
+        city: document.getElementById("shipping-city").value.trim() || null,
+      }),
+    });
+    renderShippingGeocoderResults(payload);
+    if (payload.auto_select) applyShippingGeocoderCandidate(payload.auto_select, false);
+  } catch (error) {
+    clearShippingGeocoderResults();
+    shippingFeedback(error.message, true);
+  } finally {
+    button.removeAttribute("aria-busy");
+    button.disabled = !(shippingState.config?.geocoder?.api_ready);
+  }
+}
+
 function renderShippingLocationContext() {
   const context = shippingState.detail?.location_context || {};
   const node = document.getElementById("shipping-location-warning");
@@ -1237,10 +1354,14 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
   const trackingButton = document.getElementById("shipping-tracking-open");
   trackingButton.hidden = !shipment?.tracking_number;
   trackingButton.dataset.waybill = shipment?.tracking_number || "";
+  trackingButton.dataset.msMilestoneError = shipment?.ms_milestones?.error || "";
   if (showTrackingFeedback && shipment?.tracking_number) {
     const warnings = Array.isArray(shipment.provider_warnings) ? shipment.provider_warnings : [];
     const warningText = warnings.length ? ` Ostrzeżenia etykiety: ${warnings.join(" ")}` : "";
-    shippingFeedback(`Numer przesyłki: ${shipment.tracking_number}. Menadżer Serwisu: ${shippingFirebirdStatusLabel(shipment.firebird_status)}.${warningText}`);
+    const milestoneError = shipment?.ms_milestones?.error
+      ? ` Synchronizacja pól przesyłki MS wymaga uzgodnienia: ${shipment.ms_milestones.error}`
+      : "";
+    shippingFeedback(`Numer przesyłki: ${shipment.tracking_number}. Menadżer Serwisu: ${shippingFirebirdStatusLabel(shipment.firebird_status)}.${warningText}${milestoneError}`, Boolean(milestoneError));
   }
 }
 
@@ -1337,6 +1458,7 @@ async function loadShippingDetail(orderId) {
   renderShippingOverduePayment(null);
   renderShippingOrderState(null);
   shippingFeedback("");
+  clearShippingGeocoderResults();
   try {
     const detail = await shippingJson(`/admin/shipping/orders/${orderId}`);
     shippingState.detail = detail;
@@ -2347,6 +2469,11 @@ async function initializeShipping() {
     document.getElementById("shipping-dpd-status").textContent = config.dpd.enabled ? dpdLabel : "Wyłączone";
     document.getElementById("shipping-tracking-sync").disabled = !(config.dpd_info?.enabled && config.dpd_info?.api_ready);
     document.getElementById("shipping-tracking-tab-count").textContent = String(config.dpd_info?.counts?.active || 0);
+    const geocoderButton = document.getElementById("shipping-geocoder-match");
+    geocoderButton.disabled = !config.geocoder?.api_ready;
+    geocoderButton.title = config.geocoder?.api_ready
+      ? "Sprawdź ulicę, kod i miasto w Adresy.app"
+      : "Geokoder Adresy.app nie jest skonfigurowany";
     const dpdDemoButton = document.getElementById("shipping-dpd-demo-test");
     dpdDemoButton.hidden = !(shippingFulfillmentEnabled() && config.dpd.enabled && config.dpd.mode === "demo" && config.dpd.api_ready && config.dpd.sender_ready);
     document.getElementById("shipping-warehouse").textContent = `Magazyn ${config.warehouse_id}`;
@@ -2405,6 +2532,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shipping-clear-selection").addEventListener("click", clearShippingSelection);
   document.getElementById("shipping-consolidation-select").addEventListener("click", selectShippingConsolidationGroup);
   document.getElementById("shipping-contact-select").addEventListener("change", (event) => applyShippingContact(event.currentTarget.value));
+  document.getElementById("shipping-geocoder-match").addEventListener("click", geocodeShippingAddress);
   document.querySelectorAll("[data-stock-scope]").forEach((button) => {
     button.addEventListener("click", () => setShippingStockScope(button.dataset.stockScope));
   });

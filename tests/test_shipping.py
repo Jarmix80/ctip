@@ -7,7 +7,7 @@ import io
 import json
 import re
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -96,6 +96,7 @@ from app.services.shipping_firebird import (
     shipping_document_mode,
     shipping_order_state_payload,
     write_shipment_to_order,
+    write_shipping_milestones_to_order,
 )
 from app.services.shipping_workflow import (
     ShippingConflictError,
@@ -1723,7 +1724,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-wide-layout-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-shipping-fields-01",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
@@ -1731,6 +1732,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-queue-refresh"', response.text)
         self.assertIn("Etap pracy (domyślne)", response.text)
         self.assertIn('id="shipping-phone-note"', response.text)
+        self.assertIn('id="shipping-geocoder-match"', response.text)
+        self.assertIn('id="shipping-geocoder-results"', response.text)
         self.assertIn("Zezwól na część ze stanem zerowym", response.text)
         self.assertIn('data-shipping-default-entry="true"', response.text)
         self.assertIn('data-shipping-layout-choice="legacy"', response.text)
@@ -1787,7 +1790,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
         self.assertIn("shipping.css?v=", response.text)
-        self.assertIn("-wide-layout-01", response.text)
+        self.assertIn("-shipping-fields-01", response.text)
         self.assertIn("/static/shipping/shipping-v2.js", response.text)
         self.assertIn('id="shipping-v2-audit"', response.text)
         self.assertIn('id="shipping-v2-progress-label"', response.text)
@@ -1962,6 +1965,8 @@ class ShippingSchemaTests(unittest.TestCase):
             "MOCK123",
             None,
             None,
+            None,
+            None,
         )
         with (
             patch(
@@ -1988,6 +1993,103 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertNotIn("SET PRZESYLKA", queries)
         connection.rollback.assert_called_once()
 
+    def test_zapis_etykiety_uzupelnia_wykonanie_i_adres_przesylki(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (
+            15,
+            44,
+            77,
+            2026,
+            "O",
+            None,
+            None,
+            None,
+            "test1",
+            None,
+        )
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+        ):
+            result = write_shipment_to_order(
+                order_table_id=1001,
+                tracking_number="0000111122223A",
+                items=[],
+                shipping_address={
+                    "company_name": "Przykładowa Firma",
+                    "contact_name": "Jan Kowalski",
+                    "street": "Testowa 10/2",
+                    "postal_code": "00-001",
+                    "city": "Warszawa",
+                    "phone": "+48123456789",
+                    "email": "jan@example.com",
+                },
+                tracking_source="dpd",
+                generated_at=datetime(2026, 9, 1, 8, 30, tzinfo=UTC),
+            )
+
+        update_call = next(
+            call for call in cursor.execute.call_args_list if "SET PRZESYLKA" in call.args[0]
+        )
+        tracking, execution, address, order_table_id = update_call.args[1]
+        self.assertEqual(tracking, "0000111122223A")
+        self.assertIn("test1", execution)
+        self.assertIn("numer nadany przez API DPD", execution)
+        self.assertEqual(
+            address,
+            "Przykładowa Firma | Jan Kowalski | Testowa 10/2 | 00-001 Warszawa",
+        )
+        self.assertNotIn("123456789", address)
+        self.assertNotIn("jan@example.com", address)
+        self.assertEqual(order_table_id, 1001)
+        self.assertEqual(result["shipping_address"], address)
+        connection.commit.assert_called_once()
+
+    def test_statusy_dpd_uzupelniaja_datowanie_i_opis_bez_kosztow(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = ("0000111122223A", None, "test1", None, None)
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+        ):
+            result = write_shipping_milestones_to_order(
+                order_table_id=1001,
+                tracking_number="0000111122223A",
+                pickup_date=date(2026, 9, 2),
+                pickup_note="Wysłana paczka 02.09.2026 0000111122223A",
+                delivery_date=date(2026, 9, 3),
+                description_text="03.09.2026 12:00 — Doręczona: Przesyłka doręczona",
+            )
+
+        update_call = next(
+            call for call in cursor.execute.call_args_list if "UPDATE ZLECENIE SET" in call.args[0]
+        )
+        query = update_call.args[0]
+        self.assertIn("DATA_PRZES = ?", query)
+        self.assertIn("DATA_PRZES_WE = ?", query)
+        self.assertIn("PRZESYLKA_WE = ?", query)
+        self.assertNotIn("KOSZTP1", query)
+        self.assertNotIn("KOSZTP2", query)
+        self.assertEqual(
+            result["changed_fields"],
+            ["DATA_PRZES", "WYKONANIE", "DATA_PRZES_WE", "PRZESYLKA_WE"],
+        )
+        connection.commit.assert_called_once()
+
     def test_rw_powstaje_w_zakupy_z_kolejnym_numerem_magazynowym(self) -> None:
         connection = MagicMock()
         cursor = connection.cursor.return_value
@@ -2009,9 +2111,7 @@ class ShippingSchemaTests(unittest.TestCase):
                 None,
                 None,
                 None,
-                None,
                 "MOCK123",
-                None,
                 "Ricoh",
                 "MPC 3003",
                 "ZR",
@@ -2081,6 +2181,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("RODZAJ_DOK = 'RW'", executed_queries)
         self.assertIn("INSERT INTO ZAKPOZYCJA", executed_queries)
         self.assertNotIn("'ROK'", executed_queries)
+        self.assertNotIn("DATA_PRZES", executed_queries)
+        self.assertNotIn("WYKONANIE", executed_queries)
         connection.commit.assert_called_once()
 
     def test_wz_powiazane_z_faktura_zapisuje_numer_fv_w_dokumencie_zewnetrznym(
@@ -2106,9 +2208,7 @@ class ShippingSchemaTests(unittest.TestCase):
                 None,
                 None,
                 None,
-                None,
                 "MOCK123",
-                None,
                 "Ricoh",
                 "MPC 2011",
                 "ZR",
@@ -2215,9 +2315,7 @@ class ShippingSchemaTests(unittest.TestCase):
                 None,
                 None,
                 "5318/KPSK/2026",
-                None,
                 "MOCK123",
-                datetime(2026, 8, 28).date(),
                 "Ricoh",
                 "MPC 2011",
                 "Z",

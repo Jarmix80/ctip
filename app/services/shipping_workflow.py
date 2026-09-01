@@ -796,6 +796,48 @@ def _serialize_case(case: ShippingCase) -> dict[str, Any]:
                 "label_available": bool(shipment.label_content),
                 "firebird_status": shipment.firebird_status,
                 "firebird_error": shipment.firebird_error,
+                "ms_milestones": {
+                    "eligible": shipment.firebird_label_metadata_synced_at is not None,
+                    "label_metadata_synced_at": (
+                        shipment.firebird_label_metadata_synced_at.isoformat()
+                        if shipment.firebird_label_metadata_synced_at
+                        else None
+                    ),
+                    "pickup": {
+                        "status": (
+                            "synchronized" if shipment.firebird_pickup_event_key else "pending"
+                        ),
+                        "event_key": shipment.firebird_pickup_event_key,
+                        "synced_at": (
+                            shipment.firebird_pickup_synced_at.isoformat()
+                            if shipment.firebird_pickup_synced_at
+                            else None
+                        ),
+                    },
+                    "delivery": {
+                        "status": (
+                            "synchronized" if shipment.firebird_delivery_event_key else "pending"
+                        ),
+                        "event_key": shipment.firebird_delivery_event_key,
+                        "synced_at": (
+                            shipment.firebird_delivery_synced_at.isoformat()
+                            if shipment.firebird_delivery_synced_at
+                            else None
+                        ),
+                    },
+                    "description": {
+                        "status": (
+                            "synchronized" if shipment.firebird_description_event_key else "pending"
+                        ),
+                        "event_key": shipment.firebird_description_event_key,
+                        "synced_at": (
+                            shipment.firebird_description_synced_at.isoformat()
+                            if shipment.firebird_description_synced_at
+                            else None
+                        ),
+                    },
+                    "error": shipment.firebird_milestone_error,
+                },
                 "firebird_rw_id": shipment.firebird_rw_id,
                 "firebird_rw_number": shipment.firebird_rw_number,
                 "firebird_wz_id": shipment.firebird_wz_id,
@@ -1385,8 +1427,14 @@ async def create_shipping_shipment(
                 order_table_id=case.firebird_order_table_id,
                 tracking_number=str(shipment.tracking_number),
                 items=_shipping_case_firebird_items(case),
+                shipping_address=case.address_snapshot,
+                tracking_source=(
+                    "manual" if manual_tracking else ("mock" if mode == "mock" else "dpd")
+                ),
+                generated_at=shipment.created_at,
             )
             shipment.firebird_status = result["status"]
+            shipment.firebird_label_metadata_synced_at = _now()
             positions = result.get("created_position_ids", [])
             for item, position_id in zip(case.items, positions, strict=False):
                 item.firebird_position_id = position_id
@@ -1663,8 +1711,12 @@ async def create_consolidated_shipping_shipment(
                 order_table_id=case.firebird_order_table_id,
                 tracking_number=str(shipment.tracking_number),
                 items=_shipping_case_firebird_items(case),
+                shipping_address=case.address_snapshot,
+                tracking_source="mock" if mode == "mock" else "dpd",
+                generated_at=shipment.created_at,
             )
             shipment.firebird_status = write_result["status"]
+            shipment.firebird_label_metadata_synced_at = _now()
             positions = write_result.get("created_position_ids", [])
             for item, position_id in zip(case.items, positions, strict=False):
                 item.firebird_position_id = position_id
@@ -1899,8 +1951,12 @@ async def attach_shipping_cases_to_existing_label(
                 order_table_id=case.firebird_order_table_id,
                 tracking_number=tracking_number,
                 items=_shipping_case_firebird_items(case),
+                shipping_address=case.address_snapshot,
+                tracking_source="existing",
+                generated_at=shipment.created_at,
             )
             shipment.firebird_status = write_result["status"]
+            shipment.firebird_label_metadata_synced_at = _now()
             positions = write_result.get("created_position_ids", [])
             for item, position_id in zip(case.items, positions, strict=False):
                 item.firebird_position_id = position_id

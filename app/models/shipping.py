@@ -280,6 +280,22 @@ class ShippingShipment(Base):
     provider_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     firebird_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     firebird_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_label_metadata_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firebird_pickup_event_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_pickup_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firebird_delivery_event_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_delivery_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firebird_description_event_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    firebird_description_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    firebird_milestone_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     firebird_rw_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     firebird_rw_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     firebird_wz_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

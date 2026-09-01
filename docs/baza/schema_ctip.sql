@@ -1293,6 +1293,14 @@ CREATE TABLE ctip.shipping_shipment (
     provider_response json,
     firebird_status text DEFAULT 'pending'::text NOT NULL,
     firebird_error text,
+    firebird_label_metadata_synced_at timestamp with time zone,
+    firebird_pickup_event_key text,
+    firebird_pickup_synced_at timestamp with time zone,
+    firebird_delivery_event_key text,
+    firebird_delivery_synced_at timestamp with time zone,
+    firebird_description_event_key text,
+    firebird_description_synced_at timestamp with time zone,
+    firebird_milestone_error text,
     firebird_rw_id integer,
     firebird_rw_number text,
     firebird_wz_id integer,
@@ -1592,3 +1600,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 \unrestrict ZhoCtUc30GzkxBj7Yh0bzFBbOdWa7nQwYCLFFyI6FrXZAs0p8C43i7qFe78uujG
 -- Preferencja wyglądu modułu Shipping:
 -- alembic/versions/a1c3e5f7b9d2_add_shipping_layout_to_admin_user.py
+-- alembic/versions/d6e8f0a2b4c7_add_shipping_firebird_milestones.py
