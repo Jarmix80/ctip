@@ -1779,6 +1779,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('data-shipping-layout-choice="v2"', response.text)
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
+        self.assertIn("shipping.css?v=", response.text)
+        self.assertIn("-legacy-audit-01", response.text)
         self.assertIn("/static/shipping/shipping-v2.js", response.text)
         self.assertIn('id="shipping-v2-audit"', response.text)
         self.assertIn('id="shipping-v2-progress-label"', response.text)
