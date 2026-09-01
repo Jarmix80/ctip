@@ -222,6 +222,17 @@ def test_powershell_healthcheck_message_delimits_variable_before_colon() -> None
     assert "$ExpectedStatus: $Url" not in module
 
 
+def test_powershell_native_runner_does_not_promote_stderr_to_failure() -> None:
+    """Stderr polecenia natywnego nie może przerwać odczytu jego kodu wyjścia."""
+    module = (
+        Path(__file__).resolve().parents[1] / "scripts" / "windows" / "CtipDeployment.Common.psm1"
+    ).read_text(encoding="utf-8")
+    assert '$ErrorActionPreference = "Continue"' in module
+    assert "$nativeSucceeded = $?" in module
+    assert "$exitCode = $LASTEXITCODE" in module
+    assert "$ErrorActionPreference = $previousErrorActionPreference" in module
+
+
 def test_legacy_update_scripts_are_blocked() -> None:
     """Historyczne aktualizatory nie mogą ominąć kanonicznego wdrożenia."""
     repository = Path(__file__).resolve().parents[1]
