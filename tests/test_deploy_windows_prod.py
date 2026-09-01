@@ -197,6 +197,8 @@ def test_powershell_contains_healthcheck_rollback() -> None:
     assert "Assert-Endpoints" in script
     assert '"checkout", "--detach", $expectedCurrent' in script
     assert "Start-Service -Name $serviceName" in script
+    assert '$rollbackServices = $services -join ","' in script
+    assert "Start-Service $rollbackServices" in script
 
 
 def test_legacy_update_scripts_are_blocked() -> None:

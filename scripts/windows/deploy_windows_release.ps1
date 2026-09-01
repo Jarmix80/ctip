@@ -260,6 +260,8 @@ finally {
     }
 }
 
+$rollbackServices = $services -join ","
+
 [pscustomobject]@{
     mode = "apply"
     previous_commit = $expectedCurrent
@@ -267,5 +269,5 @@ finally {
     alembic = $alembicAfter
     restarted_services = $services
     protected_services = $protectedServices
-    rollback = "git -C $InstallDir checkout --detach $expectedCurrent; Start-Service $($services -join ',')"
+    rollback = "git -C $InstallDir checkout --detach $expectedCurrent; Start-Service $rollbackServices"
 } | ConvertTo-Json -Compress
