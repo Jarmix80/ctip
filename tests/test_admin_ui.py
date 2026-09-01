@@ -193,7 +193,10 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="saving">' not in html
     assert '<template x-if="!testing">' not in html
     assert '<template x-if="testing">' not in html
-    assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
+    assert (
+        "x-text=\"editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') "
+        ": 'Edycja tylko w .env'\"" in html
+    )
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
     assert 'id="firebird-ms-config"' in html
     assert 'x-data="firebirdMsConfig()"' in html
@@ -212,7 +215,7 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert "C:/MS/BAZA/MS.FDB" in html
     assert "D:/bazavmantenance/BAZA_CPC.FDB" in html
     assert 'id="fb-allow-writes"' in html
-    assert "Odblokuj zapis do Firebird" in html
+    assert "Edycja tylko w .env" in html
 
 
 def test_firebird_partial_requires_authentication():
@@ -258,7 +261,10 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="saving">' not in html
     assert '<template x-if="!testing">' not in html
     assert '<template x-if="testing">' not in html
-    assert "x-text=\"saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację'\"" in html
+    assert (
+        "x-text=\"editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') "
+        ": 'Edycja tylko w .env'\"" in html
+    )
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
     assert 'x-data="firebirdMsConfig()"' in html
     assert 'data-config-label="Menadżer Serwisu"' in html
@@ -266,7 +272,7 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert 'data-test-endpoint="/admin/firebird/test"' in html
     assert '<option value="network">Baza sieciowa</option>' in html
     assert '<option value="local">Baza lokalna</option>' in html
-    assert ":disabled=\"mode === 'local'\"" in html
+    assert ":disabled=\"mode === 'local' || !editable\"" in html
     assert 'id="fb-allow-writes"' in html
     assert 'x-model="allowWrites"' in html
 

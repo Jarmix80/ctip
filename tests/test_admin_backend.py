@@ -42,6 +42,7 @@ from app.models import (
     ContractsMailboxMessage,
     DeviceAuditItem,
     DeviceAuditRun,
+    DeviceCounterReading,
     DeviceIntakeOperation,
     DeviceInventoryEvent,
     DeviceInventoryUnit,
@@ -66,7 +67,6 @@ from app.services.contracts_dashboard import (
     FirebirdRuntimeConfig,
     find_client_in_firebird,
     firebird_writes_enabled,
-    load_firebird_runtime_config,
     use_firebird_runtime_config,
 )
 from app.services.contracts_proforma import FirebirdProformaWriteResult
@@ -178,6 +178,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowSheetStatusCache.__table__,
                     DeviceAuditRun.__table__,
                     DeviceAuditItem.__table__,
+                    DeviceCounterReading.__table__,
                     DeviceIntakeOperation.__table__,
                     DeviceInventoryUnit.__table__,
                     DeviceInventoryEvent.__table__,
@@ -928,7 +929,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response_forbidden_delete.status_code, 403)
 
-    async def test_update_database_config_persists_values(self):
+    async def test_update_database_config_is_blocked_as_env_only(self):
         token, _ = await self._login()
         update_payload = {
             "host": "10.0.0.5",
@@ -943,29 +944,35 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             json=update_payload,
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["password_set"])
-        self.assertEqual(body["host"], update_payload["host"])
-        self.assertEqual(body["port"], update_payload["port"])
+        self.assertEqual(response.status_code, 423)
+        self.assertIn("plik .env", response.text)
 
-        # ponowny odczyt powinien zwrócić te same wartości
-        response = await self.client.get(
+        read_response = await self.client.get(
             "/admin/config/database",
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["user"], update_payload["user"])
-        self.assertEqual(body["sslmode"], "require")
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.json()["source"], "env")
+        self.assertFalse(read_response.json()["editable"])
 
-        # w bazie powinno być zapisane ustawienie host
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "database.host")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, "10.0.0.5")
+            self.assertIsNone(setting)
+            entry = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action == "config_database_update_blocked_env"
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            self.assertIsNotNone(entry)
+            self.assertNotIn(update_payload["password"], json.dumps(entry.payload))
 
-    async def test_update_firebird_config_persists_values(self):
+    async def test_update_firebird_config_is_blocked_as_env_only(self):
         token, _ = await self._login()
         update_payload = {
             "mode": "network",
@@ -984,37 +991,35 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             json=update_payload,
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["mode"], "network")
-        self.assertEqual(body["host"], update_payload["host"])
-        self.assertEqual(body["database"], update_payload["database"])
-        self.assertEqual(body["charset"], "UTF8")
-        self.assertEqual(body["role"], "RDB$ADMIN")
-        self.assertEqual(body["local_copy_path"], update_payload["local_copy_path"])
-        self.assertTrue(body["allow_writes"])
-        self.assertTrue(body["password_set"])
+        self.assertEqual(response.status_code, 423)
+        self.assertIn("plik .env", response.text)
 
-        response = await self.client.get(
+        read_response = await self.client.get(
             "/admin/config/firebird",
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["user"], update_payload["user"])
-        self.assertEqual(body["port"], update_payload["port"])
-        self.assertTrue(body["allow_writes"])
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.json()["source"], "env")
+        self.assertFalse(read_response.json()["editable"])
 
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "firebird.host")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, update_payload["host"])
-            allow_writes_setting = await session.get(AdminSetting, "firebird.allow_writes")
-            self.assertIsNotNone(allow_writes_setting)
-            assert allow_writes_setting is not None
-            self.assertEqual(allow_writes_setting.value, "true")
+            self.assertIsNone(setting)
+            entry = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action == "config_firebird_update_blocked_env"
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            self.assertIsNotNone(entry)
+            self.assertNotIn(update_payload["password"], json.dumps(entry.payload))
 
-    async def test_update_firebird_vmaintenance_config_persists_values(self):
+    async def test_update_firebird_vmaintenance_config_is_blocked_as_env_only(self):
         token, _ = await self._login()
         update_payload = {
             "host": "192.168.0.8",
@@ -1030,28 +1035,36 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             json=update_payload,
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["host"], update_payload["host"])
-        self.assertEqual(body["database"], update_payload["database"])
-        self.assertEqual(body["role"], update_payload["role"])
-        self.assertTrue(body["password_set"])
+        self.assertEqual(response.status_code, 423)
+        self.assertIn("plik .env", response.text)
 
-        response = await self.client.get(
+        read_response = await self.client.get(
             "/admin/config/firebird-vmaintenance",
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["user"], update_payload["user"])
-        self.assertEqual(body["port"], update_payload["port"])
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.json()["source"], "env")
+        self.assertFalse(read_response.json()["editable"])
 
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "firebird_vmaintenance.host")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, update_payload["host"])
+            self.assertIsNone(setting)
+            entry = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action
+                            == "config_firebird_vmaintenance_update_blocked_env"
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            self.assertIsNotNone(entry)
+            self.assertNotIn(update_payload["password"], json.dumps(entry.payload))
 
-    async def test_update_google_sheets_config_persists_values(self):
+    async def test_update_google_sheets_config_is_blocked_as_env_only(self):
         token, _ = await self._login()
         update_payload = {
             "enabled": True,
@@ -1064,46 +1077,35 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             json=update_payload,
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["enabled"])
-        self.assertEqual(body["credentials_path"], update_payload["credentials_path"])
-        self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
-        self.assertEqual(
-            body["workflow_devices_worksheet"],
-            update_payload["workflow_devices_worksheet"],
-        )
-        self.assertEqual(body["source"], "admin")
+        self.assertEqual(response.status_code, 423)
+        self.assertIn("plik .env", response.text)
 
-        response = await self.client.get(
+        read_response = await self.client.get(
             "/admin/config/google-sheets",
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["spreadsheet_id"], "spreadsheet-test-id")
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.json()["source"], "env")
+        self.assertFalse(read_response.json()["editable"])
 
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "google_sheets.spreadsheet_id")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, "spreadsheet-test-id")
+            self.assertIsNone(setting)
+            entry = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action == "config_google_sheets_update_blocked_env"
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            self.assertIsNotNone(entry)
 
-    async def test_update_google_sheets_config_blocked_when_lock_enabled(self):
+    async def test_update_google_sheets_config_remains_locked_for_legacy_flag(self):
         token, _ = await self._login()
-
-        baseline_payload = {
-            "enabled": True,
-            "credentials_path": "/srv/google/prod.json",
-            "spreadsheet_id": "spreadsheet-prod",
-            "workflow_devices_worksheet": "Urzadzenia_magazyn",
-        }
-        response = await self.client.put(
-            "/admin/config/google-sheets",
-            json=baseline_payload,
-            headers={"X-Admin-Session": token},
-        )
-        self.assertEqual(response.status_code, 200)
-
         previous_lock = settings.google_sheets_config_lock
         settings.google_sheets_config_lock = True
         try:
@@ -1119,16 +1121,14 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
                 headers={"X-Admin-Session": token},
             )
             self.assertEqual(response.status_code, 423)
-            self.assertIn("GOOGLE_SHEETS_CONFIG_LOCK=true", response.text)
+            self.assertIn("plik .env", response.text)
 
-            response = await self.client.get(
+            read_response = await self.client.get(
                 "/admin/config/google-sheets",
                 headers={"X-Admin-Session": token},
             )
-            self.assertEqual(response.status_code, 200)
-            body = response.json()
-            self.assertEqual(body["credentials_path"], baseline_payload["credentials_path"])
-            self.assertEqual(body["spreadsheet_id"], baseline_payload["spreadsheet_id"])
+            self.assertEqual(read_response.status_code, 200)
+            self.assertEqual(read_response.json()["source"], "env")
         finally:
             settings.google_sheets_config_lock = previous_lock
 
@@ -1225,9 +1225,9 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_update_kp_repair_source_config_persists_values(self):
         token, _ = await self._login()
         update_payload = {
-            "csv_directory": "inbox/ewidencja",
-            "csv_pattern": "DPLAC*.csv",
-            "email_lookback_months": 5,
+            "csv_directory": settings.kp_csv_directory,
+            "csv_pattern": settings.kp_csv_pattern,
+            "email_lookback_months": 6,
         }
         response = await self.client.put(
             "/admin/config/kp-repair-source",
@@ -1242,8 +1242,10 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.session_factory() as session:
             setting = await session.get(AdminSetting, "kp_repair.csv_directory")
-            self.assertIsNotNone(setting)
-            self.assertEqual(setting.value, update_payload["csv_directory"])
+            self.assertIsNone(setting)
+            lookback = await session.get(AdminSetting, "kp_repair.email_lookback_months")
+            self.assertIsNotNone(lookback)
+            self.assertEqual(lookback.value, "6")
 
     @patch("app.api.routes.admin_firebird.test_firebird_connection")
     async def test_firebird_test_endpoint_uses_current_configuration(self, mock_test):
@@ -1306,26 +1308,12 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             engine_version="2.5.9",
         )
         token, _ = await self._login()
-        await self.client.put(
-            "/admin/config/firebird",
-            json={
-                "mode": "local",
-                "host": "192.168.0.8",
-                "port": 3050,
-                "database": "D:/PROD/BAZAMS.FDB",
-                "user": "SYSDBA",
-                "password": "masterkey",
-                "charset": "WIN1250",
-                "role": None,
-                "local_copy_path": "/srv/firebird/local/BAZAMS_LOCAL.FDB",
-                "allow_writes": False,
-            },
-            headers={"X-Admin-Session": token},
-        )
-
         response = await self.client.post(
             "/admin/firebird/test",
-            json={"mode": "local"},
+            json={
+                "mode": "local",
+                "local_copy_path": "/srv/firebird/local/BAZAMS_LOCAL.FDB",
+            },
             headers={"X-Admin-Session": token},
         )
         self.assertEqual(response.status_code, 200)
@@ -1336,30 +1324,19 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["host"], "127.0.0.1")
         self.assertEqual(kwargs["database"], "/srv/firebird/local/BAZAMS_LOCAL.FDB")
 
-    async def test_firebird_client_lookup_uses_runtime_configuration_from_admin_settings(self):
-        token, _ = await self._login()
-        response = await self.client.put(
-            "/admin/config/firebird",
-            json={
-                "mode": "network",
-                "host": "192.168.0.8",
-                "port": 3050,
-                "database": "D:/MS/BAZAMS.FDB",
-                "user": "SYSDBA",
-                "password": "sekret-ms",
-                "charset": "WIN1250",
-                "role": "RDB$ADMIN",
-                "local_copy_path": "inbox/firebird/test_ms_local.fdb",
-                "allow_writes": True,
-            },
-            headers={"X-Admin-Session": token},
+    async def test_firebird_client_lookup_uses_runtime_configuration_context(self):
+        config = FirebirdRuntimeConfig(
+            mode="network",
+            host="192.168.0.8",
+            port=3050,
+            database="D:/MS/BAZAMS.FDB",
+            user="SYSDBA",
+            password="sekret-ms",
+            charset="WIN1250",
+            role="RDB$ADMIN",
+            local_copy_path="inbox/firebird/test_ms_local.fdb",
+            allow_writes=True,
         )
-        self.assertEqual(response.status_code, 200)
-
-        async with self.session_factory() as session:
-            config = await load_firebird_runtime_config(session)
-
-        self.assertTrue(config.allow_writes)
 
         connect_calls: list[dict[str, object]] = []
 
@@ -1417,11 +1394,11 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "app.services.contracts_dashboard._resolve_firebird_runtime_config",
+                "app.services.firebird_runtime.resolve_firebird_runtime_config",
                 return_value=runtime,
             ),
             patch(
-                "app.services.contracts_dashboard._resolve_local_firebird_path",
+                "app.services.firebird_runtime.resolve_local_firebird_path",
                 return_value=Path("D:/BAZA_MS_KP/BAZAMS.FDB"),
             ),
             patch("pathlib.Path.exists", return_value=True),
@@ -1558,36 +1535,48 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             "schedule_evening": "21:15",
             "retention_local_copies": 14,
             "retention_cloud_copies": 7,
+            "retention_local_days": 30,
+            "retention_cloud_days": 20,
             "archive_ctip_files": True,
             "archive_ctip_db": True,
             "archive_firebird_prod": True,
             "archive_firebird_test": False,
             "archive_optima": True,
             "storage_mode": "network",
-            "local_directory": "D:\\\\Backup_CTIP_MS",
+            "local_directory": data["local_directory"],
             "network_directory": "\\\\NAS\\\\CTIP",
             "cloud_provider": "office365",
             "cloud_only_evening": True,
-            "office_tenant_id": "tenant-id",
-            "office_client_id": "client-id",
-            "office_site_id": "tenant.sharepoint.com,site-id,web-id",
-            "office_drive_id": "drive-id",
-            "office_folder_path": "CTIP-Backup",
-            "office_folder_ctip": "BackupKP/CTIP",
-            "office_folder_firebird_prod": "BackupKP/Menadzer_Serwisu/prod",
-            "office_folder_firebird_test": "BackupKP/Menadzer_Serwisu/test",
-            "office_folder_optima": "BackupKP/Optima",
-            "office_client_secret": "top-secret",
-            "optima_server_instance": "SERWER1\\\\OPTIMA",
-            "optima_host": "192.168.0.8",
-            "optima_port": 1433,
-            "optima_auth_mode": "mixed",
-            "optima_login": "automate_backup",
-            "optima_password": "secret123",
-            "optima_db_it_partner": "CDN_IT_Partner",
-            "optima_db_ksero_partner": "CDN_Ksero_Partner1",
-            "optima_db_config": "CDN_KNF_Ksero_Partner",
+            "optima_only_evening": True,
+            "office_tenant_id": data["office_tenant_id"],
+            "office_client_id": data["office_client_id"],
+            "office_site_id": data["office_site_id"],
+            "office_drive_id": data["office_drive_id"],
+            "office_folder_path": data["office_folder_path"],
+            "office_folder_ctip": data["office_folder_ctip"],
+            "office_folder_firebird_prod": data["office_folder_firebird_prod"],
+            "office_folder_firebird_test": data["office_folder_firebird_test"],
+            "office_folder_optima": data["office_folder_optima"],
+            "office_client_secret": None,
+            "optima_server_instance": data["optima_server_instance"],
+            "optima_host": data["optima_host"],
+            "optima_port": data["optima_port"],
+            "optima_auth_mode": data["optima_auth_mode"],
+            "optima_login": data["optima_login"],
+            "optima_password": None,
+            "optima_db_it_partner": data["optima_db_it_partner"],
+            "optima_db_ksero_partner": data["optima_db_ksero_partner"],
+            "optima_db_config": data["optima_db_config"],
         }
+        blocked_payload = {**update_payload, "local_directory": "D:\\\\Inny_katalog"}
+        blocked = await self.client.put(
+            "/admin/backup/config",
+            headers={"X-Admin-Session": token},
+            json=blocked_payload,
+        )
+        self.assertEqual(blocked.status_code, 423)
+        self.assertIn("wyłącznie z pliku .env", blocked.text)
+
         response = await self.client.put(
             "/admin/backup/config",
             headers={"X-Admin-Session": token},
@@ -1598,70 +1587,36 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["schedule_morning"], "05:30")
         self.assertEqual(data["schedule_evening"], "21:15")
         self.assertEqual(data["storage_mode"], "network")
-        self.assertTrue(data["office_client_secret_set"])
-        self.assertEqual(data["optima_server_instance"], "SERWER1\\\\OPTIMA")
-        self.assertEqual(data["optima_host"], "192.168.0.8")
-        self.assertEqual(data["optima_port"], 1433)
-        self.assertEqual(data["optima_auth_mode"], "mixed")
-        self.assertEqual(data["optima_login"], "automate_backup")
-        self.assertEqual(data["office_folder_ctip"], "BackupKP/CTIP")
-        self.assertEqual(data["office_folder_firebird_prod"], "BackupKP/Menadzer_Serwisu/prod")
-        self.assertEqual(data["office_folder_firebird_test"], "BackupKP/Menadzer_Serwisu/test")
-        self.assertEqual(data["office_folder_optima"], "BackupKP/Optima")
-        self.assertTrue(data["optima_password_set"])
-        self.assertEqual(data["optima_db_it_partner"], "CDN_IT_Partner")
-        self.assertEqual(data["optima_db_ksero_partner"], "CDN_Ksero_Partner1")
-        self.assertEqual(data["optima_db_config"], "CDN_KNF_Ksero_Partner")
+        self.assertEqual(data["retention_local_days"], 30)
+        self.assertEqual(data["retention_cloud_days"], 20)
+        self.assertEqual(data["integration_source"], "env")
+        self.assertFalse(data["integration_editable"])
+        self.assertTrue(data["operational_editable"])
 
         async with self.session_factory() as session:
             stored = await settings_store.get_namespace(session, "backup")
             self.assertEqual(stored.get("schedule_morning"), "05:30")
             self.assertEqual(stored.get("network_directory"), "\\\\NAS\\\\CTIP")
-            self.assertEqual(stored.get("office_tenant_id"), "tenant-id")
-            self.assertEqual(stored.get("office_client_secret"), "top-secret")
-            self.assertEqual(stored.get("office_site_id"), "tenant.sharepoint.com,site-id,web-id")
-            self.assertEqual(stored.get("office_folder_ctip"), "BackupKP/CTIP")
-            self.assertEqual(
-                stored.get("office_folder_firebird_prod"), "BackupKP/Menadzer_Serwisu/prod"
-            )
-            self.assertEqual(
-                stored.get("office_folder_firebird_test"), "BackupKP/Menadzer_Serwisu/test"
-            )
-            self.assertEqual(stored.get("office_folder_optima"), "BackupKP/Optima")
-            self.assertEqual(stored.get("optima_server_instance"), "SERWER1\\\\OPTIMA")
-            self.assertEqual(stored.get("optima_host"), "192.168.0.8")
-            self.assertEqual(stored.get("optima_port"), "1433")
-            self.assertEqual(stored.get("optima_auth_mode"), "mixed")
-            self.assertEqual(stored.get("optima_login"), "automate_backup")
-            self.assertEqual(stored.get("optima_password"), "secret123")
-            self.assertEqual(stored.get("optima_db_it_partner"), "CDN_IT_Partner")
-            self.assertEqual(stored.get("optima_db_ksero_partner"), "CDN_Ksero_Partner1")
-            self.assertEqual(stored.get("optima_db_config"), "CDN_KNF_Ksero_Partner")
+            self.assertEqual(stored.get("retention_local_days"), "30")
+            self.assertEqual(stored.get("retention_cloud_days"), "20")
+            self.assertIsNone(stored.get("office_tenant_id"))
+            self.assertIsNone(stored.get("office_client_secret"))
+            self.assertIsNone(stored.get("optima_password"))
 
             result = await session.execute(
                 select(AdminAuditLog).where(AdminAuditLog.action == "backup_config_update")
             )
             entry = result.scalars().first()
             self.assertIsNotNone(entry)
+            blocked_result = await session.execute(
+                select(AdminAuditLog).where(
+                    AdminAuditLog.action == "backup_config_update_blocked_env"
+                )
+            )
+            self.assertIsNotNone(blocked_result.scalars().first())
 
     async def test_backup_office365_test_resolves_drive(self):
         token, _ = await self._login()
-        async with self.session_factory() as session:
-            await settings_store.set_namespace(
-                session,
-                "backup",
-                {
-                    "office_tenant_id": StoredValue("tenant-id", False),
-                    "office_client_id": StoredValue("client-id", False),
-                    "office_client_secret": StoredValue("secret", True),
-                    "office_site_id": StoredValue("kseropartner.sharepoint.com,site,web", False),
-                    "office_folder_path": StoredValue("CTIP-Backup/Prod", False),
-                    "office_folder_ctip": StoredValue("BackupKP/CTIP", False),
-                },
-                user_id=1,
-            )
-            await session.commit()
-
         fake_result = Office365ConnectionResult(
             ok=True,
             message="Połączenie z Office 365 (SharePoint) działa poprawnie.",
@@ -1669,9 +1624,21 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             drive_id="b!drive",
             folder_path="CTIP-Backup/Prod",
         )
-        with patch(
-            "app.api.routes.admin_backup.test_office365_connection",
-            new=AsyncMock(return_value=fake_result),
+        with (
+            patch.object(settings, "office365_tenant_id", "tenant-id"),
+            patch.object(settings, "office365_client_id", "client-id"),
+            patch.object(settings, "office365_client_secret", "secret"),
+            patch.object(
+                settings,
+                "office365_site_id",
+                "kseropartner.sharepoint.com,site,web",
+            ),
+            patch.object(settings, "office365_folder_path", "CTIP-Backup/Prod"),
+            patch.object(settings, "office365_folder_ctip", "BackupKP/CTIP"),
+            patch(
+                "app.api.routes.admin_backup.test_office365_connection",
+                new=AsyncMock(return_value=fake_result),
+            ) as connection_mock,
         ):
             response = await self.client.post(
                 "/admin/backup/office365/test",
@@ -1682,10 +1649,18 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         data = response.json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["drive_id"], "b!drive")
+        connection_mock.assert_awaited_once_with(
+            tenant_id="tenant-id",
+            client_id="client-id",
+            client_secret="secret",
+            site_id="kseropartner.sharepoint.com,site,web",
+            drive_id=settings.office365_drive_id,
+            folder_path="BackupKP/CTIP",
+        )
 
         async with self.session_factory() as session:
             stored = await settings_store.get_namespace(session, "backup")
-            self.assertEqual(stored.get("office_drive_id"), "b!drive")
+            self.assertIsNone(stored.get("office_drive_id"))
 
     async def test_backup_run_dry_creates_audit_entry(self):
         token, _ = await self._login()
@@ -1751,26 +1726,31 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             included_components=["postgresql_ctip"],
             postgres_dump_included=True,
         )
-        fake_firebird, fake_optima = _fake_component_results()
+        fake_outcome = {
+            "run_result": fake_run,
+            "status": "SUCCESS",
+            "uploaded_folders": [],
+            "upload_errors": [],
+            "upload_urls": [],
+            "local_deleted": 0,
+            "cloud_deleted": 0,
+            "main_uploaded": False,
+            "firebird_backup_included": True,
+            "firebird_uploaded_to_cloud": False,
+            "firebird_test_uploaded_to_cloud": False,
+            "optima_backup_included": True,
+            "optima_uploaded_to_cloud": False,
+            "optima_databases": [
+                "CDN_IT_Partner",
+                "CDN_Ksero_Partner1",
+                "CDN_KNF_Ksero_Partner",
+            ],
+        }
         try:
-            with (
-                patch(
-                    "app.api.routes.admin_backup.create_local_backup",
-                    return_value=fake_run,
-                ),
-                patch(
-                    "app.api.routes.admin_backup.create_firebird_backup",
-                    return_value=fake_firebird,
-                ),
-                patch(
-                    "app.api.routes.admin_backup.create_optima_backup",
-                    return_value=fake_optima,
-                ),
-                patch(
-                    "app.api.routes.admin_backup.run_local_retention",
-                    return_value=_empty_retention_result(),
-                ),
-            ):
+            with patch(
+                "app.api.routes.admin_backup._execute_backup_job",
+                new=AsyncMock(return_value=fake_outcome),
+            ) as execute_mock:
                 response = await self.client.post(
                     "/admin/backup/run",
                     headers={"X-Admin-Session": token},
@@ -1785,6 +1765,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(data["dry_run"])
         self.assertEqual(data["backup_name"], "backup_20260304_170000.tar.gz")
         self.assertTrue(data["postgres_dump_included"])
+        execute_mock.assert_awaited_once()
 
     async def test_backup_run_uploads_complete_archive_once(self):
         token, _ = await self._login()
@@ -1815,6 +1796,28 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         try:
             with (
+                patch.object(settings, "optima_db_it_partner", "CDN_IT_Partner"),
+                patch.object(
+                    settings,
+                    "optima_db_ksero_partner",
+                    "CDN_Ksero_Partner1",
+                ),
+                patch.object(settings, "optima_db_config", "CDN_KNF_Ksero_Partner"),
+                patch.object(settings, "office365_tenant_id", "tenant-id"),
+                patch.object(settings, "office365_client_id", "client-id"),
+                patch.object(settings, "office365_client_secret", "secret"),
+                patch.object(
+                    settings,
+                    "office365_site_id",
+                    "kseropartner.sharepoint.com,site,web",
+                ),
+                patch.object(settings, "office365_folder_ctip", "BackupKP/CTIP"),
+                patch.object(
+                    settings,
+                    "office365_folder_firebird_prod",
+                    "BackupKP/Menadzer_Serwisu/prod",
+                ),
+                patch.object(settings, "office365_folder_optima", "BackupKP/Optima"),
                 patch(
                     "app.api.routes.admin_backup.create_local_backup",
                     return_value=fake_run,
@@ -8526,7 +8529,7 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Automatyczne SMS", card["title"])
             self.assertIn("recent", diagnostics)
 
-    async def test_update_email_config_persists_values(self):
+    async def test_update_email_config_is_blocked_as_env_only(self):
         token, _ = await self._login()
         payload = {
             "host": "smtp.mail.local",
@@ -8543,28 +8546,33 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
             json=payload,
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["host"], payload["host"])
-        self.assertEqual(body["port"], payload["port"])
-        self.assertEqual(body["username"], payload["username"])
-        self.assertEqual(body["sender_address"], payload["sender_address"])
-        self.assertTrue(body["password_set"])
-        self.assertEqual(body["username"], payload["username"])
-        self.assertEqual(body["sender_name"], payload["sender_name"])
-        self.assertEqual(body["sender_address"], payload["sender_address"])
-        self.assertTrue(body["use_tls"])
-        self.assertFalse(body["use_ssl"])
-        self.assertTrue(body["password_set"])
+        self.assertEqual(response.status_code, 423)
+        self.assertIn("plik .env", response.text)
 
-        response = await self.client.get(
+        read_response = await self.client.get(
             "/admin/config/email",
             headers={"X-Admin-Session": token},
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["host"], payload["host"])
-        self.assertEqual(body["port"], payload["port"])
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.json()["source"], "env")
+        self.assertFalse(read_response.json()["editable"])
+
+        async with self.session_factory() as session:
+            setting = await session.get(AdminSetting, "email.host")
+            self.assertIsNone(setting)
+            entry = (
+                (
+                    await session.execute(
+                        select(AdminAuditLog).where(
+                            AdminAuditLog.action == "config_email_update_blocked_env"
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            self.assertIsNotNone(entry)
+            self.assertNotIn(payload["password"], json.dumps(entry.payload))
 
     async def test_update_form_handling_config_persists_values(self):
         token, _ = await self._login()

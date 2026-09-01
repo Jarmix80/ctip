@@ -4,11 +4,17 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parent.parent / "inbox" / "audyt_model" / "process_ricoh_images.py"
 )
+if not SCRIPT_PATH.is_file():
+    pytest.skip(
+        "Lokalny skrypt pipeline'u Ricoh nie jest częścią repozytorium.",
+        allow_module_level=True,
+    )
 SPEC = importlib.util.spec_from_file_location("process_ricoh_images", SCRIPT_PATH)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)

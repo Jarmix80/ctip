@@ -3,7 +3,7 @@ set -euo pipefail
 
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"
-VENV_DIR="${WORKDIR}/.venv"
+VENV_DIR="${VENV_DIR:-${WORKDIR}/.venv}"
 PYTHON_BIN="${VENV_DIR}/bin/python"
 PIP_BIN="${VENV_DIR}/bin/pip"
 UVICORN_BIN="${VENV_DIR}/bin/uvicorn"
