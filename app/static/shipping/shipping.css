@@ -15,7 +15,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: var(--bg); }
 button, input, select, textarea { font: inherit; }
-.shipping-shell { width: min(1520px, 100%); margin: 0 auto; padding: 24px; }
+.shipping-shell { width: min(2560px, 100%); margin: 0 auto; padding: clamp(12px, 1.25vw, 28px); }
 .shipping-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 20px; }
 .shipping-header h1 { margin: 2px 0 6px; font-size: clamp(28px, 3vw, 42px); }
 .shipping-header p { margin: 0; color: var(--muted); }
@@ -48,7 +48,7 @@ textarea { resize: vertical; line-height: 1.45; }
 input:focus, select:focus, textarea:focus { outline: 3px solid #d1e9ff; border-color: #1570ef; }
 input.invalid { border-color: var(--red); background: #fef3f2; }
 input.invalid:focus { outline-color: #fecdca; }
-.shipping-workspace { display: grid; grid-template-columns: minmax(300px, 390px) minmax(0, 1fr) minmax(240px, 280px); gap: 14px; align-items: start; }
+.shipping-workspace { display: grid; grid-template-columns: clamp(340px, 21vw, 460px) minmax(0, 1fr) clamp(260px, 15vw, 340px); gap: clamp(14px, 1vw, 22px); align-items: start; }
 .shipping-card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: 0 8px 24px rgba(16, 24, 40, .04); }
 .shipping-queue-card { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: hidden; }
 .shipping-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px; border-bottom: 1px solid var(--line); }
@@ -363,6 +363,12 @@ input.invalid:focus { outline-color: #fecdca; }
 .shipping-v2-archive-section > small { display: block; margin-top: 9px; color: var(--muted); }
 .shipping-v2-archive-operators { grid-template-columns: repeat(3, 1fr); }
 .shipping-v2-archive-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 14px; }
+
+@media (min-width: 1920px) {
+  .shipping-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .shipping-address-candidates { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .shipping-stock-tools { width: min(100%, 620px); }
+}
 
 @media (max-width: 1250px) {
   .shipping-workspace { grid-template-columns: minmax(300px, 390px) minmax(0, 1fr); }

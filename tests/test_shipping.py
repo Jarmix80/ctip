@@ -1721,7 +1721,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-label-text-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-wide-layout-01",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
@@ -1744,6 +1744,10 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("font-size: 17px", stylesheet)
         self.assertIn("height: calc(100vh - 104px)", stylesheet)
         self.assertIn("min-height: 0; max-height: none", stylesheet)
+        self.assertIn("width: min(2560px", stylesheet)
+        self.assertIn("clamp(330px, 20vw, 440px)", stylesheet)
+        self.assertNotIn("width: min(1880px", stylesheet)
+        self.assertNotIn("width: min(1780px", stylesheet)
         enhancer = Path("app/static/shipping/shipping-v2.js").read_text(encoding="utf-8")
         self.assertNotIn("fetch(", enhancer)
         self.assertIn("MutationObserver", enhancer)
@@ -1781,7 +1785,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
         self.assertIn("shipping.css?v=", response.text)
-        self.assertIn("-legacy-audit-01", response.text)
+        self.assertIn("-wide-layout-01", response.text)
         self.assertIn("/static/shipping/shipping-v2.js", response.text)
         self.assertIn('id="shipping-v2-audit"', response.text)
         self.assertIn('id="shipping-v2-progress-label"', response.text)
@@ -1799,7 +1803,11 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("shippingLayoutDestination", javascript)
         stylesheet = Path("app/static/shipping/shipping.css").read_text(encoding="utf-8")
         self.assertIn(".shipping-legacy-audit", stylesheet)
-        self.assertIn("grid-template-columns: minmax(300px, 390px)", stylesheet)
+        self.assertIn("width: min(2560px, 100%)", stylesheet)
+        self.assertIn("clamp(340px, 21vw, 460px)", stylesheet)
+        self.assertIn("@media (min-width: 1920px)", stylesheet)
+        self.assertIn("repeat(4, minmax(0, 1fr))", stylesheet)
+        self.assertNotIn("width: min(1520px", stylesheet)
 
     def test_strona_prototypow_pokazuje_siedem_niefunkcjonalnych_wariantow(
         self,
