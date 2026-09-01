@@ -72,6 +72,14 @@ def collect_issues(
         issues.append("Projekt Compose musi mieć nazwę ctip-test.")
 
     services = config.get("services") or {}
+    log_init = services.get("log-init") or {}
+    if log_init.get("image") != expected_image:
+        issues.append("Usługa log-init nie używa przypiętego obrazu.")
+    if str(log_init.get("user")) != "0:0":
+        issues.append("Usługa log-init musi działać jednorazowo jako root.")
+    if not any(_mount_target(mount) == "/app/docs/LOG" for mount in log_init.get("volumes") or []):
+        issues.append("Usługa log-init nie inicjalizuje wolumenu logów.")
+
     for name in APPLICATION_SERVICES:
         service = services.get(name)
         if not isinstance(service, dict):
@@ -97,6 +105,19 @@ def collect_issues(
             issues.append(f"Usługa {name} nie blokuje komunikacji z klientami.")
         if _is_true(environment.get("FB_ALLOW_WRITES")):
             issues.append(f"Usługa {name} musi mieć FB_ALLOW_WRITES=false.")
+
+    for name in ("web", "collector", "sms-sender"):
+        dependencies = (services.get(name) or {}).get("depends_on") or {}
+        log_dependency = dependencies.get("log-init") or {}
+        if log_dependency.get("condition") != "service_completed_successfully":
+            issues.append(f"Usługa {name} nie czeka na inicjalizację logów.")
+
+    firebird = services.get("firebird") or {}
+    firebird_config_mounts = [
+        mount for mount in firebird.get("volumes") or [] if _mount_target(mount) == "/firebird"
+    ]
+    if len(firebird_config_mounts) != 1 or _mount_source(firebird_config_mounts[0]).startswith("/"):
+        issues.append("Firebird musi używać stabilnego nazwanego wolumenu konfiguracji.")
 
     web = services.get("web") or {}
     secret_mounts = [

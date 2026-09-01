@@ -19,6 +19,27 @@ x-immutable-service: &immutable-service
   restart: unless-stopped
 
 services:
+  firebird:
+    volumes: !override
+      - ${CTIP_TEST_FIREBIRD_DIR:-./.runtime-firebird}:/data
+      - ctip_test_firebird_config:/firebird
+      - ./ops/firebird/aliases.test.conf:/firebird/etc/aliases.conf:ro
+
+  log-init:
+    <<: *immutable-service
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /app/docs/LOG/Centralka /app/docs/LOG/BAZAPostGre &&
+        chown -R ${LOCAL_UID:-1000}:${LOCAL_LOG_GID:-101} /app/docs/LOG &&
+        chmod -R u+rwX,g+rwX,o-rwx /app/docs/LOG
+    restart: "no"
+    volumes: !override
+      - ctip_test_app_logs:/app/docs/LOG
+    networks: !reset []
+
   mock-ctip:
     <<: *immutable-service
     volumes: !reset []
@@ -38,6 +59,9 @@ services:
       GOOGLE_SHEETS_ENABLED: ${TEST_GOOGLE_SHEETS_RUNTIME_ENABLED:-false}
       GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_TEST_SPREADSHEET_ID:-}
       DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED: ${TEST_DEVICE_SHEET_OUTBOX_SCHEDULER_ENABLED:-false}
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
 
   forms-public:
     <<: *immutable-service
@@ -51,6 +75,9 @@ services:
       - ctip_test_app_logs:/app/docs/LOG
     environment:
       <<: [*isolated-runtime, *disabled-google]
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
 
   sms-sender:
     <<: *immutable-service
@@ -58,6 +85,9 @@ services:
       - ctip_test_app_logs:/app/docs/LOG
     environment:
       <<: [*isolated-runtime, *disabled-google]
+    depends_on:
+      log-init:
+        condition: service_completed_successfully
 
   bot-identity-api:
     <<: *immutable-service
@@ -249,3 +279,6 @@ volumes:
     external: true
     name: ${CTIP_TEST_MAILPIT_VOLUME:-ctip-prod-mirror_ctip_mirror_mailpit_data}
   ctip_test_app_logs:
+  ctip_test_firebird_config:
+    external: true
+    name: ${CTIP_TEST_FIREBIRD_CONFIG_VOLUME:-ctip-test-firebird-config}

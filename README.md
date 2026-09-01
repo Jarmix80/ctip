@@ -67,7 +67,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - System Linux lub Windows (dla usługi Windows wymagane uprawnienia administratora).
 
 ## Konfiguracja środowiskowa
-Lokalna praca w repozytorium odbywa się wyłącznie na `.env.test` oraz bazie `ctip_test`. Produkcyjny `.env` pozostaje poza repo i jest używany dopiero na serwerze wdrożeniowym. Artefakty lokalne (`.codex/*` poza `.codex/session.json`, `backups/`, lokalne binaria w `tools/`) pozostają poza wersjonowaniem; sekrety z obu plików środowiskowych również nie trafiają do Git.
+Lokalna praca w repozytorium odbywa się wyłącznie na `.env.test` oraz bazie `ctip_test`. Produkcyjny `.env` pozostaje poza repo i jest używany dopiero na serwerze wdrożeniowym. Artefakty lokalne (`.codex/*` poza `.codex/session.json`, `backups/`, lokalne binaria w `tools/`) pozostają poza wersjonowaniem; sekrety z obu plików środowiskowych również nie trafiają do Git. Kanoniczny serwer testowy używa stabilnego wolumenu konfiguracji Firebird i jednorazowej usługi `log-init`; cutover uznaje za poprawne tylko procesy pozostające stabilnie uruchomione, nie samą odpowiedź WWW.
 
 ### Operacyjne sync urzadzen FLOW (prod)
 Do powtarzalnego audytu i aktualizacji arkusza `Urzadzenia_magazyn` oraz uzupelnienia `MASZYNA` w Firebird sluzy:

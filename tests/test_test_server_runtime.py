@@ -39,6 +39,16 @@ def _config() -> dict:
             "target": "/run/secrets",
         }
     ]
+    services["log-init"] = {
+        "image": "ctip/test-runtime:0123456789abcdef0123456789abcdef01234567",
+        "user": "0:0",
+        "volumes": [{"type": "volume", "source": "logs", "target": "/app/docs/LOG"}],
+    }
+    for name in ("web", "collector", "sms-sender"):
+        services[name]["depends_on"] = {"log-init": {"condition": "service_completed_successfully"}}
+    services["firebird"] = {
+        "volumes": [{"type": "volume", "source": "firebird-config", "target": "/firebird"}]
+    }
     services["test-gateway"] = {"ports": [{"published": "8000", "target": 8000}]}
     return {"name": "ctip-test", "services": services}
 
@@ -99,5 +109,6 @@ def test_server_commands_do_not_depend_on_legacy_network_name() -> None:
     assert "scripts/reconcile_test_alembic_state.py" in script
     assert "--backup-manifest /backup/SHA256SUMS" in script
     assert "-e PYTHONPATH=/app" in script
+    assert "wait_for_persistent_services" in script
     assert "env -i" in script
     assert 'CTIP_ENV_FILE="${ENV_FILE}"' in script

@@ -16,6 +16,8 @@ oba zestawy sieci nie kolidują nawet wtedy, gdy stare kontenery są zatrzymane.
 - PostgreSQL używa zachowanego wolumenu `ctip-prod-mirror_ctip_mirror_postgres_data`.
 - Mailpit używa zachowanego wolumenu `ctip-prod-mirror_ctip_mirror_mailpit_data`.
 - Firebird znajduje się w ignorowanym katalogu `.runtime-firebird/BAZAMS_TEST.FDB`.
+- Konfiguracja i testowa baza zabezpieczeń Firebird znajdują się w stabilnym wolumenie `ctip-test-firebird-config`; został on skopiowany ze sprawdzonego starego stosu bez usuwania źródła.
+- Logi aplikacyjne korzystają z wolumenu inicjalizowanego przez jednorazową usługę `log-init`, dzięki czemu procesy bez uprawnień administratora mogą tworzyć dzienne katalogi i pliki.
 - Sekrety testowe znajdują się w ignorowanym katalogu `.runtime-secrets`; pliki muszą mieć tryb `0600`, a katalog `0700`.
 - Stare kontenery, wolumeny i kopie baz nie są automatycznie usuwane.
 
@@ -35,7 +37,7 @@ export ENV_FILE=/home/marcin/projects/ctip/.env.test
 ./ctiptest server-status
 ```
 
-`server-build` buduje obraz `ctip/test-runtime:<pełny_sha>`. `server-check` sprawdza etykietę obrazu, izolację, montowania, porty i zgodność migracji. `server-migrate` najpierw wykonuje backup PostgreSQL i Firebird, a następnie aktualizuje wyłącznie `ctip_test`. `server-cutover` ponownie wykonuje backup, zatrzymuje stare testowe kontenery bez ich usuwania i uruchamia projekt `ctip-test`.
+`server-build` buduje obraz `ctip/test-runtime:<pełny_sha>`. `server-check` sprawdza etykietę obrazu, izolację, montowania, porty i zgodność migracji. `server-migrate` najpierw wykonuje backup PostgreSQL i Firebird, a następnie aktualizuje wyłącznie `ctip_test`. `server-cutover` ponownie wykonuje backup, zatrzymuje stare testowe kontenery bez ich usuwania i uruchamia projekt `ctip-test`. Odbiór wymaga nie tylko odpowiedzi HTTP, ale też stabilnego przez co najmniej 10 sekund stanu wszystkich procesów trwałych, w tym Firebird, kolektora oraz sendera SMS.
 
 Jeżeli historyczna baza ma znacznik `e4a8c1d9f2b7`, ale fizycznie zawiera już
 również tabele i kolumny gałęzi dostaw, Bot Identity oraz CRM, zwykła migracja

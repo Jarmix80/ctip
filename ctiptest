@@ -151,12 +151,43 @@ wait_for_url() {
     return 1
 }
 
+wait_for_persistent_services() {
+    local services service container state stable_passes
+    services=(
+        postgres firebird mailpit mock-ctip google-egress web forms-public
+        collector sms-sender bot-identity-api bot-identity-sync crm lab test-gateway
+    )
+    stable_passes=0
+    for _ in $(seq 1 60); do
+        state="running"
+        for service in "${services[@]}"; do
+            container="$(CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" ps -q "${service}")"
+            if [[ -z "${container}" ]] || [[ "$(docker inspect --format '{{.State.Status}}' "${container}")" != "running" ]]; then
+                state="waiting"
+                break
+            fi
+        done
+        if [[ "${state}" == "running" ]]; then
+            stable_passes=$((stable_passes + 1))
+            if (( stable_passes >= 5 )); then
+                return 0
+            fi
+        else
+            stable_passes=0
+        fi
+        sleep 2
+    done
+    echo "Nie wszystkie procesy stosu pozostały stabilne przez 10 sekund." >&2
+    return 1
+}
+
 wait_for_stack() {
     wait_for_url "http://127.0.0.1:8000/health" "CTIP"
     wait_for_url "http://192.168.0.9:8001/health" "CRM"
     wait_for_url "http://192.168.0.9:8790/health" "LAB"
     CTIP_TEST_IMAGE="$(server_image)" "${COMPOSE_SERVER[@]}" exec -T bot-identity-api \
         python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3).read()"
+    wait_for_persistent_services
 }
 
 backup_test_data() {
