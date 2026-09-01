@@ -23,6 +23,7 @@ LOCAL_SERVICE_HOSTS = {
     "::1",
     "localhost",
     "postgres",
+    "ctip-test-postgres",
     "firebird",
     "mailpit",
     "mock-ctip",

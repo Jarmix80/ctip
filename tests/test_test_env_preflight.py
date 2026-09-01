@@ -16,6 +16,12 @@ class TestEnvironmentPreflightTests(unittest.TestCase):
             issues = test_env_preflight.collect_issues()
         self.assertTrue(any("PGHOST" in issue and "produkcyjny" in issue for issue in issues))
 
+    def test_allows_unique_test_database_alias(self) -> None:
+        """Unikalny alias bazy CTIP nie jest mylony z usługą CHAT_KP."""
+        with mock.patch.object(test_env_preflight.settings, "pg_host", "ctip-test-postgres"):
+            issues = test_env_preflight.collect_issues()
+        self.assertFalse(any("PGHOST" in issue for issue in issues))
+
     def test_detects_live_delivery_mode(self) -> None:
         with mock.patch.object(test_env_preflight.settings, "outbound_delivery_mode", "live"):
             issues = test_env_preflight.collect_issues()
