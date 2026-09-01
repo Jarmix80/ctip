@@ -37,7 +37,11 @@ python scripts/deploy_windows_prod.py \
   --dry-run
 ```
 
-Tryb `--dry-run` nie zatrzymuje usług, nie migruje bazy i nie przełącza commita. Dopiero osobne, jawne polecenie z `--apply` wykonuje wdrożenie.
+Tryb `--dry-run` pobiera z `origin` wyłącznie obiekt wskazanego pełnego SHA do
+`FETCH_HEAD`, ale nie zmienia zdalnego HEAD ani plików worktree, nie zatrzymuje
+usług, nie migruje bazy i nie przełącza commita. Dzięki temu pierwszy dry-run
+nowego wydania nie zależy od wcześniejszego ręcznego `git fetch`. Dopiero osobne,
+jawne polecenie z `--apply` wykonuje wdrożenie.
 
 ## Przebieg `--apply`
 
@@ -55,7 +59,7 @@ Przy błędzie skrypt przywraca poprzedni commit i ponownie uruchamia wskazane u
 
 ## Ograniczenia operacyjne
 
-- Nie używać `source .env`, `git pull`, aktywnej nazwy gałęzi ani założenia, że produkcja nie pracuje w detached HEAD.
+- Nie używać `source .env`, `git pull`, aktywnej nazwy gałęzi ani założenia, że produkcja nie pracuje w detached HEAD; orkiestrator sam pobiera dokładny pełny SHA przez `git fetch --no-tags origin <sha>`.
 - Nie przesyłać dużych skryptów przez linię poleceń PowerShell.
 - Nie traktować samego `stderr` Alembic jako awarii; decyduje kod wyjścia.
 - Endpoint FormsPublic sprawdzać lokalnie przez `127.0.0.1:8100`.

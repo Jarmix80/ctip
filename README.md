@@ -594,7 +594,7 @@ ALTER SEQUENCE ctip.call_events_id_seq OWNER TO appuser;
 Rekomenduje się uruchomienie obu procesów pod nadzorem `systemd` lub innego menedżera usług. W przypadku `systemd` kontroluj usterki poprzez `Restart=always` oraz logowanie do `journalctl`.
 
 ## Aktualizacja produkcji na Windows Server (PowerShell)
-Środowisko produkcyjne działa na Windows Server, zwykle w trybie detached HEAD. Wdrożenie wykonuje się z Linux/WSL jednym mechanizmem `scripts/deploy_windows_prod.py`, który pobiera dane połączenia z klucza `ssh_serv_link`, materializuje skrypty z przypiętego commita przez binarne `git archive` i kontrolę SHA-256, wykonuje backupy, używa środowiska NSSM, tworzy worktree kandydata i restartuje wyłącznie usługi wskazane w planie.
+Środowisko produkcyjne działa na Windows Server, zwykle w trybie detached HEAD. Wdrożenie wykonuje się z Linux/WSL jednym mechanizmem `scripts/deploy_windows_prod.py`, który pobiera dane połączenia z klucza `ssh_serv_link`, pobiera z `origin` dokładny pełny SHA bez przełączania worktree, materializuje skrypty z przypiętego commita przez binarne `git archive` i kontrolę SHA-256, wykonuje backupy, używa środowiska NSSM, tworzy worktree kandydata i restartuje wyłącznie usługi wskazane w planie.
 
 Najpierw obowiązkowo uruchom wariant `--dry-run`. Wariant `--apply` wolno wykonać dopiero po sprawdzeniu raportu, rewizji Alembic, dozwolonych ścieżek i endpointów. Pełny przykład oraz rollback opisuje `docs/instal/windows_release_deployment.md`.
 

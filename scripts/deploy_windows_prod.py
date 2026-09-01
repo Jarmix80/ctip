@@ -339,6 +339,21 @@ def execute(
     if remote_state.get("head") != args.expected_current or not remote_state.get("clean"):
         raise RuntimeError("Zdalna produkcja ma nieoczekiwany HEAD albo lokalne zmiany.")
 
+    remote_fetch = (
+        "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';"
+        f"$repo={_powershell_quoted(args.install_dir)};"
+        f"$release={_powershell_quoted(args.release)};"
+        "& git.exe -C $repo fetch --no-tags origin $release;"
+        "if($LASTEXITCODE-ne 0){throw 'git fetch release failed'};"
+        "$object=$release+'^{commit}';"
+        "& git.exe -C $repo cat-file -e $object;"
+        "if($LASTEXITCODE-ne 0){throw 'release commit unavailable after fetch'}"
+    )
+    _require_success(
+        run_remote_powershell(runner, ssh_command, remote_fetch),
+        "Pobranie obiektu release",
+    )
+
     plan = {
         "expected_current": args.expected_current,
         "release": args.release,
