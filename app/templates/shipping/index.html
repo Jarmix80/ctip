@@ -5,8 +5,8 @@
     <title>CTIP – wysyłki części</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-shipping-fields-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-milestones-geocoder-01"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-dpd-limits-phone-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-dpd-limits-phone-01"></script>
     <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-milestones-01"></script>
   </head>
   <body data-shipping-layout="legacy" data-shipping-default-entry="false">
@@ -146,18 +146,18 @@
           </section>
 
           <div class="shipping-form-grid">
-            <label><span>Firma *</span><input id="shipping-company" minlength="2" maxlength="250" required></label>
+            <label><span class="shipping-field-label">Firma * <small id="shipping-company-count" class="shipping-field-counter" aria-live="polite">0/100</small></span><input id="shipping-company" minlength="2" maxlength="250" required></label>
             <label>
               <span>Kontakt z Menadżera Serwisu</span>
               <select id="shipping-contact-select"></select>
               <small id="shipping-contact-note" class="shipping-field-note"></small>
             </label>
-            <label><span>Osoba kontaktowa</span><input id="shipping-contact" maxlength="150"></label>
-            <label class="wide"><span>Ulica i numer *</span><input id="shipping-street" minlength="3" maxlength="250" required></label>
+            <label><span class="shipping-field-label">Osoba kontaktowa <small id="shipping-contact-count" class="shipping-field-counter" aria-live="polite">0/100</small></span><input id="shipping-contact" maxlength="150"></label>
+            <label class="wide"><span class="shipping-field-label">Ulica i numer * <small id="shipping-street-count" class="shipping-field-counter" aria-live="polite">0/100</small></span><input id="shipping-street" minlength="3" maxlength="250" required></label>
             <label><span>Kod pocztowy *</span><input id="shipping-postal" maxlength="6" pattern="\d{2}-\d{3}" placeholder="00-000" required></label>
-            <label><span>Miejscowość *</span><input id="shipping-city" minlength="2" maxlength="150" required></label>
+            <label><span class="shipping-field-label">Miejscowość * <small id="shipping-city-count" class="shipping-field-counter" aria-live="polite">0/50</small></span><input id="shipping-city" minlength="2" maxlength="150" required></label>
             <label><span>Telefon *</span><input id="shipping-phone" minlength="7" maxlength="30" inputmode="tel" required><small id="shipping-phone-note" class="shipping-field-note"></small></label>
-            <label><span>E-mail</span><input id="shipping-email" type="email" maxlength="250"></label>
+            <label><span class="shipping-field-label">E-mail <small id="shipping-email-count" class="shipping-field-counter" aria-live="polite">0/100</small></span><input id="shipping-email" type="email" maxlength="250"></label>
             <input id="shipping-address-source" type="hidden" value="manual">
             <label>
               <span>Waga paczki *</span>

@@ -52,6 +52,7 @@ from app.models import (
     ShippingTrackingSyncRun,
 )
 from app.schemas.shipping import (
+    ShippingAddressRequest,
     ShippingAttachExistingRequest,
     ShippingBulkCreateRequest,
     ShippingCompatibilityManualBatchRequest,
@@ -64,6 +65,7 @@ from app.services.dpd_shipping import (
     DpdConfigurationError,
     DpdShippingClient,
     DpdTransportError,
+    dpd_recipient_field_limits,
     split_dpd_label_text,
 )
 from app.services.shipping_archive import (
@@ -108,9 +110,11 @@ from app.services.shipping_firebird import (
     write_shipment_to_order,
     write_shipping_milestones_to_order,
 )
+from app.services.shipping_phone import normalize_polish_shipping_phone
 from app.services.shipping_workflow import (
     ShippingConflictError,
     ShippingLocationChangedError,
+    _send_notifications,
     _shipping_item_price,
     attach_shipping_cases_to_existing_label,
     build_shipping_address_candidates,
@@ -260,6 +264,23 @@ class DpdShippingClientTests(unittest.TestCase):
     def tearDown(self) -> None:
         for key, value in self.previous.items():
             setattr(settings, key, value)
+
+    def test_status_konfiguracji_udostepnia_wspolne_limity_odbiorcy(self) -> None:
+        status = DpdShippingClient().configuration_status()
+
+        self.assertEqual(
+            status["recipient_field_limits"],
+            {
+                "company_name": {"api_limit": 100, "label_limit": 57},
+                "contact_name": {"api_limit": 100, "label_limit": 60},
+                "street": {"api_limit": 100, "label_limit": 30},
+                "city": {"api_limit": 50, "label_limit": 37},
+                "email": {"api_limit": 100, "label_limit": None},
+            },
+        )
+        self.assertEqual(status["recipient_field_limits"], dpd_recipient_field_limits())
+        self.assertNotIn("password", status)
+        self.assertNotIn("login", status)
 
     def test_mock_generuje_realistyczna_etykiete_pdf_a4(self) -> None:
         settings.dpd_enabled = True
@@ -863,6 +884,42 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
         settings.dpd_test_mode = self.previous_dpd_test_mode
         settings.shipping_test_firebird_writes = self.previous_shipping_test_firebird_writes
         await self.engine.dispose()
+
+    async def test_powiadomienie_nie_wysyla_sms_na_bledny_numer_historyczny(self) -> None:
+        shipment = ShippingShipment(
+            provider_mode="production",
+            tracking_number="1234567890",
+        )
+        case = ShippingCase(address_snapshot={"phone": "+49 123 456 789"})
+
+        with patch("app.services.shipping_workflow.HttpSmsProvider.send_sms") as send_sms:
+            errors = await _send_notifications(shipment, case)
+
+        send_sms.assert_not_called()
+        self.assertEqual(shipment.notification_sms_status, "failed")
+        self.assertEqual(shipment.notification_email_status, "skipped")
+        self.assertIn("wyłącznie polski numer", errors[0])
+
+    async def test_powiadomienie_wysyla_sms_na_znormalizowany_numer_stacjonarny(
+        self,
+    ) -> None:
+        shipment = ShippingShipment(
+            id=91,
+            provider_mode="production",
+            tracking_number="1234567890",
+        )
+        case = ShippingCase(address_snapshot={"phone": "(61) 250-03-01"})
+
+        with patch(
+            "app.services.shipping_workflow.HttpSmsProvider.send_sms",
+            return_value=SimpleNamespace(success=True, error=None),
+        ) as send_sms:
+            errors = await _send_notifications(shipment, case)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(shipment.notification_sms_status, "sent")
+        self.assertEqual(shipment.notification_email_status, "skipped")
+        self.assertEqual(send_sms.call_args.args[0], "+48612500301")
 
     async def test_review_zapisuje_adres_rezerwacje_i_zgodnosc(self) -> None:
         async with self.session_factory() as session:
@@ -1926,6 +1983,69 @@ class ShippingCloseRouteTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ShippingSchemaTests(unittest.TestCase):
+    def test_telefon_shipping_obsluguje_polskie_formaty_i_numery_stacjonarne(
+        self,
+    ) -> None:
+        examples = {
+            "612500301": "+48612500301",
+            "+48 61 250 03 01": "+48612500301",
+            "0048 (61) 250-03-01": "+48612500301",
+            "061.250.03.01": "+48612500301",
+            "500 600 700": "+48500600700",
+        }
+
+        for source, expected in examples.items():
+            with self.subTest(source=source):
+                self.assertEqual(normalize_polish_shipping_phone(source), expected)
+
+    def test_telefon_shipping_odrzuca_niejednoznaczne_i_zagraniczne_wartosci(
+        self,
+    ) -> None:
+        invalid_numbers = (
+            "telefon 500600700",
+            "+49 123 456 789",
+            "0049 123 456 789",
+            "50060070",
+            "5006007000",
+            "50+0600700",
+            "++48500600700",
+            "012345678",
+        )
+
+        for phone in invalid_numbers:
+            with self.subTest(phone=phone), self.assertRaises(ValueError):
+                normalize_polish_shipping_phone(phone)
+
+    def test_schema_adresu_wymusza_twarde_limity_dpd(self) -> None:
+        address = _review_payload().address.model_dump(mode="json")
+        valid_email = f"a@{'b' * 50}.{'c' * 47}"
+        boundary_values = {
+            "company_name": "F" * 100,
+            "contact_name": "K" * 100,
+            "street": "U" * 100,
+            "city": "M" * 50,
+            "email": valid_email,
+        }
+
+        for field_name, value in boundary_values.items():
+            with self.subTest(field_name=field_name):
+                payload = {**address, field_name: value}
+                self.assertEqual(
+                    getattr(ShippingAddressRequest.model_validate(payload), field_name),
+                    value,
+                )
+
+        over_limit_values = {
+            "company_name": "F" * 101,
+            "contact_name": "K" * 101,
+            "street": "U" * 101,
+            "city": "M" * 51,
+            "email": f"a@{'b' * 50}.{'c' * 48}",
+        }
+        for field_name, value in over_limit_values.items():
+            with self.subTest(field_name=field_name), self.assertRaises(ValidationError):
+                ShippingAddressRequest.model_validate({**address, field_name: value})
+
     def test_blokady_etapowego_wdrozenia_sa_wymuszane_przez_backend(self) -> None:
         with (
             patch.object(settings, "shipping_catalog_mutations_enabled", False),
@@ -1971,7 +2091,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-shipping-fields-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-dpd-limits-phone-01",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
@@ -1979,6 +2099,14 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-queue-refresh"', response.text)
         self.assertIn("Etap pracy (domyślne)", response.text)
         self.assertIn('id="shipping-phone-note"', response.text)
+        for counter_id in (
+            "shipping-company-count",
+            "shipping-contact-count",
+            "shipping-street-count",
+            "shipping-city-count",
+            "shipping-email-count",
+        ):
+            self.assertIn(f'id="{counter_id}"', response.text)
         self.assertIn('id="shipping-geocoder-match"', response.text)
         self.assertIn('id="shipping-geocoder-results"', response.text)
         self.assertIn("Zezwól na część ze stanem zerowym", response.text)
@@ -2037,7 +2165,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
         self.assertIn("shipping.css?v=", response.text)
-        self.assertIn("-shipping-fields-01", response.text)
+        self.assertIn("-dpd-limits-phone-01", response.text)
         self.assertIn("/static/shipping/shipping-v2.js", response.text)
         self.assertIn('id="shipping-v2-audit"', response.text)
         self.assertIn('id="shipping-v2-progress-label"', response.text)
@@ -2047,6 +2175,14 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-v2-audit-status"', response.text)
         self.assertIn("POSTĘP REALIZACJI", response.text)
         self.assertIn("RW, WZ albo FV + WZ", response.text)
+        for counter_id in (
+            "shipping-company-count",
+            "shipping-contact-count",
+            "shipping-street-count",
+            "shipping-city-count",
+            "shipping-email-count",
+        ):
+            self.assertIn(f'id="{counter_id}"', response.text)
         javascript = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
         required_ids = set(re.findall(r'getElementById\("([^"]+)"\)', javascript))
         rendered_ids = set(re.findall(r'id="([^"]+)"', response.text))
@@ -2878,6 +3014,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("function shippingFulfillmentEnabled()", javascript)
         self.assertIn("Tryb wdrożeniowy", javascript)
         self.assertIn("function shippingRequestUuid()", javascript)
+        self.assertIn("function renderShippingRecipientFieldCounters()", javascript)
+        self.assertIn("function normalizePolishShippingPhone(value)", javascript)
         self.assertIn("idempotency_key: shippingRequestUuid()", javascript)
         self.assertIn("shipping-generate-selected", javascript)
         self.assertIn("shipping-generate-consolidated", javascript)

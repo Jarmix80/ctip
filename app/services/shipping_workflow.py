@@ -48,6 +48,7 @@ from app.services.shipping_firebird import (
     shipping_order_state_payload,
     write_shipment_to_order,
 )
+from app.services.shipping_phone import normalize_polish_shipping_phone
 from app.services.sms_provider import HttpSmsProvider
 
 ACTIVE_RESERVATION_STATUSES = ("ready", "shipment_created", "handed_over")
@@ -2067,18 +2068,24 @@ async def _send_notifications(shipment: ShippingShipment, case: ShippingCase) ->
         delivery_mode=settings.outbound_delivery_mode,
     )
     try:
-        result = await asyncio.to_thread(
-            provider.send_sms,
-            str(address["phone"]),
-            text,
-            metadata={"source": "shipping_handover", "shipment_id": shipment.id},
-        )
-        shipment.notification_sms_status = "sent" if result.success else "failed"
-        if not result.success:
-            errors.append(result.error or "Nie udało się wysłać SMS.")
-    except Exception as exc:
+        sms_recipient = normalize_polish_shipping_phone(str(address.get("phone") or ""))
+    except ValueError as exc:
         shipment.notification_sms_status = "failed"
-        errors.append(str(exc))
+        errors.append(f"Nie wysłano SMS: {exc}")
+    else:
+        try:
+            result = await asyncio.to_thread(
+                provider.send_sms,
+                sms_recipient,
+                text,
+                metadata={"source": "shipping_handover", "shipment_id": shipment.id},
+            )
+            shipment.notification_sms_status = "sent" if result.success else "failed"
+            if not result.success:
+                errors.append(result.error or "Nie udało się wysłać SMS.")
+        except Exception as exc:
+            shipment.notification_sms_status = "failed"
+            errors.append(str(exc))
 
     recipient = address.get("email")
     if not recipient:
