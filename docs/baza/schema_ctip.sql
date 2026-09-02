@@ -524,10 +524,6 @@ CREATE TABLE ctip.admin_user (
     password_hash text NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     is_salesperson boolean DEFAULT false NOT NULL,
-    crm_sales_sms_enabled boolean DEFAULT false NOT NULL,
-    crm_sales_email_enabled boolean DEFAULT false NOT NULL,
-    crm_operations_sms_enabled boolean DEFAULT false NOT NULL,
-    crm_operations_email_enabled boolean DEFAULT false NOT NULL,
     firebird_app_user_id integer,
     firebird_app_user_login text,
     can_withdraw_device_pz boolean DEFAULT false NOT NULL,
@@ -536,9 +532,7 @@ CREATE TABLE ctip.admin_user (
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT admin_user_pkey PRIMARY KEY (id),
-    CONSTRAINT admin_user_role_check CHECK (
-        role = ANY (ARRAY['admin'::text, 'operator'::text, 'serwisant'::text])
-    ),
+    CONSTRAINT admin_user_role_check CHECK (role = ANY (ARRAY['admin'::text, 'operator'::text])),
     CONSTRAINT admin_user_device_theme_check CHECK (device_theme = ANY (ARRAY['blue'::text, 'graphite'::text, 'mint'::text])),
     CONSTRAINT admin_user_shipping_layout_check CHECK (shipping_layout = ANY (ARRAY['v2'::text, 'legacy'::text]))
 );
@@ -697,8 +691,6 @@ CREATE TABLE ctip.form_workflow_case (
     signature_deadline_at timestamp with time zone,
     resources_release_due_at timestamp with time zone,
     resources_released_at timestamp with time zone,
-    grenke_contract_start_date date,
-    kp_contract_start_date date,
     status_changed_at timestamp with time zone,
     status_source text,
     status_history json,
@@ -820,318 +812,6 @@ ALTER TABLE ctip.workflow_sheet_status_cache OWNER TO postgres;
 
 CREATE INDEX idx_workflow_sheet_status_cache_index_norm
     ON ctip.workflow_sheet_status_cache USING btree (device_index_normalized);
-
-CREATE SEQUENCE ctip.delivery_case_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE ctip.delivery_case_id_seq OWNER TO postgres;
-ALTER SEQUENCE ctip.delivery_case_id_seq OWNED BY ctip.delivery_case.id;
-
-CREATE TABLE ctip.delivery_case (
-    id integer NOT NULL DEFAULT nextval('ctip.delivery_case_id_seq'::regclass),
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    created_by integer,
-    updated_by integer,
-    source text DEFAULT 'manual'::text NOT NULL,
-    case_type text DEFAULT 'delivery'::text NOT NULL,
-    status text DEFAULT 'new'::text NOT NULL,
-    title text NOT NULL,
-    form_request_id integer,
-    workflow_case_id integer,
-    firebird_client_id integer,
-    customer_name text,
-    customer_nip text,
-    customer_email text,
-    customer_phone text,
-    delivery_date date,
-    delivery_time_window text,
-    delivery_contact_name text,
-    delivery_contact_phone text,
-    delivery_notes text,
-    service_notes text,
-    snapshot json,
-    CONSTRAINT delivery_case_pkey PRIMARY KEY (id),
-    CONSTRAINT uq_delivery_case_workflow_case_id UNIQUE (workflow_case_id),
-    CONSTRAINT delivery_case_created_by_fkey FOREIGN KEY (created_by)
-        REFERENCES ctip.admin_user (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT delivery_case_updated_by_fkey FOREIGN KEY (updated_by)
-        REFERENCES ctip.admin_user (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT delivery_case_form_request_id_fkey FOREIGN KEY (form_request_id)
-        REFERENCES ctip.form_request (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT delivery_case_workflow_case_id_fkey FOREIGN KEY (workflow_case_id)
-        REFERENCES ctip.form_workflow_case (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT delivery_case_source_check CHECK (source = ANY (ARRAY['grenke'::text, 'manual'::text])),
-    CONSTRAINT delivery_case_type_check CHECK (case_type = ANY (ARRAY['delivery'::text, 'pickup'::text])),
-    CONSTRAINT delivery_case_status_check CHECK (
-        status = ANY (
-            ARRAY['new'::text, 'planned'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text]
-        )
-    )
-);
-
-ALTER TABLE ctip.delivery_case OWNER TO postgres;
-
-CREATE INDEX idx_delivery_case_source_status
-    ON ctip.delivery_case USING btree (source, status);
-
-CREATE INDEX idx_delivery_case_type_status
-    ON ctip.delivery_case USING btree (case_type, status);
-
-CREATE INDEX idx_delivery_case_delivery_date
-    ON ctip.delivery_case USING btree (delivery_date);
-
-CREATE INDEX idx_delivery_case_firebird_client
-    ON ctip.delivery_case USING btree (firebird_client_id);
-
-CREATE SEQUENCE ctip.delivery_case_device_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE ctip.delivery_case_device_id_seq OWNER TO postgres;
-ALTER SEQUENCE ctip.delivery_case_device_id_seq OWNED BY ctip.delivery_case_device.id;
-
-CREATE TABLE ctip.delivery_case_device (
-    id integer NOT NULL DEFAULT nextval('ctip.delivery_case_device_id_seq'::regclass),
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    delivery_case_id integer NOT NULL,
-    workflow_device_id integer,
-    producer text,
-    model text,
-    serial text,
-    ewidencja text,
-    firebird_machine_id integer,
-    device_role text DEFAULT 'delivery'::text NOT NULL,
-    source_type text,
-    source_row integer,
-    snapshot json,
-    CONSTRAINT delivery_case_device_pkey PRIMARY KEY (id),
-    CONSTRAINT uq_delivery_case_device_workflow_device_id UNIQUE (delivery_case_id, workflow_device_id),
-    CONSTRAINT delivery_case_device_delivery_case_id_fkey FOREIGN KEY (delivery_case_id)
-        REFERENCES ctip.delivery_case (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE,
-    CONSTRAINT delivery_case_device_workflow_device_id_fkey FOREIGN KEY (workflow_device_id)
-        REFERENCES ctip.form_workflow_device (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL
-);
-
-ALTER TABLE ctip.delivery_case_device OWNER TO postgres;
-
-CREATE INDEX idx_delivery_case_device_case
-    ON ctip.delivery_case_device USING btree (delivery_case_id);
-
-CREATE INDEX idx_delivery_case_device_machine
-    ON ctip.delivery_case_device USING btree (firebird_machine_id);
-
-CREATE SEQUENCE ctip.delivery_case_task_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE ctip.delivery_case_task_id_seq OWNER TO postgres;
-ALTER SEQUENCE ctip.delivery_case_task_id_seq OWNED BY ctip.delivery_case_task.id;
-
-CREATE TABLE ctip.delivery_case_task (
-    id integer NOT NULL DEFAULT nextval('ctip.delivery_case_task_id_seq'::regclass),
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    delivery_case_id integer NOT NULL,
-    task_type text DEFAULT 'other'::text NOT NULL,
-    status text DEFAULT 'todo'::text NOT NULL,
-    title text NOT NULL,
-    due_date date,
-    due_time_window text,
-    assignee_user_id integer,
-    notes text,
-    snapshot json,
-    CONSTRAINT delivery_case_task_pkey PRIMARY KEY (id),
-    CONSTRAINT delivery_case_task_delivery_case_id_fkey FOREIGN KEY (delivery_case_id)
-        REFERENCES ctip.delivery_case (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE,
-    CONSTRAINT delivery_case_task_assignee_user_id_fkey FOREIGN KEY (assignee_user_id)
-        REFERENCES ctip.admin_user (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT delivery_case_task_type_check CHECK (
-        task_type = ANY (
-            ARRAY[
-                'delivery'::text,
-                'preparation'::text,
-                'pickup'::text,
-                'zerowka'::text,
-                'customer_contact'::text,
-                'service_order'::text,
-                'document'::text,
-                'other'::text
-            ]
-        )
-    ),
-    CONSTRAINT delivery_case_task_status_check CHECK (
-        status = ANY (ARRAY['todo'::text, 'planned'::text, 'done'::text, 'cancelled'::text])
-    )
-);
-
-ALTER TABLE ctip.delivery_case_task OWNER TO postgres;
-
-CREATE INDEX idx_delivery_case_task_case
-    ON ctip.delivery_case_task USING btree (delivery_case_id);
-
-CREATE INDEX idx_delivery_case_task_due
-    ON ctip.delivery_case_task USING btree (status, due_date);
-
-CREATE SEQUENCE ctip.delivery_case_file_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE ctip.delivery_case_file_id_seq OWNER TO postgres;
-ALTER SEQUENCE ctip.delivery_case_file_id_seq OWNED BY ctip.delivery_case_file.id;
-
-CREATE TABLE ctip.delivery_case_file (
-    id integer NOT NULL DEFAULT nextval('ctip.delivery_case_file_id_seq'::regclass),
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    delivery_case_id integer NOT NULL,
-    file_type text DEFAULT 'other'::text NOT NULL,
-    source text DEFAULT 'upload'::text NOT NULL,
-    file_name text NOT NULL,
-    original_name text,
-    path text NOT NULL,
-    content_type text,
-    size_bytes integer,
-    uploaded_by integer,
-    snapshot json,
-    CONSTRAINT delivery_case_file_pkey PRIMARY KEY (id),
-    CONSTRAINT delivery_case_file_delivery_case_id_fkey FOREIGN KEY (delivery_case_id)
-        REFERENCES ctip.delivery_case (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE,
-    CONSTRAINT delivery_case_file_uploaded_by_fkey FOREIGN KEY (uploaded_by)
-        REFERENCES ctip.admin_user (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT delivery_case_file_source_check CHECK (
-        source = ANY (ARRAY['upload'::text, 'mailbox'::text, 'generated'::text])
-    )
-);
-
-ALTER TABLE ctip.delivery_case_file OWNER TO postgres;
-
-CREATE INDEX idx_delivery_case_file_case
-    ON ctip.delivery_case_file USING btree (delivery_case_id);
-
-CREATE SEQUENCE ctip.delivery_document_template_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE ctip.delivery_document_template_id_seq OWNER TO postgres;
-ALTER SEQUENCE ctip.delivery_document_template_id_seq OWNED BY ctip.delivery_document_template.id;
-
-CREATE TABLE ctip.delivery_document_template (
-    id integer NOT NULL DEFAULT nextval('ctip.delivery_document_template_id_seq'::regclass),
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    template_key text NOT NULL,
-    label text NOT NULL,
-    document_type text DEFAULT 'other'::text NOT NULL,
-    template_path text NOT NULL,
-    active boolean DEFAULT true NOT NULL,
-    required_fields json,
-    snapshot json,
-    CONSTRAINT delivery_document_template_pkey PRIMARY KEY (id),
-    CONSTRAINT uq_delivery_document_template_key UNIQUE (template_key)
-);
-
-ALTER TABLE ctip.delivery_document_template OWNER TO postgres;
-
-CREATE INDEX idx_delivery_document_template_active
-    ON ctip.delivery_document_template USING btree (active);
-
-CREATE SEQUENCE ctip.grenke_contract_end_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-ALTER SEQUENCE ctip.grenke_contract_end_id_seq OWNER TO postgres;
-ALTER SEQUENCE ctip.grenke_contract_end_id_seq OWNED BY ctip.grenke_contract_end.id;
-
-CREATE TABLE ctip.grenke_contract_end (
-    id integer NOT NULL DEFAULT nextval('ctip.grenke_contract_end_id_seq'::regclass),
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    delivery_case_id integer,
-    form_request_id integer,
-    workflow_case_id integer,
-    status text DEFAULT 'pending_confirmation'::text NOT NULL,
-    grenke_contract_start_date date,
-    prefilled_end_date date,
-    confirmed_end_date date,
-    confirmed_at timestamp with time zone,
-    confirmed_by integer,
-    customer_name text,
-    contract_number text,
-    source_note text,
-    notification_history json,
-    snapshot json,
-    CONSTRAINT grenke_contract_end_pkey PRIMARY KEY (id),
-    CONSTRAINT uq_grenke_contract_end_workflow_case_id UNIQUE (workflow_case_id),
-    CONSTRAINT grenke_contract_end_delivery_case_id_fkey FOREIGN KEY (delivery_case_id)
-        REFERENCES ctip.delivery_case (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE,
-    CONSTRAINT grenke_contract_end_form_request_id_fkey FOREIGN KEY (form_request_id)
-        REFERENCES ctip.form_request (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT grenke_contract_end_workflow_case_id_fkey FOREIGN KEY (workflow_case_id)
-        REFERENCES ctip.form_workflow_case (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT grenke_contract_end_confirmed_by_fkey FOREIGN KEY (confirmed_by)
-        REFERENCES ctip.admin_user (id) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE SET NULL,
-    CONSTRAINT grenke_contract_end_status_check CHECK (
-        status = ANY (
-            ARRAY['pending_confirmation'::text, 'confirmed'::text, 'cancelled'::text]
-        )
-    )
-);
-
-ALTER TABLE ctip.grenke_contract_end OWNER TO postgres;
-
-CREATE INDEX idx_grenke_contract_end_status_date
-    ON ctip.grenke_contract_end USING btree (status, confirmed_end_date);
-
-CREATE INDEX idx_grenke_contract_end_pending_prefill
-    ON ctip.grenke_contract_end USING btree (status, prefilled_end_date);
-
 
 CREATE SEQUENCE ctip.device_intake_operation_id_seq
     START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
@@ -1712,6 +1392,8 @@ CREATE TABLE ctip.shipping_tracking_event (
     id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     parcel_id integer REFERENCES ctip.shipping_tracking_parcel(id) ON DELETE CASCADE,
     source_event_key text NOT NULL,
+    semantic_event_key text,
+    canonical_event_id integer REFERENCES ctip.shipping_tracking_event(id) ON DELETE SET NULL,
     waybill text,
     dpd_event_id text,
     object_id text,
@@ -1738,6 +1420,10 @@ CREATE INDEX idx_shipping_tracking_event_parcel_time
     ON ctip.shipping_tracking_event USING btree (parcel_id, event_time DESC, id DESC);
 CREATE INDEX idx_shipping_tracking_event_object
     ON ctip.shipping_tracking_event USING btree (object_id);
+CREATE INDEX idx_shipping_tracking_event_semantic
+    ON ctip.shipping_tracking_event USING btree (semantic_event_key);
+CREATE INDEX idx_shipping_tracking_event_canonical
+    ON ctip.shipping_tracking_event USING btree (canonical_event_id);
 
 CREATE TABLE ctip.shipping_tracking_sync_run (
     id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
@@ -1746,6 +1432,7 @@ CREATE TABLE ctip.shipping_tracking_sync_run (
     status text DEFAULT 'processing'::text NOT NULL,
     fetched_count integer DEFAULT 0 NOT NULL,
     inserted_count integer DEFAULT 0 NOT NULL,
+    duplicate_count integer DEFAULT 0 NOT NULL,
     cancelled_count integer DEFAULT 0 NOT NULL,
     batch_count integer DEFAULT 0 NOT NULL,
     confirm_id text,
@@ -1844,12 +1531,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_request TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_case TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.form_workflow_device TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.workflow_sheet_status_cache TO appuser;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.delivery_case TO appuser;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.delivery_case_device TO appuser;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.delivery_case_task TO appuser;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.delivery_case_file TO appuser;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.delivery_document_template TO appuser;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.grenke_contract_end TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_intake_operation TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_inventory_unit TO appuser;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE ctip.device_inventory_event TO appuser;
@@ -1877,12 +1558,6 @@ GRANT ALL ON SEQUENCE ctip.form_request_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_workflow_case_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.form_workflow_device_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.workflow_sheet_status_cache_id_seq TO appuser;
-GRANT ALL ON SEQUENCE ctip.delivery_case_id_seq TO appuser;
-GRANT ALL ON SEQUENCE ctip.delivery_case_device_id_seq TO appuser;
-GRANT ALL ON SEQUENCE ctip.delivery_case_task_id_seq TO appuser;
-GRANT ALL ON SEQUENCE ctip.delivery_case_file_id_seq TO appuser;
-GRANT ALL ON SEQUENCE ctip.delivery_document_template_id_seq TO appuser;
-GRANT ALL ON SEQUENCE ctip.grenke_contract_end_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_intake_operation_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_inventory_unit_id_seq TO appuser;
 GRANT ALL ON SEQUENCE ctip.device_inventory_event_id_seq TO appuser;
@@ -1930,52 +1605,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 --
 
 \unrestrict ZhoCtUc30GzkxBj7Yh0bzFBbOdWa7nQwYCLFFyI6FrXZAs0p8C43i7qFe78uujG
--- Katalog tożsamości botów (migracja 71c4e8a2d9f0, 2026-07-24):
--- ctip.bot_identity_customer
--- ctip.bot_identity_subject
--- ctip.bot_identity_phone
--- ctip.bot_identity_binding
--- ctip.bot_identity_device
--- ctip.bot_identity_override
--- ctip.bot_identity_sync_run
--- ctip.bot_identity_resolution
--- ctip.bot_disclosure_grant
--- Pełna definicja, klucze i ograniczenia są utrzymywane w:
--- alembic/versions/71c4e8a2d9f0_add_bot_identity_directory.py
--- Rozszerzenie katalogu i Centrum Obsługi (migracja e2b7c4d9a610, 2026-07-27):
--- ctip.bot_identity_customer.nip_enc
--- ctip.bot_identity_customer.nip_hmac
--- ctip.bot_identity_resolution.nip_failure_count
--- ctip.bot_identity_resolution.nip_verified_at
--- ctip.bot_identity_sms_challenge
--- ctip.crm_case
--- ctip.crm_case_event
--- Pełna definicja, klucze i ograniczenia są utrzymywane w:
--- alembic/versions/e2b7c4d9a610_add_crm_cases_and_nip_verification.py
--- Bezpieczne referencje i rozszerzony kontrakt urządzeń (migracja a6f3c8d2e910, 2026-07-28):
--- ctip.bot_identity_device.device_ref
--- ctip.bot_identity_device.image_url
--- ctip.crm_case.device_refs
--- Pełna definicja, backfill UUID i ograniczenia są utrzymywane w:
--- alembic/versions/a6f3c8d2e910_expand_bot_device_disclosure.py
--- Uproszczenie kolejek CRM i powiadomienia użytkowników (migracja f3a7c9e2d610, 2026-07-30):
--- ctip.admin_user.crm_sales_sms_enabled
--- ctip.admin_user.crm_sales_email_enabled
--- ctip.admin_user.crm_operations_sms_enabled
--- ctip.admin_user.crm_operations_email_enabled
--- ctip.crm_case.category
--- Kolejki crm_case: sales, service_it, contracts, other.
--- Historyczne meters są mapowane do contracts, a accounting do other.
--- Pełna definicja, mapowanie danych i ograniczenia są utrzymywane w:
--- alembic/versions/f3a7c9e2d610_simplify_crm_queues_and_user_notifications.py
--- Wspólny graf migracji urządzeń, dostaw i umów:
--- alembic/versions/4e2a9c7d1b60_add_device_inventory_registry.py
--- alembic/versions/7c91e2f4a6b8_add_workflow_sheet_counters.py
--- alembic/versions/9d4b6f2a1c80_add_device_audit.py
--- alembic/versions/b5c7d9e1f302_add_device_counters_and_pz_withdrawal.py
--- alembic/versions/c4d8e2f6a1b3_add_device_theme_to_admin_user.py
--- alembic/versions/d6f1a8c3e740_merge_device_and_contract_heads.py
--- Kanoniczne scalenie gałęzi wysyłek oraz katalogu tożsamości i CRM:
--- alembic/versions/f7b2d4e6a810_merge_shipping_and_bot_heads.py
+-- Preferencja wyglądu modułu Shipping:
 -- alembic/versions/a1c3e5f7b9d2_add_shipping_layout_to_admin_user.py
--- alembic/versions/d6e8f0a2b4c7_add_shipping_firebird_milestones.py
+-- alembic/versions/f2b7c9d4e6a1_add_dpd_semantic_dedupe.py

@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.config import settings
 from app.models import (
@@ -47,6 +48,7 @@ from app.services.shipping_firebird import (
     shipping_order_state_payload,
     write_shipment_to_order,
 )
+from app.services.shipping_phone import normalize_polish_shipping_phone
 from app.services.sms_provider import HttpSmsProvider
 
 ACTIVE_RESERVATION_STATUSES = ("ready", "shipment_created", "handed_over")
@@ -193,6 +195,12 @@ def shipping_shipment_consolidation(
         "order_numbers": order_numbers,
         "primary_order_table_id": int(raw.get("primary_order_table_id") or order_table_ids[0]),
     }
+
+
+def _bind_shipping_case(case: ShippingCase, shipment: ShippingShipment) -> None:
+    """Wiąże jawnie załadowaną sprawę i przesyłkę bez uruchamiania lazy load."""
+    set_committed_value(case, "shipment", shipment)
+    set_committed_value(shipment, "shipping_case", case)
 
 
 def _shipping_notification_group_key(shipment: ShippingShipment) -> str | None:
@@ -2060,18 +2068,24 @@ async def _send_notifications(shipment: ShippingShipment, case: ShippingCase) ->
         delivery_mode=settings.outbound_delivery_mode,
     )
     try:
-        result = await asyncio.to_thread(
-            provider.send_sms,
-            str(address["phone"]),
-            text,
-            metadata={"source": "shipping_handover", "shipment_id": shipment.id},
-        )
-        shipment.notification_sms_status = "sent" if result.success else "failed"
-        if not result.success:
-            errors.append(result.error or "Nie udało się wysłać SMS.")
-    except Exception as exc:
+        sms_recipient = normalize_polish_shipping_phone(str(address.get("phone") or ""))
+    except ValueError as exc:
         shipment.notification_sms_status = "failed"
-        errors.append(str(exc))
+        errors.append(f"Nie wysłano SMS: {exc}")
+    else:
+        try:
+            result = await asyncio.to_thread(
+                provider.send_sms,
+                sms_recipient,
+                text,
+                metadata={"source": "shipping_handover", "shipment_id": shipment.id},
+            )
+            shipment.notification_sms_status = "sent" if result.success else "failed"
+            if not result.success:
+                errors.append(result.error or "Nie udało się wysłać SMS.")
+        except Exception as exc:
+            shipment.notification_sms_status = "failed"
+            errors.append(str(exc))
 
     recipient = address.get("email")
     if not recipient:
@@ -2296,77 +2310,62 @@ async def close_shipping_order(
     user_id: int,
 ) -> dict[str, Any]:
     """Kończy wybrane zlecenie albo wszystkie zlecenia jednej wspólnej paczki."""
-    session.expire_all()
     stmt = (
-        select(ShippingShipment)
-        .join(ShippingCase, ShippingCase.id == ShippingShipment.shipping_case_id)
-        .options(
-            selectinload(ShippingShipment.shipping_case).selectinload(ShippingCase.items),
-            selectinload(ShippingShipment.shipping_case).selectinload(ShippingCase.shipment),
-        )
+        select(ShippingCase, ShippingShipment)
+        .join(ShippingShipment, ShippingShipment.shipping_case_id == ShippingCase.id)
+        .options(selectinload(ShippingCase.items))
         .where(ShippingCase.firebird_order_table_id == int(order_table_id))
+        .execution_options(populate_existing=True)
     )
-    shipment = (await session.execute(stmt)).scalar_one_or_none()
-    if shipment is None:
+    selected_row = (await session.execute(stmt)).one_or_none()
+    if selected_row is None:
         raise ShippingConflictError(
             "Wybrane zlecenie nie ma przesyłki przygotowanej do zakończenia."
         )
-    shipment_id = shipment.id
+    selected_case, shipment = selected_row
+    _bind_shipping_case(selected_case, shipment)
     consolidation = shipping_shipment_consolidation(shipment)
-    session.expire(shipment)
     if consolidation:
-        grouped_shipments = list(
-            (
-                await session.execute(
-                    select(ShippingShipment)
-                    .join(
-                        ShippingCase,
-                        ShippingCase.id == ShippingShipment.shipping_case_id,
-                    )
-                    .options(
-                        selectinload(ShippingShipment.shipping_case).selectinload(
-                            ShippingCase.items
-                        ),
-                        selectinload(ShippingShipment.shipping_case).selectinload(
-                            ShippingCase.shipment
-                        ),
-                    )
-                    .where(
-                        ShippingCase.firebird_order_table_id.in_(consolidation["order_table_ids"])
-                    )
-                    .order_by(ShippingShipment.id)
-                    .with_for_update()
-                )
+        grouped_rows = (
+            await session.execute(
+                select(ShippingCase, ShippingShipment)
+                .join(ShippingShipment, ShippingShipment.shipping_case_id == ShippingCase.id)
+                .options(selectinload(ShippingCase.items))
+                .where(ShippingCase.firebird_order_table_id.in_(consolidation["order_table_ids"]))
+                .order_by(ShippingShipment.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
-            .scalars()
-            .all()
-        )
+        ).all()
+        for grouped_case, grouped_shipment in grouped_rows:
+            _bind_shipping_case(grouped_case, grouped_shipment)
         shipments_by_order_id = {
-            grouped.shipping_case.firebird_order_table_id: grouped for grouped in grouped_shipments
+            grouped_case.firebird_order_table_id: grouped_shipment
+            for grouped_case, grouped_shipment in grouped_rows
         }
         if len(shipments_by_order_id) != len(consolidation["order_table_ids"]):
             raise ShippingConflictError("Wspólna paczka nie ma kompletu powiązanych zleceń w CTIP.")
-        cases = [
-            shipments_by_order_id[order_id].shipping_case
-            for order_id in consolidation["order_table_ids"]
-        ]
-        shipments_by_case_id = {grouped.shipping_case_id: grouped for grouped in grouped_shipments}
+        cases_by_order_id = {
+            grouped_case.firebird_order_table_id: grouped_case for grouped_case, _ in grouped_rows
+        }
+        cases = [cases_by_order_id[order_id] for order_id in consolidation["order_table_ids"]]
+        shipments_by_case_id = {
+            grouped_case.id: grouped_shipment for grouped_case, grouped_shipment in grouped_rows
+        }
     else:
-        shipment = (
+        selected_case, shipment = (
             await session.execute(
-                select(ShippingShipment)
-                .options(
-                    selectinload(ShippingShipment.shipping_case).selectinload(ShippingCase.items),
-                    selectinload(ShippingShipment.shipping_case).selectinload(
-                        ShippingCase.shipment
-                    ),
-                )
-                .where(ShippingShipment.id == shipment_id)
+                select(ShippingCase, ShippingShipment)
+                .join(ShippingShipment, ShippingShipment.shipping_case_id == ShippingCase.id)
+                .options(selectinload(ShippingCase.items))
+                .where(ShippingCase.id == selected_case.id)
                 .with_for_update()
+                .execution_options(populate_existing=True)
             )
-        ).scalar_one()
-        cases = [shipment.shipping_case]
-        shipments_by_case_id = {shipment.shipping_case_id: shipment}
+        ).one()
+        _bind_shipping_case(selected_case, shipment)
+        cases = [selected_case]
+        shipments_by_case_id = {selected_case.id: shipment}
 
     selected_case = next(
         case for case in cases if case.firebird_order_table_id == int(order_table_id)
@@ -2427,6 +2426,7 @@ async def close_shipping_order(
         "consolidated": bool(consolidation),
         "closed_count": len(cases),
         "newly_closed_count": newly_closed_count,
+        "idempotent_replay": newly_closed_count == 0,
         "order_results": order_results,
     }
     await session.commit()
@@ -2440,14 +2440,14 @@ async def close_shipping_day(
     user_id: int,
 ) -> dict[str, Any]:
     """Oznacza odbiór, tworzy właściwe dokumenty MS i wysyła powiadomienia raz."""
-    session.expire_all()
     existing_stmt = select(ShippingDayClose).where(ShippingDayClose.business_date == business_date)
     existing = (await session.execute(existing_stmt)).scalar_one_or_none()
-    if existing and existing.status == "completed":
+    if existing and existing.status in {"completed", "partial"}:
         return {
             "id": existing.id,
             "business_date": existing.business_date.isoformat(),
             "status": existing.status,
+            "idempotent_replay": True,
             **existing.summary,
         }
     from zoneinfo import ZoneInfo
@@ -2553,6 +2553,7 @@ async def close_shipping_day(
         "id": day_close.id,
         "business_date": business_date.isoformat(),
         "status": day_close.status,
+        "idempotent_replay": False,
         **day_close.summary,
     }
 

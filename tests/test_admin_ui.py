@@ -13,7 +13,6 @@ if str(BASE_DIR) not in sys.path:
 
 from app.api import deps
 from app.core.config import settings
-from app.crm_prototype_app import create_crm_prototype_app
 from app.main import create_app
 from app.models import AdminUser
 from app.services import admin_users
@@ -195,8 +194,8 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="!testing">' not in html
     assert '<template x-if="testing">' not in html
     assert (
-        "x-text=\"editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'\""
-        in html
+        "x-text=\"editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') "
+        ": 'Edycja tylko w .env'\"" in html
     )
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
     assert 'id="firebird-ms-config"' in html
@@ -216,7 +215,7 @@ def test_database_partial_uses_span_labels_in_action_buttons():
     assert "C:/MS/BAZA/MS.FDB" in html
     assert "D:/bazavmantenance/BAZA_CPC.FDB" in html
     assert 'id="fb-allow-writes"' in html
-    assert "Zezwalaj na zapis do Firebird" in html
+    assert "Edycja tylko w .env" in html
 
 
 def test_firebird_partial_requires_authentication():
@@ -263,8 +262,8 @@ def test_firebird_partial_uses_span_labels_in_action_buttons():
     assert '<template x-if="!testing">' not in html
     assert '<template x-if="testing">' not in html
     assert (
-        "x-text=\"editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') : 'Edycja tylko w .env'\""
-        in html
+        "x-text=\"editable ? (saving ? 'Trwa zapisywanie…' : 'Zapisz konfigurację') "
+        ": 'Edycja tylko w .env'\"" in html
     )
     assert "x-text=\"testing ? 'Testowanie…' : 'Testuj połączenie'\"" in html
     assert 'x-data="firebirdMsConfig()"' in html
@@ -522,8 +521,6 @@ def test_users_partial_renders_listing():
     assert "data-can-manage='true'" in response.text
     assert "Telefon" in response.text
     assert "Handlowiec" in response.text
-    assert "Powiadomienia CRM" in response.text
-    assert "Pozostałe: Serwis, Umowy i liczniki, Inne" in response.text
     assert "Użytkownik MS" in response.text
     assert "Obsługa dostaw" in response.text
     assert "Obsługa urządzeń" in response.text
@@ -548,121 +545,6 @@ def test_choice_page_renders_sections_view():
     assert "root-sections-card" in response.text
     assert 'href="/flow"' in response.text
     assert 'href="/device"' in response.text
-    assert 'href="/crm"' in response.text
-
-
-def test_crm_page_renders_persistent_lab():
-    app = create_app()
-    client = TestClient(app)
-    response = client.get("/crm")
-    assert response.status_code == 200
-    assert "Centrum Obsługi" in response.text
-    assert "LAB 0.6.0" in response.text
-    assert "Sprawy zapisują się w ctip_test" in response.text
-    assert 'id="crm-view-root"' in response.text
-    assert 'data-view="inbox"' in response.text
-    assert 'data-view="sales"' in response.text
-    assert 'data-view="service_it"' in response.text
-    assert 'data-view="contracts"' in response.text
-    assert 'data-view="accounting"' not in response.text
-    assert 'data-view="meters"' not in response.text
-    assert "Umowy i liczniki" in response.text
-    assert 'data-view="other"' in response.text
-    assert 'id="crm-new-case-form"' in response.text
-    assert 'id="crm-transfer-dialog"' in response.text
-    assert 'id="crm-ms-dialog"' in response.text
-    assert 'id="crm-meter-dialog"' in response.text
-    assert "/static/crm/crm.js?v=0.6.0" in response.text
-    assert 'id="crm-operator-select"' in response.text
-    assert "Serwis + IT" in response.text
-
-
-def test_crm_page_can_render_public_lab_mode():
-    app = create_app()
-    client = TestClient(app)
-    with patch("app.web.crm_ui.settings.crm_public_prototype_mode", True):
-        response = client.get("/crm")
-    assert response.status_code == 200
-    assert 'data-crm-public-prototype="true"' in response.text
-    assert "LAB w zaufanej sieci LAN" in response.text
-
-
-def test_isolated_crm_app_exposes_only_guarded_lab_api():
-    app = create_crm_prototype_app()
-    client = TestClient(app)
-    with (
-        patch("app.crm_prototype_app.settings.crm_enabled", True),
-        patch("app.crm_prototype_app.settings.crm_lab_mode", True),
-        patch("app.crm_prototype_app.settings.crm_public_prototype_mode", True),
-        patch("app.crm_prototype_app.settings.pg_database", "ctip_test"),
-        patch("app.crm_prototype_app.settings.sms_test_mode", True),
-        patch("app.crm_prototype_app.settings.block_client_communications", True),
-        patch("app.crm_prototype_app.settings.fb_mode", "local"),
-        patch("app.crm_prototype_app.settings.fb_allow_writes", False),
-        patch("app.crm_prototype_app.settings.fb_host", "127.0.0.1"),
-        patch("app.crm_prototype_app.settings.fb_database", "/tmp/test_ms.fdb"),
-        patch("app.web.crm_ui.settings.crm_public_prototype_mode", True),
-    ):
-        crm_response = client.get("/crm")
-        assert crm_response.status_code == 200
-        assert 'data-crm-public-prototype="true"' in crm_response.text
-        root_response = client.get("/", follow_redirects=False)
-        assert root_response.status_code == 307
-        assert root_response.headers["location"] == "/crm"
-        health_response = client.get("/health")
-        assert health_response.status_code == 200
-        assert health_response.json()["safe_lab"] is True
-        assert client.get("/auth/me").status_code == 404
-        assert client.get("/admin").status_code == 404
-        assert client.get("/docs").status_code == 404
-        assert any(route.path == "/api/crm/v1/cases" for route in app.routes)
-        assert "noindex" in crm_response.headers["x-robots-tag"]
-        assert "frame-ancestors" in crm_response.headers["content-security-policy"]
-
-
-def test_crm_script_contains_sales_and_dispatcher_workflows():
-    app = create_app()
-    client = TestClient(app)
-    response = client.get("/static/crm/crm.js")
-    assert response.status_code == 200
-    assert "CRM_SALES_KANBAN_COLUMNS" in response.text
-    assert "renderSalesKanban" in response.text
-    assert "dashboardCaseMarkup" in response.text
-    assert "renderWorkspaceList" in response.text
-    assert "renderDispatcher" in response.text
-    assert "Obsługiwane — Michał" in response.text
-    assert "Obsługiwane — Kamil" in response.text
-    assert "applyDemoAutoArchive" in response.text
-    assert "CRM_AUTO_ARCHIVE_DAYS = 30" in response.text
-    assert "openTransferDialog" in response.text
-    assert "openMsDialog" in response.text
-    assert "openMeterDialog" in response.text
-    assert "Imię i nazwisko:" in response.text
-    assert "crm-dispatch-stream-message" in response.text
-    assert "OBCIĄŻENIE ZESPOŁU" not in response.text
-    assert 'addEventListener("dragstart"' in response.text
-    assert 'addEventListener("drop"' in response.text
-    assert 'dataset.crmPublicPrototype === "true"' in response.text
-    assert "loadCrmOperators" in response.text
-    assert "loadCrmCases" in response.text
-    assert "persistCaseAction" in response.text
-    assert "CRM_DEMO_CASES[0]" not in response.text
-
-
-def test_crm_styles_include_readable_dashboard_and_dispatcher_details():
-    app = create_app()
-    client = TestClient(app)
-    response = client.get("/static/crm/crm.css")
-    assert response.status_code == 200
-    assert ".crm-dashboard-case-contact" in response.text
-    assert ".crm-dashboard-case-list" in response.text
-    assert ".crm-dashboard-case:nth-child(even)" in response.text
-    assert ".crm-dispatch-stream-contact" in response.text
-    assert ".crm-dispatch-stream-message" in response.text
-    assert ".crm-dispatch-stream-item:nth-child(odd):not(.active)" in response.text
-    assert ".crm-dispatch-stream-item.active::before" in response.text
-    assert ".crm-dispatch-person > div" in response.text
-    assert "Czytelniejsza typografia prototypu" in response.text
 
 
 def test_flow_page_renders_sections_layout():

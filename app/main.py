@@ -1,6 +1,7 @@
 """Wejście aplikacji FastAPI."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -130,8 +131,8 @@ async def _app_lifespan(_: FastAPI):
             await stop_crm_retention_scheduler()
 
 
-def create_app() -> FastAPI:
-    """Buduje obiekt FastAPI wraz z trasami paneli i statycznymi zasobami."""
+def create_app(*, report_directory: str | Path = "docs/raport") -> FastAPI:
+    """Buduje aplikację z trasami paneli i wskazanym katalogiem raportu statycznego."""
     app = FastAPI(title=settings.app_title, version=settings.app_version, lifespan=_app_lifespan)
 
     app.add_middleware(
@@ -195,7 +196,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     app.mount(
         "/raport",
-        StaticFiles(directory="docs/raport", html=True),
+        StaticFiles(directory=report_directory, html=True),
         name="raport",
     )
     return app

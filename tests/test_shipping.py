@@ -7,11 +7,12 @@ import io
 import json
 import re
 import unittest
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -27,7 +28,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import StaticPool
 from starlette.testclient import TestClient
 
-from app.api.routes.admin_shipping import _require_catalog_mutations, _require_fulfillment
+from app.api.routes.admin_shipping import (
+    _require_catalog_mutations,
+    _require_fulfillment,
+    shipping_day_close_execute,
+    shipping_order_close_execute,
+)
 from app.core.config import settings
 from app.main import create_app
 from app.models import (
@@ -46,16 +52,20 @@ from app.models import (
     ShippingTrackingSyncRun,
 )
 from app.schemas.shipping import (
+    ShippingAddressRequest,
     ShippingAttachExistingRequest,
     ShippingBulkCreateRequest,
     ShippingCompatibilityManualBatchRequest,
     ShippingConsolidatedCreateRequest,
+    ShippingDayCloseRequest,
+    ShippingOrderCloseRequest,
     ShippingReviewRequest,
 )
 from app.services.dpd_shipping import (
     DpdConfigurationError,
     DpdShippingClient,
     DpdTransportError,
+    dpd_recipient_field_limits,
     split_dpd_label_text,
 )
 from app.services.shipping_archive import (
@@ -93,14 +103,18 @@ from app.services.shipping_firebird import (
     load_shipping_overdue_invoices,
     load_shipping_overdue_summaries,
     load_shipping_queue,
+    restore_shipping_milestones_to_order,
     shipping_document_mode,
+    shipping_milestone_state_token,
     shipping_order_state_payload,
     write_shipment_to_order,
     write_shipping_milestones_to_order,
 )
+from app.services.shipping_phone import normalize_polish_shipping_phone
 from app.services.shipping_workflow import (
     ShippingConflictError,
     ShippingLocationChangedError,
+    _send_notifications,
     _shipping_item_price,
     attach_shipping_cases_to_existing_label,
     build_shipping_address_candidates,
@@ -116,6 +130,10 @@ from app.services.shipping_workflow import (
     review_shipping_order,
     shipping_location_context,
     shipping_shipment_consolidation,
+)
+from scripts.backfill_shipping_close_audit_2026_09_01 import (
+    INCIDENT_ID,
+    backfill_shipping_close_audit,
 )
 
 
@@ -246,6 +264,23 @@ class DpdShippingClientTests(unittest.TestCase):
     def tearDown(self) -> None:
         for key, value in self.previous.items():
             setattr(settings, key, value)
+
+    def test_status_konfiguracji_udostepnia_wspolne_limity_odbiorcy(self) -> None:
+        status = DpdShippingClient().configuration_status()
+
+        self.assertEqual(
+            status["recipient_field_limits"],
+            {
+                "company_name": {"api_limit": 100, "label_limit": 57},
+                "contact_name": {"api_limit": 100, "label_limit": 60},
+                "street": {"api_limit": 100, "label_limit": 30},
+                "city": {"api_limit": 50, "label_limit": 37},
+                "email": {"api_limit": 100, "label_limit": None},
+            },
+        )
+        self.assertEqual(status["recipient_field_limits"], dpd_recipient_field_limits())
+        self.assertNotIn("password", status)
+        self.assertNotIn("login", status)
 
     def test_mock_generuje_realistyczna_etykiete_pdf_a4(self) -> None:
         settings.dpd_enabled = True
@@ -850,6 +885,42 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
         settings.shipping_test_firebird_writes = self.previous_shipping_test_firebird_writes
         await self.engine.dispose()
 
+    async def test_powiadomienie_nie_wysyla_sms_na_bledny_numer_historyczny(self) -> None:
+        shipment = ShippingShipment(
+            provider_mode="production",
+            tracking_number="1234567890",
+        )
+        case = ShippingCase(address_snapshot={"phone": "+49 123 456 789"})
+
+        with patch("app.services.shipping_workflow.HttpSmsProvider.send_sms") as send_sms:
+            errors = await _send_notifications(shipment, case)
+
+        send_sms.assert_not_called()
+        self.assertEqual(shipment.notification_sms_status, "failed")
+        self.assertEqual(shipment.notification_email_status, "skipped")
+        self.assertIn("wyłącznie polski numer", errors[0])
+
+    async def test_powiadomienie_wysyla_sms_na_znormalizowany_numer_stacjonarny(
+        self,
+    ) -> None:
+        shipment = ShippingShipment(
+            id=91,
+            provider_mode="production",
+            tracking_number="1234567890",
+        )
+        case = ShippingCase(address_snapshot={"phone": "(61) 250-03-01"})
+
+        with patch(
+            "app.services.shipping_workflow.HttpSmsProvider.send_sms",
+            return_value=SimpleNamespace(success=True, error=None),
+        ) as send_sms:
+            errors = await _send_notifications(shipment, case)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(shipment.notification_sms_status, "sent")
+        self.assertEqual(shipment.notification_email_status, "skipped")
+        self.assertEqual(send_sms.call_args.args[0], "+48612500301")
+
     async def test_review_zapisuje_adres_rezerwacje_i_zgodnosc(self) -> None:
         async with self.session_factory() as session:
             with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
@@ -1382,6 +1453,51 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(shipment.notification_sms_status, "simulated")
             self.assertEqual(shipment.notification_email_status, "simulated")
 
+    async def test_czesciowe_zamkniecie_dnia_jest_terminalne_i_zachowuje_podsumowanie(
+        self,
+    ) -> None:
+        business_date = datetime.now(ZoneInfo("Europe/Warsaw")).date()
+        summary = {
+            "shipment_count": 9,
+            "closed_count": 9,
+            "manual_billing_count": 0,
+            "rw_count": 9,
+            "wz_count": 0,
+            "invoice_count": 0,
+            "error_count": 8,
+            "errors": [{"stage": "notification", "error": "SMTP 553"}],
+        }
+        async with self.session_factory() as session:
+            day_close = ShippingDayClose(
+                business_date=business_date,
+                status="partial",
+                shipment_count=9,
+                closed_count=9,
+                error_count=8,
+                summary=summary,
+                closed_by=1,
+                created_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+            session.add(day_close)
+            await session.commit()
+
+            with patch("app.services.shipping_workflow._finalize_shipping_shipment") as finalize:
+                result = await close_shipping_day(
+                    session,
+                    business_date=business_date,
+                    user_id=1,
+                )
+
+            finalize.assert_not_called()
+            self.assertEqual(result["status"], "partial")
+            self.assertTrue(result["idempotent_replay"])
+            self.assertEqual(result["shipment_count"], 9)
+            self.assertEqual(result["closed_count"], 9)
+            self.assertEqual(result["error_count"], 8)
+            stored = await session.get(ShippingDayClose, day_close.id)
+            self.assertEqual(stored.summary, summary)
+
     async def test_pojedyncze_zamkniecie_uzywa_tego_samego_procesu(self) -> None:
         async with self.session_factory() as session:
             with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
@@ -1441,6 +1557,79 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 user_id=1,
             )
             self.assertEqual(repeated["status"], "already_closed")
+            self.assertTrue(repeated["idempotent_replay"])
+
+    async def test_backfill_audytu_jest_jawny_i_idempotentny(self) -> None:
+        async with self.session_factory() as session:
+            with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
+                await review_shipping_order(
+                    session,
+                    order=_order(),
+                    payload=_review_payload(),
+                    user_id=1,
+                )
+            await create_shipping_shipment(
+                session,
+                order=_order(),
+                order_table_id=1001,
+                idempotency_key=str(uuid4()),
+                user_id=1,
+            )
+            await close_shipping_order(session, order_table_id=1001, user_id=1)
+            session.add(
+                ShippingDayClose(
+                    id=2,
+                    business_date=date(2026, 8, 31),
+                    status="partial",
+                    shipment_count=9,
+                    closed_count=9,
+                    error_count=8,
+                    summary={
+                        "shipment_count": 9,
+                        "closed_count": 9,
+                        "error_count": 8,
+                        "errors": [],
+                    },
+                    closed_by=1,
+                    created_at=datetime.now(UTC),
+                    completed_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
+            preview = await backfill_shipping_close_audit(
+                session,
+                apply=False,
+                order_table_id=1001,
+                day_close_id=2,
+                expected_operator_id=1,
+            )
+            self.assertEqual(preview["would_create_count"], 2)
+
+            applied = await backfill_shipping_close_audit(
+                session,
+                apply=True,
+                order_table_id=1001,
+                day_close_id=2,
+                expected_operator_id=1,
+            )
+            repeated = await backfill_shipping_close_audit(
+                session,
+                apply=True,
+                order_table_id=1001,
+                day_close_id=2,
+                expected_operator_id=1,
+            )
+
+            self.assertEqual(applied["created_count"], 2)
+            self.assertEqual(repeated["created_count"], 0)
+            self.assertEqual(repeated["existing_count"], 2)
+            audit_rows = (await session.execute(select(AdminAuditLog))).scalars().all()
+            incident_rows = [
+                row for row in audit_rows if (row.payload or {}).get("incident_id") == INCIDENT_ID
+            ]
+            self.assertEqual(len(incident_rows), 2)
+            self.assertTrue(all((row.payload or {}).get("backfill") for row in incident_rows))
 
     def test_normalizacja_archiwum_obsluguje_polskie_znaki_i_numery(self) -> None:
         self.assertEqual(
@@ -1678,7 +1867,185 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await session.scalar(select(ShippingCase)))
 
 
+class ShippingCloseRouteTests(unittest.IsolatedAsyncioTestCase):
+    class ExpiringAdminSession:
+        def __init__(self) -> None:
+            self.expired = False
+
+        @property
+        def client_ip(self) -> str:
+            if self.expired:
+                raise RuntimeError("Sesja administratora została wygaszona")
+            return "192.168.0.23"
+
+    async def test_zamkniecie_dnia_zapamietuje_ip_przed_commitem_biznesowym(self) -> None:
+        admin_session = self.ExpiringAdminSession()
+        user = SimpleNamespace(id=18, role="operator")
+        session = AsyncMock()
+
+        async def close_day(*_args, **_kwargs) -> dict:
+            admin_session.expired = True
+            return {
+                "id": 2,
+                "business_date": "2026-09-01",
+                "status": "partial",
+                "closed_count": 9,
+                "error_count": 8,
+                "idempotent_replay": True,
+            }
+
+        with (
+            patch(
+                "app.api.routes.admin_shipping._require_shipping_access",
+                new=AsyncMock(return_value=user),
+            ),
+            patch("app.api.routes.admin_shipping._require_fulfillment"),
+            patch(
+                "app.api.routes.admin_shipping.load_firebird_runtime_config",
+                new=AsyncMock(return_value=SimpleNamespace()),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.use_firebird_runtime_config",
+                return_value=nullcontext(),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.close_shipping_day",
+                new=AsyncMock(side_effect=close_day),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.record_audit",
+                new=AsyncMock(),
+            ) as audit,
+        ):
+            result = await shipping_day_close_execute(
+                ShippingDayCloseRequest(
+                    business_date=date(2026, 9, 1),
+                    confirm_handover=True,
+                ),
+                admin_context=(admin_session, user),
+                session=session,
+            )
+
+        self.assertEqual(result["audit_status"], "recorded")
+        self.assertEqual(result["warnings"], [])
+        self.assertEqual(audit.await_args.kwargs["client_ip"], "192.168.0.23")
+
+    async def test_blad_audytu_nie_zmienia_wyniku_zamkniecia_zlecenia(self) -> None:
+        admin_session = self.ExpiringAdminSession()
+        user = SimpleNamespace(id=18, role="operator")
+        session = AsyncMock()
+        session.commit.side_effect = RuntimeError("Brak zapisu audytu")
+        business_result = {
+            "status": "closed",
+            "documents": {"document_mode": "rw"},
+            "case": {"status": "closed"},
+            "consolidated": False,
+            "closed_count": 1,
+            "newly_closed_count": 1,
+            "idempotent_replay": False,
+            "order_results": [],
+        }
+
+        with (
+            patch(
+                "app.api.routes.admin_shipping._require_shipping_access",
+                new=AsyncMock(return_value=user),
+            ),
+            patch("app.api.routes.admin_shipping._require_fulfillment"),
+            patch(
+                "app.api.routes.admin_shipping.load_firebird_runtime_config",
+                new=AsyncMock(return_value=SimpleNamespace()),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.use_firebird_runtime_config",
+                return_value=nullcontext(),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.close_shipping_order",
+                new=AsyncMock(return_value=business_result),
+            ),
+            patch(
+                "app.api.routes.admin_shipping.record_audit",
+                new=AsyncMock(),
+            ),
+        ):
+            result = await shipping_order_close_execute(
+                83540,
+                ShippingOrderCloseRequest(confirm_handover=True),
+                admin_context=(admin_session, user),
+                session=session,
+            )
+
+        self.assertEqual(result["status"], "closed")
+        self.assertEqual(result["audit_status"], "failed")
+        self.assertEqual(len(result["warnings"]), 1)
+        session.rollback.assert_awaited_once()
+
+
 class ShippingSchemaTests(unittest.TestCase):
+    def test_telefon_shipping_obsluguje_polskie_formaty_i_numery_stacjonarne(
+        self,
+    ) -> None:
+        examples = {
+            "612500301": "+48612500301",
+            "+48 61 250 03 01": "+48612500301",
+            "0048 (61) 250-03-01": "+48612500301",
+            "061.250.03.01": "+48612500301",
+            "500 600 700": "+48500600700",
+        }
+
+        for source, expected in examples.items():
+            with self.subTest(source=source):
+                self.assertEqual(normalize_polish_shipping_phone(source), expected)
+
+    def test_telefon_shipping_odrzuca_niejednoznaczne_i_zagraniczne_wartosci(
+        self,
+    ) -> None:
+        invalid_numbers = (
+            "telefon 500600700",
+            "+49 123 456 789",
+            "0049 123 456 789",
+            "50060070",
+            "5006007000",
+            "50+0600700",
+            "++48500600700",
+            "012345678",
+        )
+
+        for phone in invalid_numbers:
+            with self.subTest(phone=phone), self.assertRaises(ValueError):
+                normalize_polish_shipping_phone(phone)
+
+    def test_schema_adresu_wymusza_twarde_limity_dpd(self) -> None:
+        address = _review_payload().address.model_dump(mode="json")
+        valid_email = f"a@{'b' * 50}.{'c' * 47}"
+        boundary_values = {
+            "company_name": "F" * 100,
+            "contact_name": "K" * 100,
+            "street": "U" * 100,
+            "city": "M" * 50,
+            "email": valid_email,
+        }
+
+        for field_name, value in boundary_values.items():
+            with self.subTest(field_name=field_name):
+                payload = {**address, field_name: value}
+                self.assertEqual(
+                    getattr(ShippingAddressRequest.model_validate(payload), field_name),
+                    value,
+                )
+
+        over_limit_values = {
+            "company_name": "F" * 101,
+            "contact_name": "K" * 101,
+            "street": "U" * 101,
+            "city": "M" * 51,
+            "email": f"a@{'b' * 50}.{'c' * 48}",
+        }
+        for field_name, value in over_limit_values.items():
+            with self.subTest(field_name=field_name), self.assertRaises(ValidationError):
+                ShippingAddressRequest.model_validate({**address, field_name: value})
+
     def test_blokady_etapowego_wdrozenia_sa_wymuszane_przez_backend(self) -> None:
         with (
             patch.object(settings, "shipping_catalog_mutations_enabled", False),
@@ -1724,7 +2091,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-shipping-fields-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-dpd-limits-phone-01",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
@@ -1732,6 +2099,14 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-queue-refresh"', response.text)
         self.assertIn("Etap pracy (domyślne)", response.text)
         self.assertIn('id="shipping-phone-note"', response.text)
+        for counter_id in (
+            "shipping-company-count",
+            "shipping-contact-count",
+            "shipping-street-count",
+            "shipping-city-count",
+            "shipping-email-count",
+        ):
+            self.assertIn(f'id="{counter_id}"', response.text)
         self.assertIn('id="shipping-geocoder-match"', response.text)
         self.assertIn('id="shipping-geocoder-results"', response.text)
         self.assertIn("Zezwól na część ze stanem zerowym", response.text)
@@ -1790,7 +2165,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
         self.assertIn("shipping.css?v=", response.text)
-        self.assertIn("-shipping-fields-01", response.text)
+        self.assertIn("-dpd-limits-phone-01", response.text)
         self.assertIn("/static/shipping/shipping-v2.js", response.text)
         self.assertIn('id="shipping-v2-audit"', response.text)
         self.assertIn('id="shipping-v2-progress-label"', response.text)
@@ -1800,6 +2175,14 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-v2-audit-status"', response.text)
         self.assertIn("POSTĘP REALIZACJI", response.text)
         self.assertIn("RW, WZ albo FV + WZ", response.text)
+        for counter_id in (
+            "shipping-company-count",
+            "shipping-contact-count",
+            "shipping-street-count",
+            "shipping-city-count",
+            "shipping-email-count",
+        ):
+            self.assertIn(f'id="{counter_id}"', response.text)
         javascript = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
         required_ids = set(re.findall(r'getElementById\("([^"]+)"\)', javascript))
         rendered_ids = set(re.findall(r'id="([^"]+)"', response.text))
@@ -2055,7 +2438,17 @@ class ShippingSchemaTests(unittest.TestCase):
     def test_statusy_dpd_uzupelniaja_datowanie_i_opis_bez_kosztow(self) -> None:
         connection = MagicMock()
         cursor = connection.cursor.return_value
-        cursor.fetchone.return_value = ("0000111122223A", None, "test1", None, None)
+        cursor.fetchone.return_value = (
+            1001,
+            77,
+            2026,
+            "Z",
+            "0000111122223A",
+            None,
+            "test1",
+            None,
+            None,
+        )
         with (
             patch(
                 "app.services.shipping_firebird.firebird_writes_enabled",
@@ -2088,6 +2481,108 @@ class ShippingSchemaTests(unittest.TestCase):
             result["changed_fields"],
             ["DATA_PRZES", "WYKONANIE", "DATA_PRZES_WE", "PRZESYLKA_WE"],
         )
+        connection.commit.assert_called_once()
+
+    def test_statusy_dpd_blokuja_zapis_po_zmianie_stanu_od_dry_run(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (
+            1001,
+            77,
+            2026,
+            "Z",
+            "0000111122223A",
+            date(2026, 9, 2),
+            "Zmieniona ręcznie treść",
+            None,
+            None,
+        )
+        stale_token = shipping_milestone_state_token(
+            {
+                "order_table_id": 1001,
+                "order_id": 77,
+                "order_year": 2026,
+                "status": "Z",
+                "tracking_number": "0000111122223A",
+                "pickup_date": date(2026, 9, 2),
+                "execution_text": "Poprzednia treść",
+                "delivery_date": None,
+                "description_text": None,
+            }
+        )
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+            self.assertRaisesRegex(ShippingOrderStateConflict, "zmieniły się"),
+        ):
+            write_shipping_milestones_to_order(
+                order_table_id=1001,
+                tracking_number="0000111122223A",
+                delivery_date=date(2026, 9, 3),
+                expected_state_token=stale_token,
+            )
+
+        executed_queries = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+        self.assertNotIn("UPDATE ZLECENIE SET", executed_queries)
+        connection.rollback.assert_called_once()
+
+    def test_rollback_pilota_przywraca_tylko_pola_faktycznie_zmienione(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (
+            1001,
+            77,
+            2026,
+            "Z",
+            "0000111122223A",
+            date(2026, 9, 2),
+            "Wysłana paczka 02.09.2026 0000111122223A",
+            date(2026, 9, 3),
+            "03.09.2026 12:00 — Doręczona: Przesyłka doręczona",
+        )
+        with (
+            patch(
+                "app.services.shipping_firebird.firebird_writes_enabled",
+                return_value=(True, None),
+            ),
+            patch(
+                "app.services.shipping_firebird.firebird_connection",
+                return_value=connection,
+            ),
+        ):
+            result = restore_shipping_milestones_to_order(
+                order_table_id=1001,
+                tracking_number="0000111122223A",
+                changed_fields=["DATA_PRZES_WE", "PRZESYLKA_WE"],
+                before={
+                    "DATA_PRZES": "2026-09-02",
+                    "WYKONANIE": "Wysłana paczka 02.09.2026 0000111122223A",
+                    "DATA_PRZES_WE": None,
+                    "PRZESYLKA_WE": None,
+                },
+                expected_after={
+                    "DATA_PRZES": "2026-09-02",
+                    "WYKONANIE": "Wysłana paczka 02.09.2026 0000111122223A",
+                    "DATA_PRZES_WE": "2026-09-03",
+                    "PRZESYLKA_WE": ("03.09.2026 12:00 — Doręczona: Przesyłka doręczona"),
+                },
+            )
+
+        update_call = next(
+            call for call in cursor.execute.call_args_list if "UPDATE ZLECENIE SET" in call.args[0]
+        )
+        self.assertIn("DATA_PRZES_WE = ?", update_call.args[0])
+        self.assertIn("PRZESYLKA_WE = ?", update_call.args[0])
+        self.assertNotIn("DATA_PRZES = ?", update_call.args[0])
+        self.assertNotIn("WYKONANIE = ?", update_call.args[0])
+        self.assertEqual(update_call.args[1], (None, None, 1001))
+        self.assertEqual(result["changed_fields"], ["DATA_PRZES_WE", "PRZESYLKA_WE"])
         connection.commit.assert_called_once()
 
     def test_rw_powstaje_w_zakupy_z_kolejnym_numerem_magazynowym(self) -> None:
@@ -2519,6 +3014,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("function shippingFulfillmentEnabled()", javascript)
         self.assertIn("Tryb wdrożeniowy", javascript)
         self.assertIn("function shippingRequestUuid()", javascript)
+        self.assertIn("function renderShippingRecipientFieldCounters()", javascript)
+        self.assertIn("function normalizePolishShippingPhone(value)", javascript)
         self.assertIn("idempotency_key: shippingRequestUuid()", javascript)
         self.assertIn("shipping-generate-selected", javascript)
         self.assertIn("shipping-generate-consolidated", javascript)
@@ -2590,10 +3087,16 @@ class ShippingSchemaTests(unittest.TestCase):
             _extract_phone_from_order_text("kontakt 790742957"),
             "+48790742957",
         )
+        self.assertEqual(
+            _extract_phone_from_order_text("toner test x 1 880123456"),
+            "+48880123456",
+        )
 
     def test_parser_nie_myli_indeksu_ani_numeru_zlecenia_z_telefonem(self) -> None:
         self.assertIsNone(_extract_phone_from_order_text("Zlecenie 18425/2026"))
         self.assertIsNone(_extract_phone_from_order_text("Indeks 2021400211764"))
+        self.assertIsNone(_extract_phone_from_order_text("Indeks: 880123456"))
+        self.assertIsNone(_extract_phone_from_order_text("880123456 i 790123456"))
 
     def test_autor_zlecenia_mobilnego_jest_dopasowany_do_kontaktu(self) -> None:
         contact = {

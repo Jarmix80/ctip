@@ -123,6 +123,77 @@ function escapeShippingHtml(value) {
 const SHIPPING_LABEL_TEXT_LIMIT = 81;
 const SHIPPING_LABEL_REFERENCE_LIMIT = 27;
 const SHIPPING_LABEL_CONTENT_LIMIT = 54;
+const SHIPPING_RECIPIENT_FIELDS = {
+  company_name: { inputId: "shipping-company", counterId: "shipping-company-count" },
+  contact_name: { inputId: "shipping-contact", counterId: "shipping-contact-count" },
+  street: { inputId: "shipping-street", counterId: "shipping-street-count" },
+  city: { inputId: "shipping-city", counterId: "shipping-city-count" },
+  email: { inputId: "shipping-email", counterId: "shipping-email-count" },
+};
+
+function shippingTextLength(value) {
+  return Array.from(String(value || "").trim()).length;
+}
+
+function shippingRecipientFieldLimits() {
+  return shippingState.config?.dpd?.recipient_field_limits || {};
+}
+
+function shippingRecipientFieldWithinApiLimit(fieldName, value) {
+  const limit = Number(shippingRecipientFieldLimits()?.[fieldName]?.api_limit || 0);
+  return !limit || shippingTextLength(value) <= limit;
+}
+
+function renderShippingRecipientFieldCounters() {
+  const limits = shippingRecipientFieldLimits();
+  Object.entries(SHIPPING_RECIPIENT_FIELDS).forEach(([fieldName, field]) => {
+    const input = document.getElementById(field.inputId);
+    const counter = document.getElementById(field.counterId);
+    if (!input || !counter) return;
+    const apiLimit = Number(limits?.[fieldName]?.api_limit || 0);
+    const labelLimit = Number(limits?.[fieldName]?.label_limit || 0);
+    const length = shippingTextLength(input.value);
+    const hardExceeded = Boolean(apiLimit && length > apiLimit);
+    const labelExceeded = Boolean(labelLimit && length > labelLimit);
+    counter.textContent = apiLimit ? `${length}/${apiLimit}` : String(length);
+    counter.classList.toggle("warning", labelExceeded && !hardExceeded);
+    counter.classList.toggle("error", hardExceeded);
+    input.classList.toggle("dpd-limit-invalid", hardExceeded);
+    if (hardExceeded) {
+      counter.title = `Przekroczono limit API DPD o ${length - apiLimit} znaków.`;
+      input.setAttribute("aria-invalid", "true");
+    } else {
+      counter.title = labelExceeded
+        ? `DPD może skrócić tę wartość na etykiecie po ${labelLimit} znakach.`
+        : labelLimit
+          ? `Limit wydruku etykiety: ${labelLimit} znaków. Limit API DPD: ${apiLimit} znaków.`
+          : `Limit API DPD: ${apiLimit} znaków.`;
+      if (!input.classList.contains("invalid")) input.removeAttribute("aria-invalid");
+    }
+  });
+}
+
+function normalizePolishShippingPhone(value) {
+  const phone = String(value || "").trim();
+  if (!phone) throw new Error("podaj numer telefonu odbiorcy");
+  if (!/^[0-9+().\s-]+$/.test(phone)) {
+    throw new Error("telefon może zawierać wyłącznie cyfry, spacje, nawiasy, kropki i myślniki");
+  }
+  if ((phone.match(/\+/g) || []).length > 1 || (phone.includes("+") && !phone.startsWith("+"))) {
+    throw new Error("znak plus może wystąpić tylko raz, na początku numeru");
+  }
+  const compact = phone.replace(/[().\s-]+/g, "");
+  let nationalNumber = compact;
+  if (compact.startsWith("+48")) nationalNumber = compact.slice(3);
+  else if (compact.startsWith("0048")) nationalNumber = compact.slice(4);
+  else if (compact.startsWith("+") || compact.startsWith("00")) {
+    throw new Error("w Shipping można podać wyłącznie polski numer telefonu");
+  } else if (compact.length === 10 && compact.startsWith("0")) nationalNumber = compact.slice(1);
+  if (!/^[1-9][0-9]{8}$/.test(nationalNumber)) {
+    throw new Error("polski numer telefonu musi zawierać dokładnie 9 cyfr");
+  }
+  return `+48${nationalNumber}`;
+}
 
 function normalizeShippingLabelText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -867,6 +938,7 @@ function fillShippingAddress(address, preserveExisting = false) {
     client: "Kartoteka klienta",
     manual: "Wpisano ręcznie",
   }[address?.source] || "Wpisano ręcznie";
+  renderShippingRecipientFieldCounters();
 }
 
 function fillShippingContact(contact) {
@@ -883,6 +955,7 @@ function fillShippingContact(contact) {
     input.classList.remove("invalid");
     input.removeAttribute("aria-invalid");
   });
+  renderShippingRecipientFieldCounters();
 }
 
 function renderShippingContacts() {
@@ -924,6 +997,7 @@ function renderShippingContacts() {
     document.getElementById("shipping-phone").value = problemPhone;
     phoneNote.textContent = "Telefon pobrano z treści zlecenia.";
   }
+  renderShippingRecipientFieldCounters();
 }
 
 function applyShippingContact(contactId) {
@@ -1026,6 +1100,7 @@ function applyShippingGeocoderCandidate(candidate, replaceExisting = false) {
   shippingState.selectedAddressKey = "manual";
   document.getElementById("shipping-address-source").value = "manual";
   document.getElementById("shipping-address-source-label").textContent = "Sprawdzono w Adresy.app";
+  renderShippingRecipientFieldCounters();
   renderShippingAddressCandidates();
   shippingFeedback(replaceExisting
     ? "Zastąpiono pocztową część adresu danymi z Adresy.app."
@@ -1135,6 +1210,7 @@ function markShippingAddressManual(event) {
   }
   document.getElementById("shipping-address-source").value = "manual";
   document.getElementById("shipping-address-source-label").textContent = "Wpisano ręcznie";
+  renderShippingRecipientFieldCounters();
   renderShippingAddressCandidates();
 }
 
@@ -1532,13 +1608,21 @@ function shippingAddressFormData() {
 }
 
 function validateShippingAddress(address) {
+  let normalizedPhone = null;
+  let phoneError = "polski numer telefonu";
+  try {
+    normalizedPhone = normalizePolishShippingPhone(address.phone);
+  } catch (error) {
+    phoneError = error.message;
+  }
   const checks = [
-    ["shipping-company", "firma", address.company_name.length >= 2],
-    ["shipping-street", "ulica i numer", address.street.length >= 3],
+    ["shipping-company", "firma (maksymalnie 100 znaków)", address.company_name.length >= 2 && shippingRecipientFieldWithinApiLimit("company_name", address.company_name)],
+    ["shipping-contact", "osoba kontaktowa (maksymalnie 100 znaków)", shippingRecipientFieldWithinApiLimit("contact_name", address.contact_name)],
+    ["shipping-street", "ulica i numer (maksymalnie 100 znaków)", address.street.length >= 3 && shippingRecipientFieldWithinApiLimit("street", address.street)],
     ["shipping-postal", "kod pocztowy w formacie 00-000", /^\d{2}-\d{3}$/.test(address.postal_code)],
-    ["shipping-city", "miejscowość", address.city.length >= 2],
-    ["shipping-phone", "telefon odbiorcy", address.phone.replace(/\D/g, "").length >= 9],
-    ["shipping-email", "poprawny adres e-mail", !address.email || document.getElementById("shipping-email").checkValidity()],
+    ["shipping-city", "miejscowość (maksymalnie 50 znaków)", address.city.length >= 2 && shippingRecipientFieldWithinApiLimit("city", address.city)],
+    ["shipping-phone", phoneError, Boolean(normalizedPhone)],
+    ["shipping-email", "poprawny e-mail (maksymalnie 100 znaków)", (!address.email || document.getElementById("shipping-email").checkValidity()) && shippingRecipientFieldWithinApiLimit("email", address.email)],
   ];
   const invalid = checks.filter(([, , valid]) => !valid);
   checks.forEach(([id, , valid]) => {
@@ -1547,7 +1631,12 @@ function validateShippingAddress(address) {
     if (valid) input.removeAttribute("aria-invalid");
     else input.setAttribute("aria-invalid", "true");
   });
-  if (!invalid.length) return true;
+  renderShippingRecipientFieldCounters();
+  if (!invalid.length) {
+    address.phone = normalizedPhone;
+    document.getElementById("shipping-phone").value = normalizedPhone;
+    return true;
+  }
   shippingFeedback(`Uzupełnij dane odbiorcy: ${invalid.map(([, label]) => label).join(", ")}.`, true);
   document.getElementById(invalid[0][0]).focus();
   document.getElementById(invalid[0][0]).scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1722,7 +1811,9 @@ async function closeShippingDay() {
       method: "POST",
       body: JSON.stringify({ business_date: new Date().toLocaleDateString("sv-SE"), confirm_handover: true }),
     });
-    window.alert(`Zamknięcie dnia: ${shippingDayCloseStatusLabel(result.status)}. Zamknięto: ${result.closed_count}, RW: ${result.rw_count || 0}, WZ: ${result.wz_count || 0}, FV: ${result.invoice_count || 0}, błędy: ${result.error_count}.`);
+    const replayText = result.idempotent_replay ? " Zwrócono zachowane podsumowanie bez ponawiania operacji." : "";
+    const warningText = Array.isArray(result.warnings) && result.warnings.length ? ` Ostrzeżenia: ${result.warnings.join(" ")}` : "";
+    window.alert(`Zamknięcie dnia: ${shippingDayCloseStatusLabel(result.status)}. Zamknięto: ${result.closed_count}, RW: ${result.rw_count || 0}, WZ: ${result.wz_count || 0}, FV: ${result.invoice_count || 0}, błędy: ${result.error_count}.${replayText}${warningText}`);
     shippingState.archive.loaded = false;
     await loadShippingQueue(true);
   } catch (error) {
@@ -1761,7 +1852,8 @@ async function closeShippingOrder() {
     const closedText = result.consolidated
       ? `Zamknięto ${shippingOrdersCountLabel(result.closed_count)} wspólnej paczki`
       : "Zlecenie zakończone";
-    shippingFeedback(`${closedText}${labels.length ? ` — ${labels.join(", ")}` : ""}.`);
+    const warningText = Array.isArray(result.warnings) && result.warnings.length ? ` Ostrzeżenie: ${result.warnings.join(" ")}` : "";
+    shippingFeedback(`${closedText}${labels.length ? ` — ${labels.join(", ")}` : ""}.${warningText}`, result.audit_status === "failed");
     shippingState.archive.loaded = false;
     await loadShippingQueue(false);
     await refreshShippingOrderState();
@@ -2461,6 +2553,7 @@ async function initializeShipping() {
     document.getElementById("shipping-user").textContent = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
     shippingState.config = await shippingJson("/admin/shipping/config");
     const config = shippingState.config;
+    renderShippingRecipientFieldCounters();
     const dpdLabel = {
       mock: "Symulacja lokalna",
       demo: config.dpd.api_ready ? "DPD Demo" : "DPD Demo — brak konfiguracji",

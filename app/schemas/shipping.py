@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from app.services.shipping_phone import normalize_polish_shipping_phone
+
 
 class StrictShippingRequest(BaseModel):
     """Bazowy model odrzucający nieznane pola zapisu."""
@@ -19,33 +21,22 @@ class StrictShippingRequest(BaseModel):
 class ShippingAddressRequest(StrictShippingRequest):
     """Zweryfikowany krajowy adres odbiorcy przesyłki."""
 
-    company_name: str = Field(min_length=2, max_length=250)
-    contact_name: str | None = Field(default=None, max_length=150)
-    street: str = Field(min_length=3, max_length=250)
+    company_name: str = Field(min_length=2, max_length=100)
+    contact_name: str | None = Field(default=None, max_length=100)
+    street: str = Field(min_length=3, max_length=100)
     postal_code: str = Field(pattern=r"^\d{2}-\d{3}$")
-    city: str = Field(min_length=2, max_length=150)
+    city: str = Field(min_length=2, max_length=50)
     country_code: Literal["PL"] = "PL"
     phone: str = Field(min_length=7, max_length=30)
-    email: EmailStr | None = None
+    email: EmailStr | None = Field(default=None, max_length=100)
     source: Literal["location", "order", "client", "saved", "manual"]
     location_text: str | None = Field(default=None, max_length=500)
 
     @field_validator("phone")
     @classmethod
     def normalize_phone(cls, value: str) -> str:
-        """Usuwa separatory i normalizuje polski numer do postaci międzynarodowej."""
-        normalized = "".join(
-            character for character in value if character.isdigit() or character == "+"
-        )
-        if normalized.startswith("00"):
-            normalized = "+" + normalized[2:]
-        elif normalized.startswith("0"):
-            normalized = "+48" + normalized[1:]
-        elif not normalized.startswith("+") and len(normalized) == 9:
-            normalized = "+48" + normalized
-        if len(normalized) < 9:
-            raise ValueError("Numer telefonu jest za krótki.")
-        return normalized
+        """Waliduje i normalizuje wyłącznie dziewięciocyfrowy numer polski."""
+        return normalize_polish_shipping_phone(value)
 
 
 class ShippingGeocoderRequest(StrictShippingRequest):

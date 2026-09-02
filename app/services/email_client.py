@@ -6,6 +6,7 @@ import asyncio
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
+from email.utils import formataddr, parseaddr
 
 from app.core.config import settings
 from app.services.outbound_audit import record_email_attempt
@@ -23,6 +24,36 @@ class EmailTestResult:
 class EmailSendResult:
     success: bool
     message: str
+
+
+def _normalize_outbound_message(
+    message: EmailMessage,
+    *,
+    require_canonical_identity: bool,
+) -> str | None:
+    """Wymusza kanoniczny adres nadawcy i adres odpowiedzi dla poczty wychodzącej."""
+    sender_address = str(settings.email_sender_address or "").strip()
+    reply_to_address = str(settings.email_reply_to_address or "").strip()
+    if require_canonical_identity and not sender_address:
+        raise ValueError("Brak kanonicznego adresu EMAIL_SENDER_ADDRESS.")
+    if require_canonical_identity and not reply_to_address:
+        raise ValueError("Brak kanonicznego adresu EMAIL_REPLY_TO_ADDRESS.")
+
+    if sender_address:
+        sender_name = parseaddr(str(message.get("From") or ""))[0]
+        sender_name = sender_name or str(settings.email_sender_name or "").strip()
+        sender_header = formataddr((sender_name, sender_address)) if sender_name else sender_address
+        if message.get("From") is None:
+            message["From"] = sender_header
+        else:
+            message.replace_header("From", sender_header)
+
+    if reply_to_address:
+        if message.get("Reply-To") is not None:
+            del message["Reply-To"]
+        message["Reply-To"] = reply_to_address
+
+    return sender_address or None
 
 
 def _resolve_transport(
@@ -117,6 +148,7 @@ async def send_smtp_message(
 ) -> EmailSendResult:
     mode = settings.outbound_delivery_mode
     if mode == "disabled":
+        _normalize_outbound_message(message, require_canonical_identity=False)
         try:
             record_email_attempt(message, source=source, status="BLOCKED")
         except OSError as exc:
@@ -131,6 +163,14 @@ async def send_smtp_message(
             password=password,
             use_tls=use_tls,
             use_ssl=use_ssl,
+        )
+    except ValueError as exc:
+        return EmailSendResult(False, str(exc))
+
+    try:
+        envelope_sender = _normalize_outbound_message(
+            message,
+            require_canonical_identity=mode == "live",
         )
     except ValueError as exc:
         return EmailSendResult(False, str(exc))
@@ -164,7 +204,7 @@ async def send_smtp_message(
                     connection.ehlo()
                 if username:
                     connection.login(username, password or "")
-                connection.send_message(message)
+                connection.send_message(message, from_addr=envelope_sender)
         except smtplib.SMTPAuthenticationError as exc:
             return EmailSendResult(
                 False,

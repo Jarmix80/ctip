@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from app.core.config import settings
@@ -202,6 +202,81 @@ def _event_key(channel: str, event: DpdInfoEvent) -> str:
     return hashlib.sha256(f"{channel}|{payload}".encode()).hexdigest()
 
 
+def _semantic_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def _semantic_time(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return normalized.isoformat(timespec="microseconds")
+
+
+def _semantic_event_data(values: list[dict[str, Any]] | tuple[Any, ...] | None) -> list[dict]:
+    normalized = []
+    for value in values or []:
+        payload = value.as_dict() if hasattr(value, "as_dict") else dict(value or {})
+        normalized.append(
+            {
+                "code": _semantic_text(payload.get("code")),
+                "value": _semantic_text(payload.get("value")),
+            }
+        )
+    return sorted(
+        normalized,
+        key=lambda item: (item["code"], item["value"]),
+    )
+
+
+def dpd_semantic_event_key(
+    *,
+    source_event_key: str,
+    operation_type: str,
+    waybill: str | None,
+    business_code: str | None,
+    description: str | None,
+    event_time: datetime | None,
+    depot: str | None,
+    depot_name: str | None,
+    country: str | None,
+    package_reference: str | None,
+    parcel_reference: str | None,
+    event_data: list[dict[str, Any]] | tuple[Any, ...] | None,
+) -> str:
+    """Wyznacza tożsamość logiczną niezależną od metody SOAP i identyfikatorów DPD."""
+    normalized_waybill = str(waybill or "").strip().upper()
+    if str(operation_type or "INSERT").upper() != "INSERT" or not (
+        normalized_waybill and event_time
+    ):
+        return source_event_key
+    payload = {
+        "waybill": normalized_waybill,
+        "business_code": _semantic_text(business_code),
+        "event_time": _semantic_time(event_time),
+        "event_data": _semantic_event_data(event_data),
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _semantic_key_for_event(source_event_key: str, event: DpdInfoEvent) -> str:
+    return dpd_semantic_event_key(
+        source_event_key=source_event_key,
+        operation_type=event.operation_type,
+        waybill=event.waybill,
+        business_code=event.business_code,
+        description=event.description,
+        event_time=event.event_time,
+        depot=event.depot,
+        depot_name=event.depot_name,
+        country=event.country,
+        package_reference=event.package_reference,
+        parcel_reference=event.parcel_reference,
+        event_data=event.event_data,
+    )
+
+
 def _replacement_waybill(event: ShippingTrackingEvent) -> str | None:
     if event.business_code not in _REPLACEMENT_CODES:
         return None
@@ -279,7 +354,8 @@ async def _parcel_for_cancellation(
     return await session.get(ShippingTrackingParcel, parcel_id) if parcel_id else None
 
 
-async def _recompute_parcel(session: AsyncSession, parcel_id: int) -> None:
+async def recompute_dpd_tracking_parcel(session: AsyncSession, parcel_id: int) -> None:
+    """Przelicza bieżący stan listu wyłącznie ze zdarzeń kanonicznych."""
     parcel = await session.get(ShippingTrackingParcel, parcel_id)
     if parcel is None:
         return
@@ -291,6 +367,7 @@ async def _recompute_parcel(session: AsyncSession, parcel_id: int) -> None:
                     ShippingTrackingEvent.parcel_id == parcel_id,
                     ShippingTrackingEvent.operation_type == "INSERT",
                     ShippingTrackingEvent.is_cancelled.is_(False),
+                    ShippingTrackingEvent.canonical_event_id.is_(None),
                 )
                 .order_by(
                     ShippingTrackingEvent.event_time.desc().nullslast(),
@@ -351,8 +428,9 @@ async def persist_dpd_info_events(
     events: tuple[DpdInfoEvent, ...],
     channel: str,
 ) -> dict[str, Any]:
-    """Zapisuje partię zdarzeń bez duplikatów i przelicza stan listów."""
+    """Zapisuje techniczną historię i grupuje logiczne duplikaty zdarzeń DPD."""
     inserted = 0
+    duplicates = 0
     cancelled = 0
     affected_parcels: set[int] = set()
     ordered_events = sorted(events, key=lambda value: value.operation_type == "CANCEL")
@@ -367,15 +445,35 @@ async def persist_dpd_info_events(
         ).scalar_one_or_none()
         if existing is not None:
             continue
+        semantic_key = _semantic_key_for_event(source_key, event)
         parcel = None
         if event.operation_type == "INSERT" and event.waybill:
             parcel = await _parcel_for_waybill(session, waybill=event.waybill, channel=channel)
         elif event.operation_type == "CANCEL":
             parcel = await _parcel_for_cancellation(session, event)
         raw = event.as_dict()
+        canonical = None
+        if event.operation_type == "INSERT" and event.waybill:
+            canonical = (
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(
+                            ShippingTrackingEvent.operation_type == "INSERT",
+                            ShippingTrackingEvent.semantic_event_key == semantic_key,
+                            ShippingTrackingEvent.canonical_event_id.is_(None),
+                        )
+                        .order_by(ShippingTrackingEvent.id.asc())
+                    )
+                )
+                .scalars()
+                .first()
+            )
         stored = ShippingTrackingEvent(
             parcel_id=parcel.id if parcel else None,
             source_event_key=source_key,
+            semantic_event_key=semantic_key,
+            canonical_event_id=canonical.id if canonical else None,
             waybill=event.waybill or (parcel.waybill if parcel else None),
             dpd_event_id=event.event_id,
             object_id=event.object_id,
@@ -390,37 +488,62 @@ async def persist_dpd_info_events(
             parcel_reference=event.parcel_reference,
             event_data=[value.as_dict() for value in event.event_data],
             raw_payload=raw,
+            is_cancelled=bool(canonical and canonical.is_cancelled),
+            cancelled_at=canonical.cancelled_at if canonical and canonical.is_cancelled else None,
             received_at=datetime.now(UTC),
         )
         session.add(stored)
         inserted += 1
+        if canonical is not None:
+            duplicates += 1
         if parcel:
             affected_parcels.add(parcel.id)
         if event.operation_type == "CANCEL" and event.object_id:
-            cancelled_ids = {
-                value
-                for value in (
+            matched = list(
+                (
                     await session.execute(
-                        select(ShippingTrackingEvent.parcel_id).where(
+                        select(ShippingTrackingEvent).where(
                             ShippingTrackingEvent.object_id == event.object_id,
                             ShippingTrackingEvent.operation_type == "INSERT",
-                            ShippingTrackingEvent.is_cancelled.is_(False),
                         )
                     )
-                ).scalars()
-                if value is not None
-            }
-            await session.execute(
-                update(ShippingTrackingEvent)
-                .where(
-                    ShippingTrackingEvent.object_id == event.object_id,
-                    ShippingTrackingEvent.operation_type == "INSERT",
-                    ShippingTrackingEvent.is_cancelled.is_(False),
                 )
-                .values(is_cancelled=True, cancelled_at=datetime.now(UTC))
+                .scalars()
+                .all()
             )
-            affected_parcels.update(cancelled_ids)
-            cancelled += len(cancelled_ids)
+            if matched:
+                semantic_keys = {
+                    value.semantic_event_key for value in matched if value.semantic_event_key
+                }
+                root_ids = {value.canonical_event_id or value.id for value in matched}
+                logical_rows = list(
+                    (
+                        await session.execute(
+                            select(ShippingTrackingEvent).where(
+                                ShippingTrackingEvent.operation_type == "INSERT",
+                                or_(
+                                    ShippingTrackingEvent.semantic_event_key.in_(semantic_keys),
+                                    ShippingTrackingEvent.id.in_(root_ids),
+                                    ShippingTrackingEvent.canonical_event_id.in_(root_ids),
+                                ),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                newly_cancelled_roots = {
+                    value.canonical_event_id or value.id
+                    for value in logical_rows
+                    if not value.is_cancelled
+                }
+                cancelled_at = datetime.now(UTC)
+                for value in logical_rows:
+                    value.is_cancelled = True
+                    value.cancelled_at = cancelled_at
+                    if value.parcel_id is not None:
+                        affected_parcels.add(value.parcel_id)
+                cancelled += len(newly_cancelled_roots)
         elif event.operation_type == "INSERT" and event.object_id:
             prior_cancel = (
                 (
@@ -435,23 +558,52 @@ async def persist_dpd_info_events(
                 .first()
             )
             if prior_cancel is not None:
-                stored.is_cancelled = True
-                stored.cancelled_at = datetime.now(UTC)
-                await session.execute(
-                    update(ShippingTrackingEvent)
-                    .where(
-                        ShippingTrackingEvent.object_id == event.object_id,
-                        ShippingTrackingEvent.operation_type == "CANCEL",
-                        ShippingTrackingEvent.parcel_id.is_(None),
+                cancelled_at = datetime.now(UTC)
+                logical_rows = list(
+                    (
+                        await session.execute(
+                            select(ShippingTrackingEvent).where(
+                                ShippingTrackingEvent.operation_type == "INSERT",
+                                ShippingTrackingEvent.semantic_event_key == semantic_key,
+                            )
+                        )
                     )
-                    .values(parcel_id=parcel.id, waybill=parcel.waybill)
+                    .scalars()
+                    .all()
                 )
-                cancelled += 1
+                newly_cancelled_roots = {
+                    value.canonical_event_id or value.id
+                    for value in logical_rows
+                    if not value.is_cancelled
+                }
+                for value in logical_rows:
+                    value.is_cancelled = True
+                    value.cancelled_at = cancelled_at
+                    if value.parcel_id is not None:
+                        affected_parcels.add(value.parcel_id)
+                cancel_rows = list(
+                    (
+                        await session.execute(
+                            select(ShippingTrackingEvent).where(
+                                ShippingTrackingEvent.object_id == event.object_id,
+                                ShippingTrackingEvent.operation_type == "CANCEL",
+                                ShippingTrackingEvent.parcel_id.is_(None),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                for cancel_row in cancel_rows:
+                    cancel_row.parcel_id = parcel.id
+                    cancel_row.waybill = parcel.waybill
+                cancelled += len(newly_cancelled_roots)
     await session.flush()
     for parcel_id in affected_parcels:
-        await _recompute_parcel(session, parcel_id)
+        await recompute_dpd_tracking_parcel(session, parcel_id)
     return {
         "inserted": inserted,
+        "duplicates": duplicates,
         "cancelled": cancelled,
         "affected_parcel_ids": sorted(affected_parcels),
     }
@@ -491,6 +643,13 @@ async def _database_sync_lock() -> AsyncIterator[bool]:
                     {"lock_key": _POSTGRES_LOCK_KEY},
                 )
             await connection.close()
+
+
+@asynccontextmanager
+async def dpd_info_database_lock() -> AsyncIterator[bool]:
+    """Udostępnia wspólną blokadę synchronizacji narzędziom administracyjnym DPD."""
+    async with _database_sync_lock() as acquired:
+        yield acquired
 
 
 async def _create_sync_run(
@@ -534,7 +693,7 @@ async def synchronize_dpd_infoservices(
         if not lock_acquired:
             raise DpdInfoSyncBusyError("Inny proces CTIP synchronizuje teraz InfoServices.")
         run_id = await _create_sync_run(trigger_type=trigger_type, user_id=user_id)
-        fetched = inserted = cancelled = batches = 0
+        fetched = inserted = duplicates = cancelled = batches = 0
         confirm_id: str | None = None
         acknowledgement_confirmed = False
         info_client = client or DpdInfoServicesClient()
@@ -556,6 +715,7 @@ async def synchronize_dpd_infoservices(
                     )
                     await session.commit()
                 inserted += result["inserted"]
+                duplicates += result["duplicates"]
                 cancelled += result["cancelled"]
                 if not confirm_id:
                     raise RuntimeError("DPD nie zwróciło identyfikatora potwierdzenia partii.")
@@ -578,6 +738,7 @@ async def synchronize_dpd_infoservices(
                 status=status,
                 fetched_count=fetched,
                 inserted_count=inserted,
+                duplicate_count=duplicates,
                 cancelled_count=cancelled,
                 batch_count=batches,
                 confirm_id=confirm_id,
@@ -590,6 +751,7 @@ async def synchronize_dpd_infoservices(
                 "status": status,
                 "fetched_count": fetched,
                 "inserted_count": inserted,
+                "duplicate_count": duplicates,
                 "cancelled_count": cancelled,
                 "batch_count": batches,
                 "acknowledgement_confirmed": acknowledgement_confirmed,
@@ -603,6 +765,7 @@ async def synchronize_dpd_infoservices(
                 status=status,
                 fetched_count=fetched,
                 inserted_count=inserted,
+                duplicate_count=duplicates,
                 cancelled_count=cancelled,
                 batch_count=batches,
                 confirm_id=confirm_id,
@@ -626,7 +789,7 @@ async def backfill_dpd_waybills(
         if not lock_acquired:
             raise DpdInfoSyncBusyError("Inny proces CTIP synchronizuje teraz InfoServices.")
         run_id = await _create_sync_run(trigger_type="backfill", user_id=None)
-        fetched = inserted = cancelled = 0
+        fetched = inserted = duplicates = cancelled = 0
         info_client = client or DpdInfoServicesClient()
         try:
             for waybill in normalized:
@@ -640,6 +803,7 @@ async def backfill_dpd_waybills(
                     )
                     await session.commit()
                 inserted += result["inserted"]
+                duplicates += result["duplicates"]
                 cancelled += result["cancelled"]
             milestone_result = await _reconcile_firebird_milestones()
             await _update_sync_run(
@@ -647,6 +811,7 @@ async def backfill_dpd_waybills(
                 status="success",
                 fetched_count=fetched,
                 inserted_count=inserted,
+                duplicate_count=duplicates,
                 cancelled_count=cancelled,
                 batch_count=len(normalized),
                 acknowledgement_confirmed=True,
@@ -658,6 +823,7 @@ async def backfill_dpd_waybills(
                 "waybill_count": len(normalized),
                 "fetched_count": fetched,
                 "inserted_count": inserted,
+                "duplicate_count": duplicates,
                 "cancelled_count": cancelled,
                 "firebird_milestones": milestone_result,
             }
@@ -667,6 +833,7 @@ async def backfill_dpd_waybills(
                 status="partial" if fetched else "failed",
                 fetched_count=fetched,
                 inserted_count=inserted,
+                duplicate_count=duplicates,
                 cancelled_count=cancelled,
                 batch_count=len(normalized),
                 acknowledgement_confirmed=True,
@@ -753,6 +920,7 @@ async def latest_dpd_info_sync_status(session: AsyncSession) -> dict[str, Any] |
         "trigger_type": row.trigger_type,
         "fetched_count": row.fetched_count,
         "inserted_count": row.inserted_count,
+        "duplicate_count": row.duplicate_count,
         "cancelled_count": row.cancelled_count,
         "batch_count": row.batch_count,
         "acknowledgement_confirmed": row.acknowledgement_confirmed,
@@ -792,10 +960,13 @@ __all__ = [
     "DpdInfoSyncBusyError",
     "backfill_dpd_waybills",
     "classify_dpd_event",
+    "dpd_semantic_event_key",
     "dpd_event_group",
+    "dpd_info_database_lock",
     "is_dpd_pickup_confirmation",
     "latest_dpd_info_sync_status",
     "persist_dpd_info_events",
+    "recompute_dpd_tracking_parcel",
     "start_dpd_infoservices_scheduler",
     "stop_dpd_infoservices_scheduler",
     "synchronize_dpd_infoservices",

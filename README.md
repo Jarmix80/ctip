@@ -5,23 +5,20 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
-- Kanoniczny stos testowy `ctip-test`, niezmienne obrazy, migracja `ctip_test`, przełączenie portu `8000` i rollback: `docs/instal/test_server_runtime.md`.
-- Jedyny obsługiwany mechanizm wdrożeń Windows z dry-run, backupem i automatycznym rollbackiem: `docs/instal/windows_release_deployment.md`.
-- Audyt repozytorium, aktualne zabezpieczenia sekretów i plan rotacji: `docs/bezpieczenstwo/repo_i_sekrety_2026-09-01.md`.
+- Kanoniczny mechanizm wdrożenia produkcji Windows, backupu i rollbacku: `docs/instal/windows_release_deployment.md`.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
+- Kanoniczny, niezmienny stos testowy na `192.168.0.9:8000`, jego backup i rollback: `docs/instal/test_server_runtime.md`.
 - Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, izoluje środowisko testów i rozlicza polecenia Python według kodu wyjścia zamiast zapisu na stderr.
 - Procedura pełnego uruchomienia Shipping, bramki gotowości, pilota RW/WZ/FV oraz obowiązkowego sprzątania danych `Test Umowa`: `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md`.
 - Dwuetapowe wdrożenie pól przesyłki MS oraz ręcznego geokodera Adresy.app, z osobnymi flagami, pilotem i rollbackiem: `docs/instal/wdrozenie_shipping_pola_przesylki_geokoder_2026-09-01.md`.
 - Rejestr identyfikatorów, scenariuszy dokumentowych i początkowych stanów magazynowych pilota Shipping: `docs/instal/pilot_shipping_2026-08-28.md`.
 - Awaryjna korekta stawki VAT faktury Shipping odrzuconej przez KSeF oraz trwały hotfix formattera MS: `docs/instal/hotfix_shipping_ksef_vat_2026-09-01.md`.
+- Hotfix fałszywego błędu zamknięcia Shipping, idempotencji dnia, audytu i kanonicznego nadawcy SMTP: `docs/instal/hotfix_shipping_close_email_2026-09-01.md`.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.
 - Pomocniczy skrypt operatorski (Windows, bez `Read-Host`) do wykonania kroku Google Sheets + mailbox dry-run po wdrozeniu: `inbox/krok9_10_google_sheets_mailbox_noninteractive.ps1`.
 - Hotfix produkcyjny dla toru `mailbox -> APPROVED_ORDER` z jednorazowa naprawa formularza `39`: `docs/instal/hotfix_mailbox_binding_prod_2026-05-22.md`.
-
-## Dokumentacja operacyjna (poza zakresem CTIP)
-- Raport z optymalizacji wydajnosci testowej bazy Menadzer Serwisu (Firebird), obejmujacy benchmarki zapytan i dodane indeksy: `docs/firebird/przyspieszenie_bazy_bazams_test_2026-05-14.md`.
 
 ## Najważniejsze komponenty
 - `collector_full.py` – produkcyjny kolektor CTIP: łączy się z centralą, koreluje zdarzenia, persystuje rekordy w schemacie `ctip` oraz rejestruje zadania SMS.
@@ -36,13 +33,9 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/admin_forms.py` + `app/services/form_generator.py` – generator jednorazowych formularzy klienta (token haszowany, zapis danych zaszyfrowanych, automatyczna weryfikacja klienta po NIP w Menadżerze Serwisu po statusie `SUBMITTED`, z użyciem bieżącej konfiguracji Firebird zapisanej w panelu administratora).
 - `app/web/genform_ui.py` + `app/templates/genform/` – osobny flow handlowca pod adresem `/genform` (logowanie, generowanie linku, tabela formularzy z kolumnami operacyjnymi FLOW, osobny modal wyboru urządzeń i osobny modal proformy oraz dezaktywacja formularza z przywracaniem rezerwacji arkusza).
 - `app/web/flow_ui.py` + `app/templates/flow/` + `app/static/flow/` – widok `/flow` z bocznym menu dla sekcji „Obsługa umów”, „Obsługa urządzeń” i „Harmonogram dowozów”, nagłówkiem użytkownika, podglądem danych formularza z kopiowaniem pojedynczych pól, osobnym modalem workflow do prowadzenia sprawy klienta i wyboru urządzeń po stronie CTIP oraz stronami wizualizacji proformy `/flow/proforma-wizualizacja` i `/flow/proforma-wizualizacja1`.
-- `app/web/delivery_ui.py` + `app/templates/delivery/` + `app/static/delivery/` + `app/api/routes/admin_delivery.py` + `app/services/delivery.py` – moduł `/delivery` („Obsługa dostaw”): lista dostaw z FLOW GRENKE po statusie `APPROVED_ORDER`, ręczne zakładanie dostaw spoza GRENKE, powiązanie z klientem Firebird oraz kalendarz końców umów GRENKE wymagający potwierdzenia operatora i wysyłający przypomnienia aktywnym handlowcom.
 - `app/web/mm_ui.py` + `app/templates/mm/` + `app/static/mm/` + `app/api/routes/admin_mm.py` + `app/services/mm_dashboard.py` – raport MM pod adresem `/mm` (frontend) oraz `GET /admin/mm/dashboard` (backend) do analizy przesunięć międzymagazynowych z Firebird z filtrami: zakres dat, magazyn docelowy (`złom`/`wynajem`), model urządzenia, wyszukiwanie po numerze MM/indeksie/serialu/ewidencji, zawężenie magazynu wydającego do `Urządzenia Magazyn` i `Urządzenia Wynajem`, kolumna `cena zakupu netto` i eksport CSV.
 - `app/web/device_ui.py` + `app/templates/device/` + `app/static/device/` + `app/api/routes/admin_device.py` + usługi `device_*` – moduł `/device` ze stałym lewym menu, półprzezroczystym nagłówkiem oraz przypisanym do konta wyborem motywu niebieskiego, grafitowego lub miętowego; osobne ekrany obejmują stronę główną, przyjęcie PZ, wykup BNP, scalony magazyn, audyt, historię i synchronizacje. Każdy fizyczny egzemplarz ma osobną kartotekę `MAGAZYN`, rekord `MASZYNA`, rejestr CTIP, historię uwag/rezerwacji oraz niezawodną kolejkę Google Sheets. Widok magazynu pokazuje szybką obecność w źródłach `Arkusz/Magazyn/Urządzenie/CTIP`, ma przewijaną wewnętrznie tabelę z naprzemiennymi wierszami i otwieraniem szczegółów przez dwuklik całego wiersza lub klawiaturę; usunięto osobną kolumnę akcji. Moduł udostępnia też trwały, ręczny audyt tylko do odczytu z historią 20 przebiegów. Domyślny widok audytu jest operacyjny (aktywny arkusz lub dostępny magazyn 28), a filtry źródła udostępniają także pełne zbiory arkusza, magazynu, `MASZYNA`, CTIP i całej unii.
-- `app/web/shipping_ui.py` + `app/templates/shipping/` + `app/static/shipping/` + `app/api/routes/admin_shipping.py` + `app/services/shipping_*` – moduł `/shipping` w docelowym układzie V2 do katalogu zgodności części, realizacji wysyłek DPD, dokumentów RW/WZ/FV i przeszukiwalnego Archiwum; poprzedni interfejs pozostaje pod `/shipping/legacy`, operacje są chronione niezależnymi flagami etapowego wdrożenia, zbiorczy wydruk składa cztery natywne pola etykiet DPD na jednym arkuszu A4 bez skalowania kodów, a wspólne edytowalne pole etykiety łączy pojemność `ref1` i `content` do 81 znaków, automatycznie wpisując numer zlecenia, ilości i nazwy części. Wspólna paczka wysyła jeden komplet powiadomień SMS/e-mail niezależnie od liczby powiązanych zleceń, a gotowe zlecenia o identycznym adresie można przed przekazaniem kurierowi dołączyć do jednej istniejącej etykiety po potwierdzeniu rzeczywistej wagi paczki; WZ utworzony razem z FV zapisuje numer faktury w `ZAKUPY.DOK_ZEW`, pozycja FV ustawia `FPOZYCJA.PARAGON=0`, aby ręczne usunięcie dokumentu poprawnie odtworzyło stan magazynowy, a dane klienta, kontaktów i urządzenia są łączone po globalnych identyfikatorach MS, ponieważ `ZLECENIE.ID_FIRMA` nie musi odpowiadać wartości w kartotekach `KLIENT` i `MASZYNA`.
-- `app/web/crm_ui.py` + `app/templates/crm/` + `app/static/crm/` + `app/api/routes/crm.py` + `app/services/crm_cases.py` + `app/services/crm_notifications.py` – trwałe Centrum Obsługi pod adresem `/crm`: cztery kolejki operacyjne, zachowanie dokładnej kategorii formularza, Kanban Handlu, pulpit dyspozytora, oś zdarzeń, idempotentne przyjmowanie spraw oraz konfigurowalne powiadomienia SMS/e-mail pracowników. Zaufane formularze WWW korzystają z osobnego tokenu `CRM_WWW_TOKEN`. Operacje LAB zapisują się wyłącznie w `ctip_test`, a komunikacja jest symulowana.
-- `app/crm_prototype_app.py` – izolowana aplikacja LAB udostępniająca `/crm`, chronione `/api/crm/v1/*` i statyczne zasoby. Tryb wymaga `CRM_PUBLIC_PROTOTYPE_MODE=true`, `CRM_ENABLED=true`, `CRM_LAB_MODE=true`, `PGDATABASE=ctip_test`, lokalnego Firebird i `SMS_TEST_MODE=true`; CSP dopuszcza iframe wyłącznie ze skonfigurowanych źródeł.
-- `app/lab_portal_app.py` + `app/templates/lab/` + `app/static/lab/` – brama laboratorium na porcie `8790`: formularze zastępujące obecne wejścia Bitrix, generator scenariuszy oraz ograniczone proxy lokalnego widgetu CHAT_KP. Brama przyjmuje krótko ważny bilet HMAC z wtyczki WordPress, nie udostępnia produkcyjnych tras CTIP i zapisuje formularze wyłącznie jako sprawy `is_lab=true`.
+- `app/web/shipping_ui.py` + `app/templates/shipping/` + `app/static/shipping/` + `app/api/routes/admin_shipping.py` + `app/services/shipping_*` – moduł `/shipping` w docelowym układzie V2 do katalogu zgodności części, realizacji wysyłek DPD, dokumentów RW/WZ/FV i przeszukiwalnego Archiwum; poprzedni interfejs pozostaje pod `/shipping/legacy`, operacje są chronione niezależnymi flagami etapowego wdrożenia, zbiorczy wydruk składa cztery natywne pola etykiet DPD na jednym arkuszu A4 bez skalowania kodów, a wspólne edytowalne pole etykiety łączy pojemność `ref1` i `content` do 81 znaków, automatycznie wpisując numer zlecenia, ilości i nazwy części. Wspólna paczka wysyła jeden komplet powiadomień SMS/e-mail niezależnie od liczby powiązanych zleceń, a gotowe zlecenia o identycznym adresie można przed przekazaniem kurierowi dołączyć do jednej istniejącej etykiety po potwierdzeniu rzeczywistej wagi paczki. Zakończone lub częściowe zamknięcie dnia jest terminalne: ponowienie zwraca zachowane podsumowanie bez ponownego zapisu Firebirda i bez ponownej wysyłki powiadomień; błąd późniejszego audytu jest prezentowany jako ostrzeżenie i nie fałszuje wyniku zatwierdzonej operacji. WZ utworzony razem z FV zapisuje numer faktury w `ZAKUPY.DOK_ZEW`, pozycja FV ustawia `FPOZYCJA.PARAGON=0`, aby ręczne usunięcie dokumentu poprawnie odtworzyło stan magazynowy, a dane klienta, kontaktów i urządzenia są łączone po globalnych identyfikatorach MS, ponieważ `ZLECENIE.ID_FIRMA` nie musi odpowiadać wartości w kartotekach `KLIENT` i `MASZYNA`.
 - `app/web/contracts_ui.py` + `app/templates/contracts/` + `app/api/routes/admin_contracts.py` – techniczny dashboard workflow pod adresem `/contracts` (formularze SUBMITTED, weryfikacja klienta w Firebird, lista pozycji magazynowych Firebird dla magazynu `28`); `/flow` korzysta z tego samego backendu danych.
 - `app/services/grenke_launch.py` – integracja API-only do przycisku `Wniosek GRENKE` w `/genform`: budowa `calculationKey`, prefill kalkulacji (`setSession.php`, `calculate.php`, `saveCalculation.php`) i fallback URL `partial` z query kodowanym pod parser `decodeURI` po stronie GRENKE (bez formatu `+` dla spacji); w trybie pełnym usługa uzupełnia dane dostawcy (`provider*`) na podstawie sprzedawcy z zapisanej proformy Firebird, zapisuje pole `rate` jako listę opcji (`kwartalna`, `miesieczna`) kompatybilną z frontendem GRENKE, ustawia opłatę początkową `0%`, odczytuje limity `default/min/maxMonths` po `setSession.php` i wybiera najwyższy poprawny okres leasingu w granicach tych limitów.
 - `app/services/workflow_machine_binding.py` – automat dla statusu `APPROVED_ORDER`: przed zapisem całego pakietu wymaga, aby istniejąca kartoteka `MASZYNA` należała do klienta magazynowego `FB_WAREHOUSE_CLIENT_ID` (domyślnie `656`), a następnie wiąże urządzenia workflow z klientem w `MASZYNA.ID_KLIENT`, wymusza `AKTYWNA=TAK` i `SYNWP=1`, próbuje znormalizować `MASZYNA.EWIDENCJA` do `KP/<numer>/GRENKE/<reszta>` oraz tworzy brakujące rekordy `MASZYNA` z mapowaniem danych z tabeli `MODEL`; właściciel inny niż magazyn, brak `ID_KLIENT` albo wieloznaczne dopasowanie blokuje całą operację bez częściowego zapisu. Dla źródła `firebird_magazyn_28` automat dociąga bieżący rekord `MAGAZYN`, parsuje techniczne `NAZWA` (`S/N`, `nr.wew`) i normalizuje warianty modeli Ricoh (`IMC` -> `IM C`, `MPC` -> `MP C`) zanim dopasuje `MODEL`; status zwracany do `/genform` pokazuje też licznik `powiązane/wszystkie` i skrót pierwszych błędów z identyfikatorem urządzenia (`producent`, `model`, `serial` albo `ewidencja`).
@@ -51,7 +44,6 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `app/api/routes/portal_auth.py` + `app/static/root/root.js` – centralne logowanie na stronie głównej (`/`) oraz wybór sekcji na osobnym widoku `/choice`.
 - `app/api/routes/assistant.py` + `app/services/assistant_*` + `app/web/assistant_ui.py` + `app/templates/assistant/` + `app/static/assistant/` – moduł CTIP AI Asystent (chat z historią, streaming SSE, narzędzia `firebird_read`, `firebird_business_read`, `firebird_knowledge_read`, `workflow_devices_audit`, `sheets_read`, `imap_read`, `ctip_schema_read` i `email_send_report`; odczyt danych pozostaje read-only, a wysyłka raportu idzie przez systemową skrzynkę SMTP CTIP, automatyczne wnioski o zmiany). Wyjątkiem wykonawczym jest kontrolowana akcja operatora po audycie urządzeń: zapis świeżej paczki do zakładki roboczej `urzadzenia_chat`, bez modyfikacji docelowej zakładki `Urzadzenia_magazyn`.
 - `app/api/routes/admin_firebird.py` + `app/services/firebird_client.py` – konfiguracja i test połączenia z bazą Firebird programu Menadżer Serwisu.
-- `app/services/bot_identity_directory.py` + `app/api/routes/bot_identity.py` + `app/api/routes/admin_bot_identity.py` – centralny katalog rozpoznawania kont klientów dla botów voice/chat, synchronizowany z Firebird wyłącznie do odczytu; zasady i kontrakt opisuje `docs/bot_identity_directory.md`.
 - `inbox/` – lokalny katalog wymiany plików z Windows (dropzone), celowo odcięty od repozytorium Git.
 - `scripts/inbox_samba.sh` – uruchamianie udziału SMB dla `inbox/` (mapowany dysk w Windows).
 - `scripts/firebird_clone_local.py` – utworzenie lokalnej kopii roboczej pliku `.fdb` na podstawie `FB_DATABASE` i `FB_LOCAL_COPY_PATH`.
@@ -69,7 +61,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - System Linux lub Windows (dla usługi Windows wymagane uprawnienia administratora).
 
 ## Konfiguracja środowiskowa
-Lokalna praca w repozytorium odbywa się wyłącznie na `.env.test` oraz bazie `ctip_test`. Produkcyjny `.env` pozostaje poza repo i jest używany dopiero na serwerze wdrożeniowym. Artefakty lokalne (`.codex/*` poza `.codex/session.json`, `backups/`, lokalne binaria w `tools/`) pozostają poza wersjonowaniem; sekrety z obu plików środowiskowych również nie trafiają do Git. Kanoniczny serwer testowy używa stabilnego wolumenu konfiguracji Firebird, unikalnego aliasu `ctip-test-postgres` i jednorazowej usługi `log-init`; cutover uznaje za poprawne tylko procesy pozostające stabilnie uruchomione, uwierzytelniony kontrakt Bot Identity `ctip-v1`, świeżą synchronizację katalogu i brak nowych błędów startowych. Rollback odtwarza zarówno poprzedni obraz, jak i zweryfikowany plik Compose z jego commita. Shipping jest dostępny w trybie DPD `mock`, bez zapisu do Firebirda, wyszukiwania internetowego i komunikacji z klientami.
+Lokalna praca w repozytorium odbywa się wyłącznie na `.env.test` oraz bazie `ctip_test`. Produkcyjny `.env` pozostaje poza repo i jest używany dopiero na serwerze wdrożeniowym. Artefakty lokalne (`.codex/*` poza `.codex/session.json`, `backups/`, lokalne binaria w `tools/`) pozostają poza wersjonowaniem; sekrety z obu plików środowiskowych również nie trafiają do Git.
 
 ### Operacyjne sync urzadzen FLOW (prod)
 Do powtarzalnego audytu i aktualizacji arkusza `Urzadzenia_magazyn` oraz uzupelnienia `MASZYNA` w Firebird sluzy:
@@ -98,40 +90,6 @@ Po ręcznym ustawieniu statusu biznesowego sprawy na `APPROVED_ORDER` endpoint `
 - przy błędach wysyła alert SMS i e-mail do aktywnych administratorów, ale nie blokuje zmiany statusu sprawy.
 
 Jeżeli sprawa ma już status `APPROVED_ORDER`, ten sam automat uruchamia się ponownie również przy zapisie wyboru urządzeń (`POST /admin/contracts/forms/{form_id}/workflow/devices`), żeby utrzymać spójność po zmianach listy urządzeń.
-
-### Obsługa dostaw i kalendarz końców umów GRENKE
-Status `APPROVED_ORDER` przekazuje formularz z FLOW do modułu `/delivery`. W tym momencie CTIP tworzy albo odświeża sprawę `delivery_case`, kopiuje listę urządzeń do `delivery_case_device`, zapisuje `grenke_contract_start_date` jako datę pierwszej akceptacji GRENKE i zakłada wpis `grenke_contract_end` jako kandydat do kalendarza końca umowy. Data końca umowy jest traktowana jako roboczy prefill: operator musi ją potwierdzić, zanim system zacznie wysyłać przypomnienia.
-
-Workflow rozróżnia dwie daty startu:
-- `grenke_contract_start_date` – początek umowy GRENKE, wyprowadzany z pierwszego statusu `APPROVED_ORDER` albo historycznego `APPROVED`; automat mailboxa zapisuje tu datę wiadomości o akceptacji, a nie godzinę przetworzenia backlogu;
-- `kp_contract_start_date` – początek umowy Ksero-Partner, ustawiany z daty dowozu `delivery_date` i aktualizowany przy przeniesieniu terminu.
-
-Moduł `/delivery` obejmuje:
-- listę dostaw GRENKE, dostaw ręcznych oraz odbiorów urządzeń od klientów,
-- ręczne utworzenie dostawy spoza GRENKE z wyszukaniem istniejącego klienta Firebird albo utworzeniem klienta tym samym mechanizmem, którego używają formularze,
-- zaplanowanie odbioru urządzeń: operator wyszukuje klienta MS, wybiera jego aktywne urządzenia i tworzy sprawę bez modyfikowania bazy Firebird na etapie planowania,
-- planowanie terminu, okna czasowego, danych kontaktowych, zadań przygotowania, dowozu, odbioru, zerówki i kontaktu z klientem,
-- dodawanie plików sprawy oraz generowanie dokumentów z szablonów DOCX umieszczonych w katalogu `inbox/doku`,
-- kalendarz końców umów GRENKE z potwierdzeniem daty przez operatora,
-- przypomnienia SMS i e-mail dla progów `60`, `30` i `7` dni przed potwierdzoną datą końca umowy.
-
-Widok użytkownika `/delivery` jest pulpitem roboczym: górny pasek zawiera główne akcje, lewa kolumna pokazuje karty spraw, a prawa kolumna otwiera szczegóły wybranej dostawy albo odbioru. Szczegóły są podzielone na zakładki `Ustalenia`, `Urządzenia`, `Zadania` i `Dokumenty`, aby operator nie musiał przechodzić między osobnymi ekranami przy codziennej obsłudze.
-
-Wzory dokumentów:
-- katalog źródłowy wzorów określa `DELIVERY_DOCUMENT_TEMPLATES_ROOT` (domyślnie `inbox/doku`),
-- katalog plików spraw określa `DELIVERY_FILES_ROOT` (domyślnie `inbox/delivery/files`),
-- automatyczne wypełnianie działa tylko dla `.docx` z placeholderami `{{nazwa_pola}}` albo `[[nazwa_pola]]`; pliki `.doc` są katalogowane jako wzory, ale wymagają wcześniejszej konwersji do DOCX.
-
-Konfiguracja przypomnień:
-- `DELIVERY_NOTIFICATIONS_SCHEDULER_ENABLED=true|false` – włącza dzienny scheduler przypomnień końców umów.
-- `DELIVERY_NOTIFICATIONS_INTERVAL_SECONDS=86400` – interwał przebiegu schedulera.
-
-Scheduler przypomnień działa na progach 60/30/7 dni przed potwierdzoną datą końca umowy, zapisuje przebiegi w `admin_audit_log` oraz używa `notification_history` w `ctip.grenke_contract_end`, aby nie dublować tego samego progu. Jeżeli serwer był wyłączony w dniu progu, kolejny przebieg wykonuje najbliższe zaległe przypomnienie przed datą końca umowy.
-
-Uprawnienia:
-- sekcja `delivery` jest wymagana do API `/admin/delivery/*` i widoku `/delivery`,
-- rola `serwisant` domyślnie dostaje tylko sekcję `delivery`,
-- administrator może nadal ręcznie przypisać sekcję `delivery` kontom operatorów albo administratorów.
 
 W arkuszu FLOW wymagane są nagłówki techniczne:
 - `MS_ID_MAGAZYN_TABLE`,
@@ -222,8 +180,8 @@ Uwagi operacyjne:
 - jezeli dokument jest pustym wzorem (bez wypelnionych pol), wynik moze nie zawierac `nip` i/lub `contract_number`,
 - lista wszystkich wykrytych kandydatow jest zapisywana w polach `nips_found` i `contract_number_candidates`.
 
-### Test połączenia skrzynki umów (IMAP + SMTP SSL)
-Pierwszy krok automatyzacji obsługi umów to test połączenia skrzynki e-mail przez IMAP (odbiór) oraz SMTP (wysyłka). W repo dostępny jest skrypt `scripts/mailbox_connection_check.py`.
+### Test połączenia skrzynki umów (wyłącznie IMAP SSL)
+Pierwszy krok automatyzacji obsługi umów to test odbiorczego połączenia IMAP. Adres `umowy@ksero-partner.com.pl` nie jest używany do wysyłki. W repo dostępny jest skrypt `scripts/mailbox_connection_check.py`.
 
 Uruchomienie testu:
 ```bash
@@ -232,7 +190,7 @@ set -a && source .env.test && set +a
 python scripts/mailbox_connection_check.py
 ```
 
-Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP SSL i test logowania SMTP SSL/STARTTLS.
+Skrypt czyta konfigurację `MAILBOX_*`, wykonuje logowanie do `INBOX` przez IMAP SSL i nie otwiera połączenia SMTP.
 
 ### Synchronizacja wiadomości umów z FLOW
 Skrypt `scripts/contracts_mailbox_sync.py` analizuje wiadomości z `INBOX`, rozpoznaje temat i treść wiadomości:
@@ -419,91 +377,13 @@ Uwaga operacyjna: zasoby `192.168.0.8` (PostgreSQL/Firebird) oraz `192.168.0.11`
 | `FB_PORT` | `3050` | Port usługi Firebird. |
 | `FB_MODE` | `local` | Domyślny tryb pracy lokalnej kopii Firebird. |
 | `FB_DATABASE` | `/tmp/test_ms.fdb` | Ścieżka lokalnej bazy Firebird dla testów. |
-| `FB_USER`, `FB_PASSWORD` | `SYSDBA`, `ctip-test-only` | Dane logowania Firebird. |
+| `FB_USER`, `FB_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania Firebird. |
 | `FB_CHARSET` | `UTF8` | Kodowanie sesji Firebird. |
 | `FB_ROLE` | *(puste)* | Rola Firebird (opcjonalnie). |
 | `FB_LOCAL_COPY_PATH` | `inbox/firebird/test_ms_local.fdb` | Docelowa ścieżka lokalnej kopii roboczej bazy. |
 | `FB_ALLOW_WRITES` | `false` | Jawna blokada zapisu do aktywnej konfiguracji Firebird; wartość jest pobierana z właściwego pliku środowiskowego. |
 | `FB_WAREHOUSE_CLIENT_ID` | `656` | Domyślny `ID_KLIENT` dla technicznych zapisów urządzeń magazynowych w lokalnej Firebird. |
 | `FB_WAREHOUSE_ID` | `28` | Domyślny `ID_MAGAZYN` dla pozycji magazynowych tworzonych przez synchronizację urządzeń. |
-
-### Zmienne środowiskowe Centrum Obsługi i katalogu tożsamości
-| Nazwa | Domyślna wartość | Opis |
-|-------|------------------|------|
-| `CRM_ENABLED` | `false` | Włącza trwałe API Centrum Obsługi. |
-| `CRM_LAB_MODE` | `false` | Wymusza oznaczanie nowych spraw jako LAB i udostępnia kontrolowany reset danych testowych. |
-| `CRM_PUBLIC_PROTOTYPE_MODE` | `false` | Włącza interfejs bez logowania wyłącznie w izolowanej aplikacji LAB. |
-| `CRM_RETENTION_DAYS` | `360` | Retencja treści spraw i ich osi zdarzeń. |
-| `CRM_AUTO_ARCHIVE_DAYS` | `30` | Termin automatycznej archiwizacji po zakończeniu lub przekazaniu sprawy. |
-| `CRM_RETENTION_SCHEDULER_ENABLED` | `false` | Włącza okresowe usuwanie spraw po retencji. |
-| `CRM_FRAME_ANCESTORS` | domeny Ksero Partner | Lista originów dopuszczonych przez CSP do osadzenia LAB w iframe. |
-| `CRM_LAB_IFRAME_SECRET` | brak | Wspólny sekret HMAC bramy LAB i wtyczki `pagekp`; wartość musi odpowiadać `KP_CTIP_LAB_IFRAME_SECRET`. |
-| `CRM_LAB_CHAT_BASE_URL` | `http://192.168.0.9:8787` | Stały adres lokalnej instancji publicznego widgetu CHAT_KP używany wyłącznie przez ograniczone proxy. |
-| `CRM_LAB_PROXY_TIMEOUT_SECONDS` | `60` | Limit czasu połączenia bramy z lokalnym CHAT_KP. |
-| `CRM_WWW_TOKEN` | brak | Odrębny sekret uwierzytelniający serwerową integrację formularzy WordPress z endpointem `/v1/form-cases`; nie może trafić do Git. |
-| `BOT_IDENTITY_ENABLED` | `false` | Włącza synchronizację centralnego katalogu z Firebird. |
-| `BOT_IDENTITY_SECRET_KEY` | *(puste)* | Klucz Fernet oraz źródło kluczy HMAC dla telefonu, NIP i numeru seryjnego. |
-| `BOT_IDENTITY_VOICE_TOKEN`, `BOT_IDENTITY_CHAT_TOKEN` | *(puste)* | Różne tokeny usługowe związane odpowiednio z kanałem voice i chat. |
-| `BOT_IDENTITY_TEST_SMS_CODE` | *(puste)* | Opcjonalny sześciocyfrowy kod wyłącznie dla izolowanego testu SMS w `ctip_test`; LAB używa `123456`, kod nie jest zwracany przez API i zmienna nie może występować w produkcyjnym `.env`. |
-| `BOT_IDENTITY_IMAGE_HTTPS_HOSTS` | domeny Ksero Partner | Lista hostów HTTPS, z których katalog może zwracać zdjęcia modeli zapisane w `MODEL.PLIK`. |
-| `BOT_IDENTITY_IMAGE_LAB_HTTP_HOSTS` | lokalne hosty LAB | Lista hostów HTTP dopuszczonych wyłącznie przy `CRM_LAB_MODE=true`, `PGDATABASE=ctip_test` i `SMS_TEST_MODE=true`. |
-| `BOT_IDENTITY_MODEL_IMAGE_ROOT` | *(puste)* | Opcjonalny bezwzględny katalog kontrolowanych obrazów obsługiwanych przez `/v1/device-model-images/{image_ref}`. |
-| `BOT_IDENTITY_IMAGE_MAX_BYTES` | `5242880` | Maksymalny rozmiar pojedynczego obrazu udostępnianego przez CTIP. |
-| `BOT_IDENTITY_IMAGE_CACHE_SECONDS` | `3600` | Czas bezpiecznego cache obrazu modelu w przeglądarce. |
-| `BOT_IDENTITY_SYNC_INTERVAL_SECONDS` | `300` | Cykl odczytu lokalnej bazy Firebird w trybie read-only. |
-| `BOT_IDENTITY_WARN_AFTER_SECONDS`, `BOT_IDENTITY_BLOCK_AFTER_SECONDS` | `900`, `3600` | Progi ostrzeżenia i blokady ujawniania dla nieświeżego katalogu. |
-
-Synchronizację bez pozostałych usług uruchamia `python -m app.bot_identity_worker`.
-Worker odmawia startu przy `FB_ALLOW_WRITES=true`. W środowisku `ctip_test`
-wymagane są `FB_MODE=local`, testowa nazwa bazy oraz lokalny host lub alias
-kontenera `firebird`. Sterownik otwiera transakcję Firebird jako
-`ISOLATION_LEVEL_READ_COMMITED_RO`.
-
-Izolowane API dla CHAT_KP i kanału voice uruchamia
-`uvicorn app.bot_identity_api_app:app`. Proces udostępnia tylko trasy
-`/internal/v1`, kompatybilne trasy `/v1` oraz `/health`; nie uruchamia
-schedulera synchronizacji ani paneli CTIP. Trasa `/v1/capabilities` odpowiada
-kontraktem `1.0` wymaganym przez CHAT_KP.
-
-Odpowiedź `POST /v1/customers/resolve` zawiera `company_name` wyłącznie dla
-jednoznacznego wyniku `exact` lub `unique`. Dla `ambiguous` i `not_found` nazwa
-oraz `customer_ref` pozostają puste; API nie zwraca danych kontaktowych ani
-uwierzytelniających.
-
-Po poprawnej weryfikacji SMS
-`POST /v1/customers/{customer_ref}/devices/masked` zwraca wyłącznie aktywne
-urządzenia potwierdzonego klienta: losowe `device_ref`, producenta i model z
-projekcji `MASZYNA → MODEL`, pełny `serial`, zgodne `serial_last4`, bezpieczne
-`image_url`, lokalizację i flagę aktywności. Kontrakt spraw obsługuje stare
-`device_ref` oraz opcjonalne `device_refs` z deduplikacją i limitem 20.
-Wygasła albo niedotycząca klienta weryfikacja SMS zwraca HTTP 403 zamiast błędu
-wewnętrznego, natomiast urządzenie spoza potwierdzonej firmy jest odrzucane.
-Szczegółowe reguły ujawniania oraz mapowanie `MODEL.PLIK` opisuje
-`docs/bot_identity_directory.md`.
-
-W lokalnym środowisku integracyjnym CHAT_KP wskazuje
-`http://ctip-bot-api:8082`. API działa bez portu hosta jako kontrolowany most
-dwóch sieci Docker, a sam CHAT_KP nie otrzymuje dostępu do sieci Firebird ani
-PostgreSQL CTIP. Szczegóły scenariusza znajdują się w
-`docs/bot_identity_directory.md`.
-
-Trwałe wdrożenie laboratoryjne korzysta z `Dockerfile.bot-identity` i
-`compose.bot-identity.yml`. Obraz zawiera pakiet `app`, działa jako użytkownik
-bez uprawnień administratora i nie montuje źródeł z worktree. Sekrety są
-przekazywane wyłącznie przez ignorowany plik `.env.bot-identity.runtime`.
-Kod obsługuje bieżący schemat `ctip_test`, w którym `crm_case.category` jest
-wymagane, bez uruchamiania migracji podczas startu kontenera.
-Procedurę budowy, testów canary, podmiany oraz rollbacku opisuje
-`docs/instal/bot_identity_docker_test.md`.
-
-Izolowane usługi `ctip-crm-prototype` i `ctip-lab-portal` korzystają z
-`Dockerfile.crm-lab` oraz `compose.crm-lab.test.yml`. Obraz zawiera cały pakiet
-`app` i nie montuje kodu z aktywnego worktree. Preflight zatrzymuje start, jeżeli
-konfiguracja nie wskazuje `ctip_test`, lokalnego Firebird bez zapisu,
-`SMS_TEST_MODE=true` i `BLOCK_CLIENT_COMMUNICATIONS=true`. Healthcheck LAB jest
-dostępny bez biletu iframe, ale nadal wymaga bezpiecznej konfiguracji testowej.
-Budowę, podmianę i rollback opisuje
-`docs/instal/crm_lab_docker_test.md`.
 
 ### Zmienne środowiskowe Google Sheets
 | Nazwa | Domyślna wartość | Opis |
@@ -540,7 +420,7 @@ Budowę, podmianę i rollback opisuje
 | `FB_V_HOST` | `127.0.0.1` | Host lokalnej kopii bazy v-maintenance. |
 | `FB_V_PORT` | `3050` | Port usługi Firebird v-maintenance. |
 | `FB_V_DATABASE` | `/tmp/test_vmaintenance.fdb` | Ścieżka lokalnej bazy v-maintenance. |
-| `FB_V_USER`, `FB_V_PASSWORD` | `SYSDBA`, `ctip-test-only` | Dane logowania do bazy v-maintenance. |
+| `FB_V_USER`, `FB_V_PASSWORD` | `SYSDBA`, `masterkey` | Dane logowania do bazy v-maintenance. |
 | `FB_V_CHARSET` | `UTF8` | Kodowanie sesji Firebird v-maintenance. |
 | `FB_V_ROLE` | *(puste)* | Rola Firebird v-maintenance (opcjonalnie). |
 
@@ -574,22 +454,19 @@ Historyczna akcja synchronizacji urządzenia z arkusza w `/contracts` jest wył�
 | `EMAIL_USERNAME` | *(puste)* | Login do serwera SMTP (opcjonalnie). |
 | `EMAIL_PASSWORD` | *(puste)* | Hasło do serwera SMTP (opcjonalnie). |
 | `EMAIL_SENDER_NAME` | *(puste)* | Nazwa nadawcy w wiadomościach e-mail. |
-| `EMAIL_SENDER_ADDRESS` | *(puste)* | Adres nadawcy (From). |
+| `EMAIL_SENDER_ADDRESS` | *(puste)* | Kanoniczny adres nagłówka From i koperty SMTP; produkcyjnie `system@ksero-partner.com.pl`. |
+| `EMAIL_REPLY_TO_ADDRESS` | *(puste)* | Wymuszony adres Reply-To wszystkich wiadomości; produkcyjnie `marcin@ksero-partner.com.pl`. |
 | `EMAIL_USE_TLS` | `true` | Włącza STARTTLS. |
 | `EMAIL_USE_SSL` | `false` | Połączenie przez SSL/TLS (port 465). |
 | `BLOCK_CLIENT_COMMUNICATIONS` | `false` | Tymczasowo blokuje wysyłkę powiadomień dla klientów (SMS z linkiem i e-maile informacyjne). |
 
-### Zmienne środowiskowe skrzynki automatyzacji umów (IMAP/SMTP)
+### Zmienne środowiskowe skrzynki automatyzacji umów (wyłącznie IMAP)
 | Nazwa | Domyślna wartość | Opis |
 |-------|------------------|------|
-| `MAILBOX_EMAIL_ADDRESS` | *(puste)* | Adres skrzynki używanej przez automatyzację umów. |
+| `MAILBOX_EMAIL_ADDRESS` | *(puste)* | Odbiorczy adres skrzynki automatyzacji umów; produkcyjnie `umowy@ksero-partner.com.pl`. |
 | `MAILBOX_EMAIL_PASSWORD` | *(puste)* | Hasło do skrzynki automatyzacji. |
 | `MAILBOX_IMAP_HOST` | *(puste)* | Host IMAP skrzynki (odbiór). |
 | `MAILBOX_IMAP_PORT` | `993` | Port IMAP SSL. |
-| `MAILBOX_SMTP_HOST` | *(puste)* | Host SMTP skrzynki (wysyłka). |
-| `MAILBOX_SMTP_PORT` | `465` | Port SMTP SSL. |
-| `MAILBOX_SMTP_USE_SSL` | `true` | Wymusza połączenie SMTP przez SSL. |
-| `MAILBOX_SMTP_USE_STARTTLS` | `false` | Włącza STARTTLS dla SMTP (nie łączyć z SSL). |
 | `CONTRACTS_MAILBOX_SCHEDULER_ENABLED` | `true` | Włącza automatyczny scheduler synchronizacji mailbox -> FLOW przy starcie backendu. |
 | `CONTRACTS_MAILBOX_SYNC_INTERVAL_SECONDS` | `300` | Interwał (sekundy) cyklicznego uruchamiania synchronizacji mailboxa. |
 | `CONTRACTS_MAILBOX_SYNC_LIMIT` | `60` | Limit liczby najnowszych wiadomości analizowanych w jednym przebiegu automatu. |
@@ -643,7 +520,7 @@ Historyczna akcja synchronizacji urządzenia z arkusza w `/contracts` jest wył�
 | `ADDRESY_APP_TIMEOUT_SECONDS` | `5` | Timeout pojedynczego zapytania adresowego. |
 | `ADDRESY_APP_MIN_SCORE` | `0.85` | Minimalna zgodność kandydata dopuszczonego do automatycznego uzupełnienia braków. |
 
-Pełna lista ustawień DPD, InfoServices, nadawcy, wag, godziny granicznej i opcjonalnego wzbogacania WWW znajduje się w `.env.example` oraz `docs/projekt/wysylki_dpd.md`. Zakładka „Status przesyłek” pokazuje historię DPD i umożliwia przejście ze zlecenia lub Archiwum do numeru listu. Po osobnym włączeniu kamieni milowych potwierdzone zdarzenie odbioru zapisuje `DATA_PRZES`, doręczenie zapisuje `DATA_PRZES_WE`, a ostatni istotny problem lub stan końcowy trafia do `PRZESYLKA_WE`; koszt przesyłki nie jest wyliczany. Ręczny przycisk Adresy.app przekazuje wyłącznie ulicę, kod i miasto, uzupełnia przede wszystkim puste pola i wymaga potwierdzenia przed zastąpieniem wpisanych danych. Narzędzie `scripts/dpd_infoservices_backfill.py` przed utworzeniem pętli zdarzeń ustawia na Windows politykę zgodną z asynchronicznym sterownikiem PostgreSQL. Stały przycisk odświeżania kolejki ponownie pobiera zlecenia z MS i usuwa z widoku pozycje, które przestały spełniać filtr; elastyczny kontener z własnym przewijaniem nie obcina ostatniego rekordu. Pole ilości w sekcji „Wybierz części z magazynu” używa kroku jednej pełnej sztuki i wartości minimalnej `1`, dzięki czemu przyciski pola zwiększają ilość kolejno do `2`, `3`, `4`, bez przesunięcia o `0,001`. Edytor pod wykazem części generuje tekst z numeru zlecenia, ilości i nazw, przestaje go automatycznie nadpisywać po ręcznej zmianie i przed zapisem pokazuje podział na `ref1` (27 znaków) oraz `content` (54 znaki). Nowy ciemny `/shipping/v2` i poprzedni jasny `/shipping/legacy` mają identyczne funkcje; jasny widok ma również prawą kolumnę kafelków postępu, adresu dostawy, treści zlecenia, pakowania i statusu, synchronizowaną z edytowalnym formularzem. Oba warianty płynnie wykorzystują szerokość monitora do `2560px`, a od `1920px` rozszerzają formularz do czterech kolumn. Przełączniki są opisane jednoznacznie jako „Jasny” i „Ciemny”; wybór zapisuje się w `admin_user.shipping_layout`, a wejście przez `/shipping` otwiera domyślną wersję danego konta. Sekcja `shipping` nie jest przyznawana automatycznie żadnej roli; administrator nadaje ją jawnie wskazanym aktywnym kontom.
+Pełna lista ustawień DPD, InfoServices, nadawcy, wag, godziny granicznej i opcjonalnego wzbogacania WWW znajduje się w `.env.example` oraz `docs/projekt/wysylki_dpd.md`. Zakładka „Status przesyłek” pokazuje historię DPD i umożliwia przejście ze zlecenia lub Archiwum do numeru listu. Po osobnym włączeniu kamieni milowych potwierdzone zdarzenie odbioru zapisuje `DATA_PRZES`, doręczenie zapisuje `DATA_PRZES_WE`, a ostatni istotny problem lub stan końcowy trafia do `PRZESYLKA_WE`; koszt przesyłki nie jest wyliczany. `scripts/shipping_dpd_milestone_pilot.py` pozwala przy wyłączonej synchronizacji globalnej wykonać dry-run, kontrolowany zapis i zawężony rollback dla dokładnie jednego archiwalnego powiązania `zlecenie + list`; token stanu blokuje zapis po zmianie pól MS lub zdarzeń DPD. Ręczny przycisk Adresy.app przekazuje wyłącznie ulicę, kod i miasto, uzupełnia przede wszystkim puste pola i wymaga potwierdzenia przed zastąpieniem wpisanych danych. Parser telefonu z treści przyjmuje opisany numer, format z separatorami lub prefiksem kraju, a także pojedynczy zwarty polski numer mobilny; odrzuca opisane indeksy i niejednoznaczne zestawy kandydatów. Końcowy formularz dopuszcza również polskie numery stacjonarne, normalizuje wszystkie obsługiwane formaty do `+48XXXXXXXXX` i ponawia kontrolę bezpośrednio przed wysłaniem SMS. Liczniki danych odbiorcy ostrzegają kolorem pomarańczowym o możliwym skróceniu wydruku etykiety oraz blokują zapis na czerwono po przekroczeniu limitu API DPD; system nie obcina danych automatycznie. Narzędzie `scripts/dpd_infoservices_backfill.py` przed utworzeniem pętli zdarzeń ustawia na Windows politykę zgodną z asynchronicznym sterownikiem PostgreSQL. Stały przycisk odświeżania kolejki ponownie pobiera zlecenia z MS i usuwa z widoku pozycje, które przestały spełniać filtr; elastyczny kontener z własnym przewijaniem nie obcina ostatniego rekordu. Pole ilości w sekcji „Wybierz części z magazynu” używa kroku jednej pełnej sztuki i wartości minimalnej `1`, dzięki czemu przyciski pola zwiększają ilość kolejno do `2`, `3`, `4`, bez przesunięcia o `0,001`. Edytor pod wykazem części generuje tekst z numeru zlecenia, ilości i nazw, przestaje go automatycznie nadpisywać po ręcznej zmianie i przed zapisem pokazuje podział na `ref1` (27 znaków) oraz `content` (54 znaki). Nowy ciemny `/shipping/v2` i poprzedni jasny `/shipping/legacy` mają identyczne funkcje; jasny widok ma również prawą kolumnę kafelków postępu, adresu dostawy, treści zlecenia, pakowania i statusu, synchronizowaną z edytowalnym formularzem. Oba warianty płynnie wykorzystują szerokość monitora do `2560px`, a od `1920px` rozszerzają formularz do czterech kolumn. Przełączniki są opisane jednoznacznie jako „Jasny” i „Ciemny”; wybór zapisuje się w `admin_user.shipping_layout`, a wejście przez `/shipping` otwiera domyślną wersję danego konta. Sekcja `shipping` nie jest przyznawana automatycznie żadnej roli; administrator nadaje ją jawnie wskazanym aktywnym kontom.
 
 Logowanie do `/auth/login` i `/admin/auth/login` ustawia obecnie dwa transporty tej samej sesji:
 - bezpieczniejsze ciasteczko `HttpOnly` dla przeglądarki,
@@ -658,7 +535,7 @@ Publiczna aplikacja formularzy nie publikuje `/docs`, `/redoc` ani `/openapi.jso
 ### Lista kontrolna przed uruchomieniem
 1. Utwórz/aktywuj środowisko `.venv` i zainstaluj zależności: `python3 -m venv .venv`, następnie `source .venv/bin/activate` oraz `pip install -r requirements.txt`.
 2. Dla pracy lokalnej skopiuj `.env.test.example` do `.env.test`, pozostaw `PGDATABASE=ctip_test`, `PBX_HOST=127.0.0.1`, `SMS_TEST_MODE=true` i wygeneruj `ADMIN_SECRET_KEY` (`python - <<<'import secrets, base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`).
-3. Przed migracją potwierdź `PGHOST=127.0.0.1` i `PGDATABASE=ctip_test`, wykonaj backup, sprawdź `alembic current`, `alembic heads` i dopiero wtedy uruchom `set -a && source .env.test && set +a && alembic upgrade head`.
+3. Wykonaj migracje na lokalnej bazie testowej: `set -a && source .env.test && set +a && alembic upgrade head`.
    Jeżeli panel `/contracts` zwraca błąd `UndefinedColumnError` dla `ctip.form_request.archive_bucket`, oznacza to brak pełnych migracji i należy ponowić `alembic upgrade head` dla `ctip_test`.
    Po migracji uruchom `alembic check`; konfiguracja porównuje modele również w schemacie `ctip`, a nie tylko w domyślnym schemacie `public`. Polecenie może ujawnić starsze rozbieżności indeksów i typów, dlatego nie wolno stosować automatycznie wygenerowanej migracji bez ich odrębnego audytu.
 4. Dodaj pierwszego administratora, np. w SQL: `INSERT INTO ctip.admin_user (email, role, password_hash, is_active) VALUES (...)`; skrót hasła wygeneruj funkcją `hash_password` z `app.services.security`.
@@ -716,31 +593,11 @@ ALTER SEQUENCE ctip.call_events_id_seq OWNER TO appuser;
 Rekomenduje się uruchomienie obu procesów pod nadzorem `systemd` lub innego menedżera usług. W przypadku `systemd` kontroluj usterki poprzez `Restart=always` oraz logowanie do `journalctl`.
 
 ## Aktualizacja produkcji na Windows Server (PowerShell)
-Środowisko produkcyjne działa na Windows Server, zwykle w trybie detached HEAD. Wdrożenie wykonuje się z Linux/WSL jednym mechanizmem `scripts/deploy_windows_prod.py`, który pobiera dane połączenia z klucza `ssh_serv_link`, materializuje skrypty z przypiętego commita przez binarne `git archive` i kontrolę SHA-256, wykonuje backupy, używa środowiska NSSM, tworzy worktree kandydata i restartuje wyłącznie usługi wskazane w planie.
+Środowisko produkcyjne działa na Windows Server, zwykle w trybie detached HEAD. Wdrożenie wykonuje się z Linux/WSL jednym mechanizmem `scripts/deploy_windows_prod.py`, który pobiera dane połączenia z klucza `ssh_serv_link`, pobiera z `origin` dokładny pełny SHA bez przełączania worktree, materializuje skrypty z przypiętego commita przez binarne `git archive` i kontrolę SHA-256, wykonuje backupy, używa środowiska NSSM, tworzy worktree kandydata i restartuje wyłącznie usługi wskazane w planie.
 
 Najpierw obowiązkowo uruchom wariant `--dry-run`. Wariant `--apply` wolno wykonać dopiero po sprawdzeniu raportu, rewizji Alembic, dozwolonych ścieżek i endpointów. Pełny przykład oraz rollback opisuje `docs/instal/windows_release_deployment.md`.
 
 Nie należy wykonywać na produkcji ręcznego `git pull`, zmiany gałęzi, samodzielnego `alembic upgrade head` ani szerokiego restartu usług. Skrypty datowane oraz `scripts/windows/update_ctip*.ps1` są zablokowane i pozostają wyłącznie materiałem historycznym.
-
-### Szybka diagnostyka uslug po aktualizacji (Windows)
-Po wdrozeniu uruchom jeden skrypt kontrolny:
-
-```powershell
-cd D:\CTIP
-.\scripts\windows\check_ctip_health.ps1 -InstallDir "D:\CTIP"
-```
-
-Skrypt sprawdza:
-- status uslug `CollectorService`, `CTIP-Web`, `CTIP-SMS` (opcjonalnie `CTIP-FormsPublic`),
-- lacznosc TCP do PBX i PostgreSQL na podstawie `.env`,
-- biezace logi dzienne (`docs/LOG/Centralka`, `docs/LOG/sms`) i logi uslug (`logs/collector`, `logs/sms`),
-- typowe wzorce awarii (m.in. blad autoryzacji PostgreSQL i petla restartow kolektora).
-
-Kod wyjscia:
-- `0` – brak bledow krytycznych,
-- `2` – wykryto blad krytyczny (wymagana interwencja).
-
-Kontrola `scripts/windows/check_ctip_health.ps1` pozostaje narzędziem diagnostycznym, ale nie zastępuje walidacji wykonywanej przez kanoniczny mechanizm wdrożenia.
 
 ## Backend API (FastAPI)
 Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w katalogu `app/`. Do pracy wymaga zależności opisanych w `pyproject.toml` (`fastapi`, `uvicorn`, `sqlalchemy`, `psycopg`, `pydantic-settings`).
@@ -846,7 +703,7 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - Strona `/flow/proforma/{id}` renderuje juz rzeczywista proforme odczytana z aktywnej konfiguracji Firebird (runtime z panelu administratora, ten sam co dla workflow/proformy); domyslny wariant finalny to `?variant=final` (alias zgodnosciowy: `?variant=v1`) i jest zblizony do wzorca `inbox/FPROFORMA.pdf`.
 - Endpointy `/flow/proforma/{id}` oraz `/flow/proforma/{id}/pdf` korzystaja z zaleznosci `get_db_session` importowanej z `app.api.deps`; bledna podmiana importu na `app.db.session` powoduje awarie startu `CTIP-Web` (usluga Windows moze pozostac `Running`, ale `/health` na porcie `8000` nie odpowiada).
 - Backend zapisuje tez fizyczny plik PDF proformy do `inbox/faktura/generated/proforma_<ID>.pdf`; endpoint `/flow/proforma/{id}/pdf` zwraca pobranie jako strumien bajtów PDF (z nagłówkiem `Content-Disposition`) i nie zależy od `FileResponse`, a w workflow CTIP kolumna `proforma_pdf_path` trzyma sciezke do zapisanego pliku. Generator PDF buduje uklad A4 wzorowany na `inbox/FPROFORMA.pdf` (w tym rodzina fontow Verdana z fallbackami systemowymi), a sekcje naglowka/tabeli/podsumowania sa pozycjonowane pod produkcyjny wzorzec MS (`Faktura nr <numer_proformy>.pdf`), zamiast prostego dumpu tekstowego; nazwa pobieranego pliku jest aliasem numeru dokumentu (np. `20/proforma/2026` -> `20_proforma_2026.pdf`). Wiersz pozycji proformy w wariancie `v1` jest renderowany jednolinijkowo (bez dodatkowego `nr.wew`), z szerokosciowym przycinaniem tekstu i mniejsza typografia sekcji podsumowania/uwag/stopki, aby uniknac nachodzenia tresci; kwoty w wierszu `Razem` sa celowo wyrownane typograficznie do wiersza `wg stawki 23 %`, etykieta `Data zakończenia dostaw/usług` jest w jednej linii, blok adresowy `Sprzedawca/Nabywca` ma zaciesnione odstepy pionowe, a ciagla linia sekcji podsumowania pozostaje na poziomie `v4` przy jednoczesnym przesunieciu calego tekstu pod nia o `2 mm` w dol.
-- Sekcja Użytkownicy umożliwia przypisanie dostępu do sekcji (`admin`, `operator`, `generator`, `delivery`, `device`, `shipping`) użytkownikom nieadministracyjnym; rola `admin` zawsze ma pełny dostęp, a rola `serwisant` domyślnie otrzymuje sekcję `delivery`. Strona główna i API respektują te uprawnienia przy prezentacji i autoryzacji modułów. Widoki odczytowe użytkowników oraz konfiguracji SMTP tolerują historyczne, nieroutowalne domeny testowe, natomiast formularze tworzenia i aktualizacji nadal wymagają poprawnego adresu. Dodatkowo konto może być oznaczone znacznikiem biznesowym `Handlowiec`, powiązane z użytkownikiem Menadżera Serwisu oraz posiadać konfigurację IMAP dostępną wyłącznie administratorowi.
+- Sekcja Użytkownicy umożliwia przypisanie dostępu do sekcji (`admin`, `operator`, `generator`, `delivery`, `device`) użytkownikom nieadministracyjnym; rola `admin` zawsze ma pełny dostęp. Strona główna i API respektują te uprawnienia przy prezentacji i autoryzacji modułów. Widoki odczytowe użytkowników oraz konfiguracji SMTP tolerują historyczne, nieroutowalne domeny testowe, natomiast formularze tworzenia i aktualizacji nadal wymagają poprawnego adresu. Dodatkowo konto może być oznaczone znacznikiem biznesowym `Handlowiec`, niezależnym od roli i sekcji, powiązane z użytkownikiem Menadżera Serwisu przez listę `Użytkownik MS`, a także posiadać konfigurację IMAP (admin-only) przypisaną per użytkownik do odczytu nagłówków wiadomości przez moduł chatu.
 - Treści SMS zawierające link jednorazowy lub potwierdzenie wypełnienia formularza są maskowane w historii panelu (`Treść ukryta`), aby nie ujawniać danych wrażliwych.
 - Operatorzy logują się tym samym panelem co administratorzy i mają dostęp do Dashboardu, widoku CTIP, Książki adresowej (w trybie edycji bez możliwości usuwania kontaktów) oraz Generatora formularzy. Pozostałe sekcje pozostają zarezerwowane dla roli `admin`.
 - W CTIP Live dostępny jest szybki edytor kontaktu: po wskazaniu zdarzenia można jednym formularzem zaktualizować dane numeru (imię, nazwisko, firma, e-mail, `firebird_id`, notatki), a wynik jest natychmiast synchronizowany z główną książką adresową.
@@ -928,23 +785,6 @@ Warstwa REST udostępniająca dane CTIP i kolejkę SMS została zrealizowana w k
 - `GET /admin/contracts/delivery/schedule?day_from=YYYY-MM-DD&day_to=YYYY-MM-DD` – zwraca harmonogram dowozow w zadanym zakresie dat.
 - `POST /admin/contracts/delivery/{workflow_case_id}/move` – przenosi wpis harmonogramu na inny dzien.
 - `DELETE /admin/contracts/delivery/{workflow_case_id}` – usuwa wpis harmonogramu dla wskazanej sprawy workflow.
-- `GET /delivery` – widok modułu „Obsługa dostaw” dostępny przez `/choice` dla sekcji `delivery`.
-- `GET /admin/delivery/clients/search?q=...&nip=...` – wyszukuje klienta w Menadżerze Serwisu dla nowej dostawy albo odbioru.
-- `GET /admin/delivery/clients/{client_id}/devices` – pobiera aktywne urządzenia klienta MS do planowania odbioru.
-- `GET /admin/delivery/devices/available` – pobiera dostępne urządzenia magazynowe MS z informacją o rezerwacjach CTIP.
-- `GET /admin/delivery/cases` – lista spraw dostaw i odbiorów (`source=grenke|manual`, `case_type=delivery|pickup`, `status_filter=...`, `include_done=true|false`).
-- `GET /admin/delivery/cases/{case_id}` – szczegóły sprawy, urządzenia, zadania, pliki i pliki mailboxa GRENKE.
-- `POST /admin/delivery/cases` – ręczne utworzenie sprawy dostawy spoza GRENKE; opcjonalnie używa `firebird_client_id` albo `create_firebird_client=true`.
-- `POST /admin/delivery/pickups` – tworzy sprawę odbioru urządzeń od klienta MS bez zmiany powiązań Firebird na etapie planowania.
-- `PATCH /admin/delivery/cases/{case_id}` – aktualizacja nazwy, terminu, okna czasowego, kontaktu, notatek i statusu sprawy.
-- `POST /admin/delivery/cases/{case_id}/devices` – zapisuje urządzenia sprawy; dla dostaw aktualizuje rezerwacje w arkuszu Google Sheets, jeżeli synchronizacja jest aktywna.
-- `GET /admin/delivery/cases/{case_id}/tasks`, `POST /admin/delivery/cases/{case_id}/tasks`, `PATCH /admin/delivery/cases/{case_id}/tasks/{task_id}` – obsługa zadań operacyjnych sprawy.
-- `GET /admin/delivery/cases/{case_id}/files`, `POST /admin/delivery/cases/{case_id}/files`, `GET /admin/delivery/files/{file_id}/download` – obsługa plików sprawy.
-- `GET /admin/delivery/document-templates` i `POST /admin/delivery/cases/{case_id}/documents/generate` – lista szablonów i generowanie dokumentów DOCX.
-- `GET /admin/delivery/grenke-contracts` – lista wpisów kalendarza końców umów GRENKE z filtrami `status_filter`, `date_from`, `date_to` i `q`; odpowiedź zawiera m.in. `grenke_contract_start_date`, daty końca i harmonogram przypomnień.
-- `POST /admin/delivery/grenke-contracts/{item_id}/confirm` – potwierdza datę końca umowy i aktywuje przypomnienia.
-- `POST /admin/delivery/grenke-contracts/{item_id}/cancel` – anuluje wpis kalendarza końca umowy.
-- `POST /admin/delivery/grenke-contracts/reminders/run` – ręczne uruchomienie przypomnień końców umów.
 - `GET /formularz/{token}`, `POST /formularz/{token}` – publiczny formularz klienta oparty o jednorazowy token.
 - `GET /admin/backup/history` – lista plików kopii zapasowych z katalogu `backups/` (wymaga roli `admin`).
 - `GET /admin/backup/config`, `PUT /admin/backup/config` – odczyt i zapis konfiguracji modułu kopii zapasowych (harmonogram, zakres, lokalizacja, Office 365, konfiguracja SQL Optimy i wybór baz do archiwizacji).
@@ -1024,9 +864,8 @@ Wszystkie trasy panelu operatora wymagają nagłówka `X-Admin-Session` z ważny
   - zatrzymanie: `./ctiptest stop`;
   - reset Firebird do lokalnego snapshotu bazowego: `./ctiptest reset-firebird`.
 - Analiza ryzyk równoległej pracy produkcji i testów: `docs/projekt/dual_site_analysis.md`.
-- `compose.test.yml` uruchamia PostgreSQL 17, Firebird 2.5, Mailpit, mock CTIP, panel WWW, formularze publiczne, kolektor i sender SMS. Kontenery aplikacyjne działają w sieci `internal` bez trasy domyślnej. Porty udostępnia wyłącznie statyczna brama HAProxy; e-mail trafia do Mailpit, SMS jest raportowany jako `SIMULATED`, a pełny audyt komunikacji jest przechowywany przez 14 dni w `logs/outbound_test/`. Osobna brama `google-egress` przepuszcza wyłącznie TLS do API Google dla chronionego skoroszytu `Zerowki_test`, a `addresy-egress` wyłącznie TLS do `api.adresy.app` dla ręcznego geokodera Shipping; aplikacja nadal nie ma dostępu do pozostałych zasobów sieciowych. Usługi aplikacyjne otrzymują dodatkowo grupę katalogu logów przez `LOCAL_LOG_GID` (domyślnie `101`), aby kolektor mógł zapisywać dzienne logi przy montowaniu repozytorium z hosta.
+- `compose.test.yml` uruchamia PostgreSQL 17, Firebird 2.5, Mailpit, mock CTIP, panel WWW, formularze publiczne, kolektor i sender SMS. Kontenery aplikacyjne działają w sieci `internal` bez trasy domyślnej. Porty udostępnia wyłącznie statyczna brama HAProxy; e-mail trafia do Mailpit, SMS jest raportowany jako `SIMULATED`, a pełny audyt komunikacji jest przechowywany przez 14 dni w `logs/outbound_test/`. Osobna brama `google-egress` przepuszcza wyłącznie TLS do API Google, dzięki czemu outbox `/device` może zapisywać tylko do chronionego skoroszytu `Zerowki_test`, bez otwierania aplikacji na pozostałe zasoby sieciowe. Usługi aplikacyjne otrzymują dodatkowo grupę katalogu logów przez `LOCAL_LOG_GID` (domyślnie `101`), aby kolektor mógł zapisywać dzienne logi przy montowaniu repozytorium z hosta.
 - `./ctiptest start` wymusza ponowne utworzenie kontenerów, dzięki czemu usługi zawsze otrzymują aktualną konfigurację z `.env.test`.
-- Serwerowy stos testowy publikuje Firebirda wyłącznie jako `192.168.0.9:3050`; brama HAProxy dopuszcza połączenia lokalne oraz klienta MS `192.168.0.126`. Klient używa aliasu `BAZAMS_TEST` albo ścieżki `BAZAMS_TEST\\BazaMS.fdb`.
 - Aby zasilić `ctip_test` realnymi formularzami workflow przed testami mailbox/GRENKE, można uruchomić:
 
 ```bash
@@ -1050,9 +889,10 @@ python scripts/sync_prod_forms_to_test.py --limit 200 --status SUBMITTED
 
 Uwaga: komunikaty w skryptach PowerShell są zapisane w ASCII (bez polskich znaków), dzięki czemu Windows PowerShell 5.1 z domyślnym kodowaniem nie zgłasza błędów parsowania. Skrypty instalacyjne znajdują się w repozytorium w `scripts/windows` (także w pakiecie `docs/instal/ctip_windows_service_package.zip`) i domyślnie wymuszają `py -3.11`; na hostach z domyślnym Pythonem 3.13 uruchamiaj `install_service.ps1` z parametrem `-PythonVersion "3.11"`.
 
-Aktualizacje kodu na Windows wykonuj wyłącznie przez `scripts/deploy_windows_prod.py`, najpierw w trybie `--dry-run`, a po zatwierdzeniu planu przez osobne polecenie `--apply`. Mechanizm używa dokładnych SHA commitów, konfiguracji NSSM, backupu, worktree kandydata, ograniczonej listy usług i automatycznego rollbacku. Skrypty `scripts/windows/update_ctip.ps1`, `scripts/windows/update_ctip_easy.ps1` oraz datowane skrypty wdrożeniowe są archiwalne i celowo zablokowane. Procedura znajduje się w `docs/instal/windows_release_deployment.md`.
+Aktualizacje kodu na Windows wykonuj przez `scripts/windows/update_ctip.ps1` (zatrzymuje uslugi, `git fetch/pull`, aktualizacja zaleznosci, `pre-commit run --all-files`, testy `python -m unittest discover -s tests`, a nastepnie restart uslug). Dla srodowisk z NSSM uzyj `-ServiceNames "CollectorService","CTIP-Web","CTIP-SMS"` albo `-ServiceNames "CollectorService","CTIP-Web","CTIP-SMS","CTIP-FormsPublic"`, jeżeli aktywna jest tez subdomena formularzy.
+Szybka aktualizacja bez testow i instalacji zaleznosci: `scripts/windows/update_ctip_easy.ps1` (wykonuje `git fetch/pull --ff-only` i restartuje tylko uruchomione uslugi, a gdy brak nowych commitow - nie restartuje nic). Opcjonalnie wymusisz restart parametrem `-ForceRestart`.
 W przypadku bledu `500` na publicznym `/formularz/{token}` uzyj `scripts/windows/fix_forms_public_500.ps1`. Skrypt ma tryb diagnostyczny (bez zmian) oraz tryb naprawczy `-Apply` (git pull, `pip install -e .`, weryfikacja/korekta `AppDirectory`, wymuszenie kompletu `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD/PGSSLMODE` w `AppEnvironmentExtra` uslugi `CTIP-FormsPublic`, restart uslugi i testy endpointow `/health` + `/formularz/*`). Domyslnie dla uslugi formularzy wymusza `PGHOST=127.0.0.1`, bo PostgreSQL dziala na tym samym Windows Server.
-Datowane skrypty wdrożeniowe pozostają w repozytorium wyłącznie jako materiał historyczny i kończą działanie komunikatem wskazującym `scripts/deploy_windows_prod.py`.
+Gotowy skrypt wdrozenia sesji AI Asystenta na Windows Server (branch `codex/fix-public-form-checkbox-422`, kontrola Alembic i healthcheck) znajduje sie w `scripts/windows/deploy_prod_ctip_assistant_2026-04-30.ps1`; uruchomienie: `.\scripts\windows\deploy_prod_ctip_assistant_2026-04-30.ps1 -Apply`. Skrypt nie blokuje wdrozenia, gdy indeks wiedzy Firebird nie istnieje przed `git pull` i po aktualizacji automatycznie probuje go wygenerowac przez `scripts/build_firebird_knowledge_index.py`. Dodatkowo przed healthcheck wymusza start wskazanych uslug, a `scripts/windows/update_ctip.ps1` obsluguje komunikaty informacyjne `git`/`python` na `stderr` bez falszywego przerwania aktualizacji (ustawienie `PSNativeCommandUseErrorActionPreference=$false` i walidacja po `LASTEXITCODE`). Parametr `-TargetCommit` jest opcjonalny (domyslnie pusty) i mozna go podac tylko wtedy, gdy chcesz wymusic konkretny hash.
 
 Szczegółowy przewodnik dla Windows Server 2022 (instalacja w `D:\CTIP`, skrypty PowerShell oraz pakiet `ctip_windows_service_package.zip`) znajduje się w `docs/instal/windows_server_2022.md`. Runbook DNS/NAT/reverse proxy dla publicznych formularzy: `docs/instal/public_forms_production.md`. Stan wdrożenia produkcyjnego i opis kolejnego etapu interakcji formularza: `docs/projekt/public_forms_status_2026-04-09.md`. Dziennik domkniecia etapu formularzy, automatu MS i panelu administratora: `docs/projekt/dziennik_2026-04-09.md`.
 Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPublic`) znajduje sie w `docs/instal/ctip_windows_recovery_runbook.md`.
@@ -1080,17 +920,14 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/centralka` – instrukcje centrali Slican (m.in. „CTIP” oraz „instrukcja programowania NCP v1.21”) ułatwiające konfigurację warstwy telekomunikacyjnej i protokołu CTIP.
 - `docs/baza` – aktualny schemat `schema_ctip.sql`; plik `ctip_plain` pozostawiono jako nieaktualny zrzut archiwalny (do wglądu historycznego, nie do odtwarzania).
 - `docs/instal/wdrozenie_mailbox_archive_2026-08-28.md` – procedura migracji, kontrolowanego backfillu i wycofania rejestru wiadomości GRENKE.
-- `docs/instal/test_server_runtime.md` – procedura budowy, kontroli, migracji i przełączenia jednego stosu testowego na porcie `8000`.
-- `docs/instal/windows_release_deployment.md` – kanoniczne wdrożenie Windows Server na dokładny commit z konfiguracją NSSM i rollbackiem.
-- `docs/bezpieczenstwo/repo_i_sekrety_2026-09-01.md` – wynik audytu sekretów, ocena wpływu prywatnego repozytorium i kolejność rotacji.
 - `docs/firebird` – materiały integracyjne dla Menadżera Serwisu (konfiguracja połączenia, mapa `bazams` -> `ctip.contact` w `docs/firebird/bazams_mapowanie_ctip.md` oraz miejsce na robocze artefakty).
 - `docs/firebird/proces_sprzedazy_ms.md` – opis potwierdzonego procesu handlowego Menadzera Serwisu, znaczenia triggerow, zmian po aktualizacji KSeF oraz zapytan diagnostycznych.
-- `docs/instal/bot_identity_docker_test.md` – runbook niemutowalnego obrazu, testów canary, podmiany i rollbacku usług Bot Identity dla CHAT_KP.
-- `docs/instal/crm_lab_docker_test.md` – runbook niemutowalnego testowego obrazu, healthchecków i rollbacku usług CRM/LAB.
 - `docs/instal/public_forms_production.md` – runbook wystawienia `form.ksero-partner.com.pl` (DNS w home.pl, NAT/router, reverse proxy, osobna usługa `CTIP-FormsPublic`).
 - `docs/instal/wdrozenie_shipping_prod_2026-08-27.md` – etapowe wdrożenie Shipping na Windows Server, backupy, kontrola migracji, faza odczytowa, pilot, nadanie uprawnień i rollback kodu.
 - `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md` – pełne uruchomienie Shipping, V2 jako widok główny, bramka tworzenia zleceń pilotażowych oraz kontrola usuwania klienta, umowy, urządzenia, dokumentów i odtworzenia stanów magazynowych.
+- `docs/instal/hotfix_shipping_close_email_2026-09-01.md` – naprawa zamknięcia dnia i audytu Shipping, kanoniczny nadawca SMTP, backfill dwóch wpisów oraz procedura wdrożenia i rollbacku.
 - `docs/instal/wdrozenie_shipping_pola_przesylki_geokoder_2026-09-01.md` – dwa niezależne wydania: idempotentne pola przesyłki MS na podstawie etykiety i InfoServices oraz ręczny geokoder Adresy.app bez danych kontaktowych.
+- `docs/instal/deduplikacja_dpd_infoservices_2026-09-01.md` – bezpieczna procedura semantycznego grupowania zdarzeń DPD zwracanych przez różne metody SOAP wraz z dry-run, tokenem stanu i rollbackiem bez usuwania historii technicznej.
 - `docs/instal/pilot_shipping_2026-08-28.md` – identyfikatory trzech zleceń pilota, przypisane części, ceny oraz początkowe stany `ILOSC` i `IL_REZ` wymagane do końcowej kontroli sprzątania.
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).
@@ -1098,18 +935,13 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/projekt/obsluga_urzadzen.md` – reguły przyjęcia PZ, rezerwacji, danych historycznych, outboxu Google Sheets i uprawnień modułu `/device`.
 - `docs/projekt/wykup_bnp.md` – reguły identyfikacji, kartoteki magazynu `27`, finalizacji PZ oraz blokad procesu wykupu BNP.
 - `docs/projekt/wysylki_dpd.md` – kontrakt procesu Shipping, katalogu zgodności, integracji DPD, dokumentów Firebird, zabezpieczeń i drukowania.
-- `docs/projekt/centrum_obslugi_prototyp_2026-07-25.md` – opis warstwy widoków CRM.
-- `docs/projekt/laboratorium_formularzy_chat_crm_2026-07-27.md` – opis trwałego LAB, kontraktów kanałów, izolacji i integracji WordPress/CHAT_KP.
-- `docs/projekt/formularze_www_crm_2026-07-30.md` – kontrakt bezpośredniego przyjmowania formularzy WWW, mapowanie kolejek oraz reguły powiadomień pracowników.
 - `docs/raport` – statyczny raport CPC (HTML + CSV) udostępniany bez logowania pod `http://127.0.0.1:8000/raport`; serwer FastAPI montuje katalog bez prawa zapisu, dzięki czemu pełni rolę tylko-do-odczytu.
 - 📁 Archiwum sesji Codex: `docs/archiwum/sesja_codex_2025-10-11.md`
 - `baza_CTIP` (katalog główny repozytorium) – dokument opisujący strukturę schematu `ctip`, procedurę połączenia oraz typowe operacje administracyjne.
 - `prototype/index.html` – statyczny prototyp interfejsu użytkownika prezentujący widok listy połączeń CTIP, panel szczegółów, szybkie akcje SMS oraz historię wiadomości (dane przykładowe, brak połączenia z API).
 
 ## Testowanie i rozwój
-Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`), klienta monitorującego (`tests/test_conect_sli.py`), kolektora CTIP (`tests/test_collector_context.py`), warstwy API (`tests/test_api_auth.py`, `tests/test_sms_schema.py`) oraz świeży zestaw weryfikacji schematu bazy (`tests/test_db_schema.py`). `tests/test_admin_backend.py` obejmuje scenariusze panelu administracyjnego, w tym logi i historię SerwerSMS (`/admin/sms/logs`, `/admin/sms/history`). Uruchom je poleceniem `python -m unittest`. W przypadku rozszerzania logiki parsowania zdarzeń oraz wysyłki SMS rekomendowane jest dopisywanie kolejnych testów (zarówno dla parsowania strumienia, jak i integracji z API SMS). Każda modyfikacja kodu powinna być od razu odzwierciedlona w dokumentacji i w sekwencjach testowych.
-
-Test `tests/test_process_ricoh_images.py` pozostaje w repozytorium, ale jest pomijany przez domyślne uruchomienie pytest, ponieważ zależy od niewersjonowanego narzędzia w `inbox/audyt_model`. Gdy lokalny plik jest dostępny, test uruchamia się jawnie poleceniem `python -m pytest -o addopts='' tests/test_process_ricoh_images.py`.
+Repozytorium zawiera testy jednostkowe handshake CTIP (`tests/test_handshake.py`), klienta monitorującego (`tests/test_conect_sli.py`), kolektora CTIP (`tests/test_collector_context.py`), warstwy API (`tests/test_api_auth.py`, `tests/test_sms_schema.py`) oraz świeży zestaw weryfikacji schematu bazy (`tests/test_db_schema.py`). `tests/test_admin_backend.py` obejmuje scenariusze panelu administracyjnego, w tym logi i historię SerwerSMS (`/admin/sms/logs`, `/admin/sms/history`), blokady konfiguracji zarządzanej przez `.env` oraz fixture wszystkich tabel używanych przez magazyn urządzeń. Testy statycznego raportu korzystają z własnego katalogu tymczasowego przekazywanego do `create_app(report_directory=...)`, dlatego nie wymagają produkcyjnego junctiona `docs/raport`. Testy zabezpieczeń startowych przekazują tymczasowe `ENV_FILE` i `VENV_DIR`, dzięki czemu działają również w izolowanym worktree bez kopiowania lokalnych sekretów. Uruchom je poleceniem `python -m unittest`. W przypadku rozszerzania logiki parsowania zdarzeń oraz wysyłki SMS rekomendowane jest dopisywanie kolejnych testów (zarówno dla parsowania strumienia, jak i integracji z API SMS). Każda modyfikacja kodu powinna być od razu odzwierciedlona w dokumentacji i w sekwencjach testowych.
   - Zadania planowane.
 ## Zadania planowane
 Szczegółowy rejestr zadań znajduje się w pliku `docs/projekt/zadania_planowane.md`.
@@ -1117,7 +949,7 @@ Aktualny plan procesu obslugi umowy znajduje sie w `docs/projekt/prace_na_teraz_
 Plan naprawczy modeli produkcyjnych znajduje sie w `docs/projekt/plan_naprawczy_modeli_produkcyjnych_2026-03-18.md`.
 Audyt master tabeli MODEL na produkcji znajduje sie w `docs/projekt/audyt_master_model_produkcja_2026-03-18.md`.
 Robocze pliki CSV do decyzji i przepiec modeli sa zapisywane w katalogu `inbox/audyt_model`.
-Pipeline zdjec Ricoh (`pipeline_zdjec_imgdev.md`, `process_ricoh_images.py`, katalogi `imgsrc/`, `imgtmp/`, `imgdev/`, `logo/`) jest utrzymywany w `inbox/audyt_model`. Docelowy format PNG dla packshotow to `1200x1667`, biale tlo, logo w lewym gornym rogu oraz nazwa pliku z prefiksem `ran_`. Dodatkowy etap ponownego pozyskiwania kandydatow po odrzuceniu korzysta z katalogow `imgsrc_retry/`, `imgtmp_retry/`, `imgdev_retry/` oraz pliku `retry_better_candidates.csv`.
+Pipeline zdjec Ricoh (`pipeline_zdjec_imgdev.md`, `process_ricoh_images.py`, katalogi `imgsrc/`, `imgtmp/`, `imgdev/`, `logo/`) jest utrzymywany lokalnie w `inbox/audyt_model` i nie stanowi części repozytorium. `tests/test_process_ricoh_images.py` pozostaje testem narzędzia, ale pełny zestaw pomija go z jawnym powodem, gdy lokalny skrypt nie jest dostępny. Docelowy format PNG dla packshotow to `1200x1667`, biale tlo, logo w lewym gornym rogu oraz nazwa pliku z prefiksem `ran_`. Dodatkowy etap ponownego pozyskiwania kandydatow po odrzuceniu korzysta z katalogow `imgsrc_retry/`, `imgtmp_retry/`, `imgdev_retry/` oraz pliku `retry_better_candidates.csv`.
 W katalogu `inbox/audyt_model/imgdev` znajduje sie tez pomocniczy `index.html` z prosta galeria wszystkich finalnych obrazow `ran_*.png`; plik mozna wrzucic na hosting do tego samego katalogu co obrazy i otwierac przez HTTP/HTTPS.
 Synchronizacja `MODEL.PLIK` na lokalnej kopii Firebird jest zautomatyzowana skryptem `scripts/firebird_sync_model_plik.py`; w trybie `FB_MODE=local` skrypt laczy sie po `127.0.0.1`, obsluguje fallback do aliasu `BAZAMS_TEST` dla kopii WSL i dopiero po `--apply` zapisuje zmiany w lokalnej bazie.
 Naprawe tabeli `MODEL` wzgledem zatwierdzonego snapshotu referencyjnego wykonuje skrypt `scripts/firebird_repair_model_master.py`; skrypt potrafi przepiac `ID_MODEL` w `MASZYNA`, `MAGAZYN`, `CENNIK` i `MZ`, usunac nadmiarowe modele oraz zwalidowac wynik 1:1 wzgledem snapshotu. Dla zdalnej bazy produkcyjnej backup trzeba wykonac osobno, skrypt uruchomic z `--skip-backup`, a snapshot referencyjny czytac przez lokalny host (`--reference-host 127.0.0.1`).

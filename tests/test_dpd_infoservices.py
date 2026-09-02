@@ -36,10 +36,24 @@ from app.services.dpd_infoservices import (
 )
 from app.services.dpd_infoservices_sync import (
     classify_dpd_event,
+    dpd_semantic_event_key,
     is_dpd_pickup_confirmation,
     persist_dpd_info_events,
 )
-from app.services.shipping_milestones import reconcile_shipping_milestones
+from app.services.dpd_tracking_dedupe import (
+    apply_dpd_tracking_dedupe,
+    preview_dpd_tracking_dedupe,
+    rollback_dpd_tracking_dedupe,
+)
+from app.services.shipping_milestones import (
+    PILOT_APPLIED_EVENT,
+    PILOT_ROLLED_BACK_EVENT,
+    ShippingMilestonePilotValidationError,
+    apply_archived_shipping_milestone_pilot,
+    preview_archived_shipping_milestone_pilot,
+    reconcile_shipping_milestones,
+    rollback_archived_shipping_milestone_pilot,
+)
 from app.services.shipping_tracking import (
     get_shipping_tracking_detail,
     list_shipping_tracking,
@@ -193,6 +207,84 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             event_data=event_data,
         )
 
+    async def _add_archived_pilot_target(
+        self,
+        session: AsyncSession,
+        *,
+        order_id: int = 18517,
+        order_table_id: int = 83517,
+        waybill: str = "1050059395731U",
+    ) -> ShippingShipment:
+        now = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+        case = ShippingCase(
+            firebird_order_table_id=order_table_id,
+            firebird_order_id=order_id,
+            firebird_order_year=2026,
+            firebird_client_id=15,
+            order_kind="Umowa",
+            invoice_required=False,
+            status="closed",
+            address_snapshot={},
+            source_snapshot={},
+            weight_kg=Decimal("2.000"),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(case)
+        await session.flush()
+        shipment = ShippingShipment(
+            shipping_case_id=case.id,
+            idempotency_key=f"pilot-{order_id}",
+            provider="dpd",
+            provider_mode="production",
+            provider_shipment_id=f"sesja-{order_id}",
+            tracking_number=waybill,
+            status="closed",
+            provider_request={},
+            firebird_status="written",
+            firebird_label_metadata_synced_at=None,
+            created_at=now,
+            updated_at=now,
+            closed_at=now,
+        )
+        session.add(shipment)
+        await session.flush()
+        return shipment
+
+    async def _add_pilot_events(
+        self,
+        session: AsyncSession,
+        *,
+        waybill: str = "1050059395731U",
+    ) -> None:
+        now = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+        session.add_all(
+            [
+                ShippingTrackingEvent(
+                    source_event_key=f"pickup-{waybill}",
+                    waybill=waybill,
+                    business_code="040101",
+                    operation_type="INSERT",
+                    description="Przesyłka odebrana przez Kuriera",
+                    event_time=datetime(2026, 8, 31, 12, 42, tzinfo=UTC),
+                    event_data=[],
+                    raw_payload={},
+                    received_at=now,
+                ),
+                ShippingTrackingEvent(
+                    source_event_key=f"delivery-{waybill}",
+                    waybill=waybill,
+                    business_code="190101",
+                    operation_type="INSERT",
+                    description="Przesyłka doręczona",
+                    event_time=datetime(2026, 9, 1, 8, 1, tzinfo=UTC),
+                    event_data=[],
+                    raw_payload={},
+                    received_at=now,
+                ),
+            ]
+        )
+
     async def test_zapis_jest_idempotentny_i_cancel_przelicza_status(self) -> None:
         insert = self._event()
         insert_without_response_id = replace(insert, event_id=None)
@@ -231,6 +323,211 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event_count, 2)
         self.assertEqual(parcel.status_category, "other")
         self.assertIsNone(parcel.latest_business_code)
+
+    async def test_rozne_identyfikatory_soap_tworzace_jeden_status_sa_grupowane(self) -> None:
+        first_event = self._event(object_id="obiekt-kanal")
+        alias_event = replace(
+            first_event,
+            event_id="id-historia",
+            object_id="obiekt-historia",
+            description="Opis zwracany tylko przez historię listu",
+            depot="1326",
+            depot_name="Poznań",
+            country="PL",
+            package_reference="",
+            parcel_reference="",
+        )
+        alias_cancel = replace(
+            alias_event,
+            event_id="cancel-historia",
+            waybill="",
+            business_code="",
+            description="Anulowanie zdarzenia",
+            operation_type="CANCEL",
+        )
+        async with self.session_factory() as session:
+            first = await persist_dpd_info_events(
+                session,
+                events=(first_event,),
+                channel="kanal-klienta",
+            )
+            await session.commit()
+            alias = await persist_dpd_info_events(
+                session,
+                events=(alias_event,),
+                channel="historia-listu",
+            )
+            await session.commit()
+
+            rows = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(ShippingTrackingEvent.operation_type == "INSERT")
+                        .order_by(ShippingTrackingEvent.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            detail_before = await get_shipping_tracking_detail(
+                session,
+                waybill=first_event.waybill,
+            )
+            cancellation = await persist_dpd_info_events(
+                session,
+                events=(alias_cancel,),
+                channel="historia-listu",
+            )
+            await session.commit()
+            detail_after = await get_shipping_tracking_detail(
+                session,
+                waybill=first_event.waybill,
+            )
+
+        self.assertEqual(first["duplicates"], 0)
+        self.assertEqual(alias["duplicates"], 1)
+        self.assertEqual(len(rows), 2)
+        self.assertIsNone(rows[0].canonical_event_id)
+        self.assertEqual(rows[1].canonical_event_id, rows[0].id)
+        self.assertEqual(rows[0].semantic_event_key, rows[1].semantic_event_key)
+        self.assertEqual(len(detail_before["events"]), 1)
+        self.assertEqual(cancellation["cancelled"], 1)
+        self.assertEqual(len(detail_after["events"]), 2)
+        self.assertTrue(all(row.is_cancelled for row in rows))
+        self.assertTrue(
+            next(item for item in detail_after["events"] if item["operation_type"] == "INSERT")[
+                "is_cancelled"
+            ]
+        )
+
+    def test_klucz_semantyczny_ignoruje_opisy_danych_ale_rozroznia_wartosci(self) -> None:
+        event = self._event(
+            code="170310",
+            description="Wysłano powiadomienie",
+            event_data=(
+                DpdInfoEventData(code="01", description=None, value="test@example.com"),
+                DpdInfoEventData(code="03", description=None, value="SENT"),
+            ),
+        )
+        alias = replace(
+            event,
+            description="Powiadomienie mail",
+            depot="1305",
+            depot_name="Warszawa",
+            parcel_reference="",
+            event_data=(
+                DpdInfoEventData(code="01", description="Adresat", value="test@example.com"),
+                DpdInfoEventData(code="03", description="Status", value="SENT"),
+            ),
+        )
+        different_recipient = replace(
+            alias,
+            event_data=(
+                DpdInfoEventData(code="01", description="Adresat", value="other@example.com"),
+                DpdInfoEventData(code="03", description="Status", value="SENT"),
+            ),
+        )
+
+        def key(value: DpdInfoEvent) -> str:
+            return dpd_semantic_event_key(
+                source_event_key=str(value.object_id),
+                operation_type=value.operation_type,
+                waybill=value.waybill,
+                business_code=value.business_code,
+                description=value.description,
+                event_time=value.event_time,
+                depot=value.depot,
+                depot_name=value.depot_name,
+                country=value.country,
+                package_reference=value.package_reference,
+                parcel_reference=value.parcel_reference,
+                event_data=value.event_data,
+            )
+
+        self.assertEqual(key(event), key(alias))
+        self.assertNotEqual(key(event), key(different_recipient))
+
+    async def test_historyczna_kanonizacja_ma_dry_run_apply_i_rollback(self) -> None:
+        first_event = self._event(object_id="historyczny-1")
+        alias_event = replace(
+            first_event,
+            event_id="historyczny-alias",
+            object_id="historyczny-2",
+        )
+        async with self.session_factory() as session:
+            await persist_dpd_info_events(
+                session,
+                events=(first_event,),
+                channel="kanal-klienta",
+            )
+            await persist_dpd_info_events(
+                session,
+                events=(alias_event,),
+                channel="historia-listu",
+            )
+            await session.flush()
+            rows = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent).where(
+                            ShippingTrackingEvent.operation_type == "INSERT"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                row.semantic_event_key = None
+                row.canonical_event_id = None
+            await session.commit()
+
+            preview = await preview_dpd_tracking_dedupe(session)
+            applied = await apply_dpd_tracking_dedupe(
+                session,
+                expected_state_token=preview["state_token"],
+            )
+            await session.commit()
+            canonicalized = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(ShippingTrackingEvent.operation_type == "INSERT")
+                        .order_by(ShippingTrackingEvent.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            canonical_links = [row.canonical_event_id for row in canonicalized]
+            rolled_back = await rollback_dpd_tracking_dedupe(
+                session,
+                run_id=applied["run_id"],
+                rollback_state=applied["rollback_state"],
+            )
+            await session.commit()
+            restored = list(
+                (
+                    await session.execute(
+                        select(ShippingTrackingEvent)
+                        .where(ShippingTrackingEvent.operation_type == "INSERT")
+                        .order_by(ShippingTrackingEvent.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        self.assertEqual(preview["technical_insert_count"], 2)
+        self.assertEqual(preview["logical_event_count"], 1)
+        self.assertEqual(preview["duplicate_count"], 1)
+        self.assertEqual(applied["change_count"], 2)
+        self.assertIsNone(canonical_links[0])
+        self.assertEqual(canonical_links[1], canonicalized[0].id)
+        self.assertEqual(rolled_back["restored_count"], 2)
+        self.assertTrue(all(row.semantic_event_key is None for row in restored))
+        self.assertTrue(all(row.canonical_event_id is None for row in restored))
 
     async def test_przenumerowanie_i_wspolna_paczka_sa_widoczne_w_rejestrze(self) -> None:
         replacement = "0000999988887B"
@@ -439,6 +736,209 @@ class DpdInfoPersistenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("anulowane", shipment.firebird_milestone_error)
             cancelled_writer.assert_not_called()
 
+    async def test_pilot_archiwalny_obejmuje_tylko_wskazane_zlecenie_wspolnego_listu(
+        self,
+    ) -> None:
+        waybill = "1050059395731U"
+        firebird_preview = {
+            "state_token": "firebird-token",
+            "order": {
+                "order_table_id": 83517,
+                "order_id": 18517,
+                "order_year": 2026,
+                "status": "Z",
+                "tracking_number": waybill,
+            },
+            "changed_fields": ["DATA_PRZES_WE", "PRZESYLKA_WE"],
+            "before": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": f"Wysłana paczka 31.08.2026 {waybill}",
+                "DATA_PRZES_WE": None,
+                "PRZESYLKA_WE": None,
+            },
+            "after": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": f"Wysłana paczka 31.08.2026 {waybill}",
+                "DATA_PRZES_WE": "2026-09-01",
+                "PRZESYLKA_WE": "01.09.2026 10:01 — Doręczona: Przesyłka doręczona",
+            },
+        }
+        async with self.session_factory() as session:
+            target = await self._add_archived_pilot_target(session, waybill=waybill)
+            other = await self._add_archived_pilot_target(
+                session,
+                order_id=18518,
+                order_table_id=83518,
+                waybill=waybill,
+            )
+            await self._add_pilot_events(session, waybill=waybill)
+            await session.commit()
+            writer = MagicMock(
+                return_value={
+                    "status": "written",
+                    "changed_fields": ["DATA_PRZES_WE", "PRZESYLKA_WE"],
+                    "state_token_before": "firebird-token",
+                }
+            )
+            restorer = MagicMock(
+                return_value={
+                    "status": "restored",
+                    "changed_fields": ["DATA_PRZES_WE", "PRZESYLKA_WE"],
+                }
+            )
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", False),
+                patch(
+                    "app.services.shipping_milestones.preview_shipping_milestones_to_order",
+                    return_value=firebird_preview,
+                ) as previewer,
+                patch(
+                    "app.services.shipping_milestones.write_shipping_milestones_to_order",
+                    writer,
+                ),
+                patch(
+                    "app.services.shipping_milestones.restore_shipping_milestones_to_order",
+                    restorer,
+                ),
+            ):
+                preview = await preview_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                )
+                writer.assert_not_called()
+                applied = await apply_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                    expected_state_token=preview["state_token"],
+                )
+                await session.commit()
+                await session.refresh(target)
+                await session.refresh(other)
+                applied_events = list(
+                    (
+                        await session.execute(
+                            select(ShippingEvent).where(
+                                ShippingEvent.event_type == PILOT_APPLIED_EVENT
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                self.assertEqual(target.firebird_pickup_event_key, f"pickup-{waybill}")
+                self.assertEqual(target.firebird_delivery_event_key, f"delivery-{waybill}")
+                self.assertIsNone(other.firebird_pickup_event_key)
+                self.assertIsNone(other.firebird_delivery_event_key)
+                self.assertEqual(len(applied_events), 1)
+                self.assertEqual(applied_events[0].payload["pilot_run_id"], applied["pilot_run_id"])
+                previewer.assert_called()
+                writer.assert_called_once()
+                self.assertEqual(writer.call_args.kwargs["expected_state_token"], "firebird-token")
+
+                rolled_back = await rollback_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                    pilot_run_id=applied["pilot_run_id"],
+                )
+                await session.commit()
+                await session.refresh(target)
+
+            self.assertEqual(rolled_back["status"], "restored")
+            self.assertIsNone(target.firebird_pickup_event_key)
+            self.assertIsNone(target.firebird_delivery_event_key)
+            restorer.assert_called_once()
+            rollback_count = await session.scalar(
+                select(func.count(ShippingEvent.id)).where(
+                    ShippingEvent.event_type == PILOT_ROLLED_BACK_EVENT
+                )
+            )
+            self.assertEqual(rollback_count, 1)
+
+    async def test_pilot_archiwalny_blokuje_nieaktualny_token(self) -> None:
+        waybill = "1050059395731U"
+        firebird_preview = {
+            "state_token": "firebird-token",
+            "order": {
+                "order_table_id": 83517,
+                "order_id": 18517,
+                "order_year": 2026,
+                "status": "Z",
+                "tracking_number": waybill,
+            },
+            "changed_fields": ["DATA_PRZES_WE"],
+            "before": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": None,
+                "DATA_PRZES_WE": None,
+                "PRZESYLKA_WE": None,
+            },
+            "after": {
+                "DATA_PRZES": "2026-08-31",
+                "WYKONANIE": None,
+                "DATA_PRZES_WE": "2026-09-01",
+                "PRZESYLKA_WE": None,
+            },
+        }
+        async with self.session_factory() as session:
+            await self._add_archived_pilot_target(session, waybill=waybill)
+            await self._add_pilot_events(session, waybill=waybill)
+            await session.commit()
+            writer = MagicMock()
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", False),
+                patch(
+                    "app.services.shipping_milestones.preview_shipping_milestones_to_order",
+                    return_value=firebird_preview,
+                ),
+                patch(
+                    "app.services.shipping_milestones.write_shipping_milestones_to_order",
+                    writer,
+                ),
+                self.assertRaisesRegex(
+                    ShippingMilestonePilotValidationError,
+                    "Ponów podgląd",
+                ),
+            ):
+                await apply_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill=waybill,
+                    expected_state_token="nieaktualny-token",
+                )
+
+            writer.assert_not_called()
+            event_count = await session.scalar(select(func.count(ShippingEvent.id)))
+            self.assertEqual(event_count, 0)
+
+    async def test_pilot_archiwalny_wymaga_wylaczonej_globalnej_synchronizacji(
+        self,
+    ) -> None:
+        async with self.session_factory() as session:
+            await self._add_archived_pilot_target(session)
+            await self._add_pilot_events(session)
+            await session.commit()
+            with (
+                patch.object(settings, "shipping_dpd_firebird_milestones_enabled", True),
+                self.assertRaisesRegex(
+                    ShippingMilestonePilotValidationError,
+                    "Globalna synchronizacja",
+                ),
+            ):
+                await preview_archived_shipping_milestone_pilot(
+                    session,
+                    order_id=18517,
+                    order_year=2026,
+                    waybill="1050059395731U",
+                )
+
 
 class DpdInfoSynchronizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_potwierdzenie_dpd_nastepuje_po_commicie_partii(self) -> None:
@@ -473,7 +973,7 @@ class DpdInfoSynchronizationTests(unittest.IsolatedAsyncioTestCase):
 
         async def persist(*_args, **_kwargs) -> dict[str, int]:
             steps.append("persist")
-            return {"inserted": 1, "cancelled": 0}
+            return {"inserted": 1, "duplicates": 0, "cancelled": 0}
 
         with (
             patch.object(settings, "dpd_info_channel", "123456"),

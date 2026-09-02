@@ -64,6 +64,7 @@ class TestEnvironmentPreflightTests(unittest.TestCase):
                 google_sheets_test_spreadsheet_title="Zerowki_test",
                 google_sheets_workflow_devices_sheet="Urzadzenia_magazyn",
                 device_sheet_outbox_scheduler_enabled=True,
+                workflow_sheet_status_cache_scheduler_enabled=False,
             ),
             mock.patch.object(test_env_preflight.Path, "is_file", return_value=True),
         ):

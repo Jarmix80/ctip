@@ -39,7 +39,12 @@ def test_build_legacy_query_koduje_tylko_niezbedne_separatory():
     assert "+" not in query
 
 
-def test_fallback_launch_url_zostawia_format_nazwy_zgodny_z_decodeuri():
+def test_fallback_launch_url_zostawia_format_nazwy_zgodny_z_decodeuri(monkeypatch):
+    monkeypatch.setattr(
+        grenke_launch.settings,
+        "grenke_app_base_url",
+        "https://newonline.leasingoptymalny.pl",
+    )
     url = grenke_launch._fallback_launch_url(  # noqa: SLF001
         "cmwwgdcxivwuhmtr",
         [
@@ -59,7 +64,12 @@ def test_fallback_launch_url_zostawia_format_nazwy_zgodny_z_decodeuri():
     )
 
 
-def test_fallback_launch_url_bez_dodanych_pozycji_zwraca_czysty_link():
+def test_fallback_launch_url_bez_dodanych_pozycji_zwraca_czysty_link(monkeypatch):
+    monkeypatch.setattr(
+        grenke_launch.settings,
+        "grenke_app_base_url",
+        "https://newonline.leasingoptymalny.pl",
+    )
     assert grenke_launch._fallback_launch_url("abc123", [{"added": False}]) == (  # noqa: SLF001
         "https://newonline.leasingoptymalny.pl/kalkulacja/abc123"
     )
@@ -256,6 +266,11 @@ def test_launch_grenke_prefill_mapuje_reprezentantow_do_kroku3(monkeypatch):
 
 
 def test_launch_grenke_prefill_wysyla_rate_jako_liste_opcji(monkeypatch):
+    monkeypatch.setattr(
+        grenke_launch.settings,
+        "grenke_app_base_url",
+        "https://newonline.leasingoptymalny.pl",
+    )
     captured_payload: dict[str, object] = {}
 
     class _DummyAsyncClient:

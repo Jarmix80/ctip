@@ -38,11 +38,17 @@ async def test_email_configuration(
     sender_name = (
         payload.sender_name if payload and payload.sender_name is not None else config.sender_name
     )
-    sender_address = (
-        payload.sender_address
-        if payload and payload.sender_address is not None
-        else config.sender_address
-    )
+    sender_address = config.sender_address
+    if (
+        payload
+        and payload.sender_address is not None
+        and str(payload.sender_address).strip().casefold()
+        != str(sender_address or "").strip().casefold()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Test SMTP nie może używać adresu innego niż kanoniczny nadawca.",
+        )
     use_tls = payload.use_tls if payload and payload.use_tls is not None else config.use_tls
     use_ssl = payload.use_ssl if payload and payload.use_ssl is not None else config.use_ssl
     password_override = payload.password if payload and payload.password is not None else password

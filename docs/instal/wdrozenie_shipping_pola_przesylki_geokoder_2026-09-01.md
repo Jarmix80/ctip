@@ -63,6 +63,64 @@ Po kontroli healthchecków i pozostałych modułów należy przeprowadzić jeden
 
 Rollback funkcjonalny polega na ustawieniu `SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED=false` i restarcie wyłącznie `CTIP-Web`. Addytywnych kolumn PostgreSQL nie trzeba usuwać.
 
+### Kontrolowany pilot na zleceniu archiwalnym
+
+Archiwalne zlecenie może służyć do sprawdzenia rzeczywistych zdarzeń
+InfoServices oraz zapisu `DATA_PRZES`, `DATA_PRZES_WE`, `WYKONANIE` i
+`PRZESYLKA_WE`. Nie zastępuje ono świeżego pilota generowania etykiety, pola
+`PRZESYLKA` ani `ADRES_PRZES`.
+
+Podczas całej operacji pozostaw:
+
+```dotenv
+SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED=false
+```
+
+Najpierw odśwież wyłącznie wskazany list, a następnie wykonaj dry-run:
+
+```bash
+python scripts/dpd_infoservices_backfill.py --waybill <numer_listu> --apply
+python scripts/shipping_dpd_milestone_pilot.py \
+  --order <numer_zlecenia/rok> \
+  --waybill <numer_listu>
+```
+
+Raport dry-run zawiera token stanu i dokładną frazę potwierdzającą. Zapis wolno
+uruchomić dopiero po wykonaniu backupu PostgreSQL i Firebirda oraz kontroli pól
+MS:
+
+```bash
+python scripts/shipping_dpd_milestone_pilot.py \
+  --order <numer_zlecenia/rok> \
+  --waybill <numer_listu> \
+  --apply \
+  --state-token <token_z_dry_run> \
+  --confirmation "URUCHOM PILOT DPD <numer_zlecenia/rok> <numer_listu>"
+```
+
+Skrypt odrzuca zlecenie spoza Archiwum, przesyłkę inną niż produkcyjna DPD,
+rekord objęty już automatyczną synchronizacją, brak pełnej sekwencji odbioru i
+doręczenia, niezgodność numeru listu oraz każdą zmianę stanu po dry-run. Operacja
+dotyczy dokładnie jednego powiązania `zlecenie + list`, również gdy ten sam list
+obsługuje wspólną paczkę.
+
+Raport zapisu zwraca `pilot_run_id`. Rollback wymaga tego identyfikatora oraz
+osobnej frazy potwierdzającej i przywraca tylko pola zmienione przez wskazany
+przebieg. Jeżeli którekolwiek z tych pól zostało później zmienione ręcznie,
+rollback jest blokowany:
+
+```bash
+python scripts/shipping_dpd_milestone_pilot.py \
+  --order <numer_zlecenia/rok> \
+  --waybill <numer_listu> \
+  --rollback <pilot_run_id> \
+  --confirmation "WYCOFAJ PILOT DPD <pilot_run_id>"
+```
+
+Raporty są zapisywane w ignorowanym przez Git katalogu
+`runtime/shipping_pilots/`. Dziennik `shipping_event` zachowuje zarówno zapis,
+jak i ewentualny rollback; wpisów audytowych nie należy usuwać.
+
 ## Oddzielny audyt testów administracyjnych
 
 Po zakończeniu pilota Shipping należy przeprowadzić osobny audyt ośmiu testów

@@ -193,9 +193,22 @@ function Send-EmailAlert {
         $secure = ConvertTo-SecureString -String $env:EMAIL_PASSWORD -AsPlainText -Force
         $cred = [PSCredential]::new($env:EMAIL_USERNAME, $secure)
     }
+    $mailParams = @{
+        To = $env:ALERT_EMAIL_TO
+        From = $from
+        SmtpServer = $env:EMAIL_HOST
+        Port = $port
+        Subject = $Subject
+        Body = $Body
+        UseSsl = $useSsl
+        Credential = $cred
+        ErrorAction = "Stop"
+    }
+    if ($env:EMAIL_REPLY_TO_ADDRESS) {
+        $mailParams["ReplyTo"] = $env:EMAIL_REPLY_TO_ADDRESS
+    }
     try {
-        Send-MailMessage -To $env:ALERT_EMAIL_TO -From $from -SmtpServer $env:EMAIL_HOST `
-            -Port $port -Subject $Subject -Body $Body -UseSsl:$useSsl -Credential $cred -ErrorAction Stop
+        Send-MailMessage @mailParams
         Write-Log "Email alert wyslany." "INFO"
     } catch {
         Write-Log ("Email alert nieudany: {0}" -f $_.Exception.Message) "WARN"

@@ -64,19 +64,6 @@
 - Rozszerzono `ctip.form_workflow_case` o statusy `WAITING_SIGNATURE`, `APPROVED_ORDER`, `REJECTED_GRENKE` oraz pola terminów i historii: `signature_deadline_at`, `resources_release_due_at`, `resources_released_at`, `status_changed_at`, `status_source`, `status_history`.
 - Dodano indeksy `ix_form_request_archive_bucket`, `ix_form_request_archive_due_at` i `ix_form_workflow_case_resources_release_due_at` dla list archiwum i automatycznego zwalniania zasobów.
 
-## 2026-05-14
-- Rozszerzono ograniczenie `admin_user_role_check` o rolę `serwisant`, przeznaczoną do dostępu do modułu obsługi dostaw.
-- Dodano tabelę `ctip.delivery_case`, która przechowuje sprawy dostaw tworzone automatycznie z workflow GRENKE po statusie `APPROVED_ORDER` albo ręcznie z poziomu modułu `/delivery`.
-- Dodano tabelę `ctip.delivery_case_device`, która przechowuje urządzenia przypisane do sprawy dostawy wraz z referencją do urządzenia workflow, numerem seryjnym, ewidencją i identyfikatorem `MASZYNA`.
-- Dodano tabelę `ctip.grenke_contract_end`, która przechowuje kandydatów oraz potwierdzone daty końca umów GRENKE; dopiero status `confirmed` aktywuje przypomnienia.
-- Dodano indeksy `idx_delivery_case_source_status`, `idx_delivery_case_delivery_date`, `idx_delivery_case_firebird_client`, `idx_delivery_case_device_case`, `idx_grenke_contract_end_status_date` i `idx_grenke_contract_end_pending_prefill` dla list dostaw oraz kalendarza końców umów.
-
-## 2026-05-15
-- Rozszerzono `ctip.delivery_case` o kolumnę `case_type`, aby jedna lista obsługiwała dostawy oraz odbiory urządzeń od klienta.
-- Rozszerzono `ctip.delivery_case_device` o kolumnę `device_role`, rozróżniającą urządzenia dowożone i odbierane.
-- Dodano tabele `ctip.delivery_case_task`, `ctip.delivery_case_file` oraz `ctip.delivery_document_template` do planowania prac serwisu, przechowywania plików spraw i rejestrowania wzorów dokumentów.
-- Dodano indeksy `idx_delivery_case_type_status`, `idx_delivery_case_device_machine`, `idx_delivery_case_task_case`, `idx_delivery_case_task_due`, `idx_delivery_case_file_case` i `idx_delivery_document_template_active` dla widoku `/delivery`.
-
 ## 2026-05-20
 - Rozszerzono ograniczenie `assistant_tool_call_log_tool_name_check` o narzędzia `workflow_devices_audit` oraz `email_send_report`, aby log narzędzi asystenta akceptował deterministyczny audyt urządzeń i raporty e-mail.
 
@@ -89,11 +76,6 @@
 - Rozszerzono workflow formularzy o status `CLOSED_NOT_REALIZED` (`Zamknięta bez realizacji`) i bucket archiwum `closed_other`.
 - `ctip.form_request` otrzymał rozszerzone ograniczenie `form_request_archive_bucket_check` (`accepted|rejected|unfilled|ksero_partner|closed_other`), a `ctip.form_workflow_case` ograniczenie `form_workflow_case_business_status_check` uwzględnia nowy status.
 - Status `CLOSED_NOT_REALIZED` kończy sprawę bez realizacji, uruchamia pełne zwolnienie zasobów i trafia po archiwizacji do menu „Odrzucone inne”.
-
-## 2026-06-19
-- Rozszerzono `ctip.form_workflow_case` o kolumny `grenke_contract_start_date` i `kp_contract_start_date`, aby rozdzielić początek umowy GRENKE od początku umowy Ksero-Partner.
-- Rozszerzono `ctip.grenke_contract_end` o kolumnę `grenke_contract_start_date`, kopiowaną z workflow do kalendarza końców umów GRENKE.
-- Migracja uzupełnia `grenke_contract_start_date` z pierwszego wpisu statusu `APPROVED_ORDER`/`APPROVED` w `status_history`, a `kp_contract_start_date` z istniejącego `delivery_date`.
 
 ## 2026-07-23
 - Dodano idempotentny rejestr przyjęć urządzeń: `ctip.device_intake_operation` i `ctip.device_inventory_unit`. Rejestr przechowuje mapowania PZ, `ZAKPOZYCJA`, `MAGAZYN`, `MASZYNA`, serialu i numeru KP.
@@ -112,47 +94,14 @@
 - Rozszerzono `ctip.admin_user` o osobne uprawnienie `can_withdraw_device_pz`; administrator zachowuje prawo niezależnie od wartości pola.
 - Rozszerzono `ctip.admin_user` o kontrolowaną preferencję `device_theme` (`blue`, `graphite`, `mint`), dzięki czemu kolorystyka modułu `/device` jest przypisana do konta użytkownika.
 
-- Dodano centralny katalog tożsamości botów w tabelach `bot_identity_customer`, `bot_identity_subject`, `bot_identity_phone`, `bot_identity_binding` i `bot_identity_device`.
-- Dodano audytowalne rozstrzyganie duplikatów telefonu przez `bot_identity_override` oraz historię prób w `bot_identity_resolution`.
-- Dodano krótkotrwałe uprawnienia `bot_disclosure_grant`; pełny numer seryjny jest dostępny wyłącznie po zaufanym powiązaniu i potwierdzeniu jego aktualności.
-- Dodano historię synchronizacji `bot_identity_sync_run`, progi świeżości 15/60 minut i ochronę przed przypadkową dezaktywacją przy niepełnym odczycie Firebird.
-- Źródłem reguł kont mobilnych jest `Jarmix80/bazams@9e2d36073f943bb9b2926edbf00e55458ddc2cf9`; wartości `KONTAKT.LOCK_USER` nie są odczytywane ani kopiowane.
-
-## 2026-07-27
-
-- Dodano rewizje gałęzi urządzeń `4e2a9c7d1b60`–`c4d8e2f6a1b3` do wspólnego grafu i scalono je z gałęzią umów/dostaw rewizją `d6f1a8c3e740`; graf Alembic ma jeden head.
-- Rozszerzono katalog tożsamości na wszystkich aktywnych klientów, kontakty, telefony firm i urządzenia; konta mobilne zachowują wyższy poziom zaufania.
-- Dodano zaszyfrowany NIP, indeks HMAC NIP oraz stan weryfikacji NIP w rozpoznaniu. Zwykły kontakt wymaga poprawnego NIP przed potwierdzeniem firmy.
-- Dodano haszowane, krótkotrwałe wyzwania SMS dla izolowanego środowiska testowego.
-- Dodano tabele `crm_case` i `crm_case_event` dla trwałych spraw Centrum Obsługi, idempotencji, kolejek, deklarowanego operatora, osi zdarzeń i retencji 360 dni.
-- Reset LAB usuwa wyłącznie sprawy oznaczone `is_lab` i zachowuje zagregowany wpis w `admin_audit_log`.
-- Lokalna baza `ctip_test` została zmigrowana z `c4d8e2f6a1b3` do `e2b7c4d9a610` po wykonaniu zweryfikowanego backupu; nie wykonano migracji produkcyjnej.
-
-## 2026-07-28
-
-- Migracja `a6f3c8d2e910` dodaje losowe i unikalne `bot_identity_device.device_ref`, niezależne od identyfikatora Firebird.
-- Projekcja urządzenia otrzymuje `bot_identity_device.image_url`, synchronizowane z bezpiecznie zweryfikowanego `MODEL.PLIK`.
-- `crm_case.device_refs` zapisuje uporządkowany wybór maksymalnie 20 urządzeń przy zachowaniu zgodności z pojedynczym `device_label`.
-- Pełny numer seryjny w kontrakcie CHAT_KP jest dostępny dopiero po poprawnej weryfikacji SMS; kontrakt wewnętrzny nadal wymaga ważnego i jednorazowego `disclosure_grant`.
-
-## 2026-07-30
-
-- Migracja `f3a7c9e2d610` upraszcza kolejki Centrum Obsługi do `sales`, `service_it`, `contracts` i `other`.
-- Historyczne sprawy `meters` są przenoszone do `contracts` z kategorią `meters`, a `accounting` do `other` z zachowaniem kategorii źródłowej.
-- Tabela `ctip.crm_case` otrzymuje obowiązkową kolumnę `category`, która zachowuje dokładny rodzaj formularza niezależnie od kolejki operacyjnej.
-- Tabela `ctip.admin_user` otrzymuje cztery niezależne flagi powiadomień CRM: SMS/e-mail dla Handlu oraz SMS/e-mail dla pozostałych kolejek.
-
 ## 2026-07-31
 - Ograniczono unikalność znormalizowanego serialu i numeru KP w `ctip.device_inventory_unit` do wpisów o statusie `active`. Wycofana historia PZ nie blokuje dzięki temu ponownego przyjęcia tego samego fizycznego urządzenia, a równoległe aktywne duplikaty nadal są blokowane.
 
 ## 2026-08-31
 - Rozszerzono `ctip.shipping_case` o opcjonalną kolumnę `label_text`, która przechowuje zatwierdzoną przez operatora treść drukowanych pól `ref1` i `content` etykiety DPD.
 - Istniejące sprawy pozostają zgodne z migracją dzięki wartości `NULL`; treść jest dla nich wyliczana z numeru zlecenia oraz zapisanych części przy kolejnym użyciu modułu Shipping.
-
 ## 2026-09-01
-- Migracja `f7b2d4e6a810` scala gałęzie wysyłek oraz katalogu tożsamości i CRM w jeden kanoniczny koniec grafu Alembic.
-- Migracja scalająca nie zmienia tabel ani danych; zapewnia jednoznaczne działanie polecenia `alembic upgrade head`.
-- Narzędzie `scripts/reconcile_test_alembic_state.py` pozwala jednorazowo uzgodnić wyłącznie znacznik historycznej bazy `ctip_test`, ale dopiero po walidacji całego schematu modeli, danych krytycznych oraz sum backupu PostgreSQL i Firebird.
 - Migracja `a1c3e5f7b9d2` dodaje do `ctip.admin_user` kontrolowaną preferencję `shipping_layout` (`v2`, `legacy`) z domyślną wartością `v2`, dzięki czemu wybór wyglądu Shipping pozostaje przypisany do konta użytkownika.
 - Migracja `d6e8f0a2b4c7` rozszerza `ctip.shipping_shipment` o znaczniki idempotentnego zapisu numeru i adresu etykiety oraz zdarzeń odbioru, doręczenia i istotnego opisu DPD do Menadżera Serwisu.
+- Migracja `f2b7c9d4e6a1` dodaje semantyczny klucz zdarzenia, relację aliasu do rekordu kanonicznego oraz licznik duplikatów przebiegu InfoServices. Surowe rekordy techniczne nie są usuwane; status przesyłki, oś czasu i kamienie milowe korzystają z jednego rekordu kanonicznego dla każdego logicznego zdarzenia.
 - Pola kosztów przesyłki w Firebirdzie pozostają poza automatyzacją, ponieważ DPDServices i InfoServices nie przekazują wiarygodnego kosztu rozliczeniowego umowy przewozowej.

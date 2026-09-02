@@ -14,24 +14,21 @@ from app.services.section_permissions import default_sections_for_role, normaliz
 class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
-    def test_kamienie_milowe_shipping_sa_jedynym_headem_alembic(self) -> None:
+    def test_deduplikacja_infoservices_jest_jedynym_headem_alembic(self) -> None:
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["d6e8f0a2b4c7"])
+        self.assertEqual(scripts.get_heads(), ["f2b7c9d4e6a1"])
+        dedupe_revision = scripts.get_revision("f2b7c9d4e6a1")
+        self.assertIsNotNone(dedupe_revision)
+        self.assertEqual(dedupe_revision.down_revision, "d6e8f0a2b4c7")
+
         milestone_revision = scripts.get_revision("d6e8f0a2b4c7")
         self.assertIsNotNone(milestone_revision)
         self.assertEqual(milestone_revision.down_revision, "a1c3e5f7b9d2")
 
         preference_revision = scripts.get_revision("a1c3e5f7b9d2")
         self.assertIsNotNone(preference_revision)
-        self.assertEqual(preference_revision.down_revision, "f7b2d4e6a810")
-
-        merge_revision = scripts.get_revision("f7b2d4e6a810")
-        self.assertIsNotNone(merge_revision)
-        self.assertEqual(
-            set(merge_revision.down_revision),
-            {"f3a7c9e2d610", "e4a8c1d9f2b7"},
-        )
+        self.assertEqual(preference_revision.down_revision, "e4a8c1d9f2b7")
 
         revision = scripts.get_revision("e4a8c1d9f2b7")
         self.assertIsNotNone(revision)

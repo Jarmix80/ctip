@@ -58,6 +58,34 @@ _FIELD_LABELS = {
     "phone": "telefon",
     "email": "e-mail",
 }
+
+
+def dpd_recipient_field_limits() -> dict[str, dict[str, int | None]]:
+    """Zwraca limity danych odbiorcy wspólne dla backendu i formularza Shipping."""
+    return {
+        "company_name": {
+            "api_limit": _API_FIELD_LIMITS["company"],
+            "label_limit": _LABEL_FIELD_LIMITS["receiver.company"],
+        },
+        "contact_name": {
+            "api_limit": _API_FIELD_LIMITS["name"],
+            "label_limit": _LABEL_FIELD_LIMITS["receiver.name"],
+        },
+        "street": {
+            "api_limit": _API_FIELD_LIMITS["address"],
+            "label_limit": _LABEL_FIELD_LIMITS["receiver.address"],
+        },
+        "city": {
+            "api_limit": _API_FIELD_LIMITS["city"],
+            "label_limit": _LABEL_FIELD_LIMITS["receiver.city"],
+        },
+        "email": {
+            "api_limit": _API_FIELD_LIMITS["email"],
+            "label_limit": None,
+        },
+    }
+
+
 _DPD_ERROR_LABELS = {
     "DISABLED_API": "DPD wyłączyło dostęp do tej metody API.",
     "DISALLOWED_FID": "Podany FID nie ma dostępu do operacji DPD.",
@@ -334,6 +362,7 @@ class DpdShippingClient:
             "sender_ready": bool(sender_ready),
             "base_url": self.base_url if self.mode != "mock" else None,
             "demo_receiver_override": self.mode == "demo",
+            "recipient_field_limits": dpd_recipient_field_limits(),
         }
 
     def _validate(self) -> None:
@@ -836,6 +865,7 @@ __all__ = [
     "DpdShipmentResult",
     "DpdShippingClient",
     "DpdTransportError",
+    "dpd_recipient_field_limits",
     "normalize_dpd_label_text",
     "split_dpd_label_text",
 ]

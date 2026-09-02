@@ -53,9 +53,27 @@ def test_run_server_with_firebird_requires_confirmation_for_non_test_env() -> No
     assert "ALLOW_PRODUCTION_START=true ./run_server_with_firebird.sh" in result.stderr
 
 
-def test_run_server_with_firebird_allows_test_env_without_production_flag() -> None:
+def test_run_server_with_firebird_allows_test_env_without_production_flag(tmp_path: Path) -> None:
     """Srodowisko .env.test powinno ominac blokade produkcyjna."""
-    empty_path_dir = ROOT_DIR / ".cache" / "test-bin-empty"
+    test_env = tmp_path / ".env.test"
+    test_env.write_text(
+        "PBX_HOST=127.0.0.1\n"
+        "PGHOST=127.0.0.1\n"
+        "PGDATABASE=ctip_test\n"
+        "FB_HOST=127.0.0.1\n"
+        "FB_V_HOST=127.0.0.1\n"
+        "SMS_TEST_MODE=true\n",
+        encoding="utf-8",
+    )
+    venv_dir = tmp_path / ".venv"
+    venv_bin = venv_dir / "bin"
+    venv_bin.mkdir(parents=True)
+    for executable in ("python", "uvicorn"):
+        stub = venv_bin / executable
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    empty_path_dir = tmp_path / "test-bin-empty"
     empty_path_dir.mkdir(parents=True, exist_ok=True)
     tmux_stub = empty_path_dir / "tmux"
     tmux_stub.write_text(
@@ -75,7 +93,8 @@ def test_run_server_with_firebird_allows_test_env_without_production_flag() -> N
     result = _run_script(
         "run_server_with_firebird.sh",
         env={
-            "ENV_FILE": str(ROOT_DIR / ".env.test"),
+            "ENV_FILE": str(test_env),
+            "VENV_DIR": str(venv_dir),
             "ALLOW_PRODUCTION_START": "false",
             "START_FIREBIRD": "never",
             "SESSION_NAME": "ctip-guard-test",
@@ -130,6 +149,7 @@ def test_run_server_with_firebird_defaults_to_env_test() -> None:
     script_content = (ROOT_DIR / "run_server_with_firebird.sh").read_text(encoding="utf-8")
 
     assert 'ENV_FILE="${ENV_FILE:-${WORKDIR}/.env.test}"' in script_content
+    assert 'VENV_DIR="${VENV_DIR:-${WORKDIR}/.venv}"' in script_content
     assert 'SESSION_NAME="${SESSION_NAME:-ctip-stack-test}"' in script_content
     assert (
         'assert_env_value_not_production "PGHOST" "${PRODUCTION_DB_HOST}" "bazę PostgreSQL"'

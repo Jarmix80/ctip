@@ -267,6 +267,7 @@ async def load_email_config(session: AsyncSession) -> EmailConfigResponse:
     username = settings.email_username
     sender_name = settings.email_sender_name
     sender_address = settings.email_sender_address
+    reply_to_address = settings.email_reply_to_address
     use_tls = settings.email_use_tls
     use_ssl = settings.email_use_ssl
     password_set = bool(settings.email_password)
@@ -280,6 +281,7 @@ async def load_email_config(session: AsyncSession) -> EmailConfigResponse:
         use_tls=use_tls,
         use_ssl=use_ssl,
         password_set=password_set,
+        reply_to_address=reply_to_address,
         source="env",
         editable=False,
         lock_reason=ENV_LOCK_REASON,
