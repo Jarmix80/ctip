@@ -151,6 +151,7 @@ class _PreparedWorkflowDeviceBinding:
     snapshot: dict[str, Any]
     source_context: WorkflowDeviceSourceContext
     machine_id: int | None
+    machine_model_id: int | None
     expected_client_id: int | None
     ownership_state: str
 
@@ -463,7 +464,9 @@ def _find_machine_rows_by_ewidencja(
 def _resolve_model_match_for_device(
     *,
     source_context: WorkflowDeviceSourceContext,
+    machine_model_id: int | None = None,
 ) -> tuple[Any, str]:
+    """Dopasowuje MODEL, korzystając bezpiecznie z danych MAGAZYN i MASZYNA."""
     explicit_model_id = source_context.warehouse_model_id
     if explicit_model_id is not None and explicit_model_id > 0:
         model_match = find_model_in_firebird_by_id(explicit_model_id)
@@ -474,6 +477,20 @@ def _resolve_model_match_for_device(
         if model_match.found and model_match.id_model is not None:
             return model_match, "id_model"
 
+    if (
+        machine_model_id is not None
+        and machine_model_id > 0
+        and machine_model_id != explicit_model_id
+    ):
+        model_match = find_model_in_firebird_by_id(machine_model_id)
+        if model_match.error:
+            raise RuntimeError(
+                f"Nie udalo sie odczytac MODEL dla MASZYNA.ID_MODEL={machine_model_id}: "
+                f"{model_match.error}"
+            )
+        if model_match.found and model_match.id_model is not None:
+            return model_match, "machine_id_model"
+
     model_match = find_model_in_firebird(source_context.model or source_context.raw_name)
     if model_match.error:
         raise RuntimeError(f"Nie udalo sie odczytac modelu Firebird: {model_match.error}")
@@ -483,6 +500,10 @@ def _resolve_model_match_for_device(
     if explicit_model_id is not None and explicit_model_id > 0:
         raise RuntimeError(
             f"Nie znaleziono modelu w tabeli MODEL dla ID_MODEL={explicit_model_id}."
+        )
+    if machine_model_id is not None and machine_model_id > 0:
+        raise RuntimeError(
+            f"Nie znaleziono modelu w tabeli MODEL dla MASZYNA.ID_MODEL={machine_model_id}."
         )
     raise RuntimeError("Nie znaleziono modelu w tabeli MODEL dla wybranego urządzenia.")
 
@@ -572,6 +593,7 @@ def _validate_workflow_device_ownership_with_cursor(
                     snapshot=snapshot,
                     source_context=source_context,
                     machine_id=None,
+                    machine_model_id=None,
                     expected_client_id=None,
                     ownership_state=MACHINE_MATCH_MISSING,
                 )
@@ -620,6 +642,7 @@ def _validate_workflow_device_ownership_with_cursor(
                 snapshot=snapshot,
                 source_context=source_context,
                 machine_id=machine_id,
+                machine_model_id=_coerce_int(current_row[6] if current_row else None),
                 expected_client_id=current_client_id,
                 ownership_state=ownership.state,
             )
@@ -1081,6 +1104,7 @@ def bind_devices_to_workflow_client(
                     continue
                 model_match, model_match_source = _resolve_model_match_for_device(
                     source_context=source_context,
+                    machine_model_id=prepared.machine_model_id,
                 )
                 machine_id = prepared.machine_id
                 machine_created = False
@@ -1130,6 +1154,8 @@ def bind_devices_to_workflow_client(
                     message = "Powiązano urządzenie z klientem MS i zsynchronizowano dane MODEL."
                 if model_match_source == "id_model":
                     message = f"{message} Model dopasowano po ID_MODEL."
+                elif model_match_source == "machine_id_model":
+                    message = f"{message} Model dopasowano po MASZYNA.ID_MODEL."
                 if ewidencja_error:
                     message = (
                         f"{message} Pominięto normalizację EWIDENCJA "

@@ -296,6 +296,7 @@ ARCHIVE_BUCKET_REJECTED = "rejected"
 ARCHIVE_BUCKET_UNFILLED = "unfilled"
 ARCHIVE_BUCKET_KSERO_PARTNER = "ksero_partner"
 ARCHIVE_BUCKET_CLOSED_OTHER = "closed_other"
+ARCHIVE_SCOPE_ALL = "all"
 ARCHIVE_SCOPE_ACTIVE = "active"
 ARCHIVE_DAYS_AFTER_DECISION = 14
 RESOURCE_RELEASE_DAYS_AFTER_REJECTION = 7
@@ -1311,12 +1312,12 @@ async def contracts_dashboard_data(
     include_devices: bool = Query(default=True),
     archive_scope: str = Query(
         default=ARCHIVE_SCOPE_ACTIVE,
-        pattern="^(active|accepted|rejected|unfilled|ksero_partner|closed_other)$",
+        pattern="^(all|active|accepted|rejected|unfilled|ksero_partner|closed_other)$",
     ),
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca formularze workflow, dopasowanie klienta i urzadzen."""
+    """Zwraca formularze workflow z wybranego archiwum lub ze wszystkich kategorii."""
     _, admin_user = admin_context
     if admin_user.role not in {"admin", "operator"}:
         raise HTTPException(
@@ -1363,6 +1364,7 @@ async def contracts_dashboard_data(
             return firebird_client_cache[nip]
 
         archive_totals = {
+            ARCHIVE_SCOPE_ALL: len(forms),
             "active": 0,
             ARCHIVE_BUCKET_ACCEPTED: 0,
             ARCHIVE_BUCKET_REJECTED: 0,
@@ -1377,7 +1379,9 @@ async def contracts_dashboard_data(
                 archive_totals[bucket] += 1
             else:
                 archive_totals["active"] += 1
-            if archive_scope == ARCHIVE_SCOPE_ACTIVE and bucket is None:
+            if archive_scope == ARCHIVE_SCOPE_ALL:
+                scoped_forms.append(item)
+            elif archive_scope == ARCHIVE_SCOPE_ACTIVE and bucket is None:
                 scoped_forms.append(item)
             elif archive_scope != ARCHIVE_SCOPE_ACTIVE and bucket == archive_scope:
                 scoped_forms.append(item)
