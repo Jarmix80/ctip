@@ -382,7 +382,7 @@ function initializeGenForm() {
   let latestForms = [];
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
-  let activeArchiveScope = "all";
+  let activeArchiveScope = "active";
   let mailboxHistoryActive = false;
   let formSearchTimer = null;
   let proformaPdfDownloadBusy = false;
@@ -3197,7 +3197,7 @@ function initializeGenForm() {
       console.error("Błąd wylogowania", err);
     } finally {
       clearToken();
-      activeArchiveScope = "all";
+      activeArchiveScope = "active";
       latestForms = [];
       if (formSearchTimer !== null) {
         window.clearTimeout(formSearchTimer);
@@ -3541,7 +3541,7 @@ function initializeGenForm() {
   });
   archiveMenuItems.forEach((button) => {
     button.addEventListener("click", () => {
-      activeArchiveScope = button.getAttribute("data-archive-scope") || "all";
+      activeArchiveScope = button.getAttribute("data-archive-scope") || "active";
       setMailboxHistoryView(false);
       loadItems(false);
     });
