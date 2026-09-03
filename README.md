@@ -501,7 +501,7 @@ Historyczna akcja synchronizacji urządzenia z arkusza w `/contracts` jest wył�
 |-------|------------------|------|
 | `SHIPPING_ENABLED` | `false` | Udostępnia strony i API Shipping. Wyłączenie zwraca `503` bez wpływu na inne moduły. |
 | `SHIPPING_CATALOG_MUTATIONS_ENABLED` | `false` | Zezwala na skan, ręczne mapowanie oraz zatwierdzanie katalogu; blokada zwraca `423`. |
-| `SHIPPING_FULFILLMENT_ENABLED` | `false` | Zezwala na akceptację zleceń, etykiety, DPD i finalizację dokumentów MS; blokada zwraca `423`. |
+| `SHIPPING_FULFILLMENT_ENABLED` | `false` | Zezwala na akceptację zleceń, etykiety, DPD i finalizację dokumentów MS; blokada zwraca `423`. Lokalny błąd walidacji danych przed kontaktem z DPD pozostawia bezpieczny ślad techniczny, pozwala ponownie zatwierdzić poprawione dane i wykorzystuje ten sam rekord przy kolejnej próbie. Błędy transportowe i próby z numerem listu pozostają zablokowane do ręcznego uzgodnienia. |
 | `SHIPPING_WAREHOUSE_ID` | `1` | Identyfikator magazynu głównego części w Firebirdzie. |
 | `DPD_ENABLED` | `false` | Włącza klienta DPD; podczas fazy odczytowej musi pozostać `false`. |
 | `DPD_MODE` | `production` | Tryb adaptera: `mock`, `demo` albo `production`. |

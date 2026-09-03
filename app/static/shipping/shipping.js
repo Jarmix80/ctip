@@ -1405,12 +1405,14 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
   badge.className = `shipping-badge shipping-case-status status-${status}`;
   const ready = status === "ready";
   const shipment = caseData?.shipment;
+  const retryAllowed = Boolean(shipment?.retry_allowed);
+  const retryReviewed = Boolean(shipment?.retry_reviewed);
   const locationBlocked = Boolean(shippingState.detail?.location_context?.case_location_changed && !shipment);
   const orderState = shippingState.liveOrderState;
   const trackingMatches = !orderState || !shipment?.tracking_number
     || orderState.tracking_number === shipment.tracking_number;
   const fulfillmentLocked = !shippingFulfillmentEnabled();
-  document.getElementById("shipping-review").disabled = fulfillmentLocked || Boolean(shipment)
+  document.getElementById("shipping-review").disabled = fulfillmentLocked || Boolean(shipment && !retryAllowed)
     || Boolean(orderState && !orderState.can_review);
   const labelTextInput = document.getElementById("shipping-label-text");
   if (labelTextInput) {
@@ -1418,8 +1420,10 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
     renderShippingLabelTextMeta();
   }
   document.getElementById("shipping-create").disabled = fulfillmentLocked || !ready || locationBlocked
+    || Boolean(retryAllowed && !retryReviewed)
     || Boolean(orderState && !orderState.can_prepare_shipment);
   document.getElementById("shipping-manual").disabled = fulfillmentLocked || !ready || locationBlocked
+    || Boolean(retryAllowed && !retryReviewed)
     || Boolean(orderState && !orderState.can_prepare_shipment);
   document.getElementById("shipping-close-order").disabled = fulfillmentLocked || status !== "shipment_created"
     || !shipment?.tracking_number
@@ -1438,6 +1442,8 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
       ? ` Synchronizacja pól przesyłki MS wymaga uzgodnienia: ${shipment.ms_milestones.error}`
       : "";
     shippingFeedback(`Numer przesyłki: ${shipment.tracking_number}. Menadżer Serwisu: ${shippingFirebirdStatusLabel(shipment.firebird_status)}.${warningText}${milestoneError}`, Boolean(milestoneError));
+  } else if (showTrackingFeedback && retryAllowed && !retryReviewed) {
+    shippingFeedback("Poprzednia próba etykiety została zatrzymana przed utworzeniem listu DPD. Popraw dane i ponownie wybierz „Zatwierdź dane i rezerwację”.", true);
   }
 }
 
