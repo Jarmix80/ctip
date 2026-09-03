@@ -749,6 +749,147 @@ def test_bind_devices_to_workflow_client_parses_stock_name_and_repairs_machine_f
     assert update_params[0] == 6485
 
 
+def test_bind_devices_uses_existing_machine_model_when_warehouse_model_is_missing(
+    monkeypatch,
+) -> None:
+    class _FallbackCursor:
+        def __init__(self) -> None:
+            self.query = ""
+            self.updates: list[tuple[str, tuple[object, ...]]] = []
+            self.rowcount = 1
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            self.query = query
+            if query.strip().upper().startswith("UPDATE MASZYNA SET"):
+                self.updates.append((query, params))
+
+        def fetchone(self) -> tuple[object, ...] | None:
+            if "FROM MAGAZYN" in self.query:
+                return (
+                    18479,
+                    28,
+                    "KP/5152",
+                    "Ricoh IM430 S/N:3359PA02610",
+                    "",
+                    "",
+                    "NIE",
+                    None,
+                )
+            if "FROM MASZYNA" in self.query:
+                return (
+                    7712,
+                    656,
+                    "KP/5152/R/E",
+                    "TAK",
+                    1,
+                    "3359PA02610",
+                    460,
+                    "Ricoh",
+                    "IM 430",
+                    "Druk",
+                    "MFP A4",
+                    "Płatne",
+                    "NIE",
+                    "MAGAZYN KSERO-PARTNER",
+                )
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class _FallbackConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = _FallbackCursor()
+            self.committed = False
+            self.rolled_back = False
+
+        def cursor(self) -> _FallbackCursor:
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+        def close(self) -> None:
+            return None
+
+    requested_model_ids: list[int] = []
+
+    def find_model_by_id(model_id: int) -> FirebirdModelMatch:
+        requested_model_ids.append(model_id)
+        return FirebirdModelMatch(
+            found=model_id == 460,
+            id_model=460 if model_id == 460 else None,
+            marka="Ricoh" if model_id == 460 else None,
+            model="IM 430" if model_id == 460 else None,
+            grupa="Druk" if model_id == 460 else None,
+            rodzaj="MFP A4" if model_id == 460 else None,
+            kolor="NIE" if model_id == 460 else None,
+            plik="ricoh_im430.png" if model_id == 460 else None,
+        )
+
+    fake_connection = _FallbackConnection()
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.firebird_writes_enabled",
+        lambda: (True, None),
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding._get_firebird_connection",
+        lambda: fake_connection,
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.find_model_in_firebird_by_id",
+        find_model_by_id,
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.find_model_in_firebird",
+        lambda _name: FirebirdModelMatch(found=False),
+    )
+
+    workflow_case = SimpleNamespace(firebird_client_id=6485, form_request_id=70)
+    device = SimpleNamespace(
+        id=76,
+        source_row=18479,
+        source_type="firebird_magazyn_28",
+        producer="Ricoh",
+        model="IM430",
+        serial="3359PA02610",
+        ewidencja="KP/5152",
+        firebird_machine_id=None,
+        snapshot={
+            "row": 18479,
+            "source_type": "firebird_magazyn_28",
+            "name": "Ricoh IM430 S/N:3359PA02610",
+            "model": "IM430",
+            "index": "KP/5152",
+            "serial": "3359PA02610",
+            "ms_id_model": "",
+        },
+    )
+
+    items, errors = bind_devices_to_workflow_client(
+        workflow_case=workflow_case,
+        devices=[device],
+        actor_label="Operator Test",
+    )
+
+    assert errors == []
+    assert requested_model_ids == [460]
+    assert len(items) == 1
+    assert items[0].ok is True
+    assert items[0].machine_id == 7712
+    assert items[0].model == "IM 430"
+    assert "MASZYNA.ID_MODEL" in items[0].message
+    assert fake_connection.committed is True
+    assert fake_connection.rolled_back is False
+    assert len(fake_connection.cursor_obj.updates) == 1
+    update_query, _ = fake_connection.cursor_obj.updates[0]
+    assert "ID_KLIENT = ?" in update_query
+    assert "ID_MODEL = ?" not in update_query
+
+
 def test_build_binding_status_payload_includes_failed_device_details() -> None:
     devices = [
         SimpleNamespace(

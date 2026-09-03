@@ -852,6 +852,41 @@ body {
   letter-spacing: normal;
 }
 
+.genform-search-toolbar {
+  display: flex;
+  gap: 14px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid rgba(31, 63, 105, 0.14);
+  border-radius: 14px;
+  background: #f7f9fc;
+}
+
+.genform-search-toolbar[hidden] {
+  display: none;
+}
+
+.genform-search-field {
+  display: grid;
+  flex: 1 1 420px;
+  gap: 5px;
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.genform-search-field input {
+  min-width: 0;
+  width: 100%;
+}
+
+.genform-search-summary {
+  margin: 0 0 11px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
 .genform-side-menu {
   display: flex;
   flex-direction: column;
@@ -1019,6 +1054,20 @@ body {
 
   .genform-side-menu {
     position: static;
+  }
+
+  .genform-search-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .genform-search-field {
+    flex-basis: auto;
+  }
+
+  .genform-search-summary {
+    margin: 0;
+    white-space: normal;
   }
 
   .genform-mailbox-history-filters {

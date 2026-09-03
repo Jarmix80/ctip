@@ -207,6 +207,53 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeGenformSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pl-PL")
+    .replace(/ł/g, "l")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactGenformSearchText(value) {
+  return normalizeGenformSearchText(value).replace(/[^a-z0-9]/g, "");
+}
+
+function genformSearchValues(item) {
+  const firebird = item?.firebird && typeof item.firebird === "object" ? item.firebird : {};
+  const workflow = item?.workflow && typeof item.workflow === "object" ? item.workflow : {};
+  return [
+    item?.id,
+    `formularz ${item?.id || ""}`,
+    item?.customer_name,
+    item?.customer_nip,
+    item?.customer_email,
+    item?.customer_phone,
+    firebird.id_klient,
+    firebird.nazwa,
+    workflow.firebird_client_id,
+    `ms ${workflow.firebird_client_id || firebird.id_klient || ""}`,
+    workflow.proforma_number,
+    `proforma ${workflow.proforma_number || ""}`,
+  ].filter((value) => value !== null && value !== undefined && String(value).trim());
+}
+
+function matchesGenformSearch(item, query) {
+  const normalizedQuery = normalizeGenformSearchText(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+  const values = genformSearchValues(item);
+  const textHaystack = values.map(normalizeGenformSearchText).join(" ");
+  const compactHaystack = values.map(compactGenformSearchText).join(" ");
+  return normalizedQuery.split(" ").every((token) => {
+    const compactToken = compactGenformSearchText(token);
+    return textHaystack.includes(token) || Boolean(compactToken && compactHaystack.includes(compactToken));
+  });
+}
+
 function initializeGenForm() {
   const GRENKE_FALLBACK_BASE_URL = "https://newonline.leasingoptymalny.pl";
   const GRENKE_FALLBACK_CATEGORY_KEY = "Drukarka IT";
@@ -290,6 +337,9 @@ function initializeGenForm() {
   const mailboxHistoryMenu = document.getElementById("genform-mailbox-history-menu");
   const mailboxHistoryCount = document.getElementById("genform-count-mailbox-history");
   const formsTableWrap = document.getElementById("genform-forms-table-wrap");
+  const formSearchToolbar = document.getElementById("genform-search-toolbar");
+  const formSearchInput = document.getElementById("genform-search");
+  const formSearchSummary = document.getElementById("genform-search-summary");
   const mailboxHistoryView = document.getElementById("genform-mailbox-history-view");
   const mailboxHistoryFilters = document.getElementById("genform-mailbox-history-filters");
   const mailboxHistorySearch = document.getElementById("genform-mailbox-history-search");
@@ -332,8 +382,9 @@ function initializeGenForm() {
   let latestForms = [];
   let activeWorkflowFormId = null;
   let activeWorkflowData = null;
-  let activeArchiveScope = "active";
+  let activeArchiveScope = "all";
   let mailboxHistoryActive = false;
+  let formSearchTimer = null;
   let proformaPdfDownloadBusy = false;
   setDefaultExpiresOn();
 
@@ -1140,9 +1191,11 @@ function initializeGenForm() {
     return `${GRENKE_FALLBACK_BASE_URL}/kalkulacja/${sessionKey}?${query}`;
   }
 
-  function renderItems(items) {
+  function renderItems(items, hasSearchQuery = false) {
     if (!Array.isArray(items) || !items.length) {
-      tableBody.innerHTML = "<tr><td colspan='6'>Brak wygenerowanych formularzy.</td></tr>";
+      tableBody.innerHTML = hasSearchQuery
+        ? "<tr><td colspan='6'>Brak formularzy pasujących do wyszukiwania.</td></tr>"
+        : "<tr><td colspan='6'>Brak wygenerowanych formularzy.</td></tr>";
       return;
     }
     tableBody.innerHTML = items
@@ -1243,6 +1296,28 @@ function initializeGenForm() {
         </tr>`;
       })
       .join("");
+  }
+
+  function applyFormSearch() {
+    const query = formSearchInput?.value || "";
+    const hasSearchQuery = Boolean(normalizeGenformSearchText(query));
+    const visibleForms = hasSearchQuery
+      ? latestForms.filter((item) => matchesGenformSearch(item, query))
+      : latestForms;
+    renderItems(visibleForms, hasSearchQuery);
+    if (formSearchSummary) {
+      formSearchSummary.textContent = `Pokazano ${visibleForms.length} z ${latestForms.length} formularzy.`;
+    }
+  }
+
+  function scheduleFormSearch() {
+    if (formSearchTimer !== null) {
+      window.clearTimeout(formSearchTimer);
+    }
+    formSearchTimer = window.setTimeout(() => {
+      formSearchTimer = null;
+      applyFormSearch();
+    }, 150);
   }
 
   function renderWorkflowSummary(data) {
@@ -2440,6 +2515,9 @@ function initializeGenForm() {
     if (formsTableWrap) {
       formsTableWrap.hidden = mailboxHistoryActive;
     }
+    if (formSearchToolbar) {
+      formSearchToolbar.hidden = mailboxHistoryActive;
+    }
     if (mailboxSyncNote) {
       mailboxSyncNote.hidden = mailboxHistoryActive;
     }
@@ -2448,7 +2526,7 @@ function initializeGenForm() {
     }
     mailboxHistoryMenu?.classList.toggle("is-active", mailboxHistoryActive);
     archiveMenuItems.forEach((button) => {
-      const scope = button.getAttribute("data-archive-scope") || "active";
+      const scope = button.getAttribute("data-archive-scope") || "all";
       button.classList.toggle("is-active", !mailboxHistoryActive && scope === activeArchiveScope);
     });
   }
@@ -2641,7 +2719,7 @@ function initializeGenForm() {
       latestForms = Array.isArray(data.forms) ? data.forms : [];
       renderArchiveMenu(data.archive_totals || {});
       renderMailboxSyncNote(data.mailbox_sync || null);
-      renderItems(latestForms);
+      applyFormSearch();
       if (openedFormId && currentDetailData) {
         currentDetailData.workflowStage = resolveCurrentDetailWorkflowStage();
         updateGrenkeLaunchButtonState();
@@ -2658,10 +2736,11 @@ function initializeGenForm() {
 
   function renderArchiveMenu(totals) {
     archiveMenuItems.forEach((button) => {
-      const scope = button.getAttribute("data-archive-scope") || "active";
+      const scope = button.getAttribute("data-archive-scope") || "all";
       button.classList.toggle("is-active", scope === activeArchiveScope);
     });
     const mapping = {
+      all: document.getElementById("genform-count-all"),
       active: document.getElementById("genform-count-active"),
       accepted: document.getElementById("genform-count-accepted"),
       rejected: document.getElementById("genform-count-rejected"),
@@ -3113,6 +3192,17 @@ function initializeGenForm() {
       console.error("Błąd wylogowania", err);
     } finally {
       clearToken();
+      activeArchiveScope = "all";
+      latestForms = [];
+      if (formSearchTimer !== null) {
+        window.clearTimeout(formSearchTimer);
+        formSearchTimer = null;
+      }
+      if (formSearchInput) {
+        formSearchInput.value = "";
+      }
+      renderArchiveMenu({});
+      applyFormSearch();
       closeDetailModal();
       closeWorkflowModal();
       closeStatusModal();
@@ -3231,6 +3321,14 @@ function initializeGenForm() {
     } else {
       loadItems(true);
     }
+  });
+  formSearchInput?.addEventListener("input", scheduleFormSearch);
+  formSearchInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !formSearchInput.value) {
+      return;
+    }
+    formSearchInput.value = "";
+    scheduleFormSearch();
   });
   logoutBtn?.addEventListener("click", handleLogout);
   copyLinkBtn?.addEventListener("click", handleCopyLink);
@@ -3438,7 +3536,7 @@ function initializeGenForm() {
   });
   archiveMenuItems.forEach((button) => {
     button.addEventListener("click", () => {
-      activeArchiveScope = button.getAttribute("data-archive-scope") || "active";
+      activeArchiveScope = button.getAttribute("data-archive-scope") || "all";
       setMailboxHistoryView(false);
       loadItems(false);
     });
