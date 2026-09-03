@@ -6625,6 +6625,59 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
         form_ids = {item["id"] for item in body["forms"]}
         self.assertIn(submitted.id, form_ids)
 
+    async def test_contracts_dashboard_scope_all_includes_active_and_archived_forms(self):
+        token, _ = await self._login_operator()
+        active = await self._create_submitted_form_request(
+            customer_name="Klient aktywny",
+            customer_email="aktywny@example.local",
+            customer_phone="+48600100100",
+        )
+        archived = await self._create_submitted_form_request(
+            customer_name="Klient archiwalny",
+            customer_email="archiwalny@example.local",
+            customer_phone="+48600200200",
+        )
+
+        async with self.session_factory() as session:
+            archived_form = await session.get(FormRequest, archived.id)
+            assert archived_form is not None
+            archived_form.archive_bucket = "accepted"
+            archived_form.archived_at = datetime.now(UTC)
+            await session.commit()
+
+        with (
+            patch(
+                "app.api.routes.admin_contracts.load_available_devices_from_firebird_warehouse",
+                return_value=[],
+            ),
+            patch(
+                "app.api.routes.admin_contracts.find_client_in_firebird",
+                return_value=FirebirdClientMatch(found=False),
+            ),
+        ):
+            response = await self.client.get(
+                "/admin/contracts/dashboard?forms_scope=all&include_devices=0&archive_scope=all",
+                headers={"X-Admin-Session": token},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["archive_scope"], "all")
+        self.assertEqual(body["archive_totals"]["all"], 2)
+        self.assertEqual(body["archive_totals"]["active"], 1)
+        self.assertEqual(body["archive_totals"]["accepted"], 1)
+        self.assertEqual({item["id"] for item in body["forms"]}, {active.id, archived.id})
+
+    async def test_contracts_dashboard_rejects_unknown_archive_scope(self):
+        token, _ = await self._login_operator()
+
+        response = await self.client.get(
+            "/admin/contracts/dashboard?archive_scope=unknown",
+            headers={"X-Admin-Session": token},
+        )
+
+        self.assertEqual(response.status_code, 422)
+
     async def test_contracts_form_workflow_status_approved_order_runs_binding_automation(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()

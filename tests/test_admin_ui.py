@@ -989,6 +989,10 @@ def test_genform_page_renders_layout():
     assert "genform-status-select" in response.text
     assert "genform-status-save" in response.text
     assert "genform-summary-modal" in response.text
+    assert "genform-count-all" in response.text
+    assert "genform-search" in response.text
+    assert "genform-search-summary" in response.text
+    assert "Wszystkie" in response.text
     assert "Formularze w toku" in response.text
     assert "Wiadomości historyczne" in response.text
     assert "genform-mailbox-history-filters" in response.text
@@ -1016,6 +1020,19 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert "function openGrenkeLaunchWindow()" in content
     assert "Status GRENKE" in content
     assert "function loadMailboxHistory(showInfo = false)" in content
+    assert "function normalizeGenformSearchText(value)" in content
+    assert '.replace(/ł/g, "l")' in content
+    assert "function matchesGenformSearch(item, query)" in content
+    assert 'let activeArchiveScope = "all";' in content
+    search_values = content.split("function genformSearchValues(item)", maxsplit=1)[1].split(
+        "function matchesGenformSearch(item, query)", maxsplit=1
+    )[0]
+    assert "customer_name" in search_values
+    assert "customer_nip" in search_values
+    assert "firebird.id_klient" in search_values
+    assert "workflow.proforma_number" in search_values
+    assert "representatives" not in search_values
+    assert "pesel" not in search_values
     assert "/admin/contracts/mailbox/history" in content
     assert '{ label: "Ważny do"' not in content
     assert 'label: "E-mail firmowy"' in content
