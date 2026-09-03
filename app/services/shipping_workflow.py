@@ -31,6 +31,7 @@ from app.models import (
 from app.schemas.shipping import ShippingReviewRequest
 from app.services.dpd_shipping import (
     DPD_LABEL_TEXT_LIMIT,
+    DpdConfigurationError,
     DpdShippingClient,
     DpdTransportError,
     normalize_dpd_label_text,
@@ -758,6 +759,39 @@ def _location_key(order: dict[str, Any], address: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _shipping_shipment_retry_allowed(shipment: ShippingShipment | None) -> bool:
+    """Rozpoznaje lokalnie odrzuconą próbę, która na pewno nie utworzyła listu DPD."""
+    if shipment is None or shipment.status != "failed":
+        return False
+    if any(
+        (
+            shipment.provider_shipment_id,
+            shipment.tracking_number,
+            shipment.label_content,
+            shipment.firebird_label_metadata_synced_at,
+            shipment.day_close_id,
+            shipment.handed_over_at,
+            shipment.closed_at,
+        )
+    ):
+        return False
+    response = shipment.provider_response or {}
+    explicitly_local = bool(
+        response.get("failure_stage") == "local_validation"
+        and response.get("retry_allowed") is True
+    )
+    legacy_local = not shipment.provider_request and not shipment.provider_response
+    return explicitly_local or legacy_local
+
+
+def _shipping_shipment_retry_reviewed(shipment: ShippingShipment | None) -> bool:
+    """Informuje, czy operator zatwierdził poprawione dane po lokalnym błędzie."""
+    return bool(
+        _shipping_shipment_retry_allowed(shipment)
+        and (shipment.provider_response or {}).get("retry_reviewed") is True
+    )
+
+
 def _serialize_case(case: ShippingCase) -> dict[str, Any]:
     shipment = case.shipment
     consolidation = shipping_shipment_consolidation(shipment)
@@ -802,6 +836,8 @@ def _serialize_case(case: ShippingCase) -> dict[str, Any]:
                 "provider_mode": shipment.provider_mode,
                 "tracking_number": shipment.tracking_number,
                 "label_available": bool(shipment.label_content),
+                "retry_allowed": _shipping_shipment_retry_allowed(shipment),
+                "retry_reviewed": _shipping_shipment_retry_reviewed(shipment),
                 "firebird_status": shipment.firebird_status,
                 "firebird_error": shipment.firebird_error,
                 "ms_milestones": {
@@ -901,7 +937,9 @@ async def invalidate_shipping_case_for_location_change(
     user_id: int | None = None,
 ) -> bool:
     """Cofa gotową sprawę do weryfikacji, jeżeli lokalizacja w MS się zmieniła."""
-    if case is None or case.shipment is not None:
+    if case is None or (
+        case.shipment is not None and not _shipping_shipment_retry_allowed(case.shipment)
+    ):
         return False
     context = shipping_location_context(order)
     matches = bool(
@@ -1003,7 +1041,12 @@ async def review_shipping_order(
             )
         )
     case = await get_shipping_case(session, int(order["order_table_id"]))
-    if case and case.shipment is not None:
+    retryable_shipment = (
+        case.shipment
+        if case is not None and _shipping_shipment_retry_allowed(case.shipment)
+        else None
+    )
+    if case and case.shipment is not None and retryable_shipment is None:
         raise ShippingConflictError(
             "Dla zlecenia istnieje już przesyłka; nie można zmienić wyboru."
         )
@@ -1140,6 +1183,14 @@ async def review_shipping_order(
     case.reviewed_at = now
     case.updated_at = now
     case.status = "ready"
+    if retryable_shipment is not None:
+        retryable_shipment.provider_response = {
+            **(retryable_shipment.provider_response or {}),
+            "failure_stage": "local_validation",
+            "retry_allowed": True,
+            "retry_reviewed": True,
+        }
+        retryable_shipment.updated_at = now
     for (
         requested,
         warehouse,
@@ -1243,6 +1294,7 @@ async def review_shipping_order(
                 "address_source": address_data["source"],
                 "invoice_required": invoice_required,
                 "label_text": case.label_text,
+                "shipment_retry_reviewed": retryable_shipment is not None,
                 "negative_stock_item_ids": [
                     int(warehouse["warehouse_item_id"])
                     for (
@@ -1326,7 +1378,8 @@ async def create_shipping_shipment(
     case = await get_shipping_case(session, order_table_id)
     if case is None:
         raise ShippingConflictError("Zlecenie wymaga wcześniejszej akceptacji danych wysyłki.")
-    if case.shipment is not None:
+    retryable_shipment = case.shipment if _shipping_shipment_retry_reviewed(case.shipment) else None
+    if case.shipment is not None and retryable_shipment is None:
         raise ShippingConflictError("Dla zlecenia istnieje już przesyłka.")
     if await invalidate_shipping_case_for_location_change(
         session,
@@ -1360,28 +1413,62 @@ async def create_shipping_shipment(
         if not enabled:
             raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
     now = _now()
-    shipment = ShippingShipment(
-        shipping_case=case,
-        idempotency_key=idempotency_key,
-        provider_mode=mode,
-        status="processing",
-        provider_request={},
-        firebird_status="pending",
-        created_by=user_id,
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(shipment)
-    await session.flush()
+    if retryable_shipment is None:
+        shipment = ShippingShipment(
+            shipping_case=case,
+            idempotency_key=idempotency_key,
+            provider_mode=mode,
+            status="processing",
+            provider_request={},
+            firebird_status="pending",
+            created_by=user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(shipment)
+        await session.flush()
+        event_type = "shipment_started"
+        event_payload = {
+            "provider_mode": mode,
+            "test_firebird_writes": test_firebird_writes,
+        }
+    else:
+        shipment = retryable_shipment
+        previous_error = shipment.error_text
+        previous_idempotency_key = shipment.idempotency_key
+        shipment.idempotency_key = idempotency_key
+        shipment.provider_mode = mode
+        shipment.provider_shipment_id = None
+        shipment.tracking_number = None
+        shipment.status = "processing"
+        shipment.label_content = None
+        shipment.label_content_type = None
+        shipment.label_format = None
+        shipment.provider_request = {}
+        shipment.provider_response = None
+        shipment.firebird_status = "pending"
+        shipment.firebird_error = None
+        shipment.notification_sms_status = "pending"
+        shipment.notification_email_status = "pending"
+        shipment.notification_error = None
+        shipment.error_text = None
+        shipment.created_by = user_id
+        shipment.created_at = now
+        shipment.updated_at = now
+        event_type = "shipment_retry_started"
+        event_payload = {
+            "provider_mode": mode,
+            "test_firebird_writes": test_firebird_writes,
+            "previous_status": "failed",
+            "previous_idempotency_key": previous_idempotency_key,
+            "previous_error": previous_error,
+        }
     session.add(
         ShippingEvent(
             shipping_case_id=case.id,
             shipment_id=shipment.id,
-            event_type="shipment_started",
-            payload={
-                "provider_mode": mode,
-                "test_firebird_writes": test_firebird_writes,
-            },
+            event_type=event_type,
+            payload=event_payload,
             created_by=user_id,
             created_at=now,
         )
@@ -1420,6 +1507,14 @@ async def create_shipping_shipment(
     except Exception as exc:
         if isinstance(exc, DpdTransportError) and exc.request_payload:
             shipment.provider_request = exc.request_payload
+        elif isinstance(exc, DpdConfigurationError):
+            shipment.provider_response = {
+                "failure_stage": "local_validation",
+                "retry_allowed": True,
+                "retry_reviewed": False,
+                "error_type": type(exc).__name__,
+            }
+            case.status = "review_pending"
         shipment.status = "failed"
         shipment.error_text = str(exc)
         shipment.updated_at = _now()

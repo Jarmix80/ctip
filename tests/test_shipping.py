@@ -116,6 +116,7 @@ from app.services.shipping_workflow import (
     ShippingLocationChangedError,
     _send_notifications,
     _shipping_item_price,
+    _shipping_shipment_retry_allowed,
     attach_shipping_cases_to_existing_label,
     build_shipping_address_candidates,
     build_shipping_consolidation_groups,
@@ -1004,6 +1005,81 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 await session.scalar(select(func.count()).select_from(ShippingItem)),
                 1,
             )
+
+    async def test_lokalny_blad_dpd_pozwala_poprawic_dane_i_ponowic_etykiete(self) -> None:
+        async with self.session_factory() as session:
+            with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
+                await review_shipping_order(
+                    session,
+                    order=_order(),
+                    payload=_review_payload(),
+                    user_id=1,
+                )
+            case = await session.scalar(
+                select(ShippingCase).options(selectinload(ShippingCase.shipment))
+            )
+            failed = ShippingShipment(
+                shipping_case=case,
+                idempotency_key=str(uuid4()),
+                provider_mode="production",
+                status="failed",
+                provider_request={},
+                provider_response=None,
+                firebird_status="pending",
+                error_text="Nazwa firmy przekracza limit 100 znaków DPD.",
+                created_by=1,
+                created_at=datetime(2026, 9, 2, tzinfo=UTC),
+                updated_at=datetime(2026, 9, 2, tzinfo=UTC),
+            )
+            session.add(failed)
+            await session.commit()
+
+            corrected_payload = _review_payload()
+            corrected_payload.address.company_name = "Poprawiona nazwa firmy"
+            with patch("app.services.shipping_workflow.load_physical_stock", return_value=_stock()):
+                reviewed = await review_shipping_order(
+                    session,
+                    order=_order(),
+                    payload=corrected_payload,
+                    user_id=1,
+                )
+
+            self.assertTrue(reviewed["shipment"]["retry_allowed"])
+            self.assertTrue(reviewed["shipment"]["retry_reviewed"])
+            original_shipment_id = failed.id
+            created = await create_shipping_shipment(
+                session,
+                order=_order(),
+                order_table_id=1001,
+                idempotency_key=str(uuid4()),
+                user_id=1,
+            )
+
+            self.assertEqual(created["shipment"]["id"], original_shipment_id)
+            self.assertEqual(created["status"], "shipment_created")
+            self.assertFalse(created["shipment"]["retry_allowed"])
+            self.assertEqual(
+                await session.scalar(select(func.count()).select_from(ShippingShipment)),
+                1,
+            )
+            self.assertEqual(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(ShippingEvent)
+                    .where(ShippingEvent.event_type == "shipment_retry_started")
+                ),
+                1,
+            )
+
+    async def test_niepewna_proba_dpd_nie_jest_odblokowywana(self) -> None:
+        shipment = ShippingShipment(
+            provider_mode="production",
+            status="failed",
+            provider_request={"packages": [{"reference": "CTIP-test"}]},
+            provider_response=None,
+        )
+
+        self.assertFalse(_shipping_shipment_retry_allowed(shipment))
 
     async def test_stan_zerowy_wymaga_jawnej_zgody_operatora(self) -> None:
         async with self.session_factory() as session:
@@ -3015,6 +3091,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn("Tryb wdrożeniowy", javascript)
         self.assertIn("function shippingRequestUuid()", javascript)
         self.assertIn("function renderShippingRecipientFieldCounters()", javascript)
+        self.assertIn("shipment?.retry_allowed", javascript)
+        self.assertIn("shipment?.retry_reviewed", javascript)
         self.assertIn("function normalizePolishShippingPhone(value)", javascript)
         self.assertIn("idempotency_key: shippingRequestUuid()", javascript)
         self.assertIn("shipping-generate-selected", javascript)
