@@ -1,29 +1,33 @@
 {
-  "timestamp": "2026-09-01T22:30:00+02:00",
+  "timestamp": "2026-09-03T14:42:00+02:00",
   "summary": [
-    "Produkcyjny Shipping działa na commicie f8d9b5256081709b2d2cf3c8dbc08a992c795bd2; gałąź fix/dpd-infoservices-semantic-dedupe-2026-09-01 jest czysta i zgodna z GitHubem.",
-    "Parser numeru telefonu rozpoznaje pojedynczy zwarty polski numer komórkowy w treści zlecenia i zachowuje ochronę przed numerami indeksów oraz kodami katalogowymi.",
-    "Pilot DPD zlecenia 18553/2026 zakończono i posprzątano w MS: usunięto zlecenie oraz WZ, a stan FM1-P720-000 wrócił do 1 sztuki bez rezerwacji.",
-    "List testowy 1050168483340U pozostaje po stronie DPD jako zarejestrowany i nienadany; CTIP zachowuje jego wpis archiwalny oraz ślad jednego powiadomienia SMS.",
-    "Na produkcji globalnie włączono SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED=true; status zarejestrowany nie wykonuje zapisu etapów do Firebirda.",
-    "Ręczny przebieg InfoServices 1069 i automatyczny 1070 zakończyły się bez błędów, konfliktów, duplikatów i zapisów dla przesyłki wyłącznie zarejestrowanej.",
-    "Po wdrożeniu CTIP-Web, CollectorService, CTIP-SMS i CTIP-FormsPublic pozostają uruchomione, a kontrolowane endpointy zwracają HTTP 200."
+    "Produkcja CTIP działa na commicie 3f0a2765127261a16f6cd9847496785a771b48c9 z gałęzi release/genform-search-all-2026-09-03.",
+    "W /genform wdrożono domyślny filtr Wszystkie, pojedynczą wyszukiwarkę formularzy oraz odporność na nieczytelne historyczne payloady.",
+    "Wiązanie urządzeń FLOW korzysta z MASZYNA.ID_MODEL, gdy MAGAZYN.ID_MODEL jest pusty i dopasowanie nazwy modelu zawodzi.",
+    "Produkcyjny przypadek formularza 70, urządzenia 76 i MAGAZYN row=18479 rozwiązuje MASZYNA.ID_MASZYNA=7712 oraz MODEL.ID_MODEL=460 bez zapisu kontrolnego.",
+    "Pełny backup przed wdrożeniem zapisano w D:\\CTIP\\backups\\prod_20260903_143435.",
+    "Po wdrożeniu repozytorium produkcyjne jest czyste, a CollectorService, CTIP-Web, CTIP-SMS i CTIP-FormsPublic mają stan Running.",
+    "Kontrolowane endpointy CTIP-Web i CTIP-FormsPublic zwracają HTTP 200, a świeży log CTIP-Web nie zawiera błędów krytycznych."
   ],
   "follow_up": [
-    "W dniach 3–4 września 2026 wykonać zbiorczy audyt wszystkich przesyłek po globalnym włączeniu kamieni milowych: InfoServices, DATA_PRZES, WYKONANIE, DATA_PRZES_WE, PRZESYLKA_WE, konflikty, duplikaty i brak niezamierzonych dokumentów lub powiadomień."
+    "Monitorować pierwsze rzeczywiste wykonanie wiązania FLOW dla formularza 70 i potwierdzić zakończenie bez komunikatu o braku modelu.",
+    "W razie potrzeby rollback kodu: git -C D:\\CTIP checkout --detach 4ed49178ba17758ee2ba895f6230b6cf782076b9; Start-Service CTIP-Web."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "fix/dpd-infoservices-semantic-dedupe-2026-09-01",
-    "production_head": "f8d9b5256081709b2d2cf3c8dbc08a992c795bd2",
+    "branch_local": "release/genform-search-all-2026-09-03",
+    "production_head": "3f0a2765127261a16f6cd9847496785a771b48c9",
+    "previous_production_head": "4ed49178ba17758ee2ba895f6230b6cf782076b9",
     "venv": ".venv",
-    "focus": "shipping-production-monitoring",
+    "focus": "genform-flow-production",
+    "source_host": "192.168.0.9",
     "verification": [
       "pre-commit run --all-files: passed",
-      "pytest -q: 700 passed, 15 skipped",
-      "produkcja: repo czyste, wszystkie cztery usługi Running",
-      "produkcja: kontrolowane endpointy Shipping i pozostałych modułów zwracają HTTP 200",
-      "InfoServices: ostatnie przebiegi success, milestones written=0, failed=0, conflicts=0"
+      "pytest -q na finalnej gałęzi release: 720 passed, 15 skipped",
+      "produkcyjny dry-run: passed",
+      "produkcja: API archive_scope=all zwróciło 34 formularze, 0 ostrzeżeń i zawiera formularz 70",
+      "produkcja: row=18479 rozwiązuje machine=7712, model=460, source=machine_id_model",
+      "produkcja: wszystkie cztery usługi Running, CTIP-Web i CTIP-FormsPublic HTTP 200"
     ]
   }
 }
