@@ -455,7 +455,9 @@ def test_bind_target_device_records_success_without_firebird_update(monkeypatch)
     assert connection.committed is True
 
 
-def test_bind_mixed_target_and_warehouse_batch_stops_before_update(monkeypatch) -> None:
+def test_bind_mixed_target_and_warehouse_batch_requires_confirmation_for_retry(
+    monkeypatch,
+) -> None:
     class _MixedCursor:
         def __init__(self) -> None:
             self.query = ""
@@ -494,15 +496,19 @@ def test_bind_mixed_target_and_warehouse_batch_stops_before_update(monkeypatch) 
             return None
 
     class _MixedConnection:
-        def __init__(self) -> None:
+        def __init__(self, *, allow_commit: bool = False) -> None:
             self.cursor_obj = _MixedCursor()
+            self.allow_commit = allow_commit
+            self.committed = False
             self.rolled_back = False
 
         def cursor(self) -> _MixedCursor:
             return self.cursor_obj
 
         def commit(self) -> None:
-            raise AssertionError("Pakiet mieszany nie może zostać zatwierdzony.")
+            if not self.allow_commit:
+                raise AssertionError("Pakiet mieszany nie może zostać zatwierdzony.")
+            self.committed = True
 
         def rollback(self) -> None:
             self.rolled_back = True
@@ -544,6 +550,41 @@ def test_bind_mixed_target_and_warehouse_batch_stops_before_update(monkeypatch) 
 
     assert connection.cursor_obj.updates == 0
     assert connection.rolled_back is True
+
+    retry_connection = _MixedConnection(allow_commit=True)
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding._get_firebird_connection",
+        lambda: retry_connection,
+    )
+    monkeypatch.setattr(
+        "app.services.workflow_machine_binding.find_model_in_firebird_by_id",
+        lambda model_id: FirebirdModelMatch(
+            found=model_id == 631,
+            id_model=631,
+            marka="Ricoh",
+            model="IM C300",
+            grupa="Druk",
+            rodzaj="Platne",
+            kolor="TAK",
+        ),
+    )
+    devices[0].snapshot = {
+        "ms_binding_status": "ok",
+        "ms_id_maszyna": 777,
+        "ms_id_klient": 2924,
+    }
+
+    items, errors = bind_devices_to_workflow_client(
+        workflow_case=workflow_case,
+        devices=devices,
+        actor_label="Operator Test",
+    )
+
+    assert errors == []
+    assert [item.ok for item in items] == [True, True]
+    assert retry_connection.cursor_obj.updates == 1
+    assert retry_connection.committed is True
+    assert retry_connection.rolled_back is False
 
 
 def test_resolve_machine_id_reports_ambiguous_serial_matches() -> None:
