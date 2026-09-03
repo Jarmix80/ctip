@@ -1210,7 +1210,8 @@ function initializeGenForm() {
         const customerPhone = payload.company_phone || item.customer_phone || "—";
         const customerAddress = formatCustomerAddress(payload) || "—";
         const actions = item.available_actions || {};
-        const hasWorkflowActions = Boolean(actions.workflow);
+        const payloadDecodeError = Boolean(item?.meta?.payload_decode_error);
+        const hasWorkflowActions = !payloadDecodeError && Boolean(actions.workflow);
         const msLabel = workflow.firebird_client_id
           ? workflow.firebird_client_status === "created"
             ? `Dodano nowego klienta ID ${workflow.firebird_client_id}`
@@ -1276,7 +1277,11 @@ function initializeGenForm() {
           </td>
           <td>
             <div class="genform-row-actions">
-              <button type="button" class="genform-row-action" data-action="view" data-form-id="${rowId}">Wyświetl</button>
+              ${
+                payloadDecodeError
+                  ? '<span class="genform-status warning">Dane formularza niedostępne</span>'
+                  : `<button type="button" class="genform-row-action" data-action="view" data-form-id="${rowId}">Wyświetl</button>`
+              }
               ${
                 hasWorkflowActions
                   ? `<button type="button" class="genform-row-action" data-action="devices" data-form-id="${rowId}">Dodaj urządzenie</button>

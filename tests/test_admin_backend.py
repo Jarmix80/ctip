@@ -6678,6 +6678,38 @@ class AdminBackendTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    async def test_contracts_dashboard_all_tolerates_undecryptable_archived_form(self):
+        token, _ = await self._login_operator()
+        archived = await self._create_submitted_form_request(
+            customer_name="Klient z archiwum",
+            customer_email="archiwum@example.local",
+            customer_phone="+48600300300",
+        )
+
+        async with self.session_factory() as session:
+            archived_form = await session.get(FormRequest, archived.id)
+            assert archived_form is not None
+            archived_form.submitted_payload = "nieprawidlowy-zaszyfrowany-payload"
+            archived_form.archive_bucket = "accepted"
+            archived_form.archived_at = datetime.now(UTC)
+            await session.commit()
+
+        response = await self.client.get(
+            "/admin/contracts/dashboard?forms_scope=all&include_devices=0&archive_scope=all",
+            headers={"X-Admin-Session": token},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["archive_totals"]["all"], 1)
+        self.assertEqual(len(body["forms"]), 1)
+        item = body["forms"][0]
+        self.assertEqual(item["id"], archived.id)
+        self.assertEqual(item["customer_name"], "Klient z archiwum")
+        self.assertTrue(item["meta"]["payload_decode_error"])
+        self.assertFalse(item["available_actions"]["workflow"])
+        self.assertTrue(any(f"Formularz {archived.id}:" in warning for warning in body["warnings"]))
+
     async def test_contracts_form_workflow_status_approved_order_runs_binding_automation(self):
         token, _ = await self._login_operator()
         form = await self._create_submitted_form_request()

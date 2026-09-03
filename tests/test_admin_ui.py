@@ -1024,6 +1024,8 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert '.replace(/ł/g, "l")' in content
     assert "function matchesGenformSearch(item, query)" in content
     assert 'let activeArchiveScope = "all";' in content
+    assert "Dane formularza niedostępne" in content
+    assert "payload_decode_error" in content
     search_values = content.split("function genformSearchValues(item)", maxsplit=1)[1].split(
         "function matchesGenformSearch(item, query)", maxsplit=1
     )[0]
