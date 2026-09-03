@@ -1,23 +1,23 @@
 {
-  "timestamp": "2026-09-03T14:42:00+02:00",
+  "timestamp": "2026-09-03T15:18:00+02:00",
   "summary": [
-    "Produkcja CTIP działa na commicie 3f0a2765127261a16f6cd9847496785a771b48c9 z gałęzi release/genform-search-all-2026-09-03.",
+    "Produkcja CTIP działa na commicie bc2028e5e78594acfff1629f6380055d714c3c6b z gałęzi release/genform-search-all-2026-09-03.",
     "W /genform wdrożono domyślny filtr Wszystkie, pojedynczą wyszukiwarkę formularzy oraz odporność na nieczytelne historyczne payloady.",
     "Wiązanie urządzeń FLOW korzysta z MASZYNA.ID_MODEL, gdy MAGAZYN.ID_MODEL jest pusty i dopasowanie nazwy modelu zawodzi.",
-    "Produkcyjny przypadek formularza 70, urządzenia 76 i MAGAZYN row=18479 rozwiązuje MASZYNA.ID_MASZYNA=7712 oraz MODEL.ID_MODEL=460 bez zapisu kontrolnego.",
-    "Pełny backup przed wdrożeniem zapisano w D:\\CTIP\\backups\\prod_20260903_143435.",
+    "Produkcyjny formularz 70 został ponowiony po hotfixie częściowego wiązania; urządzenia 75 i 76 są powiązane z klientem 1462, a row=18479 korzysta z MODEL.ID_MODEL=460.",
+    "Najnowszy pełny backup przed hotfixem zapisano w D:\\CTIP\\backups\\prod_20260903_151308.",
     "Po wdrożeniu repozytorium produkcyjne jest czyste, a CollectorService, CTIP-Web, CTIP-SMS i CTIP-FormsPublic mają stan Running.",
     "Kontrolowane endpointy CTIP-Web i CTIP-FormsPublic zwracają HTTP 200, a świeży log CTIP-Web nie zawiera błędów krytycznych."
   ],
   "follow_up": [
-    "Monitorować pierwsze rzeczywiste wykonanie wiązania FLOW dla formularza 70 i potwierdzić zakończenie bez komunikatu o braku modelu.",
-    "W razie potrzeby rollback kodu: git -C D:\\CTIP checkout --detach 4ed49178ba17758ee2ba895f6230b6cf782076b9; Start-Service CTIP-Web."
+    "Po odświeżeniu `/genform` potwierdzić użytkownikowi prezentację stanu Powiązano urządzenie/a z klientem (2).",
+    "W razie potrzeby rollback kodu hotfixu: git -C D:\\CTIP checkout --detach 3f0a2765127261a16f6cd9847496785a771b48c9; Start-Service CTIP-Web."
   ],
   "context": {
     "repo": "ctip",
     "branch_local": "release/genform-search-all-2026-09-03",
-    "production_head": "3f0a2765127261a16f6cd9847496785a771b48c9",
-    "previous_production_head": "4ed49178ba17758ee2ba895f6230b6cf782076b9",
+    "production_head": "bc2028e5e78594acfff1629f6380055d714c3c6b",
+    "previous_production_head": "3f0a2765127261a16f6cd9847496785a771b48c9",
     "venv": ".venv",
     "focus": "genform-flow-production",
     "source_host": "192.168.0.9",
@@ -26,7 +26,8 @@
       "pytest -q na finalnej gałęzi release: 720 passed, 15 skipped",
       "produkcyjny dry-run: passed",
       "produkcja: API archive_scope=all zwróciło 34 formularze, 0 ostrzeżeń i zawiera formularz 70",
-      "produkcja: row=18479 rozwiązuje machine=7712, model=460, source=machine_id_model",
+      "produkcja: formularz 70 ma service_manager_binding state=ok, success_count=2, error_count=0",
+      "produkcja: MASZYNA 7674 i 7712 mają ID_KLIENT=1462; MASZYNA 7712 ma ID_MODEL=460",
       "produkcja: wszystkie cztery usługi Running, CTIP-Web i CTIP-FormsPublic HTTP 200"
     ]
   }
