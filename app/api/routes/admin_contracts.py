@@ -1392,17 +1392,27 @@ async def contracts_dashboard_data(
             meta: dict = {}
             firebird_match = None
             contract_action: str | None = None
+            payload_decode_error = False
 
             if item.status == "SUBMITTED":
-                decoded_payload, decoded_meta = form_generator.decode_submitted_payload(item)
-                payload = decoded_payload or {}
-                meta = decoded_meta or {}
-                nip = normalize_nip(str(payload.get("company_nip") or ""))
-                if nip:
-                    firebird_match = await resolve_client_match(nip)
-                    contract_action = (
-                        "podlacz_klienta" if firebird_match.found else "utworz_klienta"
+                try:
+                    decoded_payload, decoded_meta = form_generator.decode_submitted_payload(item)
+                except RuntimeError:
+                    payload_decode_error = True
+                    meta = {"payload_decode_error": True}
+                    nip = ""
+                    warnings.append(
+                        f"Formularz {item.id}: zaszyfrowane dane formularza są niedostępne."
                     )
+                else:
+                    payload = decoded_payload or {}
+                    meta = decoded_meta or {}
+                    nip = normalize_nip(str(payload.get("company_nip") or ""))
+                    if nip:
+                        firebird_match = await resolve_client_match(nip)
+                        contract_action = (
+                            "podlacz_klienta" if firebird_match.found else "utworz_klienta"
+                        )
             else:
                 nip = ""
 
@@ -1410,12 +1420,28 @@ async def contracts_dashboard_data(
             flow_status = _flow_status_for_form(item, workflow_summary)
             archive_bucket = _archive_bucket_for_form(item, workflow_summary)
             available_actions = {
-                "workflow": item.status == "SUBMITTED" and item.archive_bucket is None,
-                "proforma": item.status == "SUBMITTED" and item.archive_bucket is None,
-                "status_change": item.status == "SUBMITTED" and item.archive_bucket is None,
-                "summary": flow_status["value"] == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER,
+                "workflow": (
+                    not payload_decode_error
+                    and item.status == "SUBMITTED"
+                    and item.archive_bucket is None
+                ),
+                "proforma": (
+                    not payload_decode_error
+                    and item.status == "SUBMITTED"
+                    and item.archive_bucket is None
+                ),
+                "status_change": (
+                    not payload_decode_error
+                    and item.status == "SUBMITTED"
+                    and item.archive_bucket is None
+                ),
+                "summary": (
+                    not payload_decode_error
+                    and flow_status["value"] == WORKFLOW_BUSINESS_STATUS_APPROVED_ORDER
+                ),
                 "release_resources": (
-                    flow_status["value"] == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE
+                    not payload_decode_error
+                    and flow_status["value"] == WORKFLOW_BUSINESS_STATUS_REJECTED_GRENKE
                     and not workflow_summary.get("resources_released_at")
                     and item.archive_bucket is None
                 ),
