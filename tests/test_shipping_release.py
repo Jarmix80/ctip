@@ -175,12 +175,14 @@ class ShippingReleaseTests(unittest.TestCase):
     def test_operacje_mutacyjne_maja_blokady_a_synchronizacja_jest_odczytowa(self) -> None:
         routes = Path("app/api/routes/admin_shipping.py").read_text(encoding="utf-8")
 
-        self.assertEqual(routes.count("@router.post"), 16)
+        self.assertEqual(routes.count("@router.post"), 17)
         self.assertEqual(routes.count("_require_catalog_mutations()"), 6)
-        self.assertEqual(routes.count("_require_fulfillment()"), 10)
+        self.assertEqual(routes.count("_require_fulfillment()"), 11)
         self.assertIn('@router.post("/tracking/sync"', routes)
+        self.assertIn('@router.post("/reconciliation/run"', routes)
         self.assertIn('@router.post("/geocoder/match"', routes)
         self.assertIn("synchronize_dpd_infoservices", routes)
+        self.assertIn("synchronize_shipping_ms", routes)
 
 
 if __name__ == "__main__":

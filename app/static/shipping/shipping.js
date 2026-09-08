@@ -583,6 +583,61 @@ function shippingAlert(message, error = false) {
   node.className = `shipping-alert${error ? " error" : ""}`;
 }
 
+function shippingMsReconciliationLabel(status = {}) {
+  if (!status.enabled) return "Wyłączona";
+  if (status.running || status.status === "processing") return "Sprawdzanie…";
+  if (status.status === "failed") return "Błąd kontroli";
+  if (status.status !== "success") return "Oczekuje na pierwszy cykl";
+  const reconciled = Number(status.reconciled_count || 0);
+  const conflicts = Number(status.conflict_count || 0);
+  if (conflicts) return `${conflicts} wymaga uzgodnienia`;
+  if (reconciled) return `${reconciled} zsynchronizowano`;
+  return "Zgodność potwierdzona";
+}
+
+function renderShippingMsReconciliationStatus(status = {}) {
+  const label = document.getElementById("shipping-ms-reconciliation-status");
+  const button = document.getElementById("shipping-ms-reconciliation-run");
+  if (!label || !button) return;
+  label.textContent = shippingMsReconciliationLabel(status);
+  const completed = status.completed_at ? shippingDateTimeLabel(status.completed_at) : null;
+  label.title = completed
+    ? `Ostatnia kontrola: ${completed}. Sprawdzono: ${Number(status.scanned_count || 0)}, zsynchronizowano: ${Number(status.reconciled_count || 0)}, konflikty: ${Number(status.conflict_count || 0)}.`
+    : "Kontrola aktywnych zleceń Shipping względem Menadżera Serwisu.";
+  button.disabled = !status.enabled || !shippingFulfillmentEnabled() || Boolean(status.running);
+  button.title = status.enabled
+    ? "Sprawdź teraz aktywne zlecenia i przejmij wyłącznie w pełni zgodne ręczne zamknięcia"
+    : "Automatyczna kontrola MS jest wyłączona w konfiguracji";
+}
+
+async function refreshShippingMsReconciliationStatus() {
+  try {
+    const status = await shippingJson("/admin/shipping/reconciliation/status");
+    if (shippingState.config) shippingState.config.ms_reconciliation = status;
+    renderShippingMsReconciliationStatus(status);
+  } catch (_error) {
+    return null;
+  }
+  return shippingState.config?.ms_reconciliation || null;
+}
+
+async function runShippingMsReconciliation() {
+  const button = document.getElementById("shipping-ms-reconciliation-run");
+  button.disabled = true;
+  button.textContent = "Sprawdzanie…";
+  try {
+    const result = await shippingJson("/admin/shipping/reconciliation/run", { method: "POST" });
+    shippingAlert(`Kontrola MS zakończona. Sprawdzono: ${Number(result.scanned_count || 0)}, zsynchronizowano: ${Number(result.reconciled_count || 0)}, przywrócono: ${Number(result.restored_count || 0)}, wymagają uzgodnienia: ${Number(result.conflict_count || 0)}.`, Number(result.conflict_count || 0) > 0);
+    shippingState.archive.loaded = false;
+    await Promise.all([loadShippingQueue(false), refreshShippingMsReconciliationStatus()]);
+  } catch (error) {
+    shippingAlert(error.message, true);
+  } finally {
+    button.textContent = shippingState.layout === "legacy" ? "Sprawdź teraz" : "Sprawdź";
+    renderShippingMsReconciliationStatus(shippingState.config?.ms_reconciliation || {});
+  }
+}
+
 function shippingQueueDateValue(item) {
   const parsed = Date.parse(item?.order_date || "");
   return Number.isFinite(parsed) ? parsed : 0;
@@ -1847,6 +1902,7 @@ async function refreshShippingRuntimeState() {
   try {
     await loadShippingQueue(false, true);
     await refreshShippingOrderState();
+    await refreshShippingMsReconciliationStatus();
   } finally {
     shippingState.runtimeRefreshBusy = false;
   }
@@ -1948,6 +2004,9 @@ function shippingArchiveEventLabel(type) {
     courier_handover: "Kurier odebrał paczkę",
     firebird_rw_reconciled: "Uzgodniono dokument RW",
     external_order_state_conflict: "Wykryto konflikt stanu MS",
+    external_manual_change_conflict: "Wykryto ręczną zmianę w MS",
+    external_manual_change_restored: "Przywrócono zgodny stan MS",
+    external_closure_reconciled: "Przejęto ręczne zamknięcie z MS",
   }[type] || type || "Zdarzenie systemowe";
 }
 
@@ -2611,6 +2670,7 @@ async function initializeShipping() {
     document.getElementById("shipping-user").textContent = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
     shippingState.config = await shippingJson("/admin/shipping/config");
     const config = shippingState.config;
+    renderShippingMsReconciliationStatus(config.ms_reconciliation || {});
     renderShippingRecipientFieldCounters();
     const dpdLabel = {
       mock: "Symulacja lokalna",
@@ -2680,6 +2740,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shipping-print-packing").addEventListener("click", printSelectedShippingPackingList);
   document.getElementById("shipping-print-selected").addEventListener("click", printSelectedShippingLabels);
   document.getElementById("shipping-dpd-demo-test").addEventListener("click", runDpdDemoDiagnostic);
+  document.getElementById("shipping-ms-reconciliation-run").addEventListener("click", runShippingMsReconciliation);
   document.getElementById("shipping-clear-selection").addEventListener("click", clearShippingSelection);
   document.getElementById("shipping-consolidation-select").addEventListener("click", selectShippingConsolidationGroup);
   document.getElementById("shipping-contact-select").addEventListener("change", (event) => applyShippingContact(event.currentTarget.value));

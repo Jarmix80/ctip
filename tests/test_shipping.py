@@ -2307,7 +2307,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-label-fulltext-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-ms-reconcile-01",
             response.text,
         )
         self.assertIn(
@@ -2385,7 +2385,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping.css?v={app.version}-label-fulltext-01",
+            f"/static/shipping/shipping.css?v={app.version}-ms-reconcile-01",
             response.text,
         )
         self.assertIn(

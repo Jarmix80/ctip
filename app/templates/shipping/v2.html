@@ -5,9 +5,9 @@
     <title>CTIP – wysyłki części V2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-label-fulltext-01">
-    <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-label-fulltext-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-closed-status-01"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-ms-reconcile-01">
+    <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-ms-reconcile-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-ms-reconcile-01"></script>
     <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-device-model-01"></script>
   </head>
   <body class="shipping-v2-body{% if shipping_default_entry %} shipping-layout-resolving{% endif %}" data-shipping-layout="v2" data-shipping-default-entry="{{ 'true' if shipping_default_entry else 'false' }}">
@@ -37,6 +37,7 @@
       <section id="shipping-dispatch-view">
         <div class="shipping-v2-infobar">
           <article><i class="online"></i><span><small>DPD</small><strong id="shipping-dpd-status">—</strong></span><button id="shipping-dpd-demo-test" type="button" hidden>Test DPD Demo</button></article>
+          <article><i>↔</i><span><small>Kontrola MS</small><strong id="shipping-ms-reconciliation-status">—</strong></span><button id="shipping-ms-reconciliation-run" type="button">Sprawdź</button></article>
           <article><i>▣</i><span><small>Magazyn</small><strong id="shipping-warehouse">—</strong></span></article>
           <article><i>✓</i><span><small>Gotowe etykiety</small><strong id="shipping-v2-ready-count">0 przesyłek</strong></span></article>
           <article><i>◷</i><span><small>Odbiór kuriera</small><strong id="shipping-cutoff">—</strong></span></article>

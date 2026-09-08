@@ -5,8 +5,8 @@
     <title>CTIP – wysyłki części</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-label-fulltext-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-closed-status-01"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-ms-reconcile-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-ms-reconcile-01"></script>
     <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-device-model-01"></script>
   </head>
   <body data-shipping-layout="legacy" data-shipping-default-entry="false">
@@ -38,6 +38,7 @@
       <section id="shipping-dispatch-view">
       <section class="shipping-status-grid">
         <article><span>DPD</span><strong id="shipping-dpd-status">—</strong><button id="shipping-dpd-demo-test" type="button" class="shipping-button secondary compact" hidden>Test DPD Demo</button></article>
+        <article><span>Kontrola MS</span><strong id="shipping-ms-reconciliation-status">—</strong><button id="shipping-ms-reconciliation-run" type="button" class="shipping-button secondary compact">Sprawdź teraz</button></article>
         <article><span>Magazyn</span><strong id="shipping-warehouse">—</strong></article>
         <article><span>Kurier</span><strong id="shipping-cutoff">—</strong></article>
         <article><span>Do obsługi</span><strong id="shipping-count">0</strong></article>

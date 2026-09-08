@@ -96,6 +96,11 @@ from app.services.shipping_geocoder import (
     ShippingGeocoderConfigurationError,
     ShippingGeocoderTransportError,
 )
+from app.services.shipping_ms_reconciliation import (
+    ShippingMsReconciliationBusyError,
+    shipping_ms_reconciliation_status,
+    synchronize_shipping_ms,
+)
 from app.services.shipping_tracking import (
     get_shipping_tracking_detail,
     list_shipping_tracking,
@@ -126,7 +131,7 @@ WARSAW = ZoneInfo("Europe/Warsaw")
 logger = logging.getLogger(__name__)
 
 
-async def _record_shipping_close_audit(
+async def _record_shipping_business_audit(
     session: AsyncSession,
     *,
     user_id: int,
@@ -393,7 +398,58 @@ async def shipping_config(
             "batch_limit": min(settings.shipping_compatibility_web_batch_limit, 20),
             "daily_limit": settings.shipping_compatibility_web_daily_limit,
         },
+        "ms_reconciliation": shipping_ms_reconciliation_status(),
     }
+
+
+@router.get("/reconciliation/status", summary="Stan uzgadniania aktywnych zleceń z MS")
+async def shipping_ms_reconciliation_status_endpoint(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Zwraca stan harmonogramu bez wykonywania odczytu Firebirda."""
+    await _require_shipping_access(admin_context, session)
+    return shipping_ms_reconciliation_status()
+
+
+@router.post("/reconciliation/run", summary="Uzgodnij aktywne zlecenia Shipping z MS")
+async def shipping_ms_reconciliation_run(
+    admin_context=Depends(get_admin_session_context),  # noqa: B008
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Uruchamia kontrolowany cykl i zapisuje audyt ręcznego wywołania."""
+    admin_session, _ = admin_context
+    user = await _require_shipping_access(admin_context, session)
+    _require_fulfillment()
+    if not settings.shipping_ms_reconcile_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Automatyczne uzgadnianie Shipping z MS jest wyłączone w konfiguracji.",
+        )
+    try:
+        result = await synchronize_shipping_ms(
+            trigger_type="manual",
+            user_id=user.id,
+            apply=True,
+        )
+    except ShippingMsReconciliationBusyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return await _record_shipping_business_audit(
+        session,
+        user_id=user.id,
+        action="shipping_ms_reconciliation",
+        client_ip=admin_session.client_ip,
+        payload=result,
+        audit_payload={
+            "scanned_count": result["scanned_count"],
+            "healthy_count": result["healthy_count"],
+            "reconciled_count": result["reconciled_count"],
+            "restored_count": result["restored_count"],
+            "conflict_count": result["conflict_count"],
+        },
+    )
 
 
 @router.post("/geocoder/match", summary="Dopasuj adres dostawy w Adresy.app")
@@ -1932,7 +1988,7 @@ async def shipping_order_close_execute(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
-    return await _record_shipping_close_audit(
+    return await _record_shipping_business_audit(
         session,
         user_id=user_id,
         action="shipping_order_close",
@@ -1971,7 +2027,7 @@ async def shipping_day_close_execute(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
-    return await _record_shipping_close_audit(
+    return await _record_shipping_business_audit(
         session,
         user_id=user_id,
         action="shipping_day_close",

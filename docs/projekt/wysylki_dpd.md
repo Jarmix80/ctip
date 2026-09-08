@@ -17,6 +17,14 @@ Moduł `/delivery` obsługujący dowozy urządzeń i workflow GRENKE pozostaje o
 7. „Realizacja wysyłek” oraz „Archiwum” pokazują skrót bieżącego statusu i odnośnik do pełnej osi zdarzeń. Snapshot Archiwum pozostaje niezmienny; status jest dołączany dynamicznie.
 8. InfoServices pozostaje warstwą tylko do odczytu wobec DPD. Synchronizacja nie zamyka zleceń, nie tworzy ani nie usuwa RW, WZ lub FV, nie zmienia stanu magazynu i nie wywołuje DispositionServices. Osobna flaga może jednak wykorzystać potwierdzone zdarzenia do idempotentnego uzupełnienia pól dat i opisu przesyłki w zleceniu MS.
 
+## Uzgadnianie ręcznych zmian MS
+
+1. Niezależny harmonogram kontroluje aktywne przesyłki `label_ready`, `handed_over` oraz konflikty utworzone przez ten mechanizm. Pierwszy cykl uruchamia się po starcie backendu, kolejne domyślnie co 300 sekund.
+2. Kontrola tylko odczytuje Firebirda. Pełne ręczne zamknięcie może zostać przejęte do PostgreSQL CTIP wyłącznie przy zgodności numeru DPD, rodzaju i liczby dokumentów, powiązań klienta, zlecenia i magazynu oraz wszystkich pozycji, cen netto, stawek VAT, ilości, `POBRANO` i `ILOSCWZ`.
+3. Zgodny rekord otrzymuje dokumenty, zewnętrzną datę i operatora zamknięcia, trafia do Archiwum oraz zapisuje zdarzenie `external_closure_reconciled`. Powiadomienia nie są wysyłane i otrzymują stan `skipped_external`.
+4. Rozbieżność ustawia `reconcile_required`, zachowuje dokładny komunikat i zdarzenie `external_manual_change_conflict`. Po ręcznym przywróceniu poprawnego stanu oczekującego kontroler odtwarza wcześniejszy etap i zapisuje `external_manual_change_restored`.
+5. Blokada procesu i blokada doradcza PostgreSQL uniemożliwiają równoległy cykl z innej instancji. Kontroler nie obejmuje rekordów już zamkniętych w Archiwum.
+
 ## Przepływ operacyjny
 
 1. CTIP pobiera z lokalnego lub produkcyjnego Firebirda wyłącznie niezakończone zlecenia `TYP_US=8` w stanie `O` albo `ZR`, dla których `ZLECENIE.TECHNIK` i `ZLECENIE.TECHNIK2` są puste albo zawierają dokładną wartość techniczną `Wysyłka Wysyłka`. Każdy inny technik oznacza, że materiał dostarcza pracownik terenowy, dlatego takie zlecenie nie trafia do kolejki wysyłkowej.
@@ -131,6 +139,8 @@ Tabele `shipping_address` i `shipping_case` przechowują `location_source`, `loc
 - `GET /admin/shipping/tracking` — stronicowana lista numerów listów ze statusem, filtrami, podsumowaniem i powiązanymi zleceniami CTIP.
 - `GET /admin/shipping/tracking/{waybill}` — pełna oś zdarzeń DPD dla jednego numeru listu wraz z odnośnikami do Realizacji i Archiwum.
 - `POST /admin/shipping/tracking/sync` — ręczne uruchomienie chronionej synchronizacji przyrostowej InfoServices.
+- `GET /admin/shipping/reconciliation/status` — stan harmonogramu i podsumowanie ostatniej kontroli aktywnych przesyłek względem MS.
+- `POST /admin/shipping/reconciliation/run` — natychmiastowy, idempotentny cykl uzgadniania z audytem operatora.
 - `GET /admin/shipping/queue` — kolejka zleceń z Firebirda z polskim etapem prezentowanym przez UI, źródłem `mobile|manual`, decyzją FV, podsumowaniem zaległych płatności i informacją o możliwym wspólnym pakowaniu.
 - `GET /admin/shipping/orders/{id}` — pełna treść zlecenia, kontekst lokalizacji, jawni kandydaci adresu, stan, zgodności i lista przeterminowanych nieopłaconych FV klienta.
 - `GET /admin/shipping/orders/{id}/state` — lekki, bieżący stan MS używany przez okresowe odświeżanie i blokady interfejsu.
@@ -182,7 +192,8 @@ Motyw V2 stosuje granatowo-grafitową kolorystykę wariantu 03, miętowe akcenty
 10. Wydrukuj partie 1, 2, 3, 4 i 5 etykiet, sprawdź rozpoczęcie od pierwszego pola arkusza oraz zeskanuj wszystkie kody. Lista części musi zostać wydrukowana jako osobne zadanie na zwykłym papierze.
 11. Produkcję uruchamiaj etapowo. Faza odczytowa używa `SHIPPING_ENABLED=true`, `SHIPPING_CATALOG_MUTATIONS_ENABLED=true`, `SHIPPING_FULFILLMENT_ENABLED=false` i `DPD_ENABLED=false`. Dopiero po kontroli kolejki oraz katalogu ustaw `SHIPPING_FULFILLMENT_ENABLED=true`, `DPD_MODE=production`, `DPD_ENABLED=true` i pozostaw produkcyjne `FB_ALLOW_WRITES=true`.
 12. InfoServices uruchom niezależnie po migracji: ustaw `DPD_INFO_ENABLED=true`, oficjalny `DPD_INFO_API_URL`, kanał w `DPD_INFO_CHANNEL` oraz dane `DPD_LOGIN` i `DPD_PASSWORD`. Flaga `SHIPPING_DPD_FIREBIRD_MILESTONES_ENABLED` pozostaje wyłączona do zakończenia pilota na kopii Firebirda. Zweryfikuj ręczną synchronizację, a następnie ostatni przebieg i liczniki w zakładce „Status przesyłek”.
-13. Geokoder uruchom osobno przez `SHIPPING_GEOCODER_ENABLED=true` i klucz `ADDRESY_APP_API_KEY`. Produkcja akceptuje wyłącznie `https://api.adresy.app/api/v1`; klucz pozostaje po stronie backendu. Przed włączeniem sprawdź adres poprawny, niepełny, błędny oraz adres z numerem lokalu.
+13. Kontroler ręcznych zmian wdrażaj z `SHIPPING_MS_RECONCILE_ENABLED=false`. Najpierw uruchom `scripts/reconcile_shipping_ms.py` bez flagi `--apply`, sprawdź raport, a dopiero potem ustaw flagę na `true`. Domyślne wartości to `SHIPPING_MS_RECONCILE_INTERVAL_SECONDS=300` i `SHIPPING_MS_RECONCILE_BATCH_LIMIT=250`.
+14. Geokoder uruchom osobno przez `SHIPPING_GEOCODER_ENABLED=true` i klucz `ADDRESY_APP_API_KEY`. Produkcja akceptuje wyłącznie `https://api.adresy.app/api/v1`; klucz pozostaje po stronie backendu. Przed włączeniem sprawdź adres poprawny, niepełny, błędny oraz adres z numerem lokalu.
 
 Pierwsze uzupełnienie historii wykonuj dwuetapowo. Najpierw pokaż plan bez zapisu:
 
