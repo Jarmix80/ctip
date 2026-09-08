@@ -1504,7 +1504,7 @@ function shippingOrderStateWarningMessage(orderState) {
   const shipment = shippingState.detail?.case?.shipment;
   const localTracking = shipment?.tracking_number || null;
   if (orderState.completed) {
-    return `Zlecenie #${orderNumber} zostało już zrealizowane w MS. CTIP nie utworzy FV, WZ ani RW i nie zmieni stanu magazynu.`;
+    return `Zlecenie #${orderNumber} ma w MS stan „${orderState.status_label}”. CTIP nie utworzy FV, WZ ani RW i nie zmieni stanu magazynu.`;
   }
   if (orderState.has_assigned_technician) {
     return `Zlecenie ma przypisanego technika: ${orderState.assigned_technician}. Materiał dostarcza pracownik, dlatego wysyłka magazynowa jest zablokowana.`;

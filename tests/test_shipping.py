@@ -1955,6 +1955,82 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 1,
             )
 
+    async def test_jawny_tryb_naprawczy_zamyka_zlecenie_bez_dokumentow(self) -> None:
+        async with self.session_factory() as session:
+            with patch(
+                "app.services.shipping_workflow.load_physical_stock",
+                return_value=_stock(),
+            ):
+                await review_shipping_order(
+                    session,
+                    order=_order(),
+                    payload=_review_payload(),
+                    user_id=1,
+                )
+            case = await session.scalar(select(ShippingCase))
+            shipment = ShippingShipment(
+                shipping_case_id=case.id,
+                idempotency_key=str(uuid4()),
+                provider_mode="manual",
+                provider_shipment_id="123456789",
+                tracking_number="123456789",
+                status="label_ready",
+                provider_request={},
+                provider_response={},
+                firebird_status="written",
+                created_by=1,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+            session.add(shipment)
+            case.status = "shipment_created"
+            await session.commit()
+            closed_without_documents = shipping_order_state_payload(
+                {
+                    **_order(),
+                    "status": "Z",
+                    "tracking_number": "123456789",
+                    "closed_date": date.today(),
+                    "order_operator": "Utworzył: Joanna, Zamknął :Agnieszka",
+                }
+            )
+
+            with (
+                patch(
+                    "app.services.shipping_workflow.load_shipping_order_state",
+                    return_value=closed_without_documents,
+                ),
+                patch(
+                    "app.services.shipping_workflow.finalize_shipping_order",
+                    return_value={
+                        "status": "created",
+                        "document_mode": "rw",
+                        "rw_id": 38711,
+                        "rw_number": "RW / 2089 / 2026",
+                        "wz_id": None,
+                        "wz_number": None,
+                        "invoice_id": None,
+                        "invoice_number": None,
+                    },
+                ) as finalize,
+                patch(
+                    "app.services.shipping_workflow._send_notifications",
+                    return_value=[],
+                ),
+            ):
+                result = await close_shipping_order(
+                    session,
+                    order_table_id=1001,
+                    user_id=1,
+                    allow_preclosed_without_documents=True,
+                )
+
+            self.assertEqual(result["status"], "closed")
+            self.assertEqual(result["documents"]["rw_number"], "RW / 2089 / 2026")
+            self.assertTrue(finalize.call_args.kwargs["allow_preclosed_without_documents"])
+            self.assertEqual(case.status, "closed")
+            self.assertEqual(shipment.status, "closed")
+
     async def test_zmiana_lokalizacji_blokuje_utworzenie_przesylki(self) -> None:
         original_order = _order()
         changed_order = {**original_order, "machine_location": "Magazyn, piętro 1"}
@@ -2412,14 +2488,30 @@ class ShippingSchemaTests(unittest.TestCase):
 
     def test_stan_zlecenia_blokuje_zamkniete_i_przypisane_technikowi(self) -> None:
         completed = shipping_order_state_payload({**_order(), "status": "Z"})
+        closed = shipping_order_state_payload(
+            {
+                **_order(),
+                "status": "Z",
+                "tracking_number": "123456789",
+                "closed_date": date(2026, 9, 8),
+                "closed_time": "14:24:29",
+                "order_operator": "Utworzył: Joanna, Zamknął :Joanna Gostynska",
+            }
+        )
         assigned = shipping_order_state_payload({**_order(), "technician": "Tomek Kurtek"})
         shipping = shipping_order_state_payload(
             {**_order(), "technician": SHIPPING_TECHNICIAN_NAME}
         )
 
         self.assertTrue(completed["completed"])
+        self.assertEqual(completed["status_label"], "zrealizowane")
         self.assertFalse(completed["eligible_for_shipping"])
         self.assertFalse(completed["can_finalize"])
+        self.assertTrue(closed["completed"])
+        self.assertTrue(closed["closed"])
+        self.assertEqual(closed["status_label"], "zamknięte")
+        self.assertEqual(closed["closed_date"], "2026-09-08")
+        self.assertTrue(closed["recoverable_preclosed"])
         self.assertTrue(assigned["has_assigned_technician"])
         self.assertEqual(assigned["assigned_technician"], "Tomek Kurtek")
         self.assertFalse(assigned["can_review"])
@@ -2734,7 +2826,7 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertEqual(result["changed_fields"], ["DATA_PRZES_WE", "PRZESYLKA_WE"])
         connection.commit.assert_called_once()
 
-    def test_rw_powstaje_w_zakupy_z_kolejnym_numerem_magazynowym(self) -> None:
+    def test_tryb_naprawczy_tworzy_rw_dla_zlecenia_zamknietego_bez_dokumentow(self) -> None:
         connection = MagicMock()
         cursor = connection.cursor.return_value
         cursor.fetchone.side_effect = [
@@ -2758,7 +2850,7 @@ class ShippingSchemaTests(unittest.TestCase):
                 "MOCK123",
                 "Ricoh",
                 "MPC 3003",
-                "ZR",
+                "Z",
                 None,
                 None,
             ),
@@ -2768,7 +2860,16 @@ class ShippingSchemaTests(unittest.TestCase):
             None,
             (2089,),
             (38711,),
-            (None, None, None, None, "MOCK123", "ZR", None, "Utworzył: Joanna"),
+            (
+                None,
+                None,
+                None,
+                None,
+                "MOCK123",
+                "Z",
+                date.today(),
+                "Utworzył: Joanna, Zamknął :Agnieszka",
+            ),
             (
                 38711,
                 None,
@@ -2777,7 +2878,7 @@ class ShippingSchemaTests(unittest.TestCase):
                 "MOCK123",
                 "Z",
                 date.today(),
-                "Utworzył: Joanna, Zamknął :Operator Testowy",
+                "Utworzył: Joanna, Zamknął :Agnieszka",
             ),
         ]
         cursor.fetchall.return_value = [
@@ -2821,6 +2922,7 @@ class ShippingSchemaTests(unittest.TestCase):
                 tracking_number="MOCK123",
                 issued_by="Operator Testowy",
                 shipping_address=None,
+                allow_preclosed_without_documents=True,
             )
 
         executed_queries = "\n".join(call.args[0] for call in cursor.execute.call_args_list)

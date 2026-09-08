@@ -561,6 +561,12 @@ def shipping_order_state_payload(order: dict[str, Any]) -> dict[str, Any]:
     """Buduje bezpieczny stan operacyjny zlecenia do kontroli współbieżności."""
     order_status = (_text(order.get("status")) or "").upper()
     tracking_number = _text(order.get("tracking_number"))
+    closed_date = _date_value(order.get("closed_date"))
+    closed_time = order.get("closed_time")
+    order_operator = _text(order.get("order_operator") or order.get("operator"))
+    has_closing_operator = bool(
+        re.search(r"(?:^|,\s*)Zamknął\s*:", order_operator or "", flags=re.IGNORECASE)
+    )
     technicians = [
         value
         for value in (
@@ -581,12 +587,29 @@ def shipping_order_state_payload(order: dict[str, Any]) -> dict[str, Any]:
     is_queue_status = order_status in QUEUE_STATUSES
     eligible_for_shipping = is_queue_status and not has_assigned_technician
     completed = order_status == "Z"
+    fully_closed = completed and closed_date is not None and has_closing_operator
+    has_documents = bool(
+        order.get("invoice_id")
+        or order.get("wz_id")
+        or order.get("rw_id")
+        or _text(order.get("document_number"))
+    )
+    recoverable_preclosed = bool(
+        completed and tracking_number and not has_assigned_technician and not has_documents
+    )
     return {
         "order_table_id": int(order["order_table_id"]),
         "order_id": int(order["order_id"]),
         "order_year": int(order["order_year"]),
         "status": order_status,
-        "status_label": ORDER_STATUS_LABELS.get(order_status, order_status or "nieznany"),
+        "status_label": (
+            "zamknięte"
+            if fully_closed
+            else ORDER_STATUS_LABELS.get(order_status, order_status or "nieznany")
+        ),
+        "closed": fully_closed,
+        "closed_date": closed_date.isoformat() if closed_date else None,
+        "closed_time": str(closed_time) if closed_time is not None else None,
         "tracking_number": tracking_number,
         "invoice_id": order.get("invoice_id"),
         "wz_id": order.get("wz_id"),
@@ -599,6 +622,7 @@ def shipping_order_state_payload(order: dict[str, Any]) -> dict[str, Any]:
         "is_queue_status": is_queue_status,
         "eligible_for_shipping": eligible_for_shipping,
         "completed": completed,
+        "recoverable_preclosed": recoverable_preclosed,
         "can_review": eligible_for_shipping and not tracking_number,
         "can_prepare_shipment": eligible_for_shipping
         and (order_status == "O" or (order_status == "ZR" and not tracking_number)),
@@ -637,7 +661,8 @@ def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
         cursor.execute(
             """
             SELECT ID_ZLECENIE_TABLE, ID_ZLECENIE, ROK, STAN, PRZESYLKA,
-                   ID_FAKTURA, ID_WZ, ID_RW, FAKTURA, TECHNIK, TECHNIK2
+                   ID_FAKTURA, ID_WZ, ID_RW, FAKTURA, TECHNIK, TECHNIK2,
+                   DATA_Z, GODZINA_Z, OPERATOR
             FROM ZLECENIE
             WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
             """,
@@ -658,6 +683,9 @@ def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
             document_number,
             technician,
             secondary_technician,
+            closed_date,
+            closed_time,
+            order_operator,
         ) = row
         return shipping_order_state_payload(
             {
@@ -672,6 +700,9 @@ def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
                 "document_number": document_number,
                 "technician": technician,
                 "secondary_technician": secondary_technician,
+                "closed_date": closed_date,
+                "closed_time": closed_time,
+                "order_operator": order_operator,
             }
         )
     finally:
@@ -1005,6 +1036,8 @@ def load_shipping_order(order_table_id: int) -> dict[str, Any]:
                 z.E_MAIL AS ORDER_EMAIL,
                 z.ZGLASZA AS CONTACT_NAME,
                 z.OPERATOR AS ORDER_OPERATOR,
+                z.DATA_Z AS CLOSED_DATE,
+                z.GODZINA_Z AS CLOSED_TIME,
                 z.MARKA AS DEVICE_BRAND,
                 z.MODEL AS DEVICE_MODEL,
                 z.SERIAL AS DEVICE_SERIAL,
@@ -1852,8 +1885,9 @@ def finalize_shipping_order(
     tracking_number: str,
     issued_by: str,
     shipping_address: dict[str, Any] | None = None,
+    allow_preclosed_without_documents: bool = False,
 ) -> dict[str, Any]:
-    """Tworzy RW albo WZ z opcjonalną FV, wiąże dokumenty i zamyka zlecenie."""
+    """Tworzy dokumenty i opcjonalnie naprawia jawnie wskazane wcześniejsze zamknięcie."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
@@ -2077,7 +2111,14 @@ def finalize_shipping_order(
                 "invoice_number": None,
             }
 
-        if not order_state["can_finalize"]:
+        preclosed_recovery = bool(
+            allow_preclosed_without_documents
+            and order_state["recoverable_preclosed"]
+            and invoice_row is None
+            and wz_row is None
+            and rw_row is None
+        )
+        if not order_state["can_finalize"] and not preclosed_recovery:
             raise ShippingOrderStateConflict(
                 shipping_order_state_conflict_message(
                     order_state,

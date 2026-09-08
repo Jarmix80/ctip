@@ -2243,8 +2243,9 @@ async def _finalize_shipping_shipment(
     operator_name: str,
     day_close_id: int | None = None,
     send_notifications: bool = True,
+    allow_preclosed_without_documents: bool = False,
 ) -> dict[str, Any]:
-    """Finalizuje przesyłkę i opcjonalnie wysyła jedno powiadomienie dla fizycznej paczki."""
+    """Finalizuje przesyłkę, a tryb naprawczy dopuszcza zamknięcie bez dokumentów."""
     if shipment.status not in {"label_ready", "handed_over"}:
         raise ShippingConflictError(
             "Wybrane zlecenie nie ma gotowej etykiety oczekującej na odbiór kuriera."
@@ -2262,7 +2263,12 @@ async def _finalize_shipping_shipment(
             case.firebird_order_table_id,
         )
         tracking_matches = order_state["tracking_number"] == _text(shipment.tracking_number)
-        if not order_state["can_finalize"] or not tracking_matches:
+        preclosed_recovery = bool(
+            allow_preclosed_without_documents
+            and order_state["recoverable_preclosed"]
+            and tracking_matches
+        )
+        if (not order_state["can_finalize"] and not preclosed_recovery) or not tracking_matches:
             if tracking_matches:
                 conflict_message = shipping_order_state_conflict_message(
                     order_state,
@@ -2334,6 +2340,7 @@ async def _finalize_shipping_shipment(
                 tracking_number=str(shipment.tracking_number),
                 issued_by=operator_name,
                 shipping_address=case.address_snapshot,
+                allow_preclosed_without_documents=allow_preclosed_without_documents,
             )
         document_result.setdefault("document_mode", document_mode)
         shipment.firebird_rw_id = document_result.get("rw_id")
@@ -2401,8 +2408,9 @@ async def close_shipping_order(
     *,
     order_table_id: int,
     user_id: int,
+    allow_preclosed_without_documents: bool = False,
 ) -> dict[str, Any]:
-    """Kończy wybrane zlecenie albo wszystkie zlecenia jednej wspólnej paczki."""
+    """Kończy zlecenie; tryb naprawczy obsługuje wcześniejsze zamknięcie bez dokumentów."""
     stmt = (
         select(ShippingCase, ShippingShipment)
         .join(ShippingShipment, ShippingShipment.shipping_case_id == ShippingCase.id)
@@ -2493,6 +2501,7 @@ async def close_shipping_order(
                     user_id=user_id,
                     operator_name=operator_name,
                     send_notifications=send_notifications,
+                    allow_preclosed_without_documents=allow_preclosed_without_documents,
                 )
                 if notification_group is not None and send_notifications:
                     handled_notification_groups.add(notification_group)

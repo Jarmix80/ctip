@@ -13,7 +13,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Rejestr identyfikatorów, scenariuszy dokumentowych i początkowych stanów magazynowych pilota Shipping: `docs/instal/pilot_shipping_2026-08-28.md`.
 - Awaryjna korekta stawki VAT faktury Shipping odrzuconej przez KSeF oraz trwały hotfix formattera MS: `docs/instal/hotfix_shipping_ksef_vat_2026-09-01.md`.
 - Hotfix fałszywego błędu zamknięcia Shipping, idempotencji dnia, audytu i kanonicznego nadawcy SMTP: `docs/instal/hotfix_shipping_close_email_2026-09-01.md`.
-- Hotfix pełnego zamknięcia zleceń Shipping, naprawa `DATA_Z` i operatora oraz procedura korekty historycznej: `docs/instal/hotfix_shipping_pelne_zamkniecie_2026-09-08.md`.
+- Hotfix pełnego zamknięcia zleceń Shipping, naprawa `DATA_Z` i operatora, rozróżnienie statusu „zamknięte” oraz procedury korekty historycznej i przerwanego zamknięcia dnia: `docs/instal/hotfix_shipping_pelne_zamkniecie_2026-09-08.md`, `scripts/repair_shipping_day_close.py`.
 - Produkcyjny runbook dla zmian GENFORM/FLOW (backup, migracje, konfiguracja skrzynki i arkusza, rollback): `docs/instal/wdrozenie_genform_flow_prod_2026-04-29.md`.
 - Runbook zabezpieczenia API, logicznego backupu PostgreSQL do Office 365 i monitorowania publicznego TLS: `docs/instal/bezpieczenstwo_backup_tls.md`.
 - Runbook zweryfikowanych kopii Firebird/SQL Optima i retencji czasowej 21/14 dni: `docs/instal/backup_firebird_optima_retencja.md`.
