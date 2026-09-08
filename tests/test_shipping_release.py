@@ -160,10 +160,15 @@ class ShippingReleaseTests(unittest.TestCase):
         frontend = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
         template = Path("app/templates/shipping/v2.html").read_text(encoding="utf-8")
 
-        self.assertIn('id="shipping-label-text" maxlength="81"', template)
+        self.assertIn('id="shipping-label-text" rows="3"', template)
+        self.assertNotIn('id="shipping-label-text" maxlength="81"', template)
+        self.assertNotIn('id="shipping-consolidated-label-text" maxlength="81"', template)
         self.assertIn('id="shipping-label-text-reset"', template)
         self.assertIn('id="shipping-consolidated-label-dialog"', template)
+        self.assertIn('id="shipping-consolidated-label-error"', template)
+        self.assertIn('id="shipping-v2-audit-device"', template)
         self.assertIn("labelTextDirty", frontend)
+        self.assertIn("shippingLabelLimitMessage", frontend)
         self.assertIn("openConsolidatedLabelEditor", frontend)
         self.assertIn("label_text: labelText", frontend)
 

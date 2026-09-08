@@ -58,6 +58,117 @@ def _text(value: Any) -> str | None:
     return normalized or None
 
 
+def _closed_order_operator(existing_operator: Any, issued_by: Any) -> str:
+    """Dopisuje operatora zamykającego bez powielania znacznika i przekroczenia pola MS."""
+    existing = _text(existing_operator) or ""
+    if re.search(r"(?:^|,\s*)Zamknął\s*:", existing, flags=re.IGNORECASE):
+        return existing[:250]
+    suffix = f"Zamknął :{_text(issued_by) or 'CTIP'}"
+    available = max(0, 250 - len(suffix) - (2 if existing else 0))
+    prefix = existing[:available].rstrip(" ,")
+    return f"{prefix}, {suffix}" if prefix else suffix[:250]
+
+
+def _finalize_shipping_order_header(
+    cursor: Any,
+    *,
+    order_table_id: int,
+    document_mode: str,
+    tracking_number: str,
+    document_date: date,
+    issued_by: str,
+    rw_id: int | None = None,
+    rw_number: str | None = None,
+    wz_id: int | None = None,
+    wz_number: str | None = None,
+    invoice_id: int | None = None,
+    invoice_number: str | None = None,
+) -> None:
+    """Zapisuje i potwierdza pełny stan zamknięcia zlecenia w Menadżerze Serwisu."""
+    if document_mode == "rw":
+        expected_ids = (int(rw_id) if rw_id is not None else None, None, None)
+        document_number = _text(rw_number)
+    elif document_mode == "wz":
+        expected_ids = (None, int(wz_id) if wz_id is not None else None, None)
+        document_number = _text(wz_number)
+    else:
+        expected_ids = (None, None, int(invoice_id) if invoice_id is not None else None)
+        document_number = _text(invoice_number)
+    if not document_number or not any(value is not None for value in expected_ids):
+        raise RuntimeError("Brak kompletnego dokumentu wymaganego do zamknięcia zlecenia MS.")
+
+    cursor.execute(
+        """
+        SELECT ID_RW, ID_WZ, ID_FAKTURA, FAKTURA, PRZESYLKA, STAN, DATA_Z, OPERATOR
+        FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ? WITH LOCK
+        """,
+        (int(order_table_id),),
+    )
+    current = cursor.fetchone()
+    if current is None:
+        raise RuntimeError("Zlecenie zniknęło przed zapisem stanu zamknięcia MS.")
+    closed_date = _date_value(current[6]) or document_date
+    closed_operator = _closed_order_operator(current[7], issued_by)
+    expected = (
+        *expected_ids,
+        document_number,
+        tracking_number,
+        "Z",
+        closed_date,
+        closed_operator,
+    )
+    normalized_current = (
+        int(current[0]) if current[0] is not None else None,
+        int(current[1]) if current[1] is not None else None,
+        int(current[2]) if current[2] is not None else None,
+        _text(current[3]),
+        _text(current[4]),
+        (_text(current[5]) or "").upper(),
+        _date_value(current[6]),
+        _text(current[7]),
+    )
+    if normalized_current != expected:
+        cursor.execute(
+            """
+            UPDATE ZLECENIE
+            SET ID_RW = ?, ID_WZ = ?, ID_FAKTURA = ?, FAKTURA = ?, PRZESYLKA = ?,
+                STAN = 'Z', DATA_Z = ?, OPERATOR = ?
+            WHERE ID_ZLECENIE_TABLE = ?
+            """,
+            (
+                *expected_ids,
+                document_number,
+                tracking_number,
+                closed_date,
+                closed_operator,
+                int(order_table_id),
+            ),
+        )
+
+    cursor.execute(
+        """
+        SELECT ID_RW, ID_WZ, ID_FAKTURA, FAKTURA, PRZESYLKA, STAN, DATA_Z, OPERATOR
+        FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ?
+        """,
+        (int(order_table_id),),
+    )
+    verified = cursor.fetchone()
+    normalized_verified = (
+        int(verified[0]) if verified and verified[0] is not None else None,
+        int(verified[1]) if verified and verified[1] is not None else None,
+        int(verified[2]) if verified and verified[2] is not None else None,
+        _text(verified[3]) if verified else None,
+        _text(verified[4]) if verified else None,
+        (_text(verified[5]) or "").upper() if verified else "",
+        _date_value(verified[6]) if verified else None,
+        _text(verified[7]) if verified else None,
+    )
+    if normalized_verified != expected:
+        raise RuntimeError(
+            "Menadżer Serwisu nie potwierdził dokumentu, daty i operatora zamknięcia zlecenia."
+        )
+
+
 def _search_terms(value: Any) -> list[str]:
     """Dzieli zapytanie na unikalne wyrazy wyszukiwane niezależnie od kolejności."""
     terms: list[str] = []
@@ -1894,19 +2005,17 @@ def finalize_shipping_order(
                     "UPDATE ZAKUPY SET DOK_ZEW = ? WHERE ID_ZAKUPY_TABLE = ?",
                     (_text(invoice_number), wz_id),
                 )
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_FAKTURA = ?, ID_WZ = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    int(invoice_id),
-                    _text(invoice_number),
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
+            _finalize_shipping_order_header(
+                cursor,
+                order_table_id=order_table_id,
+                document_mode=document_mode,
+                tracking_number=normalized_tracking,
+                document_date=document_date,
+                issued_by=issued_by,
+                wz_id=wz_id,
+                wz_number=wz_number,
+                invoice_id=int(invoice_id),
+                invoice_number=_text(invoice_number),
             )
             connection.commit()
             return {
@@ -1922,19 +2031,15 @@ def finalize_shipping_order(
 
         if document_mode == "rw" and rw_row is not None:
             rw_id, rw_number = rw_row
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_RW = ?, ID_WZ = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    int(rw_id),
-                    _text(rw_number) or _text(existing_document_text),
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
+            _finalize_shipping_order_header(
+                cursor,
+                order_table_id=order_table_id,
+                document_mode=document_mode,
+                tracking_number=normalized_tracking,
+                document_date=document_date,
+                issued_by=issued_by,
+                rw_id=int(rw_id),
+                rw_number=_text(rw_number) or _text(existing_document_text),
             )
             connection.commit()
             return {
@@ -1950,19 +2055,15 @@ def finalize_shipping_order(
 
         if document_mode == "wz" and wz_row is not None:
             wz_id, wz_number = wz_row
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_WZ = ?, ID_FAKTURA = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    int(wz_id),
-                    _text(wz_number),
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
+            _finalize_shipping_order_header(
+                cursor,
+                order_table_id=order_table_id,
+                document_mode=document_mode,
+                tracking_number=normalized_tracking,
+                document_date=document_date,
+                issued_by=issued_by,
+                wz_id=int(wz_id),
+                wz_number=_text(wz_number),
             )
             connection.commit()
             return {
@@ -2453,52 +2554,20 @@ def finalize_shipping_order(
                 ),
             )
 
-        if document_mode == "rw":
-            order_values = (rw_id, rw_number)
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_RW = ?, ID_WZ = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    order_values[0],
-                    order_values[1],
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
-            )
-        elif document_mode == "wz":
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_WZ = ?, ID_RW = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    wz_id,
-                    wz_number,
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_FAKTURA = ?, ID_WZ = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    invoice_id,
-                    invoice_number,
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
-            )
+        _finalize_shipping_order_header(
+            cursor,
+            order_table_id=order_table_id,
+            document_mode=document_mode,
+            tracking_number=normalized_tracking,
+            document_date=document_date,
+            issued_by=issued_by,
+            rw_id=rw_id,
+            rw_number=rw_number,
+            wz_id=wz_id,
+            wz_number=wz_number,
+            invoice_id=invoice_id,
+            invoice_number=invoice_number,
+        )
         connection.commit()
         return {
             "status": "created",

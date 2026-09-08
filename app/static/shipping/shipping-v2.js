@@ -139,9 +139,13 @@
   }
 
   function updateOrderContent() {
+    const device = hasSelectedOrder()
+      ? element("shipping-order-device")?.textContent?.trim() || "Brak danych modelu"
+      : "Brak danych modelu";
     const problem = hasSelectedOrder()
       ? element("shipping-order-problem")?.textContent?.trim() || "Brak treści zlecenia."
       : "Wybierz zlecenie z kolejki.";
+    setText(element("shipping-v2-audit-device"), device);
     setText(element("shipping-v2-audit-problem"), problem);
   }
 
@@ -227,6 +231,7 @@
       element("shipping-queue"),
       element("shipping-case-status"),
       element("shipping-location"),
+      element("shipping-order-device"),
       element("shipping-order-problem"),
       element("shipping-tracking-open"),
     ].filter(Boolean);

@@ -199,10 +199,25 @@ function normalizeShippingLabelText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function fitShippingLabelText(value) {
-  const normalized = normalizeShippingLabelText(value);
-  if (normalized.length <= SHIPPING_LABEL_TEXT_LIMIT) return normalized;
-  return `${normalized.slice(0, SHIPPING_LABEL_TEXT_LIMIT - 1).trimEnd()}…`;
+function shippingLabelTextLength(value) {
+  return Array.from(normalizeShippingLabelText(value)).length;
+}
+
+function shippingCharactersCountLabel(count) {
+  const normalized = Math.abs(Number(count) || 0);
+  const lastTwo = normalized % 100;
+  const last = normalized % 10;
+  if (normalized === 1) return "1 znak";
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return `${normalized} znaki`;
+  return `${normalized} znaków`;
+}
+
+function shippingLabelLimitMessage(value, label = "Treść etykiety DPD") {
+  const length = shippingLabelTextLength(value);
+  const overage = Math.max(0, length - SHIPPING_LABEL_TEXT_LIMIT);
+  return overage
+    ? `${label} ma ${length} znaków. Usuń ${shippingCharactersCountLabel(overage)}, aby zmieścić się w limicie ${SHIPPING_LABEL_TEXT_LIMIT}.`
+    : "";
 }
 
 function splitShippingLabelText(value) {
@@ -237,7 +252,22 @@ function automaticShippingLabelText(order, selectedItems) {
     const itemName = item.stockItem?.item_name || item.item_name || "część";
     segments.push(`${quantity}x ${itemName}`);
   });
-  return fitShippingLabelText(segments.join("; ") || "Materiały serwisowe");
+  return normalizeShippingLabelText(segments.join("; ") || "Materiały serwisowe");
+}
+
+function updateShippingReviewButtonState(caseData = shippingState.detail?.case) {
+  const review = document.getElementById("shipping-review");
+  if (!review) return;
+  const shipment = caseData?.shipment;
+  const retryAllowed = Boolean(shipment?.retry_allowed);
+  const orderState = shippingState.liveOrderState;
+  const labelOverLimit = Boolean(shippingLabelLimitMessage(
+    document.getElementById("shipping-label-text")?.value,
+  ));
+  review.disabled = !shippingFulfillmentEnabled()
+    || Boolean(shipment && !retryAllowed)
+    || Boolean(orderState && !orderState.can_review)
+    || labelOverLimit;
 }
 
 function renderShippingLabelTextMeta() {
@@ -245,19 +275,28 @@ function renderShippingLabelTextMeta() {
   if (!input) return;
   const normalized = normalizeShippingLabelText(input.value);
   const split = splitShippingLabelText(normalized);
-  document.getElementById("shipping-label-text-count").textContent = `${normalized.length}/${SHIPPING_LABEL_TEXT_LIMIT}`;
+  const length = shippingLabelTextLength(normalized);
+  const limitMessage = shippingLabelLimitMessage(normalized);
+  const counter = document.getElementById("shipping-label-text-count");
+  counter.textContent = `${length}/${SHIPPING_LABEL_TEXT_LIMIT}`;
+  counter.classList.toggle("error", Boolean(limitMessage));
+  input.classList.toggle("dpd-limit-invalid", Boolean(limitMessage));
+  if (limitMessage) input.setAttribute("aria-invalid", "true");
+  else input.removeAttribute("aria-invalid");
   document.getElementById("shipping-label-reference-preview").textContent = split.reference || "—";
   document.getElementById("shipping-label-content-preview").textContent = split.content || "—";
   const reset = document.getElementById("shipping-label-text-reset");
   if (reset) reset.disabled = input.readOnly || !shippingState.labelTextDirty;
   const note = document.getElementById("shipping-label-text-note");
   if (note) {
-    note.textContent = input.readOnly
+    note.textContent = limitMessage || (input.readOnly
       ? "Treść została zapisana na wygenerowanej etykiecie i nie podlega dalszej edycji."
       : shippingState.labelTextDirty
         ? "Treść zmieniona ręcznie — zmiany listy części nie nadpiszą pola."
-        : "Treść aktualizuje się automatycznie do pierwszej ręcznej zmiany.";
+        : "Treść aktualizuje się automatycznie do pierwszej ręcznej zmiany.");
+    note.classList.toggle("error", Boolean(limitMessage));
   }
+  updateShippingReviewButtonState();
 }
 
 function updateAutomaticShippingLabelText(force = false) {
@@ -291,9 +330,8 @@ function initializeShippingLabelText(caseData) {
 function validatedShippingLabelText(input) {
   const normalized = normalizeShippingLabelText(input?.value);
   if (!normalized) throw new Error("Treść etykiety DPD nie może być pusta.");
-  if (normalized.length > SHIPPING_LABEL_TEXT_LIMIT) {
-    throw new Error(`Treść etykiety DPD może mieć maksymalnie ${SHIPPING_LABEL_TEXT_LIMIT} znaków.`);
-  }
+  const limitMessage = shippingLabelLimitMessage(normalized);
+  if (limitMessage) throw new Error(limitMessage);
   return normalized;
 }
 
@@ -302,7 +340,21 @@ function updateConsolidatedLabelPreview() {
   if (!input) return;
   const normalized = normalizeShippingLabelText(input.value);
   const split = splitShippingLabelText(normalized);
-  document.getElementById("shipping-consolidated-label-count").textContent = `${normalized.length}/${SHIPPING_LABEL_TEXT_LIMIT}`;
+  const length = shippingLabelTextLength(normalized);
+  const limitMessage = shippingLabelLimitMessage(normalized, "Treść wspólnej etykiety DPD");
+  const counter = document.getElementById("shipping-consolidated-label-count");
+  counter.textContent = `${length}/${SHIPPING_LABEL_TEXT_LIMIT}`;
+  counter.classList.toggle("error", Boolean(limitMessage));
+  input.classList.toggle("dpd-limit-invalid", Boolean(limitMessage));
+  if (limitMessage) input.setAttribute("aria-invalid", "true");
+  else input.removeAttribute("aria-invalid");
+  const error = document.getElementById("shipping-consolidated-label-error");
+  if (error) {
+    error.textContent = limitMessage;
+    error.hidden = !limitMessage;
+  }
+  const confirm = document.getElementById("shipping-consolidated-label-confirm");
+  if (confirm) confirm.disabled = !normalized || Boolean(limitMessage);
   document.getElementById("shipping-consolidated-reference-preview").textContent = split.reference || "—";
   document.getElementById("shipping-consolidated-content-preview").textContent = split.content || "—";
 }
@@ -320,7 +372,7 @@ function openConsolidatedLabelEditor(initialValue) {
       return Promise.resolve(null);
     }
   }
-  input.value = fitShippingLabelText(initialValue);
+  input.value = normalizeShippingLabelText(initialValue);
   updateConsolidatedLabelPreview();
   return new Promise((resolve) => {
     let settled = false;
@@ -774,7 +826,7 @@ async function generateConsolidatedShipping() {
     return;
   }
   const orderNumbers = selectedItems.map((item) => `${item.order_id}/${item.order_year}`);
-  const automaticText = fitShippingLabelText(
+  const automaticText = normalizeShippingLabelText(
     selectedItems.map((item) => item.label_text || `${item.order_id}/${item.order_year}`).join("; "),
   );
   const labelText = await openConsolidatedLabelEditor(automaticText);
@@ -1412,13 +1464,12 @@ function applyShippingCase(caseData, showTrackingFeedback = true) {
   const trackingMatches = !orderState || !shipment?.tracking_number
     || orderState.tracking_number === shipment.tracking_number;
   const fulfillmentLocked = !shippingFulfillmentEnabled();
-  document.getElementById("shipping-review").disabled = fulfillmentLocked || Boolean(shipment && !retryAllowed)
-    || Boolean(orderState && !orderState.can_review);
   const labelTextInput = document.getElementById("shipping-label-text");
   if (labelTextInput) {
     labelTextInput.readOnly = Boolean(shipment);
     renderShippingLabelTextMeta();
   }
+  updateShippingReviewButtonState(caseData);
   document.getElementById("shipping-create").disabled = fulfillmentLocked || !ready || locationBlocked
     || Boolean(retryAllowed && !retryReviewed)
     || Boolean(orderState && !orderState.can_prepare_shipment);
@@ -1561,6 +1612,7 @@ async function loadShippingDetail(orderId) {
     document.getElementById("shipping-empty").hidden = true;
     document.getElementById("shipping-order-title").textContent = `Zlecenie #${order.order_id}/${order.order_year}`;
     document.getElementById("shipping-order-subtitle").textContent = [order.order_company_name || order.client_company_name, order.device_brand, order.device_model].filter(Boolean).join(" • ");
+    document.getElementById("shipping-order-device").textContent = [order.device_brand || order.machine_brand, order.device_model || order.machine_model].filter(Boolean).join(" ") || "Brak danych modelu";
     document.getElementById("shipping-order-problem").textContent = order.problem || "Brak treści zlecenia.";
     renderShippingOverduePayment(detail.overdue_payment);
     document.getElementById("shipping-stock-search").value = "";

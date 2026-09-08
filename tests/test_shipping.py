@@ -550,6 +550,18 @@ class DpdShippingClientTests(unittest.TestCase):
         self.assertEqual(generated, "18491/2026; 2x Developing blk MPC3004-6004")
         self.assertNotIn("D2423091", generated)
 
+    def test_generator_tresci_nie_obcina_tekstu_przekraczajacego_limit(self) -> None:
+        item_name = ("Bardzo długa pełna nazwa części serwisowej " * 3).strip()
+
+        generated = build_shipping_label_text(
+            order_numbers=["18491/2026"],
+            items=[{"quantity": 2, "item_name": item_name}],
+        )
+
+        self.assertGreater(len(generated), 81)
+        self.assertTrue(generated.endswith(item_name))
+        self.assertNotIn("…", generated)
+
     def test_mock_etykieta_skrotem_oznacza_dalsze_pozycje(self) -> None:
         settings.dpd_enabled = True
         settings.dpd_mode = "mock"
@@ -1238,6 +1250,43 @@ class ShippingWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 {"sent", "skipped_consolidated"},
             )
+
+    async def test_za_dluga_automatyczna_tresc_wspolnej_etykiety_nie_tworzy_przesylki(
+        self,
+    ) -> None:
+        first_order = _order(1001)
+        second_order = {**_order(1002), "order_id": 78}
+        long_stock = _stock()
+        long_stock[0]["item_name"] = "Bardzo długa pełna nazwa części serwisowej"
+        async with self.session_factory() as session:
+            with patch(
+                "app.services.shipping_workflow.load_physical_stock",
+                return_value=long_stock,
+            ):
+                await review_shipping_order(
+                    session,
+                    order=first_order,
+                    payload=_review_payload(first_order),
+                    user_id=1,
+                )
+                await review_shipping_order(
+                    session,
+                    order=second_order,
+                    payload=_review_payload(second_order),
+                    user_id=1,
+                )
+
+            with self.assertRaisesRegex(DpdConfigurationError, "maksymalnie 81"):
+                await create_consolidated_shipping_shipment(
+                    session,
+                    orders=[first_order, second_order],
+                    order_table_ids=[1001, 1002],
+                    idempotency_key=str(uuid4()),
+                    user_id=1,
+                )
+
+            shipment_count = await session.scalar(select(func.count(ShippingShipment.id)))
+            self.assertEqual(shipment_count, 0)
 
     async def test_gotowe_zlecenie_mozna_dolaczyc_do_istniejacej_etykiety(self) -> None:
         first_order = _order(1001)
@@ -2059,6 +2108,21 @@ class ShippingCloseRouteTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ShippingSchemaTests(unittest.TestCase):
+    def test_tresc_etykiety_zwraca_czytelne_przekroczenie_limitu(self) -> None:
+        with self.assertRaises(ValidationError) as review_error:
+            _review_payload(label_text="A" * 82)
+        self.assertIn("Usuń 1 znak", str(review_error.exception))
+
+        with self.assertRaises(ValidationError) as consolidated_error:
+            ShippingConsolidatedCreateRequest.model_validate(
+                {
+                    "order_table_ids": [1001, 1002],
+                    "idempotency_key": str(uuid4()),
+                    "label_text": "B" * 82,
+                }
+            )
+        self.assertIn("Usuń 1 znak", str(consolidated_error.exception))
+
     def test_telefon_shipping_obsluguje_polskie_formaty_i_numery_stacjonarne(
         self,
     ) -> None:
@@ -2167,7 +2231,11 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-tracking-sync"', response.text)
         self.assertIn(
-            f"/static/shipping/shipping-v2.css?v={app.version}-dpd-limits-phone-01",
+            f"/static/shipping/shipping-v2.css?v={app.version}-label-fulltext-01",
+            response.text,
+        )
+        self.assertIn(
+            f"/static/shipping/shipping-v2.js?v={app.version}-device-model-01",
             response.text,
         )
         self.assertIn('id="shipping-order-state-warning"', response.text)
@@ -2240,9 +2308,14 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertIn('data-shipping-layout-choice="v2"', response.text)
         self.assertIn('id="shipping-tracking-view"', response.text)
         self.assertIn('id="shipping-archive-view"', response.text)
-        self.assertIn("shipping.css?v=", response.text)
-        self.assertIn("-dpd-limits-phone-01", response.text)
-        self.assertIn("/static/shipping/shipping-v2.js", response.text)
+        self.assertIn(
+            f"/static/shipping/shipping.css?v={app.version}-label-fulltext-01",
+            response.text,
+        )
+        self.assertIn(
+            f"/static/shipping/shipping-v2.js?v={app.version}-device-model-01",
+            response.text,
+        )
         self.assertIn('id="shipping-v2-audit"', response.text)
         self.assertIn('id="shipping-v2-progress-label"', response.text)
         self.assertIn('id="shipping-v2-audit-company"', response.text)
@@ -2695,6 +2768,17 @@ class ShippingSchemaTests(unittest.TestCase):
             None,
             (2089,),
             (38711,),
+            (None, None, None, None, "MOCK123", "ZR", None, "Utworzył: Joanna"),
+            (
+                38711,
+                None,
+                None,
+                "RW / 2089 / 2026",
+                "MOCK123",
+                "Z",
+                date.today(),
+                "Utworzył: Joanna, Zamknął :Operator Testowy",
+            ),
         ]
         cursor.fetchall.return_value = [
             (
@@ -2754,6 +2838,8 @@ class ShippingSchemaTests(unittest.TestCase):
         self.assertNotIn("'ROK'", executed_queries)
         self.assertNotIn("DATA_PRZES", executed_queries)
         self.assertNotIn("WYKONANIE", executed_queries)
+        self.assertIn("DATA_Z = ?", executed_queries)
+        self.assertIn("OPERATOR = ?", executed_queries)
         connection.commit.assert_called_once()
 
     def test_wz_powiazane_z_faktura_zapisuje_numer_fv_w_dokumencie_zewnetrznym(
@@ -2793,6 +2879,17 @@ class ShippingSchemaTests(unittest.TestCase):
             (185,),
             (38791,),
             (64557, 5318),
+            (None, None, None, None, "MOCK123", "ZR", None, "Utworzył: Joanna"),
+            (
+                None,
+                None,
+                64557,
+                "5318/KPSK/2026",
+                "MOCK123",
+                "Z",
+                date.today(),
+                "Utworzył: Joanna, Zamknął :Operator Testowy",
+            ),
         ]
         cursor.fetchall.return_value = [
             (
@@ -2897,6 +2994,26 @@ class ShippingSchemaTests(unittest.TestCase):
             (38791, "WZ / 185 / 2026"),
             None,
             ("WZ / 185 / 2026",),
+            (
+                None,
+                None,
+                64557,
+                "5318/KPSK/2026",
+                "MOCK123",
+                "Z",
+                None,
+                "Utworzył: Joanna",
+            ),
+            (
+                None,
+                None,
+                64557,
+                "5318/KPSK/2026",
+                "MOCK123",
+                "Z",
+                date.today(),
+                "Utworzył: Joanna, Zamknął :Operator Testowy",
+            ),
         ]
         with (
             patch(

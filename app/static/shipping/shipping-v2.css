@@ -103,7 +103,8 @@
 .shipping-v2-body input:focus,
 .shipping-v2-body select:focus { border-color: #53b1fd; outline-color: rgba(83, 177, 253, .28); }
 .shipping-v2-body input.invalid { border-color: #f97066; background: #2b1e27; }
-.shipping-v2-body input.dpd-limit-invalid { border-color: #f97066; background: #2b1e27; }
+.shipping-v2-body input.dpd-limit-invalid,
+.shipping-v2-body textarea.dpd-limit-invalid { border-color: #f97066; background: #2b1e27; }
 
 .shipping-v2-workspace {
   grid-template-columns: clamp(330px, 20vw, 440px) minmax(650px, 1fr) clamp(235px, 14vw, 330px);
@@ -254,6 +255,10 @@
 .shipping-v2-body .shipping-label-editor textarea,
 .shipping-v2-body .shipping-label-dialog textarea { border-color: #3b516c; color: #f2f7fc; background: #111e30; }
 .shipping-v2-body .shipping-label-editor-head strong { color: #59d9a6; }
+.shipping-v2-body .shipping-label-editor-head strong.error,
+.shipping-v2-body .shipping-label-editor-actions small.error,
+.shipping-v2-body .shipping-label-limit-error,
+.shipping-v2-body .shipping-label-dialog-meta .error { color: #f97066; }
 .shipping-v2-body .shipping-label-preview span { color: #8292a7; background: #111e30; }
 .shipping-v2-body .shipping-label-preview b,
 .shipping-v2-body .shipping-label-dialog-meta b { color: #dce6f2; }
