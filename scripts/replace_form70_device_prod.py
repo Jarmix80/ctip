@@ -605,9 +605,12 @@ def validate_initial_state(state: dict[str, Any]) -> None:
         raise Form70ReplacementError("Nowe urządzenie ma aktywną rezerwację w arkuszu.")
     if any(
         str(new_sheet.get(key) or "").strip()
-        for key in ("form_ctip", "ctip_form_id", "ctip_workflow_case_id", "proforma_grenke")
+        for key in ("form_ctip", "ctip_form_id", "ctip_workflow_case_id")
     ):
         raise Form70ReplacementError("Nowe urządzenie ma nieoczekiwane powiązanie FLOW w arkuszu.")
+    new_sheet_proforma = str(new_sheet.get("proforma_grenke") or "").strip()
+    if new_sheet_proforma not in {"", OLD_PROFORMA_NUMBER}:
+        raise Form70ReplacementError("Nowe urządzenie ma nieoczekiwaną proformę FLOW w arkuszu.")
 
 
 def _public_summary(state: dict[str, Any]) -> dict[str, Any]:

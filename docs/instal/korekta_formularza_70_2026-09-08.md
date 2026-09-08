@@ -48,6 +48,8 @@ Raport musi potwierdzić:
 - trzy zgodne wiersze arkusza;
 - brak zajętego planowanego numeru nowej proformy.
 
+Na docelowym wierszu `3931P651369` dopuszczalny jest wyłącznie pusty numer proformy albo rozpoznany ślad starej proformy `52/proforma/2026`, pod warunkiem braku aktywnej rezerwacji oraz identyfikatorów formularza i sprawy. Każda inna proforma blokuje zapis.
+
 Z raportu należy skopiować `state_token` i `required_confirmation`.
 
 ## Wykonanie

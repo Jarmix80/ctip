@@ -200,6 +200,23 @@ def test_validate_initial_state_rejects_changed_grenke_status() -> None:
         repair.validate_initial_state(state)
 
 
+def test_validate_initial_state_accepts_old_proforma_residue_on_new_device() -> None:
+    state = _initial_state()
+    new_sheet = state["sheet"]["rows"][str(repair.NEW_SOURCE_ROW)]
+    new_sheet["proforma_grenke"] = repair.OLD_PROFORMA_NUMBER
+
+    repair.validate_initial_state(state)
+
+
+def test_validate_initial_state_rejects_other_proforma_on_new_device() -> None:
+    state = _initial_state()
+    new_sheet = state["sheet"]["rows"][str(repair.NEW_SOURCE_ROW)]
+    new_sheet["proforma_grenke"] = "999/proforma/2026"
+
+    with pytest.raises(repair.Form70ReplacementError, match="nieoczekiwaną proformę"):
+        repair.validate_initial_state(state)
+
+
 def test_state_token_changes_after_device_owner_change() -> None:
     state = _initial_state()
     original = repair._state_token(state)
