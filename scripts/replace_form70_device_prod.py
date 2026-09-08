@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import shutil
+import socket
 import sys
 from copy import deepcopy
 from dataclasses import asdict
@@ -174,13 +175,40 @@ def _append_service_note(existing: Any) -> str:
     return f"{normalized}\n{SERVICE_NOTE}".strip()
 
 
+def _local_ipv4_addresses() -> set[str]:
+    """Zwraca adresy IPv4 hosta do ochrony lokalnego DSN produkcji."""
+    addresses: set[str] = set()
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addresses.add(str(item[4][0]))
+    except OSError:
+        pass
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.168.0.8", 9))
+        addresses.add(str(probe.getsockname()[0]))
+    except OSError:
+        pass
+    finally:
+        probe.close()
+    return addresses
+
+
 def _assert_production_target(*, require_writes: bool = False) -> None:
     if Path(SETTINGS_ENV_FILE).name != ".env":
         raise Form70ReplacementError("Skrypt wymaga jawnego pliku produkcyjnego .env.")
     if settings.ctip_runtime_profile != "production":
         raise Form70ReplacementError("Skrypt wymaga profilu CTIP_RUNTIME_PROFILE=production.")
-    if settings.pg_host != "192.168.0.8" or settings.pg_database != "ctip":
-        raise Form70ReplacementError("PostgreSQL musi wskazywać produkcję 192.168.0.8, baza ctip.")
+    pg_host = str(settings.pg_host or "").strip().casefold()
+    pg_host_allowed = pg_host == "192.168.0.8" or (
+        pg_host in {"127.0.0.1", "localhost"} and "192.168.0.8" in _local_ipv4_addresses()
+    )
+    if not pg_host_allowed or settings.pg_database != "ctip":
+        raise Form70ReplacementError(
+            "PostgreSQL musi wskazywać produkcję 192.168.0.8 albo jej lokalny loopback, "
+            "baza ctip."
+        )
     if settings.fb_host != "192.168.0.8" or settings.fb_port != 3050:
         raise Form70ReplacementError("Firebird musi wskazywać produkcję 192.168.0.8:3050.")
     if require_writes and not settings.fb_allow_writes:

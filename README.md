@@ -81,7 +81,7 @@ Tryb bez `--apply` wykonuje dry-run i zapisuje tylko raporty. Wszystkie raporty 
 - `raport_urzadzenia_prod_move_serial_*.json`
 - `raport_urzadzenia_prod_append_notes_*.json`
 
-Jednorazową korektę formularza `70` wykonuje się wyłącznie na serwerze produkcyjnym po wdrożeniu przypiętego commita i utworzeniu pełnego backupu PostgreSQL oraz Firebird. Skrypt zapisuje raporty i dziennik wznawialnej operacji w `runtime/form70_device_replacement`, wymaga tokenu z bezpośredniego dry-runu i nie usuwa proformy `52/proforma/2026`. Dokładna procedura, walidacja oraz rollback są opisane w `docs/instal/korekta_formularza_70_2026-09-08.md`.
+Jednorazową korektę formularza `70` wykonuje się wyłącznie na serwerze produkcyjnym po wdrożeniu przypiętego commita i utworzeniu pełnego backupu PostgreSQL oraz Firebird. Skrypt zapisuje raporty i dziennik wznawialnej operacji w `runtime/form70_device_replacement`, wymaga tokenu z bezpośredniego dry-runu i nie usuwa proformy `52/proforma/2026`. Lokalny adres PostgreSQL `127.0.0.1` lub `localhost` jest akceptowany wyłącznie na hoście posiadającym produkcyjny adres `192.168.0.8`. Dokładna procedura, walidacja oraz rollback są opisane w `docs/instal/korekta_formularza_70_2026-09-08.md`.
 
 ### Automat workflow dla `APPROVED_ORDER`
 Po ręcznym ustawieniu statusu biznesowego sprawy na `APPROVED_ORDER` endpoint `POST /admin/contracts/forms/{form_id}/workflow/status` uruchamia automat:

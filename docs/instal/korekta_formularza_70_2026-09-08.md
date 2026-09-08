@@ -21,7 +21,7 @@ Nowa proforma ma dwie pozycje i łączną wartość `13400,00` netto,
 
 1. Produkcja działa na hoście `192.168.0.8`.
 2. Kod został wdrożony mechanizmem `scripts/deploy_windows_prod.py` z dokładnego commita.
-3. Na serwerze istnieje `D:\CTIP\.env` z profilem `production` i odblokowanym zapisem Firebird.
+3. Na serwerze istnieje `D:\CTIP\.env` z profilem `production` i odblokowanym zapisem Firebird. PostgreSQL może używać lokalnego adresu `127.0.0.1` lub `localhost` tylko wtedy, gdy skrypt potwierdzi, że host posiada adres `192.168.0.8`.
 4. Pełny backup PostgreSQL i Firebird zakończył się powodzeniem. Katalog backupu musi zawierać co najmniej jeden plik `.dump` i jeden plik `.fbk`.
 5. Operator zna katalog backupu zwrócony przez wdrożenie albo `scripts\windows\backup_prod_databases.ps1`.
 6. Usługi `CTIP-Web` i `CTIP-FormsPublic` są zatrzymane na czas dry-runu zatwierdzającego i zapisu.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from unittest.mock import patch
 
 import pytest
 
@@ -214,6 +215,35 @@ def test_service_note_is_appended_only_once() -> None:
 
     assert first == second
     assert first.startswith("Istniejąca uwaga\n")
+
+
+def test_production_guard_allows_loopback_only_on_production_host() -> None:
+    with (
+        patch.object(repair, "SETTINGS_ENV_FILE", "/srv/.env"),
+        patch.object(repair.settings, "ctip_runtime_profile", "production"),
+        patch.object(repair.settings, "pg_host", "127.0.0.1"),
+        patch.object(repair.settings, "pg_database", "ctip"),
+        patch.object(repair.settings, "fb_host", "192.168.0.8"),
+        patch.object(repair.settings, "fb_port", 3050),
+        patch.object(repair.settings, "fb_allow_writes", True),
+        patch.object(repair, "_local_ipv4_addresses", return_value={"192.168.0.8"}),
+    ):
+        repair._assert_production_target(require_writes=True)
+
+
+def test_production_guard_rejects_loopback_from_wsl_host() -> None:
+    with (
+        patch.object(repair, "SETTINGS_ENV_FILE", "/srv/.env"),
+        patch.object(repair.settings, "ctip_runtime_profile", "production"),
+        patch.object(repair.settings, "pg_host", "127.0.0.1"),
+        patch.object(repair.settings, "pg_database", "ctip"),
+        patch.object(repair.settings, "fb_host", "192.168.0.8"),
+        patch.object(repair.settings, "fb_port", 3050),
+        patch.object(repair.settings, "fb_allow_writes", True),
+        patch.object(repair, "_local_ipv4_addresses", return_value={"192.168.0.9"}),
+        pytest.raises(repair.Form70ReplacementError, match="lokalny loopback"),
+    ):
+        repair._assert_production_target(require_writes=True)
 
 
 def test_validate_new_proforma_requires_replacement_first() -> None:
