@@ -49,6 +49,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - `scripts/sync_prod_forms_to_test.py` – import najnowszych formularzy workflow z produkcyjnego PostgreSQL do lokalnego `ctip_test` z odczytem `read_only` po stronie źródła i upsertami po stronie testu.
 - `scripts/manual_archive_contracts_via_smb.py` – reczny import wskazanych wiadomosci umow GRENKE: pobranie PDF z IMAP, proba odszyfrowania haslem z danych reprezentanta, zapis do SMB (`sciezka_dok_umow`) oraz opcjonalny zapis metadanych do PostgreSQL (po podaniu DSN).
 - `scripts/prod_workflow_devices_sync.py` – zestaw operacji produkcyjnych dla FLOW urzadzen (`audit`, `sync-sheet`, `sync-machines`, `move-serial`, `append-notes`, `fill-msid-by-index`) z raportami JSON do `inbox/`.
+- `scripts/replace_form70_device_prod.py` – jednorazowa, zabezpieczona korekta produkcyjna formularza `70`: zamienia uszkodzony egzemplarz `3930PA00796` na `3931P651369`, zachowuje starą proformę i status GRENKE, a zapis dopuszcza dopiero po dry-runie, tokenie stanu i wskazaniu pełnego backupu.
 - `scripts/build_firebird_knowledge_index.py` + `docs/firebird/knowledge/firebird_ms_knowledge.json` – trwała baza wiedzy o Firebird MS (tabele/kolumny/dokumentacja), regenerowana ze źródła `integrations/bazams`, używana przez chat i inne moduły repo do ograniczenia kosztów analizy.
 - `integrations/bazams/` – lokalny klon repozytorium wiedzy o MS Firebird (`Jarmix80/bazams`), używany jako źródło do budowy indeksu wiedzy.
 - `integrations/google_sheets/update_calendar_and_devices.py` – aktualizacja arkuszy Google (`Kalendarz_wiersze`, `Urzadzenia`) z formatowaniem i slotami zdarzeń dziennych.
@@ -79,6 +80,8 @@ Tryb bez `--apply` wykonuje dry-run i zapisuje tylko raporty. Wszystkie raporty 
 - `raport_urzadzenia_prod_sync_maszyna_*.json`
 - `raport_urzadzenia_prod_move_serial_*.json`
 - `raport_urzadzenia_prod_append_notes_*.json`
+
+Jednorazową korektę formularza `70` wykonuje się wyłącznie na serwerze produkcyjnym po wdrożeniu przypiętego commita i utworzeniu pełnego backupu PostgreSQL oraz Firebird. Skrypt zapisuje raporty i dziennik wznawialnej operacji w `runtime/form70_device_replacement`, wymaga tokenu z bezpośredniego dry-runu i nie usuwa proformy `52/proforma/2026`. Dokładna procedura, walidacja oraz rollback są opisane w `docs/instal/korekta_formularza_70_2026-09-08.md`.
 
 ### Automat workflow dla `APPROVED_ORDER`
 Po ręcznym ustawieniu statusu biznesowego sprawy na `APPROVED_ORDER` endpoint `POST /admin/contracts/forms/{form_id}/workflow/status` uruchamia automat:
@@ -929,6 +932,7 @@ Szybki runbook awaryjny (checklisty i komendy 1:1 dla `CTIP-Web`/`CTIP-FormsPubl
 - `docs/instal/hotfix_shipping_close_email_2026-09-01.md` – naprawa zamknięcia dnia i audytu Shipping, kanoniczny nadawca SMTP, backfill dwóch wpisów oraz procedura wdrożenia i rollbacku.
 - `docs/instal/wdrozenie_shipping_pola_przesylki_geokoder_2026-09-01.md` – dwa niezależne wydania: idempotentne pola przesyłki MS na podstawie etykiety i InfoServices oraz ręczny geokoder Adresy.app bez danych kontaktowych.
 - `docs/instal/deduplikacja_dpd_infoservices_2026-09-01.md` – bezpieczna procedura semantycznego grupowania zdarzeń DPD zwracanych przez różne metody SOAP wraz z dry-run, tokenem stanu i rollbackiem bez usuwania historii technicznej.
+- `docs/instal/korekta_formularza_70_2026-09-08.md` – kontrolowana zamiana uszkodzonego urządzenia w produkcyjnym formularzu `70`, z zachowaniem starej proformy i historii GRENKE.
 - `docs/instal/pilot_shipping_2026-08-28.md` – identyfikatory trzech zleceń pilota, przypisane części, ceny oraz początkowe stany `ILOSC` i `IL_REZ` wymagane do końcowej kontroli sprzątania.
 - `docs/LOG/Centralka` – dzienne logi kolektora i monitora CTIP (np. `log_collector_<YYYY-MM-DD>.log`, `log_con_sli_<YYYY-MM-DD>.log`); każdy wpis zawiera datę i godzinę.
 - `docs/LOG/BAZAPostGre` – dzienne logi operacji na bazie PostgreSQL (np. `log_192.168.0.8_postgre_<YYYY-MM-DD>.log`).

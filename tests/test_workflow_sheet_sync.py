@@ -424,6 +424,108 @@ def test_clear_workflow_proforma_clears_only_proforma_column() -> None:
     assert updated[header_index["notes"]] == "Ważna uwaga techniczna"
 
 
+def test_maintenance_update_changes_only_allowed_workflow_fields() -> None:
+    row = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
+    row[header_index["reservation_status"]] = "04. Rezerwacja GRENKE"
+    row[header_index["reservation_grenke"]] = "Marcin\nKlient"
+    row[header_index["form_ctip"]] = "70"
+    row[header_index["proforma_grenke"]] = "52/proforma/2026"
+    row[header_index["ctip_form_id"]] = "70"
+    row[header_index["ctip_workflow_case_id"]] = "40"
+    worksheet = FakeWorksheet([_headers(), row])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        result = workflow_sheet_sync.update_workflow_sheet_fields_for_maintenance(
+            changes=[
+                {
+                    "device": {
+                        "source_row": 12922,
+                        "sheet_row": 2,
+                        "serial": "T605H900327",
+                        "index": "KP/4066",
+                    },
+                    "expected_fields": {
+                        "notes": "Ważna uwaga techniczna",
+                        "reservation_status": "04. Rezerwacja GRENKE",
+                        "reservation_grenke": "Marcin\nKlient",
+                        "form_ctip": "70",
+                        "proforma_grenke": "52/proforma/2026",
+                        "ctip_form_id": "70",
+                        "ctip_workflow_case_id": "40",
+                    },
+                    "target_fields": {
+                        "notes": "Ważna uwaga techniczna\nNIESPRAWNE - SERWIS",
+                        "reservation_status": workflow_sheet_sync.WORKFLOW_SERVICE_BLOCK_STATUS,
+                        "reservation_grenke": "",
+                        "form_ctip": "",
+                        "proforma_grenke": "",
+                        "ctip_form_id": "",
+                        "ctip_workflow_case_id": "",
+                    },
+                    "background": "reserved",
+                }
+            ]
+        )
+
+    updated = worksheet.values[1]
+    assert result["updated_count"] == 1
+    assert updated[header_index["status"]] == "01. Przed zerówką"
+    assert updated[header_index["serial"]] == "T605H900327"
+    assert updated[header_index["notes"]].endswith("NIESPRAWNE - SERWIS")
+    assert (
+        updated[header_index["reservation_status"]]
+        == workflow_sheet_sync.WORKFLOW_SERVICE_BLOCK_STATUS
+    )
+    assert updated[header_index["reservation_grenke"]] == ""
+    assert updated[header_index["proforma_grenke"]] == ""
+
+
+def test_maintenance_update_rejects_stale_expected_state() -> None:
+    worksheet = FakeWorksheet([_headers(), _device_row()])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+        pytest.raises(RuntimeError, match="oczekiwano"),
+    ):
+        workflow_sheet_sync.update_workflow_sheet_fields_for_maintenance(
+            changes=[
+                {
+                    "device": {
+                        "source_row": 12922,
+                        "serial": "T605H900327",
+                        "index": "KP/4066",
+                    },
+                    "expected_fields": {"reservation_status": "04. Rezerwacja GRENKE"},
+                    "target_fields": {"reservation_status": "NIESPRAWNE - SERWIS"},
+                }
+            ]
+        )
+
+
+def test_sheet_lookup_contains_proforma_number() -> None:
+    row = _device_row()
+    header_index = workflow_sheet_sync._build_header_index(_headers())
+    row[header_index["proforma_grenke"]] = "52/proforma/2026"
+    worksheet = FakeWorksheet([_headers(), row])
+    workbook = FakeWorkbook(worksheet)
+
+    with (
+        workflow_sheet_sync.use_workflow_sheet_runtime_config(_configured_runtime()),
+        _sheet_context(workbook, worksheet),
+    ):
+        result = workflow_sheet_sync.load_workflow_sheet_devices_lookup(_configured_runtime())
+
+    entry = result["by_source_key"]["firebird_magazyn_28:12922"]
+    assert entry["proforma_grenke"] == "52/proforma/2026"
+
+
 def test_inventory_upsert_appends_complete_test_row() -> None:
     worksheet = FakeWorksheet([_headers()])
     workbook = FakeWorkbook(worksheet)
