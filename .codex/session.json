@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-08T15:46:00+02:00",
+  "timestamp": "2026-09-08T16:49:00+02:00",
   "summary": [
     "Na produkcji 192.168.0.8 ustawiono DPD_INFO_ENABLED=true po potwierdzeniu kompletnego DPD_INFO_CHANNEL; SHIPPING_COMPATIBILITY_WEB_ENABLED pozostawiono false zgodnie z decyzją użytkownika.",
     "Pierwsza ręczna synchronizacja kanału DPD InfoServices zakończyła się statusem success: pobrano 87 zdarzeń, zapisano 86 nowych, potwierdzono odbiór partii.",
@@ -16,19 +16,24 @@
     "Naprawiono historycznie 43 istniejące zlecenia Shipping; rekordów Firebirda 83493, 83494, 83495 i 83553 nie odtwarzano.",
     "Ponowny dry-run wykazał 43 rekordy poprawne, 0 do naprawy i 4 brakujące.",
     "Treść etykiety DPD pozostaje pełna, przekroczenie 81 znaków blokuje zatwierdzenie również przy łączeniu paczek, a prawy panel pokazuje markę i model urządzenia.",
-    "Commit 6b2199a56631011229dbfb589349d3a29bd0f259 wdrożono na produkcję 192.168.0.8; backup zapisano w D:\\CTIP\\backups\\prod_20260908_154124."
+    "Commit 6b2199a56631011229dbfb589349d3a29bd0f259 wdrożono na produkcję 192.168.0.8; backup zapisano w D:\\CTIP\\backups\\prod_20260908_154124.",
+    "Log dostępu wykazał, że 8 września 2026 r. żądanie POST /admin/shipping/day-close nie dotarło do CTIP; 15 przesyłek pozostało w label_ready, a zlecenie 83627 zostało wcześniej ręcznie zamknięte w MS bez dokumentów.",
+    "Dodano rozróżnienie stanu zrealizowane od pełnego stanu zamkniętego oraz odseparowany od API skrypt scripts/repair_shipping_day_close.py z dry-runem i jawnym trybem naprawczym.",
+    "Commit aa61311b405b35b81405869a5170ca9fd037835a wdrożono na produkcję; backup PostgreSQL i Firebirda zapisano w D:\\CTIP\\backups\\prod_20260908_163923.",
+    "Naprawa produkcyjna utworzyła dla 83627 dokumenty FV 5514/KPSK/2026 i WZ / 196 / 2026, a zamknięcie dnia nr 6 zakończyło pozostałe 14 przesyłek bez błędów.",
+    "Końcowa kontrola potwierdziła 16/16 zamkniętych zleceń, 14 RW, 2 WZ, 2 FV, zgodne pozycje dokumentów i POBRANO oraz dokładny spadek stanów wszystkich 23 kartotek użytych w naprawianych przesyłkach."
   ],
   "follow_up": [
     "Monitorować zakładkę Status przesyłek podczas pierwszych rzeczywistych doręczeń i zwrotów DPD.",
     "Nie włączać SHIPPING_COMPATIBILITY_WEB_ENABLED bez osobnej decyzji i kontroli limitów.",
-    "Monitorować pierwsze nowe zamknięcie Shipping i potwierdzić jego prezentację jako zamknięte w MS."
+    "Przy następnym zbiorczym zamknięciu Shipping potwierdzić obecność żądania POST /admin/shipping/day-close i nowego wpisu shipping_day_close."
   ],
   "context": {
     "repo": "ctip",
     "branch_local": "release/genform-search-all-2026-09-03",
     "venv": "/home/marcin/projects/ctip/.venv",
     "focus": "shipping-full-close-label-limit-device-model-production",
-    "production_commit": "6b2199a56631011229dbfb589349d3a29bd0f259",
+    "production_commit": "aa61311b405b35b81405869a5170ca9fd037835a",
     "alembic": "f2b7c9d4e6a1",
     "verification": [
       "pre-commit run --all-files: passed",
@@ -49,7 +54,17 @@
       "node --check dla shipping.js i shipping-v2.js: passed",
       "produkcja /health, /shipping, /shipping/legacy i /shipping/v2: HTTP 200",
       "naprawa historyczna: repaired=43, remaining=0, missing=4",
-      "zlecenie 18691/2026: STAN=Z, DATA_Z=2026-09-08, operator zamykający obecny, RW i DPD bez zmian"
+      "zlecenie 18691/2026: STAN=Z, DATA_Z=2026-09-08, operator zamykający obecny, RW i DPD bez zmian",
+      "pytest -q: 743 passed, 15 skipped",
+      "testy Shipping: 110 passed",
+      "pre-commit run --all-files i node --check app/static/shipping/shipping.js: passed",
+      "produkcja aa61311b405b35b81405869a5170ca9fd037835a: Git clean, Alembic f2b7c9d4e6a1",
+      "produkcja: CTIP-Web, CTIP-FormsPublic, CTIP-SMS i CollectorService działają; /health i trzy widoki Shipping zwracają HTTP 200",
+      "bieżący start CTIP-Web: 0 błędów krytycznych",
+      "zlecenia z etykietami 2026-09-08: 16/16 closed w CTIP i zamknięte w MS",
+      "dokumenty 2026-09-08: 14 RW, 2 WZ, 2 FV; wszystkie nagłówki, pozycje, powiązania FV-WZ i POBRANO zgodne",
+      "magazyn: 23/23 użyte kartoteki zmniejszone dokładnie o ilości z 15 naprawianych przesyłek",
+      "raport naprawy: D:\\CTIP\\runtime\\repairs\\shipping_day_close_20260908_apply.json"
     ],
     "services": [
       "CollectorService: Running",
