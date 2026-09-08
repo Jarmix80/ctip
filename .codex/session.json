@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-29T05:24:25+02:00",
+  "timestamp": "2026-09-08T15:46:00+02:00",
   "summary": [
     "Na produkcji 192.168.0.8 ustawiono DPD_INFO_ENABLED=true po potwierdzeniu kompletnego DPD_INFO_CHANNEL; SHIPPING_COMPATIBILITY_WEB_ENABLED pozostawiono false zgodnie z decyzją użytkownika.",
     "Pierwsza ręczna synchronizacja kanału DPD InfoServices zakończyła się statusem success: pobrano 87 zdarzeń, zapisano 86 nowych, potwierdzono odbiór partii.",
@@ -11,18 +11,25 @@
     "Uporządkowano wszystkie 12 lokalnych worktree: każde jest czyste, a wszystkie aktywne gałęzie z worktree są zgodne z GitHubem.",
     "Pierwotny prototyp Shipping i oryginalną dokumentację DPD zachowano bez łączenia z produkcją na gałęzi archive/root-shipping-prototype-2026-08-29 w commicie 50cce44.",
     "Zapisano i wypchnięto zaległe stany sesji mailboxa i Shipping oraz konfigurację testowego Firebirda; port backendu 127.0.0.1:3051 jest aktywny i zgodny z compose.test.yml.",
-    "Produkcja pozostaje czysta na commicie 15ed0ae4149b6abfa305b2ca8ea9521a6bc0fb07; cztery usługi działają, a health, Shipping i FormsPublic zwracają HTTP 200."
+    "Produkcja pozostaje czysta na commicie 15ed0ae4149b6abfa305b2ca8ea9521a6bc0fb07; cztery usługi działają, a health, Shipping i FormsPublic zwracają HTTP 200.",
+    "Naprawiono pełne zamykanie zleceń Shipping w MS: finalizacja zapisuje i weryfikuje STAN='Z', DATA_Z, dokument, przesyłkę oraz operatora zamykającego.",
+    "Naprawiono historycznie 43 istniejące zlecenia Shipping; rekordów Firebirda 83493, 83494, 83495 i 83553 nie odtwarzano.",
+    "Ponowny dry-run wykazał 43 rekordy poprawne, 0 do naprawy i 4 brakujące.",
+    "Treść etykiety DPD pozostaje pełna, przekroczenie 81 znaków blokuje zatwierdzenie również przy łączeniu paczek, a prawy panel pokazuje markę i model urządzenia.",
+    "Commit 6b2199a56631011229dbfb589349d3a29bd0f259 wdrożono na produkcję 192.168.0.8; backup zapisano w D:\\CTIP\\backups\\prod_20260908_154124."
   ],
   "follow_up": [
     "Monitorować zakładkę Status przesyłek podczas pierwszych rzeczywistych doręczeń i zwrotów DPD.",
     "Nie włączać SHIPPING_COMPATIBILITY_WEB_ENABLED bez osobnej decyzji i kontroli limitów.",
-    "Stary izolowany mirror WWW na porcie 8000 ma zatrzymany kontener web; bieżący test Shipping działa poprawnie na porcie 8002."
+    "Monitorować pierwsze nowe zamknięcie Shipping i potwierdzić jego prezentację jako zamknięte w MS."
   ],
   "context": {
     "repo": "ctip",
-    "branch_local": "feature/shipping-full-rollout-2026-08-28",
-    "venv": ".venv",
-    "focus": "shipping-dpd-infoservices-production-enabled-and-git-trees-clean",
+    "branch_local": "release/genform-search-all-2026-09-03",
+    "venv": "/home/marcin/projects/ctip/.venv",
+    "focus": "shipping-full-close-label-limit-device-model-production",
+    "production_commit": "6b2199a56631011229dbfb589349d3a29bd0f259",
+    "alembic": "f2b7c9d4e6a1",
     "verification": [
       "pre-commit run --all-files: passed",
       "pytest -q tests/test_dpd_infoservices_backfill.py tests/test_dpd_infoservices.py: 8 passed",
@@ -35,7 +42,14 @@
       "wszystkie aktywne gałęzie worktree: 0 ahead, 0 behind względem GitHub",
       "test Shipping 127.0.0.1:8002 /health i /shipping: HTTP 200",
       "test Firebird 127.0.0.1:3051: aktywny",
-      "produkcja Git: clean i zgodna z origin"
+      "produkcja Git: clean i zgodna z origin",
+      "pytest -q: 742 passed, 15 skipped",
+      "testy Shipping: 124 passed",
+      "ruff check . i black --check .: passed",
+      "node --check dla shipping.js i shipping-v2.js: passed",
+      "produkcja /health, /shipping, /shipping/legacy i /shipping/v2: HTTP 200",
+      "naprawa historyczna: repaired=43, remaining=0, missing=4",
+      "zlecenie 18691/2026: STAN=Z, DATA_Z=2026-09-08, operator zamykający obecny, RW i DPD bez zmian"
     ],
     "services": [
       "CollectorService: Running",
