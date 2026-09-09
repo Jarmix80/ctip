@@ -8,7 +8,7 @@ import json
 import re
 import unittest
 from contextlib import nullcontext
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -2557,8 +2557,21 @@ class ShippingSchemaTests(unittest.TestCase):
             ("model_id",),
             ("order_kind",),
             ("order_operator",),
+            ("closed_time",),
         ]
-        cursor.fetchone.return_value = (83493, 18493, 2026, "O", 1, 2954, 7222, 458, "Umowa", "")
+        cursor.fetchone.return_value = (
+            83493,
+            18493,
+            2026,
+            "O",
+            1,
+            2954,
+            7222,
+            458,
+            "Umowa",
+            "",
+            time(14, 24, 29),
+        )
         cursor.fetchall.side_effect = [[], []]
 
         with patch(
@@ -2570,6 +2583,7 @@ class ShippingSchemaTests(unittest.TestCase):
         detail_query = cursor.execute.call_args_list[0].args[0]
         contact_queries = [call.args for call in cursor.execute.call_args_list[1:]]
         self.assertEqual(result["model_id"], 458)
+        self.assertEqual(result["closed_time"], "14:24:29")
         self.assertIn("ON k.ID_KLIENT = z.ID_KLIENT", detail_query)
         self.assertIn("ON o.ID_ODDZIAL = z.ID_ODDZIAL", detail_query)
         self.assertIn("ON m.ID_KLIENT = z.ID_KLIENT", detail_query)

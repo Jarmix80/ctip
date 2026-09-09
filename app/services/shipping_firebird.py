@@ -283,9 +283,10 @@ def shipping_document_mode(*, order_kind: Any, invoice_required: bool) -> str:
 
 
 def _json_value(value: Any) -> Any:
+    """Normalizuje typy Firebirda przed użyciem w odpowiedzi i snapshotach JSON."""
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, date):
+    if isinstance(value, (date, time)):
         return value.isoformat()
     return value
 
