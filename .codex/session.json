@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-08T19:33:46+02:00",
+  "timestamp": "2026-09-09T13:05:00+02:00",
   "summary": [
     "Na produkcji 192.168.0.8 ustawiono DPD_INFO_ENABLED=true po potwierdzeniu kompletnego DPD_INFO_CHANNEL; SHIPPING_COMPATIBILITY_WEB_ENABLED pozostawiono false zgodnie z decyzją użytkownika.",
     "Pierwsza ręczna synchronizacja kanału DPD InfoServices zakończyła się statusem success: pobrano 87 zdarzeń, zapisano 86 nowych, potwierdzono odbiór partii.",
@@ -24,7 +24,9 @@
     "Końcowa kontrola potwierdziła 16/16 zamkniętych zleceń, 14 RW, 2 WZ, 2 FV, zgodne pozycje dokumentów i POBRANO oraz dokładny spadek stanów wszystkich 23 kartotek użytych w naprawianych przesyłkach.",
     "Dodano niezależny kontroler aktywnych przesyłek Shipping: zgodne ręczne zamknięcie MS jest przejmowane do CTIP bez ponownego zapisu Firebirda i bez SMS-a lub e-maila, a każda rozbieżność otrzymuje blokadę reconcile_required.",
     "Produkcyjny dry-run wykrył dokładnie 11 zgodnych ręcznych zamknięć z 7 września 2026 r. i 0 konfliktów; pierwszy cykl automatu zamknął wszystkie 11 rekordów w CTIP, podpiął RW, utworzył archiwa i audyty oraz ustawił powiadomienia skipped_external.",
-    "Commit 602f8b529e23972e0bdb13d525234c153f35361b wdrożono na produkcję 192.168.0.8; backup baz zapisano w D:\\CTIP\\backups\\prod_20260908_191845, a backup konfiguracji w D:\\CTIP\\backups\\config\\ctip_env_before_shipping_ms_20260908_172239.env."
+    "Commit 602f8b529e23972e0bdb13d525234c153f35361b wdrożono na produkcję 192.168.0.8; backup baz zapisano w D:\\CTIP\\backups\\prod_20260908_191845, a backup konfiguracji w D:\\CTIP\\backups\\config\\ctip_env_before_shipping_ms_20260908_172239.env.",
+    "Naprawiono ogólny błąd akceptacji danych Shipping: Firebird zwracał ZLECENIE.GODZINA_Z jako datetime.time, którego nie można było zapisać w source_snapshot JSON.",
+    "Commit 1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f wdrożono na produkcję 192.168.0.8; exact-order check dla 83670 (18670/2026) potwierdził pełną serializację JSON i closed_time jako tekst ISO."
   ],
   "follow_up": [
     "Monitorować zakładkę Status przesyłek podczas pierwszych rzeczywistych doręczeń i zwrotów DPD.",
@@ -36,8 +38,8 @@
     "repo": "ctip",
     "branch_local": "release/genform-search-all-2026-09-03",
     "venv": "/home/marcin/projects/ctip/.venv",
-    "focus": "shipping-manual-ms-reconciliation-production",
-    "production_commit": "602f8b529e23972e0bdb13d525234c153f35361b",
+    "focus": "shipping-firebird-time-json-hotfix-production",
+    "production_commit": "1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f",
     "alembic": "f2b7c9d4e6a1",
     "verification": [
       "pre-commit run --all-files: passed",
@@ -77,7 +79,12 @@
       "produkcja po pierwszym cyklu: 11/11 closed, właściwe RW, archived=true, po jednym zdarzeniu external_closure_reconciled, 0 konfliktów",
       "powiadomienia 11/11: SMS i e-mail skipped_external; aktywne kandydaty kontrolera: 0",
       "produkcja 602f8b529e23972e0bdb13d525234c153f35361b: Git clean, Alembic f2b7c9d4e6a1, CTIP-Web Running",
-      "końcowe /health, /shipping i FormsPublic /health: HTTP 200; bieżący start CTIP-Web bez wyjątków"
+      "końcowe /health, /shipping i FormsPublic /health: HTTP 200; bieżący start CTIP-Web bez wyjątków",
+      "pre-commit run --all-files: passed dla hotfixu czasu Firebird",
+      "tests/test_shipping.py: 110 passed",
+      "produkcja 1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f: Git clean, /health i /shipping HTTP 200",
+      "zlecenie 83670 (18670/2026): json.dumps całego payloadu zakończony powodzeniem, closed_time_type=str",
+      "bieżący start CTIP-Web po wdrożeniu: 0 błędów krytycznych"
     ],
     "services": [
       "CollectorService: Running",
