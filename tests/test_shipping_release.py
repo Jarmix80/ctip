@@ -1,4 +1,4 @@
-"""Testy izolowanego wydania produkcyjnego modułu Shipping."""
+"""Testy zgodności wydania Shipping z rozszerzonym grafem migracji testowego CTIP."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
     def test_deduplikacja_infoservices_jest_jedynym_headem_alembic(self) -> None:
+        """Zachowuje głowę Shipping oraz istniejące scalenie migracji CRM i Bot Identity."""
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
         self.assertEqual(scripts.get_heads(), ["f2b7c9d4e6a1"])
@@ -28,7 +29,11 @@ class ShippingReleaseTests(unittest.TestCase):
 
         preference_revision = scripts.get_revision("a1c3e5f7b9d2")
         self.assertIsNotNone(preference_revision)
-        self.assertEqual(preference_revision.down_revision, "e4a8c1d9f2b7")
+        self.assertEqual(preference_revision.down_revision, "f7b2d4e6a810")
+
+        integration_revision = scripts.get_revision("f7b2d4e6a810")
+        self.assertIsNotNone(integration_revision)
+        self.assertEqual(set(integration_revision.down_revision), {"f3a7c9e2d610", "e4a8c1d9f2b7"})
 
         revision = scripts.get_revision("e4a8c1d9f2b7")
         self.assertIsNotNone(revision)
@@ -160,22 +165,29 @@ class ShippingReleaseTests(unittest.TestCase):
         frontend = Path("app/static/shipping/shipping.js").read_text(encoding="utf-8")
         template = Path("app/templates/shipping/v2.html").read_text(encoding="utf-8")
 
-        self.assertIn('id="shipping-label-text" maxlength="81"', template)
+        self.assertIn('id="shipping-label-text" rows="3"', template)
+        self.assertNotIn('id="shipping-label-text" maxlength="81"', template)
+        self.assertNotIn('id="shipping-consolidated-label-text" maxlength="81"', template)
         self.assertIn('id="shipping-label-text-reset"', template)
         self.assertIn('id="shipping-consolidated-label-dialog"', template)
+        self.assertIn('id="shipping-consolidated-label-error"', template)
+        self.assertIn('id="shipping-v2-audit-device"', template)
         self.assertIn("labelTextDirty", frontend)
+        self.assertIn("shippingLabelLimitMessage", frontend)
         self.assertIn("openConsolidatedLabelEditor", frontend)
         self.assertIn("label_text: labelText", frontend)
 
     def test_operacje_mutacyjne_maja_blokady_a_synchronizacja_jest_odczytowa(self) -> None:
         routes = Path("app/api/routes/admin_shipping.py").read_text(encoding="utf-8")
 
-        self.assertEqual(routes.count("@router.post"), 16)
+        self.assertEqual(routes.count("@router.post"), 17)
         self.assertEqual(routes.count("_require_catalog_mutations()"), 6)
-        self.assertEqual(routes.count("_require_fulfillment()"), 10)
+        self.assertEqual(routes.count("_require_fulfillment()"), 11)
         self.assertIn('@router.post("/tracking/sync"', routes)
+        self.assertIn('@router.post("/reconciliation/run"', routes)
         self.assertIn('@router.post("/geocoder/match"', routes)
         self.assertIn("synchronize_dpd_infoservices", routes)
+        self.assertIn("synchronize_shipping_ms", routes)
 
 
 if __name__ == "__main__":

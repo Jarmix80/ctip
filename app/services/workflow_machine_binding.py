@@ -24,6 +24,7 @@ from app.services.contracts_dashboard import (
 from app.services.email_client import send_smtp_message
 from app.services.workflow_device_ownership import (
     MACHINE_BATCH_MIXED_HOLD,
+    MACHINE_MATCH_BOUND_CURRENT_WORKFLOW,
     MACHINE_MATCH_MISSING,
     MACHINE_MATCH_TARGET,
     MACHINE_MATCH_WAREHOUSE,
@@ -548,7 +549,7 @@ def _validate_workflow_device_ownership_with_cursor(
     workflow_case: FormWorkflowCase,
     devices: list[FormWorkflowDevice],
 ) -> list[_PreparedWorkflowDeviceBinding]:
-    """Sprawdza cały pakiet przed wykonaniem pierwszego zapisu w Firebird."""
+    """Sprawdza pakiet i rozpoznaje bezpieczne ponowienie częściowego wiązania."""
     prepared: list[_PreparedWorkflowDeviceBinding] = []
     conflicts: list[WorkflowDeviceOwnershipConflictItem] = []
     target_client_id = _coerce_int(workflow_case.firebird_client_id)
@@ -644,7 +645,9 @@ def _validate_workflow_device_ownership_with_cursor(
                 machine_id=machine_id,
                 machine_model_id=_coerce_int(current_row[6] if current_row else None),
                 expected_client_id=current_client_id,
-                ownership_state=ownership.state,
+                ownership_state=(
+                    MACHINE_MATCH_BOUND_CURRENT_WORKFLOW if idempotent_binding else ownership.state
+                ),
             )
         )
 
@@ -1060,7 +1063,14 @@ def bind_devices_to_workflow_client(
             snapshot = prepared.snapshot
             source_context = prepared.source_context
             try:
-                if prepared.ownership_state == MACHINE_MATCH_TARGET and prepared.machine_id:
+                if (
+                    prepared.ownership_state
+                    in {
+                        MACHINE_MATCH_BOUND_CURRENT_WORKFLOW,
+                        MACHINE_MATCH_TARGET,
+                    }
+                    and prepared.machine_id
+                ):
                     current_row = _fetch_machine_row(cursor, prepared.machine_id)
                     items.append(
                         WorkflowDeviceBindingItem(

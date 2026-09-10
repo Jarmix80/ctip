@@ -27,6 +27,12 @@ class TestEnvironmentPreflightTests(unittest.TestCase):
             issues = test_env_preflight.collect_issues()
         self.assertTrue(any("OUTBOUND_DELIVERY_MODE" in issue for issue in issues))
 
+    def test_detects_automatic_shipping_reconciliation(self) -> None:
+        """Normalny testowy profil nie może automatycznie uzgadniać archiwalnych danych."""
+        with mock.patch.object(test_env_preflight.settings, "shipping_ms_reconcile_enabled", True):
+            issues = test_env_preflight.collect_issues()
+        self.assertTrue(any("Automatyczne uzgadnianie Shipping" in issue for issue in issues))
+
     def test_detects_local_firebird_mode(self) -> None:
         with mock.patch.object(test_env_preflight.settings, "fb_mode", "local"):
             issues = test_env_preflight.collect_issues()

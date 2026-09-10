@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -56,6 +56,117 @@ def _text(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _closed_order_operator(existing_operator: Any, issued_by: Any) -> str:
+    """Dopisuje operatora zamykającego bez powielania znacznika i przekroczenia pola MS."""
+    existing = _text(existing_operator) or ""
+    if re.search(r"(?:^|,\s*)Zamknął\s*:", existing, flags=re.IGNORECASE):
+        return existing[:250]
+    suffix = f"Zamknął :{_text(issued_by) or 'CTIP'}"
+    available = max(0, 250 - len(suffix) - (2 if existing else 0))
+    prefix = existing[:available].rstrip(" ,")
+    return f"{prefix}, {suffix}" if prefix else suffix[:250]
+
+
+def _finalize_shipping_order_header(
+    cursor: Any,
+    *,
+    order_table_id: int,
+    document_mode: str,
+    tracking_number: str,
+    document_date: date,
+    issued_by: str,
+    rw_id: int | None = None,
+    rw_number: str | None = None,
+    wz_id: int | None = None,
+    wz_number: str | None = None,
+    invoice_id: int | None = None,
+    invoice_number: str | None = None,
+) -> None:
+    """Zapisuje i potwierdza pełny stan zamknięcia zlecenia w Menadżerze Serwisu."""
+    if document_mode == "rw":
+        expected_ids = (int(rw_id) if rw_id is not None else None, None, None)
+        document_number = _text(rw_number)
+    elif document_mode == "wz":
+        expected_ids = (None, int(wz_id) if wz_id is not None else None, None)
+        document_number = _text(wz_number)
+    else:
+        expected_ids = (None, None, int(invoice_id) if invoice_id is not None else None)
+        document_number = _text(invoice_number)
+    if not document_number or not any(value is not None for value in expected_ids):
+        raise RuntimeError("Brak kompletnego dokumentu wymaganego do zamknięcia zlecenia MS.")
+
+    cursor.execute(
+        """
+        SELECT ID_RW, ID_WZ, ID_FAKTURA, FAKTURA, PRZESYLKA, STAN, DATA_Z, OPERATOR
+        FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ? WITH LOCK
+        """,
+        (int(order_table_id),),
+    )
+    current = cursor.fetchone()
+    if current is None:
+        raise RuntimeError("Zlecenie zniknęło przed zapisem stanu zamknięcia MS.")
+    closed_date = _date_value(current[6]) or document_date
+    closed_operator = _closed_order_operator(current[7], issued_by)
+    expected = (
+        *expected_ids,
+        document_number,
+        tracking_number,
+        "Z",
+        closed_date,
+        closed_operator,
+    )
+    normalized_current = (
+        int(current[0]) if current[0] is not None else None,
+        int(current[1]) if current[1] is not None else None,
+        int(current[2]) if current[2] is not None else None,
+        _text(current[3]),
+        _text(current[4]),
+        (_text(current[5]) or "").upper(),
+        _date_value(current[6]),
+        _text(current[7]),
+    )
+    if normalized_current != expected:
+        cursor.execute(
+            """
+            UPDATE ZLECENIE
+            SET ID_RW = ?, ID_WZ = ?, ID_FAKTURA = ?, FAKTURA = ?, PRZESYLKA = ?,
+                STAN = 'Z', DATA_Z = ?, OPERATOR = ?
+            WHERE ID_ZLECENIE_TABLE = ?
+            """,
+            (
+                *expected_ids,
+                document_number,
+                tracking_number,
+                closed_date,
+                closed_operator,
+                int(order_table_id),
+            ),
+        )
+
+    cursor.execute(
+        """
+        SELECT ID_RW, ID_WZ, ID_FAKTURA, FAKTURA, PRZESYLKA, STAN, DATA_Z, OPERATOR
+        FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ?
+        """,
+        (int(order_table_id),),
+    )
+    verified = cursor.fetchone()
+    normalized_verified = (
+        int(verified[0]) if verified and verified[0] is not None else None,
+        int(verified[1]) if verified and verified[1] is not None else None,
+        int(verified[2]) if verified and verified[2] is not None else None,
+        _text(verified[3]) if verified else None,
+        _text(verified[4]) if verified else None,
+        (_text(verified[5]) or "").upper() if verified else "",
+        _date_value(verified[6]) if verified else None,
+        _text(verified[7]) if verified else None,
+    )
+    if normalized_verified != expected:
+        raise RuntimeError(
+            "Menadżer Serwisu nie potwierdził dokumentu, daty i operatora zamknięcia zlecenia."
+        )
 
 
 def _search_terms(value: Any) -> list[str]:
@@ -172,9 +283,10 @@ def shipping_document_mode(*, order_kind: Any, invoice_required: bool) -> str:
 
 
 def _json_value(value: Any) -> Any:
+    """Normalizuje typy Firebirda przed użyciem w odpowiedzi i snapshotach JSON."""
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, date):
+    if isinstance(value, (date, time)):
         return value.isoformat()
     return value
 
@@ -450,6 +562,12 @@ def shipping_order_state_payload(order: dict[str, Any]) -> dict[str, Any]:
     """Buduje bezpieczny stan operacyjny zlecenia do kontroli współbieżności."""
     order_status = (_text(order.get("status")) or "").upper()
     tracking_number = _text(order.get("tracking_number"))
+    closed_date = _date_value(order.get("closed_date"))
+    closed_time = order.get("closed_time")
+    order_operator = _text(order.get("order_operator") or order.get("operator"))
+    has_closing_operator = bool(
+        re.search(r"(?:^|,\s*)Zamknął\s*:", order_operator or "", flags=re.IGNORECASE)
+    )
     technicians = [
         value
         for value in (
@@ -470,12 +588,29 @@ def shipping_order_state_payload(order: dict[str, Any]) -> dict[str, Any]:
     is_queue_status = order_status in QUEUE_STATUSES
     eligible_for_shipping = is_queue_status and not has_assigned_technician
     completed = order_status == "Z"
+    fully_closed = completed and closed_date is not None and has_closing_operator
+    has_documents = bool(
+        order.get("invoice_id")
+        or order.get("wz_id")
+        or order.get("rw_id")
+        or _text(order.get("document_number"))
+    )
+    recoverable_preclosed = bool(
+        completed and tracking_number and not has_assigned_technician and not has_documents
+    )
     return {
         "order_table_id": int(order["order_table_id"]),
         "order_id": int(order["order_id"]),
         "order_year": int(order["order_year"]),
         "status": order_status,
-        "status_label": ORDER_STATUS_LABELS.get(order_status, order_status or "nieznany"),
+        "status_label": (
+            "zamknięte"
+            if fully_closed
+            else ORDER_STATUS_LABELS.get(order_status, order_status or "nieznany")
+        ),
+        "closed": fully_closed,
+        "closed_date": closed_date.isoformat() if closed_date else None,
+        "closed_time": str(closed_time) if closed_time is not None else None,
         "tracking_number": tracking_number,
         "invoice_id": order.get("invoice_id"),
         "wz_id": order.get("wz_id"),
@@ -488,6 +623,7 @@ def shipping_order_state_payload(order: dict[str, Any]) -> dict[str, Any]:
         "is_queue_status": is_queue_status,
         "eligible_for_shipping": eligible_for_shipping,
         "completed": completed,
+        "recoverable_preclosed": recoverable_preclosed,
         "can_review": eligible_for_shipping and not tracking_number,
         "can_prepare_shipment": eligible_for_shipping
         and (order_status == "O" or (order_status == "ZR" and not tracking_number)),
@@ -518,6 +654,446 @@ def shipping_order_state_conflict_message(
     )
 
 
+def _external_closed_at(closed_date: Any, closed_time: Any) -> str | None:
+    """Składa datę zamknięcia MS do znacznika UTC zachowywanego w CTIP."""
+    normalized_date = _date_value(closed_date)
+    if normalized_date is None:
+        return None
+    if isinstance(closed_time, datetime):
+        normalized_time = closed_time.time()
+    elif isinstance(closed_time, time):
+        normalized_time = closed_time
+    else:
+        try:
+            normalized_time = time.fromisoformat(str(closed_time)) if closed_time else time.min
+        except ValueError:
+            normalized_time = time.min
+    local_value = datetime.combine(normalized_date, normalized_time, tzinfo=WARSAW)
+    return local_value.astimezone(UTC).isoformat()
+
+
+def _external_closing_operator(value: Any) -> str | None:
+    """Wyodrębnia operatora ręcznego zamknięcia z pola operatora zlecenia MS."""
+    operator = _text(value)
+    if not operator:
+        return None
+    match = re.search(r"(?:^|,\s*)Zamknął\s*:\s*(.+)$", operator, flags=re.IGNORECASE)
+    return _text(match.group(1)) if match else None
+
+
+def _decimal_value(value: Any) -> Decimal:
+    """Normalizuje liczbę Firebirda do porównania dokumentów Shipping."""
+    return Decimal(str(value or 0).replace(",", "."))
+
+
+def _external_position_errors(
+    rows: list[tuple[Any, ...]],
+    *,
+    expected_items: list[dict[str, Any]],
+    invoice: bool,
+) -> list[str]:
+    """Porównuje pozycje ręcznego dokumentu z zatwierdzonym snapshotem CTIP."""
+    errors: list[str] = []
+    expected = {int(item["warehouse_item_id"]): item for item in expected_items}
+    actual: dict[int, tuple[Any, ...]] = {}
+    for row in rows:
+        item_id = int(row[0])
+        if item_id in actual:
+            errors.append(f"Dokument zawiera powtórzoną kartotekę magazynową {item_id}.")
+        actual[item_id] = row
+    if set(actual) != set(expected):
+        errors.append("Pozycje dokumentu nie odpowiadają częściom zatwierdzonym w Shipping.")
+        return errors
+    for item_id, item in expected.items():
+        row = actual[item_id]
+        warehouse_id = int(row[1]) if row[1] is not None else None
+        if warehouse_id != int(item["warehouse_id"]):
+            errors.append(f"Kartoteka {item_id} pochodzi z innego magazynu.")
+        if _decimal_value(row[2]).quantize(Decimal("0.0001")) != _decimal_value(
+            item["price_net"]
+        ).quantize(Decimal("0.0001")):
+            errors.append(f"Cena netto kartoteki {item_id} różni się od decyzji Shipping.")
+        expected_quantity = _decimal_value(item["quantity"]).quantize(Decimal("0.001"))
+        if _decimal_value(row[3]).quantize(Decimal("0.001")) != expected_quantity:
+            errors.append(f"Ilość kartoteki {item_id} różni się od decyzji Shipping.")
+        if _vat_rate(row[4]).quantize(Decimal("0.001")) != _decimal_value(
+            item["vat_rate"]
+        ).quantize(Decimal("0.001")):
+            errors.append(f"Stawka VAT kartoteki {item_id} różni się od decyzji Shipping.")
+        if _decimal_value(row[5]).quantize(Decimal("0.001")) != expected_quantity:
+            errors.append(f"Kartoteka {item_id} nie została w pełni rozchodowana.")
+        if invoice and _decimal_value(row[6]).quantize(Decimal("0.001")) != expected_quantity:
+            errors.append(f"Ilość WZ kartoteki {item_id} nie odpowiada fakturze.")
+    return errors
+
+
+def _external_document_counts(cursor: Any, order_id: int, order_year: int) -> dict[str, int]:
+    """Liczy dokumenty powiązane ze zleceniem niezależnie od pól nagłówka."""
+    cursor.execute(
+        """
+        SELECT RODZAJ_DOK, COUNT(*)
+        FROM ZAKUPY
+        WHERE ID_ZLECENIE = ? AND ROK_ZLECENIA = ? AND RODZAJ_DOK IN ('RW', 'WZ')
+        GROUP BY RODZAJ_DOK
+        """,
+        (int(order_id), int(order_year)),
+    )
+    counts = {"rw": 0, "wz": 0, "invoice": 0}
+    for kind, count in cursor.fetchall():
+        normalized = (_text(kind) or "").casefold()
+        if normalized in counts:
+            counts[normalized] = int(count)
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM FAKTURA
+        WHERE ID_ZLECENIE = ? AND ROK_ZLECENIA = ? AND RODZAJ_DOK = 'KPSK'
+        """,
+        (int(order_id), int(order_year)),
+    )
+    counts["invoice"] = int(cursor.fetchone()[0])
+    return counts
+
+
+def _load_external_stock_document(
+    cursor: Any,
+    *,
+    document_id: int,
+    expected_kind: str,
+    candidate: dict[str, Any],
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Odczytuje i waliduje ręcznie wystawiony dokument RW albo WZ."""
+    cursor.execute(
+        """
+        SELECT ID_ZAKUPY_TABLE, RODZAJ_DOK, NUMER, ID_KLIENT, ID_ZLECENIE,
+               ROK_ZLECENIA, ID_MW, DATA_WYST, WYSTAWIL
+        FROM ZAKUPY WHERE ID_ZAKUPY_TABLE = ?
+        """,
+        (int(document_id),),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None, [f"Nie znaleziono dokumentu {expected_kind} wskazanego w zleceniu."]
+    errors: list[str] = []
+    if (_text(row[1]) or "").upper() != expected_kind:
+        errors.append(f"Dokument {document_id} nie jest dokumentem {expected_kind}.")
+    if int(row[3] or 0) != int(candidate["client_id"]):
+        errors.append(f"Dokument {expected_kind} jest przypisany do innego klienta.")
+    if (int(row[4] or 0), int(row[5] or 0)) != (
+        int(candidate["order_id"]),
+        int(candidate["order_year"]),
+    ):
+        errors.append(f"Dokument {expected_kind} jest przypisany do innego zlecenia.")
+    expected_warehouses = {int(item["warehouse_id"]) for item in candidate["items"]}
+    if expected_warehouses != {int(row[6] or 0)}:
+        errors.append(f"Dokument {expected_kind} wskazuje inny magazyn.")
+    cursor.execute(
+        """
+        SELECT ID_MAGAZYN, ID_MW, CENA_NETTO, ILOSC, STAWKA_VAT, POBRANO
+        FROM ZAKPOZYCJA WHERE ID_ZAKUPY = ? ORDER BY ID_ZAKPOZYCJA_TABLE
+        """,
+        (int(document_id),),
+    )
+    position_rows = [(*position, None) for position in cursor.fetchall()]
+    errors.extend(
+        _external_position_errors(
+            position_rows,
+            expected_items=candidate["items"],
+            invoice=False,
+        )
+    )
+    return (
+        {
+            "id": int(row[0]),
+            "number": _text(row[2]),
+            "issue_date": _date_value(row[7]).isoformat() if _date_value(row[7]) else None,
+            "issued_by": _text(row[8]),
+        },
+        errors,
+    )
+
+
+def _load_external_invoice(
+    cursor: Any,
+    *,
+    invoice_id: int,
+    candidate: dict[str, Any],
+) -> tuple[dict[str, Any] | None, int | None, list[str]]:
+    """Odczytuje i waliduje fakturę oraz jej pozycje względem snapshotu Shipping."""
+    cursor.execute(
+        """
+        SELECT ID_FAKTURA_TABLE, RODZAJ_DOK, NUMER, ID_KLIENT, ID_ZLECENIE,
+               ROK_ZLECENIA, ID_MAGAZYN, ID_WZ, DATA_WYST, WYSTAWIL
+        FROM FAKTURA WHERE ID_FAKTURA_TABLE = ?
+        """,
+        (int(invoice_id),),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None, None, ["Nie znaleziono faktury wskazanej w zleceniu."]
+    errors: list[str] = []
+    if (_text(row[1]) or "").upper() != INVOICE_DOCUMENT_KIND:
+        errors.append("Dokument wskazany jako faktura nie ma rodzaju KPSK.")
+    if int(row[3] or 0) != int(candidate["client_id"]):
+        errors.append("Faktura jest przypisana do innego klienta.")
+    if (int(row[4] or 0), int(row[5] or 0)) != (
+        int(candidate["order_id"]),
+        int(candidate["order_year"]),
+    ):
+        errors.append("Faktura jest przypisana do innego zlecenia.")
+    expected_warehouses = {int(item["warehouse_id"]) for item in candidate["items"]}
+    if expected_warehouses != {int(row[6] or 0)}:
+        errors.append("Faktura wskazuje inny magazyn.")
+    cursor.execute(
+        """
+        SELECT ID_MAGPOZ, ID_MAGAZYN, CENA_NETTO, ILOSC, STAWKA_VAT, POBRANO, ILOSCWZ
+        FROM FPOZYCJA WHERE ID_FAKTURA = ? ORDER BY ID_FPOZYCJA_TABLE
+        """,
+        (int(invoice_id),),
+    )
+    errors.extend(
+        _external_position_errors(
+            list(cursor.fetchall()),
+            expected_items=candidate["items"],
+            invoice=True,
+        )
+    )
+    return (
+        {
+            "id": int(row[0]),
+            "number": _text(row[2]),
+            "issue_date": _date_value(row[8]).isoformat() if _date_value(row[8]) else None,
+            "issued_by": _text(row[9]),
+        },
+        int(row[7]) if row[7] is not None else None,
+        errors,
+    )
+
+
+def _inspect_external_shipping_order(cursor: Any, candidate: dict[str, Any]) -> dict[str, Any]:
+    """Klasyfikuje bieżący stan jednego aktywnego zlecenia Shipping w MS."""
+    order_table_id = int(candidate["order_table_id"])
+    cursor.execute(
+        """
+        SELECT ID_ZLECENIE_TABLE, ID_ZLECENIE, ROK, ID_KLIENT, STAN, PRZESYLKA,
+               ID_FAKTURA, ID_WZ, ID_RW, FAKTURA, TECHNIK, TECHNIK2,
+               DATA_Z, GODZINA_Z, OPERATOR
+        FROM ZLECENIE WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
+        """,
+        (order_table_id, DELIVERY_TYPE_ID),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        snapshot = {"order_table_id": order_table_id, "missing": True}
+        return {
+            "order_table_id": order_table_id,
+            "classification": "conflict",
+            "message": "Nie znaleziono aktywnego zlecenia dowozu materiałów w MS.",
+            "state_token": hashlib.sha256(
+                json.dumps(snapshot, sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+            "snapshot": snapshot,
+            "documents": {},
+            "closed_at": None,
+            "closing_operator": None,
+        }
+    (
+        _,
+        order_id,
+        order_year,
+        client_id,
+        order_status,
+        tracking_number,
+        invoice_id,
+        wz_id,
+        rw_id,
+        document_number,
+        technician,
+        secondary_technician,
+        closed_date,
+        closed_time,
+        order_operator,
+    ) = row
+    counts = _external_document_counts(cursor, int(order_id), int(order_year))
+    state = shipping_order_state_payload(
+        {
+            "order_table_id": order_table_id,
+            "order_id": order_id,
+            "order_year": order_year,
+            "status": order_status,
+            "tracking_number": tracking_number,
+            "invoice_id": invoice_id,
+            "wz_id": wz_id,
+            "rw_id": rw_id,
+            "document_number": document_number,
+            "technician": technician,
+            "secondary_technician": secondary_technician,
+            "closed_date": closed_date,
+            "closed_time": closed_time,
+            "order_operator": order_operator,
+        }
+    )
+    snapshot = {
+        "order_table_id": order_table_id,
+        "order_id": int(order_id),
+        "order_year": int(order_year),
+        "client_id": int(client_id),
+        "status": state["status"],
+        "status_label": state["status_label"],
+        "tracking_number": state["tracking_number"],
+        "invoice_id": int(invoice_id) if invoice_id is not None else None,
+        "wz_id": int(wz_id) if wz_id is not None else None,
+        "rw_id": int(rw_id) if rw_id is not None else None,
+        "document_number": _text(document_number),
+        "document_counts": counts,
+        "closed_date": state["closed_date"],
+        "closed_time": state["closed_time"],
+        "closing_operator": _external_closing_operator(order_operator),
+        "assigned_technician": state["assigned_technician"],
+    }
+    state_token = hashlib.sha256(
+        json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    identity_matches = (int(order_id), int(order_year), int(client_id)) == (
+        int(candidate["order_id"]),
+        int(candidate["order_year"]),
+        int(candidate["client_id"]),
+    )
+    tracking_matches = state["tracking_number"] == _text(candidate["tracking_number"])
+    if (
+        identity_matches
+        and tracking_matches
+        and state["can_finalize"]
+        and counts == {"rw": 0, "wz": 0, "invoice": 0}
+    ):
+        return {
+            "order_table_id": order_table_id,
+            "classification": "healthy",
+            "message": "Zlecenie oczekuje w MS na standardowe zamknięcie przez Shipping.",
+            "state_token": state_token,
+            "snapshot": snapshot,
+            "documents": {},
+            "closed_at": None,
+            "closing_operator": None,
+        }
+
+    errors: list[str] = []
+    if not identity_matches:
+        errors.append("Tożsamość zlecenia lub klienta różni się od snapshotu Shipping.")
+    if not tracking_matches:
+        errors.append("Numer przesyłki w MS różni się od numeru etykiety Shipping.")
+    if not state["closed"]:
+        errors.append(f"Zlecenie ma w MS stan „{state['status_label']}”, a nie pełne zamknięcie.")
+    if state["has_assigned_technician"]:
+        errors.append("Zlecenie ma przypisanego technika innego niż magazyn wysyłkowy.")
+
+    mode = str(candidate["document_mode"])
+    expected_counts = {
+        "rw": {"rw": 1, "wz": 0, "invoice": 0},
+        "wz": {"rw": 0, "wz": 1, "invoice": 0},
+        "invoice_wz": {"rw": 0, "wz": 1, "invoice": 1},
+    }[mode]
+    if counts != expected_counts:
+        errors.append("Liczba lub rodzaj dokumentów nie odpowiada decyzji Shipping.")
+    documents: dict[str, Any] = {
+        "rw_id": None,
+        "rw_number": None,
+        "wz_id": None,
+        "wz_number": None,
+        "invoice_id": None,
+        "invoice_number": None,
+    }
+    primary_number: str | None = None
+    if mode == "rw" and rw_id is not None:
+        rw, document_errors = _load_external_stock_document(
+            cursor,
+            document_id=int(rw_id),
+            expected_kind="RW",
+            candidate=candidate,
+        )
+        errors.extend(document_errors)
+        if rw:
+            documents.update(rw_id=rw["id"], rw_number=rw["number"])
+            primary_number = rw["number"]
+        if wz_id is not None or invoice_id is not None:
+            errors.append("Zlecenie RW ma dodatkowe powiązanie WZ albo FV.")
+    elif mode == "wz" and wz_id is not None:
+        wz, document_errors = _load_external_stock_document(
+            cursor,
+            document_id=int(wz_id),
+            expected_kind="WZ",
+            candidate=candidate,
+        )
+        errors.extend(document_errors)
+        if wz:
+            documents.update(wz_id=wz["id"], wz_number=wz["number"])
+            primary_number = wz["number"]
+        if rw_id is not None or invoice_id is not None:
+            errors.append("Zlecenie WZ ma dodatkowe powiązanie RW albo FV.")
+    elif mode == "invoice_wz" and invoice_id is not None:
+        invoice, invoice_wz_id, document_errors = _load_external_invoice(
+            cursor,
+            invoice_id=int(invoice_id),
+            candidate=candidate,
+        )
+        errors.extend(document_errors)
+        if invoice:
+            documents.update(invoice_id=invoice["id"], invoice_number=invoice["number"])
+            primary_number = invoice["number"]
+        if invoice_wz_id is None:
+            errors.append("Faktura nie ma powiązanego dokumentu WZ.")
+        else:
+            wz, wz_errors = _load_external_stock_document(
+                cursor,
+                document_id=invoice_wz_id,
+                expected_kind="WZ",
+                candidate=candidate,
+            )
+            errors.extend(wz_errors)
+            if wz:
+                documents.update(wz_id=wz["id"], wz_number=wz["number"])
+        if rw_id is not None or wz_id is not None:
+            errors.append("Zlecenie fakturowane ma dodatkowe powiązanie RW albo WZ w nagłówku.")
+    else:
+        errors.append("Nagłówek zlecenia nie wskazuje oczekiwanego dokumentu.")
+    if primary_number != _text(document_number):
+        errors.append("Numer dokumentu w nagłówku zlecenia nie zgadza się z dokumentem źródłowym.")
+
+    if errors:
+        return {
+            "order_table_id": order_table_id,
+            "classification": "conflict",
+            "message": " ".join(dict.fromkeys(errors)),
+            "state_token": state_token,
+            "snapshot": snapshot,
+            "documents": documents,
+            "closed_at": _external_closed_at(closed_date, closed_time),
+            "closing_operator": _external_closing_operator(order_operator),
+        }
+    return {
+        "order_table_id": order_table_id,
+        "classification": "external_closed",
+        "message": "Ręczne zamknięcie w MS jest w pełni zgodne z decyzją Shipping.",
+        "state_token": state_token,
+        "snapshot": snapshot,
+        "documents": documents,
+        "closed_at": _external_closed_at(closed_date, closed_time),
+        "closing_operator": _external_closing_operator(order_operator),
+    }
+
+
+def inspect_active_shipping_orders(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Odczytuje i klasyfikuje aktywne zlecenia bez wykonywania zapisów w MS."""
+    if not candidates:
+        return []
+    connection = firebird_connection()
+    cursor = connection.cursor()
+    try:
+        return [_inspect_external_shipping_order(cursor, candidate) for candidate in candidates]
+    finally:
+        cursor.close()
+        connection.close()
+
+
 def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
     """Odczytuje lekki, bieżący stan zlecenia do okresowej kontroli interfejsu."""
     connection = firebird_connection()
@@ -526,7 +1102,8 @@ def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
         cursor.execute(
             """
             SELECT ID_ZLECENIE_TABLE, ID_ZLECENIE, ROK, STAN, PRZESYLKA,
-                   ID_FAKTURA, ID_WZ, ID_RW, FAKTURA, TECHNIK, TECHNIK2
+                   ID_FAKTURA, ID_WZ, ID_RW, FAKTURA, TECHNIK, TECHNIK2,
+                   DATA_Z, GODZINA_Z, OPERATOR
             FROM ZLECENIE
             WHERE ID_ZLECENIE_TABLE = ? AND TYP_US = ?
             """,
@@ -547,6 +1124,9 @@ def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
             document_number,
             technician,
             secondary_technician,
+            closed_date,
+            closed_time,
+            order_operator,
         ) = row
         return shipping_order_state_payload(
             {
@@ -561,6 +1141,9 @@ def load_shipping_order_state(order_table_id: int) -> dict[str, Any]:
                 "document_number": document_number,
                 "technician": technician,
                 "secondary_technician": secondary_technician,
+                "closed_date": closed_date,
+                "closed_time": closed_time,
+                "order_operator": order_operator,
             }
         )
     finally:
@@ -894,6 +1477,8 @@ def load_shipping_order(order_table_id: int) -> dict[str, Any]:
                 z.E_MAIL AS ORDER_EMAIL,
                 z.ZGLASZA AS CONTACT_NAME,
                 z.OPERATOR AS ORDER_OPERATOR,
+                z.DATA_Z AS CLOSED_DATE,
+                z.GODZINA_Z AS CLOSED_TIME,
                 z.MARKA AS DEVICE_BRAND,
                 z.MODEL AS DEVICE_MODEL,
                 z.SERIAL AS DEVICE_SERIAL,
@@ -1741,8 +2326,9 @@ def finalize_shipping_order(
     tracking_number: str,
     issued_by: str,
     shipping_address: dict[str, Any] | None = None,
+    allow_preclosed_without_documents: bool = False,
 ) -> dict[str, Any]:
-    """Tworzy RW albo WZ z opcjonalną FV, wiąże dokumenty i zamyka zlecenie."""
+    """Tworzy dokumenty i opcjonalnie naprawia jawnie wskazane wcześniejsze zamknięcie."""
     enabled, reason = firebird_writes_enabled()
     if not enabled:
         raise RuntimeError(reason or "Zapis do Firebird jest zablokowany.")
@@ -1894,19 +2480,17 @@ def finalize_shipping_order(
                     "UPDATE ZAKUPY SET DOK_ZEW = ? WHERE ID_ZAKUPY_TABLE = ?",
                     (_text(invoice_number), wz_id),
                 )
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_FAKTURA = ?, ID_WZ = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    int(invoice_id),
-                    _text(invoice_number),
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
+            _finalize_shipping_order_header(
+                cursor,
+                order_table_id=order_table_id,
+                document_mode=document_mode,
+                tracking_number=normalized_tracking,
+                document_date=document_date,
+                issued_by=issued_by,
+                wz_id=wz_id,
+                wz_number=wz_number,
+                invoice_id=int(invoice_id),
+                invoice_number=_text(invoice_number),
             )
             connection.commit()
             return {
@@ -1922,19 +2506,15 @@ def finalize_shipping_order(
 
         if document_mode == "rw" and rw_row is not None:
             rw_id, rw_number = rw_row
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_RW = ?, ID_WZ = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    int(rw_id),
-                    _text(rw_number) or _text(existing_document_text),
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
+            _finalize_shipping_order_header(
+                cursor,
+                order_table_id=order_table_id,
+                document_mode=document_mode,
+                tracking_number=normalized_tracking,
+                document_date=document_date,
+                issued_by=issued_by,
+                rw_id=int(rw_id),
+                rw_number=_text(rw_number) or _text(existing_document_text),
             )
             connection.commit()
             return {
@@ -1950,19 +2530,15 @@ def finalize_shipping_order(
 
         if document_mode == "wz" and wz_row is not None:
             wz_id, wz_number = wz_row
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_WZ = ?, ID_FAKTURA = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    int(wz_id),
-                    _text(wz_number),
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
+            _finalize_shipping_order_header(
+                cursor,
+                order_table_id=order_table_id,
+                document_mode=document_mode,
+                tracking_number=normalized_tracking,
+                document_date=document_date,
+                issued_by=issued_by,
+                wz_id=int(wz_id),
+                wz_number=_text(wz_number),
             )
             connection.commit()
             return {
@@ -1976,7 +2552,14 @@ def finalize_shipping_order(
                 "invoice_number": None,
             }
 
-        if not order_state["can_finalize"]:
+        preclosed_recovery = bool(
+            allow_preclosed_without_documents
+            and order_state["recoverable_preclosed"]
+            and invoice_row is None
+            and wz_row is None
+            and rw_row is None
+        )
+        if not order_state["can_finalize"] and not preclosed_recovery:
             raise ShippingOrderStateConflict(
                 shipping_order_state_conflict_message(
                     order_state,
@@ -2453,52 +3036,20 @@ def finalize_shipping_order(
                 ),
             )
 
-        if document_mode == "rw":
-            order_values = (rw_id, rw_number)
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_RW = ?, ID_WZ = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    order_values[0],
-                    order_values[1],
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
-            )
-        elif document_mode == "wz":
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_WZ = ?, ID_RW = NULL, ID_FAKTURA = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    wz_id,
-                    wz_number,
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE ZLECENIE
-                SET ID_FAKTURA = ?, ID_WZ = NULL, ID_RW = NULL, FAKTURA = ?,
-                    PRZESYLKA = ?, STAN = 'Z'
-                WHERE ID_ZLECENIE_TABLE = ?
-                """,
-                (
-                    invoice_id,
-                    invoice_number,
-                    normalized_tracking,
-                    int(order_table_id),
-                ),
-            )
+        _finalize_shipping_order_header(
+            cursor,
+            order_table_id=order_table_id,
+            document_mode=document_mode,
+            tracking_number=normalized_tracking,
+            document_date=document_date,
+            issued_by=issued_by,
+            rw_id=rw_id,
+            rw_number=rw_number,
+            wz_id=wz_id,
+            wz_number=wz_number,
+            invoice_id=invoice_id,
+            invoice_number=invoice_number,
+        )
         connection.commit()
         return {
             "status": "created",
@@ -2524,6 +3075,7 @@ __all__ = [
     "SHIPPING_TECHNICIAN_NAME",
     "ShippingOrderStateConflict",
     "finalize_shipping_order",
+    "inspect_active_shipping_orders",
     "load_shipping_overdue_invoices",
     "load_shipping_overdue_summaries",
     "load_shipping_order",

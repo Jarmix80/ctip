@@ -88,7 +88,7 @@ def collect_issues(
     expected_image: str,
     check_filesystem: bool = False,
 ) -> list[str]:
-    """Zwraca naruszenia izolacji i niezmienności obrazu testowego."""
+    """Kontroluje izolację obrazu testowego i wyłączenie automatu uzgadniania MS."""
     issues: list[str] = []
     if config.get("name") != "ctip-test":
         issues.append("Projekt Compose musi mieć nazwę ctip-test.")
@@ -169,6 +169,7 @@ def collect_issues(
         "DPD_INFO_ENABLED",
         "SHIPPING_COMPATIBILITY_WEB_ENABLED",
         "SHIPPING_TEST_FIREBIRD_WRITES",
+        "SHIPPING_MS_RECONCILE_ENABLED",
     ):
         if not _is_false(web_environment.get(key)):
             issues.append(f"Usługa web wymaga {key}=false w środowisku testowym.")

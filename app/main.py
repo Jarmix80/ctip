@@ -43,6 +43,10 @@ from app.services.dpd_infoservices_sync import (
     start_dpd_infoservices_scheduler,
     stop_dpd_infoservices_scheduler,
 )
+from app.services.shipping_ms_reconciliation import (
+    start_shipping_ms_reconciliation_scheduler,
+    stop_shipping_ms_reconciliation_scheduler,
+)
 from app.services.workflow_sheet_status_cache import (
     ensure_workflow_sheet_status_cache_table,
     start_workflow_sheet_status_cache_scheduler,
@@ -65,7 +69,7 @@ from app.web.shipping_ui import router as shipping_ui_router
 
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI):
-    """Obsługuje zadania startowe i zamknięcie aplikacji."""
+    """Obsługuje harmonogramy CTIP oraz rozszerzeń testowych przy starcie i zamknięciu."""
     backup_scheduler_started = False
     workflow_sheet_status_scheduler_started = False
     contracts_workflow_maintenance_scheduler_started = False
@@ -76,6 +80,7 @@ async def _app_lifespan(_: FastAPI):
     delivery_notifications_scheduler_started = False
     bot_identity_scheduler_started = False
     crm_retention_scheduler_started = False
+    shipping_ms_reconciliation_scheduler_started = False
     await ensure_workflow_sheet_status_cache_table()
     if settings.backup_scheduler_enabled and settings.backup_execution_active:
         await start_backup_scheduler()
@@ -106,6 +111,9 @@ async def _app_lifespan(_: FastAPI):
     if settings.crm_enabled and settings.crm_retention_scheduler_enabled:
         await start_crm_retention_scheduler()
         crm_retention_scheduler_started = True
+    if settings.shipping_enabled and settings.shipping_ms_reconcile_enabled:
+        await start_shipping_ms_reconciliation_scheduler()
+        shipping_ms_reconciliation_scheduler_started = True
     try:
         yield
     finally:
@@ -129,6 +137,8 @@ async def _app_lifespan(_: FastAPI):
             await stop_bot_identity_scheduler()
         if crm_retention_scheduler_started:
             await stop_crm_retention_scheduler()
+        if shipping_ms_reconciliation_scheduler_started:
+            await stop_shipping_ms_reconciliation_scheduler()
 
 
 def create_app(*, report_directory: str | Path = "docs/raport") -> FastAPI:

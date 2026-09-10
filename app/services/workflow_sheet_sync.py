@@ -169,8 +169,21 @@ _workflow_sheet_runtime_config_var: ContextVar[WorkflowSheetRuntimeConfig | None
 
 WORKFLOW_RESERVATION_STATUS = "04. Rezerwacja GRENKE"
 WORKFLOW_RESERVATION_NOTE = "Rezerwacja zalozona automatycznie przez CTIP."
+WORKFLOW_SERVICE_BLOCK_STATUS = "NIESPRAWNE - SERWIS"
 WORKFLOW_RESERVED_ROW_COLOR = {"red": 0.98, "green": 0.89, "blue": 0.89}
 WORKFLOW_DEFAULT_ROW_COLOR = {"red": 1.0, "green": 1.0, "blue": 1.0}
+
+_WORKFLOW_MAINTENANCE_FIELD_KEYS = {
+    "notes",
+    "reservation_status",
+    "reservation_until",
+    "reservation_grenke",
+    "form_ctip",
+    "proforma_grenke",
+    "ctip_form_id",
+    "ctip_workflow_case_id",
+    "business_status_legacy",
+}
 
 
 def normalize_workflow_sheet_spreadsheet_id(value: str | None) -> str:
@@ -437,6 +450,7 @@ def load_workflow_sheet_devices_lookup(
         reservation_status_value = _row_value(local_row, header_index.get("reservation_status"))
         reservation_until_value = _row_value(local_row, header_index.get("reservation_until"))
         reservation_value = _row_value(local_row, header_index.get("reservation_grenke"))
+        proforma_value = _row_value(local_row, header_index.get("proforma_grenke"))
         form_ctip_value = _row_value(local_row, header_index.get("form_ctip"))
         ctip_form_id_value = _row_value(local_row, header_index.get("ctip_form_id"))
         workflow_case_id_value = _row_value(local_row, header_index.get("ctip_workflow_case_id"))
@@ -457,6 +471,7 @@ def load_workflow_sheet_devices_lookup(
             "reservation_status": reservation_status_value,
             "reservation_until": reservation_until_value,
             "reservation_grenke": reservation_value,
+            "proforma_grenke": proforma_value,
             "form_ctip": form_ctip_value,
             "ctip_form_id": ctip_form_id_value,
             "ctip_workflow_case_id": workflow_case_id_value,
@@ -855,6 +870,128 @@ def clear_workflow_proforma_from_sheet(*, devices: list[dict[str, Any]]) -> dict
         "reason": None,
         "worksheet_title": worksheet.title,
         "cleared_count": len(row_results),
+        "rows": row_results,
+        "added_headers": added_headers,
+    }
+
+
+def update_workflow_sheet_fields_for_maintenance(
+    *,
+    changes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Aktualizuje istniejące pola FLOW po ścisłej walidacji stanu arkusza."""
+
+    config = _resolve_workflow_sheet_runtime_config()
+    enabled, reason = workflow_sheet_sync_configured(config)
+    if not enabled:
+        return {
+            "enabled": False,
+            "reason": reason,
+            "worksheet_title": None,
+            "updated_count": 0,
+            "rows": [],
+            "added_headers": [],
+        }
+
+    workbook, _ = _open_workbook(config)
+    worksheet = _resolve_devices_worksheet(workbook, config, strict=True)
+    headers, header_index, values, added_headers = _prepare_headers(workbook, worksheet)
+    data_rows = [list(row) for row in values[1:]] if len(values) > 1 else []
+
+    queued_updates: list[dict[str, Any]] = []
+    row_results: list[dict[str, Any]] = []
+    matched_rows: set[int] = set()
+    reserved_rows: list[int] = []
+    default_rows: list[int] = []
+    for change in changes:
+        device = dict(change.get("device") or {})
+        expected_fields = dict(change.get("expected_fields") or {})
+        target_fields = dict(change.get("target_fields") or {})
+        background = str(change.get("background") or "").strip().lower()
+        if background not in {"", "reserved", "default"}:
+            raise ValueError("Tło utrzymaniowe musi mieć wartość reserved albo default.")
+        invalid_keys = (
+            set(expected_fields) | set(target_fields)
+        ) - _WORKFLOW_MAINTENANCE_FIELD_KEYS
+        if invalid_keys:
+            raise ValueError(
+                "Niedozwolone pola utrzymaniowe arkusza: " + ", ".join(sorted(invalid_keys))
+            )
+
+        row_number = _find_matching_row_number(data_rows, header_index, device)
+        if row_number is None:
+            raise RuntimeError(
+                "Nie znaleziono jednoznacznego wiersza arkusza dla urządzenia "
+                f"{device.get('serial') or device.get('index') or device.get('source_row')}."
+            )
+        if row_number in matched_rows:
+            raise RuntimeError(f"Wiersz arkusza {row_number} wskazano więcej niż raz.")
+        matched_rows.add(row_number)
+
+        local_row = _ensure_row_width(data_rows[row_number - 2], len(headers))
+        before_fields = {
+            key: _row_value(local_row, header_index.get(key))
+            for key in sorted(set(expected_fields) | set(target_fields))
+        }
+        for key, expected_value in expected_fields.items():
+            actual_value = _row_value(local_row, header_index.get(key))
+            normalized_expected = str(expected_value or "").strip()
+            normalized_target = str(target_fields.get(key) or "").strip()
+            if actual_value not in {normalized_expected, normalized_target}:
+                raise RuntimeError(
+                    f"Wiersz arkusza {row_number}, pole {key}: oczekiwano "
+                    f"{normalized_expected!r} albo stanu docelowego {normalized_target!r}, "
+                    f"otrzymano {actual_value!r}."
+                )
+
+        for key, value in target_fields.items():
+            _queue_single_cell_update(
+                queued_updates,
+                row_number,
+                header_index,
+                key,
+                value,
+            )
+            _set_row_value(local_row, header_index, key, value)
+        data_rows[row_number - 2] = local_row
+        if background == "reserved":
+            reserved_rows.append(row_number)
+        elif background == "default":
+            default_rows.append(row_number)
+        row_results.append(
+            {
+                "source_row": _coerce_int(device.get("source_row") or device.get("row")),
+                "sheet_row": row_number,
+                "before_fields": before_fields,
+                "target_fields": {
+                    key: str(value or "").strip() for key, value in target_fields.items()
+                },
+            }
+        )
+
+    if queued_updates:
+        worksheet.batch_update(queued_updates, value_input_option="USER_ENTERED")
+    _set_row_background_color(
+        workbook,
+        worksheet,
+        row_numbers=reserved_rows,
+        header_len=len(headers),
+        background_color=WORKFLOW_RESERVED_ROW_COLOR,
+    )
+    _set_row_background_color(
+        workbook,
+        worksheet,
+        row_numbers=default_rows,
+        header_len=len(headers),
+        background_color=WORKFLOW_DEFAULT_ROW_COLOR,
+    )
+    _hide_helper_column(workbook, worksheet, header_index)
+
+    return {
+        "enabled": True,
+        "reason": None,
+        "worksheet_title": worksheet.title,
+        "updated_count": len(row_results),
         "rows": row_results,
         "added_headers": added_headers,
     }
@@ -1899,7 +2036,9 @@ __all__ = [
     "sync_device_inventory_to_sheet",
     "sync_workflow_devices_to_sheet",
     "test_workflow_sheet_connection",
+    "update_workflow_sheet_fields_for_maintenance",
     "WorkflowSheetRuntimeConfig",
+    "WORKFLOW_SERVICE_BLOCK_STATUS",
     "use_workflow_sheet_runtime_config",
     "workflow_sheet_sync_configured",
 ]

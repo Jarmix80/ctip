@@ -35,6 +35,9 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(cfg.shipping_enabled)
         self.assertFalse(cfg.shipping_catalog_mutations_enabled)
         self.assertFalse(cfg.shipping_fulfillment_enabled)
+        self.assertFalse(cfg.shipping_ms_reconcile_enabled)
+        self.assertEqual(cfg.shipping_ms_reconcile_interval_seconds, 300)
+        self.assertEqual(cfg.shipping_ms_reconcile_batch_limit, 250)
 
     def test_resolver_prefers_test_file_without_explicit_override(self) -> None:
         with TemporaryDirectory() as directory:

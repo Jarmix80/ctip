@@ -994,6 +994,7 @@ def test_genform_page_renders_layout():
     assert "genform-search-summary" in response.text
     assert "Wszystkie" in response.text
     assert "Formularze w toku" in response.text
+    assert 'class="genform-side-menu-item is-active" data-archive-scope="active"' in response.text
     assert "Wiadomości historyczne" in response.text
     assert "genform-mailbox-history-filters" in response.text
     assert "genform-mailbox-history-modal" in response.text
@@ -1023,7 +1024,7 @@ def test_genform_js_has_copy_fallback_for_non_secure_context():
     assert "function normalizeGenformSearchText(value)" in content
     assert '.replace(/ł/g, "l")' in content
     assert "function matchesGenformSearch(item, query)" in content
-    assert 'let activeArchiveScope = "all";' in content
+    assert 'let activeArchiveScope = "active";' in content
     assert "Dane formularza niedostępne" in content
     assert "payload_decode_error" in content
     search_values = content.split("function genformSearchValues(item)", maxsplit=1)[1].split(

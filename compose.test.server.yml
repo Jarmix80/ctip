@@ -9,10 +9,12 @@ x-isolated-runtime: &isolated-runtime
   CTIP_RUNTIME_PROFILE: test
   PGHOST: ctip-test-postgres
   PGDATABASE: ctip_test
+  PBX_HOST: mock-ctip
   SMS_TEST_MODE: "true"
   OUTBOUND_DELIVERY_MODE: capture
   BLOCK_CLIENT_COMMUNICATIONS: "true"
   FB_ALLOW_WRITES: "false"
+  SHIPPING_MS_RECONCILE_ENABLED: "false"
 
 x-immutable-service: &immutable-service
   image: ${CTIP_TEST_IMAGE:?Ustaw CTIP_TEST_IMAGE na obraz oznaczony pełnym SHA commita}

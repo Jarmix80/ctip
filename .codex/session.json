@@ -1,39 +1,32 @@
 {
-  "timestamp": "2026-09-01T02:42:00+02:00",
+  "timestamp": "2026-09-10",
   "summary": [
-    "Utworzono kanoniczną gałąź integracyjną z modułami Shipping, Delivery, Bot Identity, CRM i LAB oraz jednym końcem grafu Alembic f7b2d4e6a810.",
-    "Przygotowano jeden niezmienny stos testowy ctip-test: główny panel na porcie 8000, bez portu 8002 i bez montowania kodu z aktywnego worktree.",
-    "Dodano bezpieczne polecenia server-build, server-check, server-migrate, server-cutover i server-rollback z backupem PostgreSQL oraz Firebird.",
-    "Wdrożenia Windows ujednolicono przez scripts/deploy_windows_prod.py; stare aktualizatory są zablokowane, a konfiguracja NSSM ma pierwszeństwo przed .env.",
-    "Dodano skanowanie sekretów w pre-commit i CI; aktywne wartości usunięto z bieżącego drzewa, bez przepisywania historii Git.",
-    "Repozytorium GitHub jest prywatne i miało jednego użytkownika, co ogranicza ekspozycję; nadal zalecana jest kontrolowana rotacja historycznie ujawnionych danych.",
-    "Domyślny pytest pomija test process_ricoh_images zależny od niewersjonowanego katalogu inbox; test pozostaje dostępny do jawnego uruchomienia.",
-    "Przywrócono brakujący commit integracji formularzy WWW z CRM, w tym token serwerowy, cztery kolejki, kategorie spraw i ustawienia powiadomień użytkowników.",
-    "Dodano kontrolowane uzgodnienie historycznej bazy ctip_test: pełna walidacja modeli i danych oraz zmiana wyłącznie alembic_version po sprawdzonym backupie.",
-    "Pre-commit przeszedł, testy celowane zakończyły się 130 passed, a pełny zestaw bez znanego test_admin_backend.py zakończył się 571 passed i 14 skipped.",
-    "Odbiór stosu wymaga teraz bezpiecznego trybu Shipping DPD mock, kompletnej konfiguracji Bot Identity, uwierzytelnionego kontraktu ctip-v1, świeżej synchronizacji oraz braku nowych błędów startowych.",
-    "PostgreSQL stosu testowego ma unikalny alias ctip-test-postgres, aby Bot Identity podłączony równocześnie do sieci CHAT_KP nie rozwiązywał obcej usługi o ogólnej nazwie postgres.",
-    "Rollback stosu testowego przechowuje zweryfikowaną sumą SHA-256 konfigurację Compose z commita poprzedniego obrazu i sprawdza zdrowie procesów po odtworzeniu."
+    "Przygotowanie wyrównania izolowanego stosu ctip-test z wydaniem produkcyjnym 1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f.",
+    "Scalono gałąź release/genform-search-all-2026-09-03 z gałęzią test/shipping-retry-local-validation-2026-09-03, zachowując Delivery, CRM, LAB i Bot Identity.",
+    "Profil testowy zachowuje PostgreSQL ctip_test, lokalny Firebird, PBX mock-ctip, DPD mock, przechwytywanie komunikacji oraz wyłączone zapisy Firebird i automatyczne uzgadnianie MS.",
+    "Użytkownik zatwierdził commit, push i wdrożenie testowego. Produkcja oraz MSConnector mają pozostać bez zmian; brak zgody na zmianę wspólnego profilu SYSTEM."
   ],
   "follow_up": [
-    "Każde kolejne wydanie testowe budować z pełnego SHA i przełączać wyłącznie przez server-check oraz server-cutover.",
-    "Nie usuwać starych kontenerów, wolumenów, baz ani kopii bez osobnej zgody właściciela.",
-    "Nie wykonywać wdrożenia produkcyjnego ani push bez osobnego, jawnego polecenia.",
-    "Po zakończeniu przedstawić niewykonywany plan optymalizacji szybkości i możliwości rozwoju całego systemu."
+    "Wdrożyć przygotowany obraz testowy i zapisać wynik odbioru oraz dane rollbacku.",
+    "MSConnector pozostaje bez zmian; przygotowana notatka wymaga ręcznego przekazania producentowi."
   ],
   "context": {
-    "repo": "ctip",
-    "branch_local": "integration/repo-runtime-repair-2026-09-01",
+    "branch_local": "test/shipping-retry-local-validation-2026-09-03",
+    "worktree": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree",
+    "production_commit": "1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f",
+    "merged_release_commit": "a0f758525fe3bfb3c8254ffd32539de0f674f28c",
+    "previous_test_image": "ctip/test-runtime:ce9328e3213067b5670a2bd102a6e218f8bacc4e",
+    "alembic": "f2b7c9d4e6a1",
     "venv": "/home/marcin/projects/ctip/.venv",
-    "focus": "repo-runtime-security-test-stack-windows-deployment",
+    "deployment_status": "zweryfikowane_scalenie_przed_wdrozeniem",
+    "backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-alignment-20260910_135724",
+    "firebird_restore_file": "/home/marcin/projects/ctip/.runtime-firebird/.alignment_verify_20260910_135724.fdb",
     "verification": [
-      "pre-commit run --all-files: passed",
-      "alembic heads: f7b2d4e6a810",
-      "testy celowane runtime, Bot Identity i Shipping: 130 passed",
-      "pełny pytest bez tests/test_admin_backend.py: 571 passed, 14 skipped",
-      "tests/test_admin_backend.py: znana niestabilność, timeout 180 sekund",
-      "import app.main, app.bot_identity_api_app i app.bot_identity_worker: passed",
-      "skan aktywnych sekretów bieżącego drzewa: passed"
+      "236 testów ukierunkowanych: passed",
+      "Pełny pytest: 823 passed, 14 skipped, 4 failed; cztery błędy odtworzono na wcześniejszej bazie 09b74f2",
+      "pre-commit, ruff check, black --check i node --check: passed",
+      "Backup PostgreSQL i Firebird: zgodne SHA-256; Firebird odtworzony i odczytany (81294 zlecenia, 174 modele, 7548 kartotek)",
+      "Schemat bez zmian; wspólne pliki Shipping i GenForm zgodne z wydaniem produkcyjnym"
     ]
   }
 }

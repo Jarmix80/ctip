@@ -211,11 +211,11 @@ async def archive_shipping_shipment(
     session: AsyncSession,
     *,
     shipment: ShippingShipment,
-    closed_by: int,
+    closed_by: int | None,
     closed_at: datetime,
     closing_operator_name: str | None = None,
 ) -> dict[str, Any]:
-    """Zapisuje końcowy snapshot przesyłki w tej samej transakcji co zamknięcie."""
+    """Zapisuje snapshot także dla zamknięcia wykonanego przez operatora zewnętrznego."""
     case = shipment.shipping_case
     users = await _load_operators(
         session,

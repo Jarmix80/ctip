@@ -261,6 +261,21 @@ class Settings(BaseSettings):
     shipping_test_firebird_writes: bool = Field(
         default=False, alias="SHIPPING_TEST_FIREBIRD_WRITES"
     )
+    shipping_ms_reconcile_enabled: bool = Field(
+        default=False, alias="SHIPPING_MS_RECONCILE_ENABLED"
+    )
+    shipping_ms_reconcile_interval_seconds: int = Field(
+        default=300,
+        alias="SHIPPING_MS_RECONCILE_INTERVAL_SECONDS",
+        ge=60,
+        le=3600,
+    )
+    shipping_ms_reconcile_batch_limit: int = Field(
+        default=250,
+        alias="SHIPPING_MS_RECONCILE_BATCH_LIMIT",
+        ge=1,
+        le=1000,
+    )
     shipping_compatibility_web_enabled: bool = Field(
         default=False, alias="SHIPPING_COMPATIBILITY_WEB_ENABLED"
     )

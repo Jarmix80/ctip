@@ -46,7 +46,7 @@ def _spreadsheet_id(value: str | None) -> str:
 
 
 def collect_issues(*, check_network: bool = False) -> list[str]:
-    """Zwraca listę warunków uniemożliwiających bezpieczny start testu."""
+    """Blokuje produkcyjne integracje i samoczynne uzgadnianie MS podczas startu testu."""
     issues: list[str] = []
     if settings.ctip_runtime_profile != "test":
         issues.append("CTIP_RUNTIME_PROFILE musi mieć wartość test.")
@@ -140,6 +140,8 @@ def collect_issues(*, check_network: bool = False) -> list[str]:
             issues.append("Scheduler outboxu Google Sheets TEST musi być włączony.")
     if settings.workflow_sheet_status_cache_scheduler_enabled:
         issues.append("Scheduler odświeżania Google Sheets musi być wyłączony.")
+    if settings.shipping_ms_reconcile_enabled:
+        issues.append("Automatyczne uzgadnianie Shipping z MS musi być wyłączone.")
     if settings.delivery_notifications_scheduler_enabled:
         issues.append("Scheduler powiadomień dostaw musi być wyłączony.")
     if settings.backup_scheduler_enabled or settings.backup_execution_active:

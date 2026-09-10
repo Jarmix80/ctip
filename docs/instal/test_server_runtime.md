@@ -14,6 +14,49 @@ PostgreSQL ma w sieci wewnętrznej unikalny alias `ctip-test-postgres`. Nie woln
 zastępować go ogólną nazwą `postgres`, ponieważ usługa Bot Identity należy także
 do sieci CHAT_KP, w której występuje inna baza o takim aliasie.
 
+## Wyrównanie z produkcją — 10 września 2026
+
+Gałąź `test/shipping-retry-local-validation-2026-09-03` zawiera scalenie wydania
+`release/genform-search-all-2026-09-03` z poprawkami produkcyjnymi do commita
+`1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f`. Obejmuje to serializację czasu
+Firebird do JSON, pełne zamknięcia Shipping, uzgadnianie ręcznych zmian MS,
+pełną treść etykiety z blokadą powyżej 81 znaków, model urządzenia oraz
+poprawki GenForm/FLOW. Moduły Delivery, CRM, LAB i Bot Identity pozostają dostępne.
+
+Obraz testowy ma własny SHA ze względu na rozszerzenia testowe; zgodność nie
+oznacza identycznego obrazu ani przeniesienia produkcyjnej konfiguracji.
+Schemat pozostaje na rewizji `f2b7c9d4e6a1`, bez migracji i resetowania danych.
+`SHIPPING_MS_RECONCILE_ENABLED=false` jest wymuszane przez Compose i kontrolowane
+przez preflight, aby automat nie zmieniał historycznych spraw testowych.
+Scenariusze uzgadniania sprawdzają testy z odseparowanymi danymi i atrapami integracji.
+Wszystkie usługi otrzymują `PBX_HOST=mock-ctip`, niezależnie od starszych wpisów `.env.test`.
+
+Polecenia wydania należy wykonywać z katalogu
+`/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree`.
+Główny katalog repozytorium pozostaje archiwalny. Jego stary `ctiptest` nie jest
+skryptem zarządzającym aktywnym stosem. Właściwy skrypt używa
+`scripts/docker_compose.sh`, który potrafi uruchomić istniejącą wtyczkę Compose
+bezpośrednio, gdy polecenie `docker compose` nie jest zarejestrowane.
+
+Przed przełączeniem tego wydania należy dodatkowo wykonać logiczną kopię
+Firebird przez `/usr/local/firebird/bin/gbak` w kontenerze `ctip-test-firebird-1`,
+zapisując wynik poza Git i sprawdzając odtworzenie do osobnego pliku.
+Zwykła kopia działającego pliku FDB wykonywana przez starszy skrypt wydania
+nie zastępuje takiej weryfikacji. PostgreSQL wymaga kopii `pg_dump -Fc`.
+Stan rollbacku oraz raport odbioru są przechowywane w ignorowanym
+`runtime/deployments/`; nie wolno usuwać poprzedniego obrazu ani wolumenów.
+Dzienne logi `docs/LOG` zachowują format `*_YYYY-MM-DD.log` i znaczniki czasu wpisów.
+
+Walidacja przygotowanego scalenia: 236 testów Shipping, GenForm/FLOW, interfejsu
+i izolacji zakończonych powodzeniem; pełny zestaw: 823 poprawne, 14 pominiętych
+i 4 niepowodzenia. Dwa testy automatyzacji FLOW nie tworzą tabeli `delivery_case`
+w swojej bazie SQLite, a dwa testy `/raport` oczekują braku plików mimo danych
+tworzonych przez własny pomocniczy katalog testowy. Te same cztery problemy
+potwierdzono na wcześniejszej bazie kodu `09b74f2`; nie zmieniano tych testów
+ani niezwiązanej z wydaniem logiki. Rzeczywista baza `ctip_test` zawiera
+`delivery_case` i `grenke_contract_end`. Kontrole pre-commit, Ruff, Black
+oraz składni JavaScript zakończyły się powodzeniem.
+
 ## Dane trwałe
 
 - PostgreSQL używa zachowanego wolumenu `ctip-prod-mirror_ctip_mirror_postgres_data`.

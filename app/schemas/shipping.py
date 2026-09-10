@@ -11,6 +11,36 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 
 from app.services.shipping_phone import normalize_polish_shipping_phone
 
+SHIPPING_LABEL_TEXT_LIMIT = 81
+
+
+def _shipping_character_count_label(count: int) -> str:
+    """Odmienia techniczny licznik znaków używany w błędach walidacji."""
+    last_two = count % 100
+    last = count % 10
+    if count == 1:
+        return "1 znak"
+    if 2 <= last <= 4 and not 12 <= last_two <= 14:
+        return f"{count} znaki"
+    return f"{count} znaków"
+
+
+def _normalize_shipping_label_text(value: str | None, *, label: str) -> str | None:
+    """Normalizuje treść etykiety i zwraca dokładny komunikat przekroczenia limitu."""
+    if value is None:
+        return None
+    normalized = " ".join(str(value).split())
+    if not normalized:
+        raise ValueError(f"{label} nie może być pusta.")
+    if len(normalized) > SHIPPING_LABEL_TEXT_LIMIT:
+        overage = len(normalized) - SHIPPING_LABEL_TEXT_LIMIT
+        raise ValueError(
+            f"{label} ma {len(normalized)} znaków. "
+            f"Usuń {_shipping_character_count_label(overage)}, aby zmieścić się "
+            f"w limicie {SHIPPING_LABEL_TEXT_LIMIT}."
+        )
+    return normalized
+
 
 class StrictShippingRequest(BaseModel):
     """Bazowy model odrzucający nieznane pola zapisu."""
@@ -89,13 +119,8 @@ class ShippingReviewRequest(StrictShippingRequest):
     @field_validator("label_text", mode="before")
     @classmethod
     def normalize_label_text(cls, value: str | None) -> str | None:
-        """Scala białe znaki i odrzuca pustą treść etykiety podaną przez operatora."""
-        if value is None:
-            return None
-        normalized = " ".join(str(value).split())
-        if not normalized:
-            raise ValueError("Treść etykiety DPD nie może być pusta.")
-        return normalized
+        """Scala białe znaki i zwraca czytelny błąd przekroczenia limitu DPD."""
+        return _normalize_shipping_label_text(value, label="Treść etykiety DPD")
 
 
 class ShippingCreateRequest(StrictShippingRequest):
@@ -154,13 +179,8 @@ class ShippingConsolidatedCreateRequest(StrictShippingRequest):
     @field_validator("label_text", mode="before")
     @classmethod
     def normalize_label_text(cls, value: str | None) -> str | None:
-        """Normalizuje finalną treść wspólnej etykiety przekazaną z modalu."""
-        if value is None:
-            return None
-        normalized = " ".join(str(value).split())
-        if not normalized:
-            raise ValueError("Treść wspólnej etykiety DPD nie może być pusta.")
-        return normalized
+        """Normalizuje tekst wspólnej etykiety i raportuje przekroczenie limitu DPD."""
+        return _normalize_shipping_label_text(value, label="Treść wspólnej etykiety DPD")
 
 
 class ShippingAttachExistingRequest(StrictShippingRequest):

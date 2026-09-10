@@ -5,10 +5,10 @@
     <title>CTIP – wysyłki części V2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
-    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-dpd-limits-phone-01">
-    <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-dpd-limits-phone-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-dpd-limits-phone-01"></script>
-    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-milestones-01"></script>
+    <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-ms-reconcile-01">
+    <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-ms-reconcile-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-ms-reconcile-01"></script>
+    <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-device-model-01"></script>
   </head>
   <body class="shipping-v2-body{% if shipping_default_entry %} shipping-layout-resolving{% endif %}" data-shipping-layout="v2" data-shipping-default-entry="{{ 'true' if shipping_default_entry else 'false' }}">
     <main class="shipping-v2-shell">
@@ -37,6 +37,7 @@
       <section id="shipping-dispatch-view">
         <div class="shipping-v2-infobar">
           <article><i class="online"></i><span><small>DPD</small><strong id="shipping-dpd-status">—</strong></span><button id="shipping-dpd-demo-test" type="button" hidden>Test DPD Demo</button></article>
+          <article><i>↔</i><span><small>Kontrola MS</small><strong id="shipping-ms-reconciliation-status">—</strong></span><button id="shipping-ms-reconciliation-run" type="button">Sprawdź</button></article>
           <article><i>▣</i><span><small>Magazyn</small><strong id="shipping-warehouse">—</strong></span></article>
           <article><i>✓</i><span><small>Gotowe etykiety</small><strong id="shipping-v2-ready-count">0 przesyłek</strong></span></article>
           <article><i>◷</i><span><small>Odbiór kuriera</small><strong id="shipping-cutoff">—</strong></span></article>
@@ -78,6 +79,7 @@
                   <p class="shipping-step">KARTA REALIZACJI WYSYŁKI</p>
                   <h1 id="shipping-order-title">Zlecenie</h1>
                   <p id="shipping-order-subtitle" class="shipping-muted"></p>
+                  <span id="shipping-order-device" hidden>Brak danych modelu</span>
                 </div>
                 <span id="shipping-case-status" class="shipping-badge shipping-v2-stamp">Do weryfikacji</span>
               </header>
@@ -170,7 +172,7 @@
                 </div>
                 <div class="shipping-label-editor">
                   <div class="shipping-label-editor-head"><label for="shipping-label-text">Treść etykiety DPD</label><strong id="shipping-label-text-count">0/81</strong></div>
-                  <textarea id="shipping-label-text" maxlength="81" rows="3" placeholder="Numer zlecenia i części dołączone do paczki"></textarea>
+                  <textarea id="shipping-label-text" rows="3" aria-describedby="shipping-label-text-note" placeholder="Numer zlecenia i części dołączone do paczki"></textarea>
                   <div class="shipping-label-preview"><span>Referencja (27): <b id="shipping-label-reference-preview">—</b></span><span>Zawartość (54): <b id="shipping-label-content-preview">—</b></span></div>
                   <div class="shipping-label-editor-actions"><small id="shipping-label-text-note">Treść aktualizuje się automatycznie do pierwszej ręcznej zmiany.</small><button id="shipping-label-text-reset" type="button" class="shipping-button secondary compact">Przywróć treść automatyczną</button></div>
                 </div>
@@ -215,6 +217,7 @@
             </section>
             <section class="shipping-v2-audit-problem">
               <p class="shipping-step">TREŚĆ ZLECENIA</p>
+              <strong id="shipping-v2-audit-device">Brak danych modelu</strong>
               <p id="shipping-v2-audit-problem">Wybierz zlecenie z kolejki.</p>
             </section>
             <section><p class="shipping-step">PAKOWANIE</p><strong id="shipping-v2-audit-package">Brak wybranych części</strong><p id="shipping-v2-audit-billing">Dokument zostanie określony po wyborze zlecenia.</p></section>
@@ -345,7 +348,8 @@
         <div class="shipping-label-dialog-card">
           <header><div><p class="shipping-step">WSPÓLNA PACZKA</p><h2>Treść wspólnej etykiety DPD</h2></div><button id="shipping-consolidated-label-cancel" type="button" class="shipping-button secondary compact">Anuluj</button></header>
           <p>Sprawdź finalny tekst dla wszystkich wybranych zleceń. Możesz zmienić także automatycznie wpisane numery zleceń.</p>
-          <textarea id="shipping-consolidated-label-text" maxlength="81" rows="4"></textarea>
+          <textarea id="shipping-consolidated-label-text" rows="4" aria-describedby="shipping-consolidated-label-error"></textarea>
+          <small id="shipping-consolidated-label-error" class="shipping-label-limit-error" aria-live="polite" hidden></small>
           <div class="shipping-label-dialog-meta"><span id="shipping-consolidated-label-count">0/81</span><span>Referencja: <b id="shipping-consolidated-reference-preview">—</b></span><span>Zawartość: <b id="shipping-consolidated-content-preview">—</b></span></div>
           <footer><button id="shipping-consolidated-label-confirm" type="button" class="shipping-button success">Generuj wspólną etykietę</button></footer>
         </div>

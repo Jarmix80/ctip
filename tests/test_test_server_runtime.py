@@ -52,6 +52,7 @@ def _config() -> dict:
             "SHIPPING_GEOCODER_ENABLED": "true",
             "SHIPPING_COMPATIBILITY_WEB_ENABLED": "false",
             "SHIPPING_TEST_FIREBIRD_WRITES": "false",
+            "SHIPPING_MS_RECONCILE_ENABLED": "false",
         }
     )
     services["web"]["extra_hosts"] = {"api.adresy.app": "172.28.252.21"}
@@ -100,6 +101,19 @@ def test_server_compose_accepts_immutable_test_services() -> None:
     """Poprawny stos nie zgłasza naruszeń."""
     image = "ctip/test-runtime:0123456789abcdef0123456789abcdef01234567"
     assert collect_issues(_config(), expected_image=image) == []
+
+
+def test_server_compose_rejects_automatic_ms_reconciliation() -> None:
+    """Testowy automat MS nie może sam zmieniać historycznych spraw w ctip_test."""
+    config = _config()
+    config["services"]["web"]["environment"]["SHIPPING_MS_RECONCILE_ENABLED"] = "true"
+
+    issues = collect_issues(
+        config,
+        expected_image="ctip/test-runtime:0123456789abcdef0123456789abcdef01234567",
+    )
+
+    assert any("SHIPPING_MS_RECONCILE_ENABLED=false" in issue for issue in issues)
 
 
 def test_server_compose_rejects_source_mount_and_firebird_write() -> None:
