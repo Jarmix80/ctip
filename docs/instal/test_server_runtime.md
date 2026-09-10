@@ -57,6 +57,43 @@ ani niezwiązanej z wydaniem logiki. Rzeczywista baza `ctip_test` zawiera
 `delivery_case` i `grenke_contract_end`. Kontrole pre-commit, Ruff, Black
 oraz składni JavaScript zakończyły się powodzeniem.
 
+### Odbiór wdrożenia
+
+Przełączenie zakończono 10 września 2026 r. około godziny 14:15 CEST. Działa obraz
+`ctip/test-runtime:902d0556f5580ad58833b6ef0088977e797faa69`, wypchnięty na istniejącą
+gałąź testową. Późniejszy commit dokumentacyjny zapisuje odbiór, ale nie zmienia
+wdrożonego obrazu. Przy kolejnych poleceniach operatorskich należy jawnie ustawić:
+
+```bash
+export CTIP_TEST_IMAGE=ctip/test-runtime:902d0556f5580ad58833b6ef0088977e797faa69
+./ctiptest server-status
+```
+
+- Wszystkie 15 usług trwałych działa bez restartów; 9 usług aplikacyjnych używa
+  wspólnego obrazu. Jednorazowy `log-init` zakończył się kodem `0`.
+- CTIP, formularze publiczne, CRM i LAB odpowiadają na kontrolę zdrowia kodem `200`.
+  Strony Shipping i GenForm są dostępne; chronione API bez sesji zwraca `401`.
+  Udostępniane pliki JavaScript odpowiadają zawartości wydania.
+- Odczytano 9 pozycji testowej kolejki Shipping oraz szczegóły 3 zleceń. Serializacja
+  danych i wartości czasu do JSON działa poprawnie. Kolektor zapisuje świeże
+  zdarzenia z atrapy centrali.
+- Bot Identity potwierdził kontrakt `ctip-v1` i świeżą synchronizację Firebird
+  tylko do odczytu. Logi aplikacji nie zawierały świeżych błędów startu.
+- Po starcie ponownie potwierdzono testową bazę, blokady komunikacji i zapisów,
+  wyłączone uzgadnianie MS oraz brak trasy domyślnej kontenera `web`.
+
+Logiczne kopie baz znajdują się w `backups/test-alignment-20260910_135724/`.
+Sumy SHA-256 są poprawne; kopię Firebird odtworzono do osobnego pliku i odczytano
+81294 zlecenia, 174 modele oraz 7548 kartotek magazynowych. Dodatkowa kopia
+skryptu przełączenia: `backups/test-cutover/20260910_141316/`.
+Stan rollbacku: `runtime/deployments/test-cutover-20260910_141329/`;
+zawiera poprzedni obraz `ce9328e3213067b5670a2bd102a6e218f8bacc4e` i jego nakładkę
+Compose z sumą kontrolną. Raport odbioru bez danych klientów:
+`runtime/deployments/raport-odbioru-2026-09-10.json`.
+
+Nie wykonywano migracji, resetowania danych, rzeczywistych nadań przesyłek ani
+wystawiania dokumentów RW/WZ/FV. Produkcja i MSConnector pozostały bez zmian.
+
 ## Dane trwałe
 
 - PostgreSQL używa zachowanego wolumenu `ctip-prod-mirror_ctip_mirror_postgres_data`.

@@ -1,14 +1,15 @@
 {
   "timestamp": "2026-09-10",
   "summary": [
-    "Przygotowanie wyrównania izolowanego stosu ctip-test z wydaniem produkcyjnym 1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f.",
+    "Wdrożono wyrównanie izolowanego stosu ctip-test z poprawkami produkcyjnymi, obraz 902d0556f5580ad58833b6ef0088977e797faa69.",
     "Scalono gałąź release/genform-search-all-2026-09-03 z gałęzią test/shipping-retry-local-validation-2026-09-03, zachowując Delivery, CRM, LAB i Bot Identity.",
     "Profil testowy zachowuje PostgreSQL ctip_test, lokalny Firebird, PBX mock-ctip, DPD mock, przechwytywanie komunikacji oraz wyłączone zapisy Firebird i automatyczne uzgadnianie MS.",
-    "Użytkownik zatwierdził commit, push i wdrożenie testowego. Produkcja oraz MSConnector mają pozostać bez zmian; brak zgody na zmianę wspólnego profilu SYSTEM."
+    "Użytkownik zatwierdził commit, push i wdrożenie testowego. Produkcja oraz MSConnector mają pozostać bez zmian; brak zgody na zmianę wspólnego profilu SYSTEM.",
+    "Przełączenie, odczyt danych Shipping, serializacja JSON, synchronizacja Bot Identity i kontrola izolacji zakończyły się powodzeniem."
   ],
   "follow_up": [
-    "Wdrożyć przygotowany obraz testowy i zapisać wynik odbioru oraz dane rollbacku.",
-    "MSConnector pozostaje bez zmian; przygotowana notatka wymaga ręcznego przekazania producentowi."
+    "MSConnector pozostaje bez zmian; przygotowana notatka wymaga ręcznego przekazania producentowi.",
+    "Cztery wcześniejsze niepowodzenia pełnego zestawu testów pozostają odrębnym zadaniem; wydanie ich nie zmienia."
   ],
   "context": {
     "branch_local": "test/shipping-retry-local-validation-2026-09-03",
@@ -18,7 +19,7 @@
     "previous_test_image": "ctip/test-runtime:ce9328e3213067b5670a2bd102a6e218f8bacc4e",
     "alembic": "f2b7c9d4e6a1",
     "venv": "/home/marcin/projects/ctip/.venv",
-    "deployment_status": "zweryfikowane_scalenie_przed_wdrozeniem",
+    "deployment_status": "wdrozone_i_odebrane_testowe",
     "backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-alignment-20260910_135724",
     "firebird_restore_file": "/home/marcin/projects/ctip/.runtime-firebird/.alignment_verify_20260910_135724.fdb",
     "verification": [
@@ -26,7 +27,17 @@
       "Pełny pytest: 823 passed, 14 skipped, 4 failed; cztery błędy odtworzono na wcześniejszej bazie 09b74f2",
       "pre-commit, ruff check, black --check i node --check: passed",
       "Backup PostgreSQL i Firebird: zgodne SHA-256; Firebird odtworzony i odczytany (81294 zlecenia, 174 modele, 7548 kartotek)",
-      "Schemat bez zmian; wspólne pliki Shipping i GenForm zgodne z wydaniem produkcyjnym"
-    ]
+      "Schemat bez zmian; wspólne pliki Shipping i GenForm zgodne z wydaniem produkcyjnym",
+      "15 usług trwałych działa bez restartów; 9 aplikacyjnych używa wspólnego obrazu 902d0556f5580ad58833b6ef0088977e797faa69, log-init zakończony kodem 0",
+      "HTTP: CTIP, formularze publiczne, CRM i LAB 200; Shipping i GenForm 200, chronione API 401 bez sesji; pliki JS zgodne z wydaniem",
+      "Odczyt Firebird: 9 pozycji kolejki, 3 szczegóły zleceń, poprawny JSON i serializacja czasu; mock CTIP zapisuje świeże zdarzenia",
+      "Bot Identity: poprawny kontrakt ctip-v1 i świeża synchronizacja read-only; aplikacje bez świeżych błędów, izolacja i blokady potwierdzone po starcie"
+    ],
+    "deployed_code_commit": "902d0556f5580ad58833b6ef0088977e797faa69",
+    "deployed_image": "ctip/test-runtime:902d0556f5580ad58833b6ef0088977e797faa69",
+    "rollback_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/runtime/deployments/test-cutover-20260910_141329",
+    "cutover_backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-cutover/20260910_141316",
+    "acceptance_report": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/runtime/deployments/raport-odbioru-2026-09-10.json",
+    "deployment_note": "Późniejszy commit dokumentacyjny nie zmienia obrazu; polecenia operatorskie wymagają przypięcia CTIP_TEST_IMAGE do wdrożonego SHA."
   }
 }

@@ -8,7 +8,7 @@ CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje 
 - Kanoniczny mechanizm wdrożenia produkcji Windows, backupu i rollbacku: `docs/instal/windows_release_deployment.md`.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
 - Kanoniczny, niezmienny stos testowy na `192.168.0.9:8000`, jego backup i rollback: `docs/instal/test_server_runtime.md`.
-- Wyrównanie testowego CTIP z poprawkami produkcyjnymi z 9 września 2026 r. zachowuje CRM, LAB i Bot Identity; automat uzgadniania MS pozostaje wyłączony w testowym. Szczegóły oraz właściwy skrypt Compose: `docs/instal/test_server_runtime.md`.
+- Wyrównanie testowego CTIP z poprawkami produkcyjnymi wdrożono 10 września 2026 r. w obrazie `902d0556f5580ad58833b6ef0088977e797faa69`, zachowując CRM, LAB i Bot Identity; automat uzgadniania MS pozostaje wyłączony w testowym. Wyniki odbioru, ograniczenia testów i rollback: `docs/instal/test_server_runtime.md`.
 - Zanonimizowana diagnoza MSConnector do ręcznego przekazania producentowi, bez zmiany wspólnego profilu SYSTEM: `docs/instal/diagnoza_msconnector_2026-09-10.md`.
 - Produkcyjny runbook etapowego wdrożenia modułu Shipping bez zatrzymywania pozostałych usług: `docs/instal/wdrozenie_shipping_prod_2026-08-27.md`; automat kandydata bezpiecznie zastępuje pusty `docs/raport/.gitkeep` junctionem do bieżącego raportu, odłącza junction przed cleanupem worktree, izoluje środowisko testów i rozlicza polecenia Python według kodu wyjścia zamiast zapisu na stderr.
 - Procedura pełnego uruchomienia Shipping, bramki gotowości, pilota RW/WZ/FV oraz obowiązkowego sprzątania danych `Test Umowa`: `docs/instal/uruchomienie_shipping_full_prod_2026-08-28.md`.
