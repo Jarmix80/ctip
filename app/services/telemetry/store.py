@@ -340,7 +340,7 @@ class TelemetryStore:
                         previous=value,
                         value=neighbor_value,
                     )
-        if reading.semantic_key:
+        if reading.semantic_key and reading.kind != "daily_snapshot":
             matches = self.connection.execute(
                 select(tables.record).where(
                     tables.record.c.semantic_key == reading.semantic_key,

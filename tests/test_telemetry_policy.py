@@ -496,3 +496,78 @@ def test_undated_xml_replay_does_not_depend_on_generated_mime_boundary():
     assert [reading.external_key for reading in parse_remote_message(blob)] == [
         reading.external_key for reading in parse_remote_message(blob)
     ]
+
+
+def test_daily_normal_growth_is_not_a_conflict_but_equal_time_disagreement_is(engine):
+    """Ostrzega o sprzecznym równoczesnym pomiarze, nie o późniejszym przyroście dnia."""
+
+    def payload(row):
+        snapshots, _, _ = daily.prepare_page(
+            "vmaintenance",
+            "MASZYNY_STATS",
+            [row],
+            {7: "TEST-1"},
+            {"TEST-1": [(1, 2)]},
+            date(2024, 8, 1),
+            date(2026, 8, 2),
+        )
+        return next(iter(snapshots.values()))
+
+    earlier = payload(vm_row(1, "10:00"))
+    later = daily.merge_daily(earlier, payload(vm_row(2, "18:00")))
+    with engine.begin() as connection:
+        store = TelemetryStore(connection)
+        source = store.ensure_source("daily-test", "test")
+        store.ingest(source["id"], "first", [daily.daily_reading(earlier)])
+        store.ingest(source["id"], "second", [daily.daily_reading(later)])
+        assert (
+            connection.execute(
+                select(func.count())
+                .select_from(tables.issue)
+                .where(tables.issue.c.code == "conflicting_value")
+            ).scalar_one()
+            == 0
+        )
+    conflict = daily.merge_daily(later, payload(vm_row(3, "18:00")))
+    reading = daily.daily_reading(conflict)
+    assert ("conflicting_value", "lifetime.black") in reading.issues
+    assert len(conflict["components"]["counters"]["alternatives"]) == 2
+
+
+def test_daily_correction_reversion_points_to_existing_revision(engine):
+    """Powtórzona korekta A/B/A/B nie pozostawia starej wersji jako bieżącej."""
+    with engine.begin() as connection:
+        store = TelemetryStore(connection)
+        source = store.ensure_source("vmaintenance", "database")
+        latest_ids = []
+        for value in (100, 200, 100, 200, 200):
+            payload = {
+                "policy": daily.POLICY,
+                "source": "vmaintenance",
+                "serial": "TEST-1",
+                "day": "2026-08-01",
+                "components": {
+                    "counters": {
+                        "key": "same-source-row",
+                        "time": "2026-08-01T10:00:00+00:00",
+                        "data": {"counter": value},
+                        "measurements": {"lifetime.black": value},
+                    }
+                },
+            }
+            key = "daily:TEST-1:2026-08-01"
+            previous = daily.current_daily(connection, source["id"], key)
+            reading = daily.daily_reading(daily.merge_daily(previous, payload))
+            store.ingest(source["id"], "same-page", [reading])
+            daily.accept_daily(connection, source["id"], [reading])
+            current = daily.current_daily(connection, source["id"], key)
+            assert current["components"]["counters"]["measurements"]["lifetime.black"] == value
+            latest_ids.append(
+                connection.execute(select(tables.daily_head.c.record_id)).scalar_one()
+            )
+        assert latest_ids[1] == latest_ids[3] == latest_ids[4]
+        assert connection.execute(select(func.count()).select_from(tables.record)).scalar_one() == 3
+        assert (
+            connection.execute(select(func.count()).select_from(tables.daily_head)).scalar_one()
+            == 1
+        )

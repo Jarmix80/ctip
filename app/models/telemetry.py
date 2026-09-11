@@ -141,4 +141,22 @@ mail_delivery = _table(
 )
 Index("idx_telemetry_mail_pending", mail_delivery.c.source_id, mail_delivery.c.move_status)
 Index("idx_telemetry_mail_hash", mail_delivery.c.sha256)
-TELEMETRY_TABLES = (source, imports, artifact, device_link, record, origin, issue, mail_delivery)
+daily_head = Table(
+    "telemetry_daily_head",
+    Base.metadata,
+    Column("source_id", ForeignKey(source.c.id), primary_key=True),
+    Column("external_key", Text, primary_key=True),
+    Column("record_id", ForeignKey(record.c.id), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+TELEMETRY_TABLES = (
+    source,
+    imports,
+    artifact,
+    device_link,
+    record,
+    origin,
+    issue,
+    mail_delivery,
+    daily_head,
+)

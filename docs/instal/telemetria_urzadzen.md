@@ -62,6 +62,14 @@ swój czas, dokładność i identyfikator źródłowy. Późniejszy odczyt lub k
 tworzy wersję tej samej migawki, nie kolejny logiczny punkt wykresu.
 Brak pomiaru nie daje sztucznego zera ani świeżej daty.
 
+`telemetry_daily_head` wskazuje bieżącą wersję w tej samej transakcji co kursor.
+Powrót do już istniejącej wersji aktualizuje wskaźnik bez duplikowania historii;
+wykres nie powinien wybierać wersji wyłącznie według czasu jej pierwszego importu.
+
+Normalna aktualizacja pomiaru w ciągu dnia nie jest konfliktem wartości.
+Różne wartości składnika z tym samym czasem zachowują alternatywy i ostrzeżenie;
+wybór reprezentacji technicznej nie rozstrzyga arbitralnie prawidłowego wyniku.
+
 Każdy przebieg ponownie sprawdza co najmniej ostatnie siedem dni od poprzedniego
 ukończenia, a niedokończone porcje mają własny kursor. Zmiana katalogu aktywnych
 umów wymusza ponowne sprawdzenie dwuletniej historii. Zdarzenia i wpisy historii
@@ -81,7 +89,7 @@ operacje magazynowe nie są przypisywane arbitralnie do urządzenia.
 - `--scheduled` wykonuje tylko zaległy pełny przebieg o 23:55; nie łączy się go z limitem i wyborem źródła.
 - `--dry-run` nie zapisuje danych, kursorów, folderów, przeniesień ani dziennika plikowego.
 
-Rozszerzenie wymaga migracji `a6d9e1f3b520 -> c4f2a9b8d610`. Przed włączeniem
+Rozszerzenie wymaga migracji `a6d9e1f3b520 -> c4f2a9b8d610 -> e8c7d6a5b410`. Przed włączeniem
 zadań należy wykonać kontrolny odczyt, ograniczony pilot, pełną historię i
 ponowienie bez przyrostu logicznych danych. Panel administracyjny pokazuje
 oddzielnie migawki, zaległości i decyzje pocztowe. Dziennik
