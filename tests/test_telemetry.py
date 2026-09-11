@@ -608,6 +608,48 @@ def test_firebird_25_reader_discovery_uses_services_not_security_table(monkeypat
     )
 
 
+def test_vmaintenance_uses_utf8_without_changing_ms_charset(monkeypatch):
+    """Rozdziela UTF-8 pól NONE w V od połączenia WIN1250 używanego przez MS."""
+    from app.services.telemetry import sources
+    from scripts import setup_telemetry_windows as setup
+
+    connections = []
+
+    class Connection:
+        def cursor(self):
+            return self
+
+        def execute(self, query):
+            assert "MON$READ_ONLY" in query
+
+        def fetchone(self):
+            return (1,)
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    def connect(**kwargs):
+        connections.append(kwargs)
+        return Connection()
+
+    monkeypatch.delenv("TELEMETRY_VM_CHARSET", raising=False)
+    monkeypatch.setattr(sources.settings, "fb_charset", "WIN1250")
+    monkeypatch.setattr(sources.firebirdsql, "connect", connect)
+    config = TelemetrySettings(_env_file=None)
+    assert config.vm_charset == setup.VM_CHARSET == "UTF8"
+    for vmaintenance in (True, False):
+        with sources.firebird_connection(vmaintenance, config):
+            pass
+    assert [connection["charset"] for connection in connections] == ["UTF8", "WIN1250"]
+    assert all(
+        connection["isolation_level"] == sources.firebirdsql.ISOLATION_LEVEL_READ_COMMITED_RO
+        for connection in connections
+    )
+
+
 def test_redelivered_report_is_archived_without_duplicate_data(engine, tmp_path, monkeypatch):
     for name in ("Toner", "All Supplies", "Reporting"):
         (tmp_path / name).mkdir()
