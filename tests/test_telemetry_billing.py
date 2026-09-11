@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 
 from app.models import telemetry as tables
 from app.services.telemetry import sources
@@ -114,6 +114,23 @@ def test_late_billing_history_detects_regression_but_skips_drafts(engine):
             ).scalar_one()
             == 1
         )
+
+
+def test_billing_neighbors_use_existing_serial_index(engine):
+    """Ogranicza porównanie do serii urządzenia zamiast skanowania całej historii CPC."""
+    queries = []
+
+    def capture(connection, cursor, statement, parameters, context, executemany):
+        if "ORDER BY" in statement and "imported_at DESC" in statement:
+            queries.append(statement.split("WHERE", 1)[1])
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        save(engine, cpc_row())
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert len(queries) == 2
+    assert all(".serial =" in query for query in queries)
 
 
 def test_ms_reader_limits_period_and_joins_correct_active_contract_key(monkeypatch):
