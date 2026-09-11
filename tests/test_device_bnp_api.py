@@ -8,10 +8,16 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import HTTPException, status
+from pydantic import ValidationError
 from starlette.testclient import TestClient
 
 from app.api import deps
+from app.api.routes.admin_device import (
+    DeviceBnpBuyoutCompleteRequest,
+    DeviceBnpCatalogCreateRequest,
+)
 from app.main import create_app
 from app.services.device_bnp_buyout import BnpBuyoutResult, BnpCatalogResult
 
@@ -53,6 +59,8 @@ def test_device_bnp_lookup_zwraca_maszyne_i_status_kartoteki() -> None:
         "machine": {"id_maszyna_table": 5189, "ewidencja": "KP/4579/SRS"},
         "suggested_ewidencja": "WKP/4579/SRS",
         "suggested_index": "WKP/4579/BNP",
+        "identifier_mode": "kp",
+        "identifier_value": "4579",
         "can_create_catalog": True,
         "can_complete": False,
         "blockers": [],
@@ -75,10 +83,14 @@ def test_device_bnp_lookup_zwraca_maszyne_i_status_kartoteki() -> None:
 
     assert response.status_code == 200
     assert response.json()["lookup"]["suggested_index"] == "WKP/4579/BNP"
+    assert response.json()["lookup"]["identifier_mode"] == "kp"
+    assert response.json()["lookup"]["identifier_value"] == "4579"
     assert read_mock.await_args.kwargs["serial"] == "3101RC80528"
 
 
-def test_device_bnp_catalog_create_zapisuje_audyt() -> None:
+@pytest.mark.parametrize("expected_ewidencja", ["KP/4579/SRS", ""])
+def test_device_bnp_catalog_create_zapisuje_audyt(expected_ewidencja: str) -> None:
+    """API przekazuje także pustą ewidencję do serwisu i rejestruje przygotowanie kartoteki."""
     client, db_session = _build_client()
     expected = BnpCatalogResult(
         created=True,
@@ -114,7 +126,7 @@ def test_device_bnp_catalog_create_zapisuje_audyt() -> None:
             json={
                 "serial": "3101RC80528",
                 "machine_table_id": 5189,
-                "expected_ewidencja": "KP/4579/SRS",
+                "expected_ewidencja": expected_ewidencja,
                 "warehouse_index": "WKP/4579/BNP",
                 "item_name": "Ricoh IM C3000",
             },
@@ -125,7 +137,7 @@ def test_device_bnp_catalog_create_zapisuje_audyt() -> None:
     create_mock.assert_called_once_with(
         serial="3101RC80528",
         machine_table_id=5189,
-        expected_ewidencja="KP/4579/SRS",
+        expected_ewidencja=expected_ewidencja,
         warehouse_index="WKP/4579/BNP",
         item_name="Ricoh IM C3000",
         kto="CTIP/OPERATOR",
@@ -136,7 +148,9 @@ def test_device_bnp_catalog_create_zapisuje_audyt() -> None:
     )
 
 
-def test_device_bnp_complete_tworzy_pz_i_zapisuje_audyt() -> None:
+@pytest.mark.parametrize("expected_ewidencja", ["KP/4579/SRS", ""])
+def test_device_bnp_complete_tworzy_pz_i_zapisuje_audyt(expected_ewidencja: str) -> None:
+    """API dopuszcza pustą ewidencję źródłową i zachowuje audyt finalizacji."""
     client, db_session = _build_client()
     expected = BnpBuyoutResult(
         already_completed=False,
@@ -148,7 +162,7 @@ def test_device_bnp_complete_tworzy_pz_i_zapisuje_audyt() -> None:
         warehouse_quantity=Decimal("1"),
         machine_id=7112,
         machine_table_id=5189,
-        previous_ewidencja="KP/4579/SRS",
+        previous_ewidencja=expected_ewidencja,
         target_ewidencja="WKP/4579/SRS",
         supplier_id=1937,
         external_document="FWK26/06/00093",
@@ -179,7 +193,7 @@ def test_device_bnp_complete_tworzy_pz_i_zapisuje_audyt() -> None:
                 "serial": "3101RC80528",
                 "machine_table_id": 5189,
                 "warehouse_item_id": 18592,
-                "expected_ewidencja": "KP/4579/SRS",
+                "expected_ewidencja": expected_ewidencja,
                 "target_ewidencja": "WKP/4579/SRS",
                 "warehouse_index": "WKP/4579/BNP",
                 "item_name": "Ricoh IM C3000",
@@ -195,7 +209,7 @@ def test_device_bnp_complete_tworzy_pz_i_zapisuje_audyt() -> None:
         serial="3101RC80528",
         machine_table_id=5189,
         warehouse_item_id=18592,
-        expected_ewidencja="KP/4579/SRS",
+        expected_ewidencja=expected_ewidencja,
         target_ewidencja="WKP/4579/SRS",
         warehouse_index="WKP/4579/BNP",
         item_name="Ricoh IM C3000",
@@ -243,3 +257,38 @@ def test_device_bnp_catalog_respektuje_blokade_zapisu() -> None:
     assert response.status_code == 409
     assert response.json()["detail"] == "Zapis testowy jest zablokowany."
     assert db_session.added == []
+
+
+@pytest.mark.parametrize(
+    "request_model", [DeviceBnpCatalogCreateRequest, DeviceBnpBuyoutCompleteRequest]
+)
+@pytest.mark.parametrize("invalid_value", [None, "A" * 101])
+def test_zadanie_bnp_wymaga_pola_ewidencji_o_poprawnej_dlugosci(
+    request_model, invalid_value
+) -> None:
+    """Pusta wartość jest dozwolona, ale null, pominięcie i przekroczenie limitu nie są."""
+    payload = {
+        "serial": "ABC123",
+        "machine_table_id": 1,
+        "expected_ewidencja": "",
+        "warehouse_index": "WKP/ABC123",
+        "item_name": "Urządzenie",
+    }
+    if request_model is DeviceBnpBuyoutCompleteRequest:
+        payload.update(
+            warehouse_item_id=2,
+            target_ewidencja="WKP/ABC123",
+            external_document="FV/TEST",
+            document_date="2026-09-10",
+            purchase_price_netto="24.00",
+        )
+    assert request_model.model_validate(payload).expected_ewidencja == ""
+    payload["expected_ewidencja"] = invalid_value
+    with pytest.raises(ValidationError) as invalid_error:
+        request_model.model_validate(payload)
+    assert invalid_error.value.errors()[0]["loc"] == ("expected_ewidencja",)
+    del payload["expected_ewidencja"]
+    with pytest.raises(ValidationError) as missing_error:
+        request_model.model_validate(payload)
+    assert missing_error.value.errors()[0]["loc"] == ("expected_ewidencja",)
+    assert missing_error.value.errors()[0]["type"] == "missing"

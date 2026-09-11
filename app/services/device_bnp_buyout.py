@@ -30,6 +30,20 @@ _KP_IDENTIFIER_PATTERN = re.compile(
     r"^(?P<prefix>W?KP)/(?P<number>\d+)(?P<suffix>/.*)?$",
     re.IGNORECASE,
 )
+_WKP_IDENTIFIER_PATTERN = re.compile(
+    r"^WKP/(?P<value>[A-Z0-9]+)(?P<suffix>/.*)?$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _BuyoutIdentifiers:
+    """Tożsamość wykupu oparta na numerze KP albo kanonicznym serialu maszyny."""
+
+    mode: str
+    value: str
+    ewidencja: str
+    warehouse_index: str
 
 
 @dataclass(slots=True)
@@ -61,7 +75,8 @@ class BnpBuyoutResult:
 
 
 def _normalize_serial_key(value: str | None) -> str:
-    return re.sub(r"[^A-Z0-9]", "", _text(value, 100).upper())
+    """Normalizuje cały serial bez skracania identyfikatora urządzenia."""
+    return re.sub(r"[^A-Z0-9]", "", _text(value).upper())
 
 
 def _normalize_nip(value: str | None) -> str:
@@ -69,7 +84,7 @@ def _normalize_nip(value: str | None) -> str:
 
 
 def _parse_kp_identifier(value: str | None) -> dict[str, str] | None:
-    normalized = _text(value, 100)
+    normalized = _text(value)
     match = _KP_IDENTIFIER_PATTERN.fullmatch(normalized)
     if match is None:
         return None
@@ -80,31 +95,71 @@ def _parse_kp_identifier(value: str | None) -> dict[str, str] | None:
     }
 
 
-def _build_buyout_identifiers(source_ewidencja: str) -> tuple[str, str]:
+def _build_buyout_identifiers(
+    source_ewidencja: str,
+    *,
+    serial: str | None = None,
+    serial2: str | None = None,
+) -> _BuyoutIdentifiers:
+    """Zachowuje numer KP albo wyznacza WKP z serialu dla niestandardowej ewidencji."""
+    if _text(source_ewidencja).upper().startswith("WKP/"):
+        raise ValueError("Urządzenie ma już oznaczenie WKP i wygląda na wcześniej wykupione.")
     parsed = _parse_kp_identifier(source_ewidencja)
-    if parsed is None or parsed["prefix"] != "KP":
-        raise ValueError("MASZYNA.EWIDENCJA musi mieć format KP/<numer>/...")
-    return (
-        f"WKP/{parsed['number']}{parsed['suffix']}",
-        f"WKP/{parsed['number']}{BNP_INDEX_SUFFIX}",
+    if parsed is not None:
+        mode = "kp"
+        value = parsed["number"]
+        target_ewidencja = f"WKP/{value}{parsed['suffix']}"
+        warehouse_index = f"WKP/{value}{BNP_INDEX_SUFFIX}"
+    else:
+        mode = "serial"
+        value = _normalize_serial_key(_text(serial) or serial2)
+        if not value:
+            raise ValueError(
+                "Brak numeru seryjnego w kartotece MASZYNA do utworzenia oznaczenia WKP."
+            )
+        target_ewidencja = warehouse_index = f"WKP/{value}"
+    return _BuyoutIdentifiers(
+        mode=mode,
+        value=value,
+        ewidencja=_validate_target_identifier(
+            target_ewidencja,
+            expected_value=value,
+            identifier_mode=mode,
+            field_name="MASZYNA.EWIDENCJA",
+        ),
+        warehouse_index=_validate_target_identifier(
+            warehouse_index,
+            expected_value=value,
+            identifier_mode=mode,
+            field_name="MAGAZYN.INDEKS",
+        ),
     )
 
 
 def _validate_target_identifier(
     value: str,
     *,
-    expected_number: str,
+    expected_value: str,
+    identifier_mode: str,
     field_name: str,
 ) -> str:
-    normalized = _text(value, 100)
-    parsed = _parse_kp_identifier(normalized)
-    if parsed is None or parsed["prefix"] != "WKP":
+    """Dopuszcza dopiski WKP, chroniąc bazowy numer KP lub serial i limit pola Firebird."""
+    normalized = _text(value)
+    if len(normalized) > 100:
+        raise ValueError(f"{field_name} nie może przekraczać 100 znaków.")
+    match = _WKP_IDENTIFIER_PATTERN.fullmatch(normalized)
+    if match is None:
         raise ValueError(f"{field_name} musi mieć format WKP/<numer>/...")
-    if parsed["number"] != expected_number:
-        raise ValueError(
-            f"{field_name} musi zachować numer KP/{expected_number}; zmiana numeru jest zablokowana."
+    if match.group("value").upper() != expected_value.upper():
+        number_label = (
+            f"numer KP/{expected_value}"
+            if identifier_mode == "kp"
+            else f"numer seryjny {expected_value}"
         )
-    return f"WKP/{parsed['number']}{parsed['suffix']}"
+        raise ValueError(
+            f"{field_name} musi zachować {number_label}; zmiana numeru jest zablokowana."
+        )
+    return f"WKP/{expected_value}{match.group('suffix') or ''}"
 
 
 def _map_machine_row(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -118,7 +173,7 @@ def _map_machine_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "marka": _text(row[6], 50),
         "model": _text(row[7], 50),
         "serial": _text(row[8], 100),
-        "serial2": _text(row[9], 100),
+        "serial2": _text(row[9]),
         "ewidencja": _text(row[10], 100),
         "aktywna": _text(row[11], 20),
         "stoi": _text(row[12], 250),
@@ -169,6 +224,9 @@ def _find_machine_for_write(
     machine_table_id: int,
     serial_key: str,
 ) -> dict[str, Any]:
+    """Sprawdza rekord maszyny i niepusty serial przed zapisem wykupu."""
+    if not serial_key:
+        raise ValueError("Numer seryjny jest wymagany.")
     cursor.execute(
         _machine_query() + " WHERE m.ID_MASZYNA_TABLE = ?",
         (int(machine_table_id),),
@@ -203,8 +261,9 @@ def _map_warehouse_row(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-def _find_warehouse_rows(cursor, kp_number: str) -> list[dict[str, Any]]:
-    base_index = f"WKP/{kp_number}".upper()
+def _find_warehouse_rows(cursor, identifier_value: str) -> list[dict[str, Any]]:
+    """Wyszukuje kartoteki tego samego numeru KP lub serialu wraz z dopiskami."""
+    base_index = f"WKP/{identifier_value}".upper()
     cursor.execute(
         """
         SELECT
@@ -262,6 +321,7 @@ def _find_bnp_supplier(cursor) -> dict[str, Any] | None:
 
 
 def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
+    """Buduje podgląd wykupu z ostrzeżeniem przy zastąpieniu numeru KP serialem."""
     serial_key = _normalize_serial_key(serial_value)
     if not serial_key:
         raise ValueError("Numer seryjny jest wymagany.")
@@ -278,6 +338,8 @@ def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
             "target_item": None,
             "suggested_ewidencja": "",
             "suggested_index": "",
+            "identifier_mode": None,
+            "identifier_value": None,
             "can_create_catalog": False,
             "can_complete": False,
             "blockers": ["Nie znaleziono urządzenia po podanym numerze seryjnym."],
@@ -293,6 +355,8 @@ def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
             "target_item": None,
             "suggested_ewidencja": "",
             "suggested_index": "",
+            "identifier_mode": None,
+            "identifier_value": None,
             "can_create_catalog": False,
             "can_complete": False,
             "blockers": [
@@ -302,28 +366,48 @@ def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
         }
 
     machine = machines[0]
-    parsed = _parse_kp_identifier(machine["ewidencja"])
     blockers: list[str] = []
     warnings: list[str] = []
     suggested_ewidencja = ""
     suggested_index = ""
     warehouse_rows: list[dict[str, Any]] = []
     target_item = None
+    identifier_mode = None
+    identifier_value = None
 
-    if parsed is None:
-        blockers.append("MASZYNA.EWIDENCJA nie ma formatu KP/<numer>/...")
+    if machine["ewidencja"].upper().startswith("WKP/"):
+        blockers.append("Urządzenie ma już oznaczenie WKP i wygląda na wcześniej wykupione.")
+        match = _WKP_IDENTIFIER_PATTERN.fullmatch(machine["ewidencja"])
+        if match is not None:
+            identifier_value = match.group("value").upper()
+            identifier_mode = "kp" if identifier_value.isdigit() else "serial"
     else:
-        if parsed["prefix"] == "WKP":
-            blockers.append("Urządzenie ma już oznaczenie WKP i wygląda na wcześniej wykupione.")
+        try:
+            identifiers = _build_buyout_identifiers(
+                machine["ewidencja"], serial=machine["serial"], serial2=machine["serial2"]
+            )
+        except ValueError as exc:
+            blockers.append(str(exc))
         else:
-            suggested_ewidencja, suggested_index = _build_buyout_identifiers(machine["ewidencja"])
-        warehouse_rows = _find_warehouse_rows(cursor, parsed["number"])
+            identifier_mode = identifiers.mode
+            identifier_value = identifiers.value
+            suggested_ewidencja = identifiers.ewidencja
+            suggested_index = identifiers.warehouse_index
+            if identifiers.mode == "serial":
+                warnings.append(
+                    "MASZYNA.EWIDENCJA nie ma formatu KP/<numer>/... "
+                    f"Wykup zostanie zapisany według numeru seryjnego {identifiers.value}. "
+                    f"Proponowane oznaczenie: {identifiers.ewidencja}."
+                )
+
+    if identifier_value:
+        warehouse_rows = _find_warehouse_rows(cursor, identifier_value)
         target_rows = [
             row for row in warehouse_rows if row["id_magazyn"] == BNP_BUYOUT_WAREHOUSE_ID
         ]
         if len(target_rows) > 1:
             blockers.append(
-                "Na magazynie 27 istnieje więcej niż jedna kartoteka dla tego numeru KP."
+                "Na magazynie 27 istnieje więcej niż jedna kartoteka dla tego identyfikatora WKP."
             )
         elif target_rows:
             target_item = target_rows[0]
@@ -338,13 +422,7 @@ def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
     if supplier is None:
         blockers.append(f"Nie znaleziono jednoznacznej kartoteki BNP dla NIP {BNP_SUPPLIER_NIP}.")
 
-    can_create_catalog = (
-        parsed is not None
-        and parsed["prefix"] == "KP"
-        and target_item is None
-        and not any("więcej niż jedna kartoteka" in item for item in blockers)
-        and supplier is not None
-    )
+    can_create_catalog = bool(identifier_value) and target_item is None and not blockers
     return {
         "serial": _text(serial_value, 100),
         "machines": machines,
@@ -354,6 +432,8 @@ def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
         "target_item": target_item,
         "suggested_ewidencja": suggested_ewidencja,
         "suggested_index": suggested_index,
+        "identifier_mode": identifier_mode,
+        "identifier_value": identifier_value,
         "can_create_catalog": can_create_catalog,
         "can_complete": target_item is not None and not blockers,
         "blockers": blockers,
@@ -362,7 +442,7 @@ def _build_lookup_payload(cursor, serial_value: str) -> dict[str, Any]:
 
 
 def lookup_bnp_buyout(*, serial: str) -> dict[str, Any]:
-    """Zwraca podgląd urządzenia i kartotek dla procesu wykupu BNP."""
+    """Zwraca podgląd wykupu BNP według numeru KP lub serialu z ostrzeżeniami."""
     connection = _firebird_connection()
     cursor = connection.cursor()
     try:
@@ -381,7 +461,7 @@ def create_bnp_catalog_item(
     item_name: str,
     kto: str,
 ) -> BnpCatalogResult:
-    """Tworzy brakującą kartotekę wykupu BNP na magazynie 27 ze stanem 0."""
+    """Tworzy kartotekę WKP według KP lub serialu na magazynie 27 ze stanem 0."""
     serial_key = _normalize_serial_key(serial)
     normalized_name = _text(item_name, 250)
     if not normalized_name:
@@ -397,28 +477,33 @@ def create_bnp_catalog_item(
             machine_table_id=machine_table_id,
             serial_key=serial_key,
         )
-        if machine["ewidencja"].upper() != _text(expected_ewidencja, 100).upper():
+        if machine["ewidencja"].upper() != _text(expected_ewidencja).upper():
             raise ValueError(
                 "MASZYNA.EWIDENCJA zmieniła się od czasu wyszukania. Odśwież dane urządzenia."
             )
-        parsed = _parse_kp_identifier(machine["ewidencja"])
-        if parsed is None or parsed["prefix"] != "KP":
-            raise ValueError("Kartotekę można utworzyć tylko dla oznaczenia KP/<numer>/...")
+        identifiers = _build_buyout_identifiers(
+            machine["ewidencja"], serial=machine["serial"], serial2=machine["serial2"]
+        )
         normalized_index = _validate_target_identifier(
             warehouse_index,
-            expected_number=parsed["number"],
+            expected_value=identifiers.value,
+            identifier_mode=identifiers.mode,
             field_name="MAGAZYN.INDEKS",
         )
         target_rows = [
             row
-            for row in _find_warehouse_rows(cursor, parsed["number"])
+            for row in _find_warehouse_rows(cursor, identifiers.value)
             if row["id_magazyn"] == BNP_BUYOUT_WAREHOUSE_ID
         ]
         if len(target_rows) > 1:
             raise ValueError(
-                "Na magazynie 27 istnieje więcej niż jedna kartoteka dla tego numeru KP."
+                "Na magazynie 27 istnieje więcej niż jedna kartoteka dla tego identyfikatora WKP."
             )
         if target_rows:
+            if target_rows[0]["quantity"] != Decimal("0"):
+                raise ValueError(
+                    "Kartoteka na magazynie 27 ma stan różny od 0. Ponowny wykup został zablokowany."
+                )
             connection.rollback()
             return BnpCatalogResult(created=False, warehouse_item=target_rows[0])
 
@@ -459,7 +544,7 @@ def create_bnp_catalog_item(
         created_id = int(row[0])
         created_rows = [
             item
-            for item in _find_warehouse_rows(cursor, parsed["number"])
+            for item in _find_warehouse_rows(cursor, identifiers.value)
             if item["id_magazyn_table"] == created_id
         ]
         if len(created_rows) != 1:
@@ -509,13 +594,14 @@ def _find_existing_document(
     ]
 
 
-def _find_existing_buyout_by_number(
+def _find_existing_buyout_by_identifier(
     cursor,
     *,
     supplier_id: int,
-    kp_number: str,
+    identifier_value: str,
 ) -> list[dict[str, Any]]:
-    base_index = f"WKP/{kp_number}".upper()
+    """Wykrywa wcześniejsze PZ wykupu według numeru KP albo serialu i dopisków."""
+    base_index = f"WKP/{identifier_value}".upper()
     cursor.execute(
         """
         SELECT FIRST 10
@@ -594,7 +680,7 @@ def complete_bnp_buyout(
     issued_by: str,
     kto: str,
 ) -> BnpBuyoutResult:
-    """Tworzy PZ wykupu BNP i zmienia oznaczenie urządzenia na WKP."""
+    """Atomowo tworzy PZ i ustawia WKP według KP lub serialu, chroniąc ponowienia."""
     serial_key = _normalize_serial_key(serial)
     normalized_name = _text(item_name, 250)
     normalized_document = _text(external_document, 30)
@@ -619,17 +705,19 @@ def complete_bnp_buyout(
             machine_table_id=machine_table_id,
             serial_key=serial_key,
         )
-        source_parsed = _parse_kp_identifier(expected_ewidencja)
-        if source_parsed is None or source_parsed["prefix"] != "KP":
-            raise ValueError("Oczekiwane oznaczenie źródłowe musi mieć format KP/<numer>/...")
+        identifiers = _build_buyout_identifiers(
+            expected_ewidencja, serial=machine["serial"], serial2=machine["serial2"]
+        )
         normalized_target = _validate_target_identifier(
             target_ewidencja,
-            expected_number=source_parsed["number"],
+            expected_value=identifiers.value,
+            identifier_mode=identifiers.mode,
             field_name="MASZYNA.EWIDENCJA",
         )
         normalized_index = _validate_target_identifier(
             warehouse_index,
-            expected_number=source_parsed["number"],
+            expected_value=identifiers.value,
+            identifier_mode=identifiers.mode,
             field_name="MAGAZYN.INDEKS",
         )
         supplier = _find_bnp_supplier(cursor)
@@ -641,7 +729,7 @@ def complete_bnp_buyout(
 
         target_rows = [
             row
-            for row in _find_warehouse_rows(cursor, source_parsed["number"])
+            for row in _find_warehouse_rows(cursor, identifiers.value)
             if row["id_magazyn"] == BNP_BUYOUT_WAREHOUSE_ID
         ]
         if len(target_rows) != 1:
@@ -680,19 +768,19 @@ def complete_bnp_buyout(
             raise ValueError(
                 "Urządzenie ma już oznaczenie docelowe WKP, ale nie znaleziono zgodnego PZ."
             )
-        if current_ewidencja.upper() != _text(expected_ewidencja, 100).upper():
+        if current_ewidencja.upper() != _text(expected_ewidencja).upper():
             raise ValueError(
                 "MASZYNA.EWIDENCJA zmieniła się od czasu wyszukania. Odśwież dane urządzenia."
             )
         if existing_document_rows:
             raise ValueError("Dokument BNP o podanym numerze został już zapisany w PZ.")
-        if _find_existing_buyout_by_number(
+        if _find_existing_buyout_by_identifier(
             cursor,
             supplier_id=supplier_id,
-            kp_number=source_parsed["number"],
+            identifier_value=identifiers.value,
         ):
             raise ValueError(
-                "Dla tego numeru KP istnieje już PZ wykupu BNP. Ponowny zapis został zablokowany."
+                "Dla tego identyfikatora WKP istnieje już PZ wykupu BNP. Ponowny zapis został zablokowany."
             )
         if warehouse_item["quantity"] != Decimal("0"):
             raise ValueError(

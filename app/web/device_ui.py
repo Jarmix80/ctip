@@ -11,7 +11,7 @@ from app.core.config import settings
 templates = Jinja2Templates(directory="app/templates")
 
 router = APIRouter(tags=["device-ui"])
-DEVICE_UI_VERSION = "0.6.4"
+DEVICE_UI_VERSION = "0.6.5"
 
 
 async def _device_template(request: Request, view: str) -> HTMLResponse:
@@ -41,7 +41,7 @@ async def device_intake_page(request: Request) -> HTMLResponse:
 
 @router.get("/device/bnp-buyout", response_class=HTMLResponse)
 async def device_bnp_buyout_page(request: Request) -> HTMLResponse:
-    """Formularz wykupu urządzenia po zakończeniu wynajmu BNP."""
+    """Formularz wykupu BNP z docelową ewidencją według numeru KP lub serialu."""
     return await _device_template(request, "bnp-buyout")
 
 

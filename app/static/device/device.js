@@ -1760,7 +1760,7 @@ function renderBnpLookup(lookup, preserved = {}) {
         <strong>${escapeHtml(
           `${machine.marka || ""} ${machine.model || ""}`.trim() || "Urządzenie"
         )}</strong>
-        <small>Dane powiązane z numerem seryjnym w lokalnym Firebird.</small>
+        <small>Dane powiązane z numerem seryjnym w bazie Firebird.</small>
       </header>
       <article><span>Klient</span><strong>${escapeHtml(
         machine.client_name || `ID ${machine.id_klient || "—"}`
@@ -1768,7 +1768,7 @@ function renderBnpLookup(lookup, preserved = {}) {
       <article><span>Urządzenie</span><strong>${escapeHtml(
         `${machine.marka || ""} ${machine.model || ""}`.trim() || "—"
       )}</strong></article>
-      <article><span>Serial / KP</span><strong>${escapeHtml(serial || "—")}<br>${escapeHtml(
+      <article><span>Serial / ewidencja</span><strong>${escapeHtml(serial || "—")}<br>${escapeHtml(
         machine.ewidencja || "—"
       )}</strong></article>
       <article><span>Dostawca wykupu</span><strong>${escapeHtml(
@@ -1849,26 +1849,30 @@ async function loadBnpLookup({ preserveForm = false } = {}) {
 }
 
 function validateBnpIdentifiers() {
-  const sourceValue = String(deviceState.bnpLookup?.machine?.ewidencja || "")
+  const identifierMode = deviceState.bnpLookup?.identifier_mode;
+  const identifierValue = String(deviceState.bnpLookup?.identifier_value || "")
     .trim()
     .toUpperCase();
-  const sourceMatch = sourceValue.match(/^KP\/(\d+)(?:\/.*)?$/);
-  if (!sourceMatch) {
-    throw new Error("Źródłowa ewidencja urządzenia nie ma formatu KP/<numer>/...");
+  if (!["kp", "serial"].includes(identifierMode) || !identifierValue) {
+    throw new Error("Brak identyfikatora wykupu. Wyszukaj urządzenie ponownie.");
   }
   [
     ["Docelowa ewidencja", "device-bnp-target-ewidencja"],
     ["Indeks magazynowy", "device-bnp-warehouse-index"],
   ].forEach(([label, fieldId]) => {
-    const match = String(document.getElementById(fieldId)?.value || "")
-      .trim()
-      .toUpperCase()
-      .match(/^WKP\/(\d+)(?:\/.*)?$/);
+    const value = String(document.getElementById(fieldId)?.value || "").trim();
+    if (Array.from(value).length > 100) {
+      throw new Error(`${label} nie może przekraczać 100 znaków.`);
+    }
+    const match = value.toUpperCase().match(/^WKP\/([A-Z0-9]+)(?:\/.*)?$/);
     if (!match) {
       throw new Error(`${label} musi mieć format WKP/<numer>/...`);
     }
-    if (match[1] !== sourceMatch[1]) {
-      throw new Error(`${label} musi zachować numer KP/${sourceMatch[1]}.`);
+    if (match[1] !== identifierValue) {
+      const numberLabel = identifierMode === "kp"
+        ? `numer KP/${identifierValue}`
+        : `numer seryjny ${identifierValue}`;
+      throw new Error(`${label} musi zachować ${numberLabel}.`);
     }
   });
 }
@@ -2028,7 +2032,7 @@ function bindBnpEvents() {
       document.getElementById("device-bnp-confirm").checked = false;
       document.getElementById("device-bnp-create-catalog-action").hidden = true;
       document.getElementById("device-bnp-final-result-text").textContent =
-        `${buyout.pz_number || "PZ"} | ${buyout.previous_ewidencja || "KP"} → ` +
+        `${buyout.pz_number || "PZ"} | ${buyout.previous_ewidencja || "brak ewidencji"} → ` +
         `${buyout.target_ewidencja || "WKP"} | magazyn 27: ${
           buyout.warehouse_quantity ?? 1
         }.`;
