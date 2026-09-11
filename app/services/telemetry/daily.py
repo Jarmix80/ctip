@@ -5,12 +5,19 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
 
 from app.models import telemetry as tables
 from app.services.telemetry import sources
-from app.services.telemetry.parsers import Reading, fingerprint, number, serial_number, timestamp
-from app.services.telemetry.store import TelemetryStore
+from app.services.telemetry.parsers import (
+    PARSER_VERSION,
+    Reading,
+    fingerprint,
+    number,
+    serial_number,
+    timestamp,
+)
+from app.services.telemetry.store import TelemetryStore, utcnow
 
 POLICY = "daily2"
 logger = logging.getLogger(__name__)
@@ -82,16 +89,37 @@ def event_readings(kind, serial, row, reading):
 
 
 def merge_daily(current, incoming):
-    """Wybiera ostatni poprawny składnik dnia, niezależnie od kolejności stron źródła."""
+    """Wybiera ostatni składnik; sprzeczne dane z tej samej chwili zachowuje jako alternatywy."""
     result = copy.deepcopy(current or incoming)
     result["components"] = copy.deepcopy((current or {}).get("components", {}))
     for key, component in incoming["components"].items():
         previous = result["components"].get(key)
-        if previous is None or (component["time"], component["key"]) > (
+        if (
+            previous is not None
+            and component["time"] == previous["time"]
+            and component["measurements"] != previous["measurements"]
+        ):
+            alternatives = {}
+            for value in (previous, component):
+                for variant in [value, *value.get("alternatives", [])]:
+                    clean = {
+                        name: copy.deepcopy(item)
+                        for name, item in variant.items()
+                        if name != "alternatives"
+                    }
+                    alternatives[fingerprint(clean)] = clean
+            selected = copy.deepcopy(component if component["key"] >= previous["key"] else previous)
+            selected["alternatives"] = [alternatives[name] for name in sorted(alternatives)]
+            result["components"][key] = selected
+            continue
+        if previous is None or (component["time"], component["key"]) >= (
             previous["time"],
             previous["key"],
         ):
-            result["components"][key] = component
+            selected = copy.deepcopy(component)
+            if previous and component["time"] == previous["time"] and previous.get("alternatives"):
+                selected["alternatives"] = copy.deepcopy(previous["alternatives"])
+            result["components"][key] = selected
     return result
 
 
@@ -113,6 +141,10 @@ def daily_reading(payload):
     ordered = sorted(components.values(), key=lambda value: (value["time"], value["key"]))
     for component in ordered:
         result.measurements.update(component["measurements"])
+        for variant in component.get("alternatives", []):
+            for metric in component["measurements"].keys() & variant["measurements"].keys():
+                if component["measurements"][metric] != variant["measurements"][metric]:
+                    result.issues.append(("conflicting_value", metric))
     return result
 
 
@@ -240,6 +272,56 @@ def pr_daily_page(table, after, limit, config, fingerprints, start):
         return [row[0] for row in cursor.fetchall()]
 
 
+def current_daily(connection, source_id, key):
+    """Odczytuje aktualną wersję niezależnie od kolejności powstawania wersji niezmiennych."""
+    payload = connection.execute(
+        select(tables.record.c.payload)
+        .select_from(tables.daily_head.join(tables.record))
+        .where(
+            tables.daily_head.c.source_id == source_id,
+            tables.daily_head.c.external_key == key,
+        )
+    ).scalar()
+    if payload is not None:
+        return payload
+    return connection.execute(
+        select(tables.record.c.payload)
+        .where(tables.record.c.source_id == source_id, tables.record.c.external_key == key)
+        .order_by(tables.record.c.imported_at.desc(), tables.record.c.id.desc())
+        .limit(1)
+    ).scalar()
+
+
+def accept_daily(connection, source_id, readings):
+    """Ustawia bieżącą wersję także przy powrocie źródła do wcześniej zapisanej treści."""
+    for reading in readings:
+        if reading.kind != "daily_snapshot":
+            continue
+        record_id = connection.execute(
+            select(tables.record.c.id).where(
+                tables.record.c.source_id == source_id,
+                tables.record.c.external_key == reading.external_key,
+                tables.record.c.revision_hash == fingerprint(reading.payload),
+                tables.record.c.parser_version == PARSER_VERSION,
+            )
+        ).scalar_one()
+        values = {"record_id": record_id, "updated_at": utcnow()}
+        changed = connection.execute(
+            update(tables.daily_head)
+            .where(
+                tables.daily_head.c.source_id == source_id,
+                tables.daily_head.c.external_key == reading.external_key,
+            )
+            .values(**values)
+        )
+        if not changed.rowcount:
+            connection.execute(
+                insert(tables.daily_head).values(
+                    source_id=source_id, external_key=reading.external_key, **values
+                )
+            )
+
+
 def run_daily(runner, kind):
     """Wznawia porcje i koryguje ostatni tydzień bez utraty historii nowych umów."""
     mapping = runner.get_active_mapping()
@@ -349,20 +431,13 @@ def run_daily(runner, kind):
                     readings = list(events)
                     for payload in snapshots.values():
                         key = f"daily:{payload['serial']}:{payload['day']}"
-                        previous = connection.execute(
-                            select(tables.record.c.payload)
-                            .where(
-                                tables.record.c.source_id == source["id"],
-                                tables.record.c.external_key == key,
-                            )
-                            .order_by(tables.record.c.imported_at.desc())
-                            .limit(1)
-                        ).scalar()
+                        previous = current_daily(connection, source["id"], key)
                         readings.append(daily_reading(merge_daily(previous, payload)))
                     store = TelemetryStore(connection)
                     result = store.ingest(
                         source["id"], f"{POLICY}/{table}/{candidate_table.get('after')}", readings
                     )
+                    accept_daily(connection, source["id"], readings)
                     store.checkpoint(source["id"], checkpoint)
             for key, value in {
                 **counts,

@@ -1756,3 +1756,11 @@ CREATE TABLE ctip.telemetry_mail_delivery (
 );
 CREATE INDEX idx_telemetry_mail_hash ON ctip.telemetry_mail_delivery (sha256);
 CREATE INDEX idx_telemetry_mail_pending ON ctip.telemetry_mail_delivery (source_id, move_status);
+
+CREATE TABLE ctip.telemetry_daily_head (
+    source_id TEXT NOT NULL REFERENCES ctip.telemetry_source(id),
+    external_key TEXT NOT NULL,
+    record_id TEXT NOT NULL REFERENCES ctip.telemetry_record(id),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    PRIMARY KEY (source_id, external_key)
+);

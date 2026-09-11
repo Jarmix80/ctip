@@ -18,7 +18,8 @@ class ShippingReleaseTests(unittest.TestCase):
         """Zachowuje krok telemetrii nad Shipping i istniejące scalenie migracji."""
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["c4f2a9b8d610"])
+        self.assertEqual(scripts.get_heads(), ["e8c7d6a5b410"])
+        self.assertEqual(scripts.get_revision("e8c7d6a5b410").down_revision, "c4f2a9b8d610")
         self.assertEqual(scripts.get_revision("c4f2a9b8d610").down_revision, "a6d9e1f3b520")
         dedupe_revision = scripts.get_revision("f2b7c9d4e6a1")
         self.assertIsNotNone(dedupe_revision)

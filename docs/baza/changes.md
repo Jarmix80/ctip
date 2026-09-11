@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+- Migracja `e8c7d6a5b410` po `c4f2a9b8d610` dodaje `telemetry_daily_head`: jedną bieżącą wersję źródło/urządzenie/dzień. Powrót źródła do poprzedniej wartości nie powiela historii i poprawnie aktualizuje wskaźnik w transakcji z kursorem.
+
 - Migracja `c4f2a9b8d610` po `a6d9e1f3b520` dodaje rejestr `telemetry_mail_delivery`: decyzję dopasowania, źródłowy UID i UIDVALIDITY, SHA-256, folder docelowy oraz wznawialny stan przeniesienia.
 - Unikalność obejmuje źródło/folder/generację/UID; indeksy obsługują kolejkę przeniesień i skróty treści. Downgrade nie usuwa rejestru.
 - Nowa polityka zastępuje pierwotne pozostawianie DPLAC: po zatwierdzeniu bazy CSV są przenoszone do właściwego archiwum. Migawki dzienne i zdarzenia korzystają z istniejącej historii rekordów.
