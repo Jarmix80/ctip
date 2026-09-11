@@ -138,6 +138,8 @@ pochodzenie, powiązania i ostrzeżenia obejmują również te dane.
   późniejszy obecny właściciel numeru seryjnego nie nadpisuje historii.
 - Spadek między początkiem i końcem daje `billing_counter_decrease`; pomiędzy
   zafakturowanymi okresami tej samej maszyny i umowy — `billing_period_decrease`.
+  Zapytanie ogranicza serię numerem seryjnym i korzysta z istniejącego indeksu
+  źródło/serial/czas, zamiast ponownie przeglądać całą historię wszystkich maszyn.
   Błędny okres pozostaje ostrzeżeniem parsera, nigdy nie jest normalizowany z
   miesiąca 0 na styczeń. Zapytanie zakresowe nie pobiera okresów spoza okna.
 

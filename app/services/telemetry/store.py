@@ -361,6 +361,7 @@ class TelemetryStore:
         query = select(tables.record).where(
             tables.record.c.source_id == source_id,
             tables.record.c.kind == "billing_period",
+            tables.record.c.serial == (reading.serial or None),
             tables.record.c.id != record_id,
             tables.record.c.payload["ID_MASZYNA"].as_integer() == reading.payload.get("ID_MASZYNA"),
             tables.record.c.payload["ID_UMOWACPC"].as_integer()
