@@ -116,5 +116,29 @@ Index("idx_telemetry_record_semantic", record.c.semantic_key)
 Index("idx_telemetry_record_key", record.c.source_id, record.c.external_key)
 Index("idx_telemetry_import_source", imports.c.source_id, imports.c.started_at)
 Index("idx_telemetry_origin_archive", origin.c.archive_status)
+Index("idx_telemetry_origin_archive_path", origin.c.source_id, origin.c.archive_path)
 Index("idx_telemetry_device_identity", device_link.c.source_id, device_link.c.external_key)
-TELEMETRY_TABLES = (source, imports, artifact, device_link, record, origin, issue)
+mail_delivery = _table(
+    "telemetry_mail_delivery",
+    Column("source_id", ForeignKey(source.c.id), nullable=False),
+    Column("folder", Text, nullable=False),
+    Column("uidvalidity", Text, nullable=False),
+    Column("uid", BigInteger, nullable=False),
+    Column("sha256", Text, nullable=False),
+    Column("message_id", Text),
+    Column("artifact_id", ForeignKey(artifact.c.id)),
+    Column("decision", Text, nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("target_folder", Text, nullable=False),
+    Column("move_status", Text, nullable=False),
+    Column("target_uidvalidity", Text),
+    Column("target_uid", BigInteger),
+    Column("attempts", BigInteger, nullable=False, default=0),
+    Column("last_error", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("source_id", "folder", "uidvalidity", "uid", name="uq_telemetry_mail_uid"),
+)
+Index("idx_telemetry_mail_pending", mail_delivery.c.source_id, mail_delivery.c.move_status)
+Index("idx_telemetry_mail_hash", mail_delivery.c.sha256)
+TELEMETRY_TABLES = (source, imports, artifact, device_link, record, origin, issue, mail_delivery)

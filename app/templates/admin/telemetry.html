@@ -20,16 +20,22 @@
     <p>Wersje rekordów: <strong>{{ records }}</strong></p>
     <p>Grupy semantyczne: <strong>{{ semantic_groups }}</strong></p>
     <p>Oczekuje na archiwizację: <strong>{{ archive_pending }}</strong></p>
+    <p>Oczekuje na przeniesienie wiadomości: <strong>{{ mail_move_pending }}</strong></p>
   </div>
   <h2>Źródła i świeżość</h2>
   <table>
-    <thead><tr><th>Źródło</th><th>Włączone</th><th>Ostatnia kontrola</th><th>Ostatni pomiar</th><th>Okres CPC (początek)</th><th>Błąd</th></tr></thead>
+    <thead><tr><th>Źródło</th><th>Włączone</th><th>Ostatnia kontrola</th><th>Ostatni pomiar</th><th>Okres CPC (początek)</th><th>Migawki dzienne / zaległości</th><th>Błąd</th></tr></thead>
     <tbody>{% for row in sources %}<tr>
       <td>{{ row.name }}</td><td>{{ 'Tak' if row.enabled else 'Nie' }}</td>
       <td>{{ row.last_success_at or 'Brak' }}</td><td>{{ row.last_observed_at or 'Brak ustalonej daty' }}</td>
       <td>{{ row.last_billing_period or '—' }}</td>
+      <td>{{ row.daily_snapshots }}; {{ 'historia w toku' if row.daily_in_progress else (row.daily_completed or '—') }}{% if row.mail_retry %}; {{ row.mail_retry }} wiadomości do ponowienia{% endif %}</td>
       <td class="error">{{ row.last_error or '—' }}</td>
-    </tr>{% else %}<tr><td colspan="6">Brak uruchomionych źródeł.</td></tr>{% endfor %}</tbody>
+    </tr>{% else %}<tr><td colspan="7">Brak uruchomionych źródeł.</td></tr>{% endfor %}</tbody>
+  </table>
+  <h2>Klasyfikacja poczty</h2>
+  <table><thead><tr><th>Wynik</th><th>Przeniesienie</th><th>Liczba</th></tr></thead>
+    <tbody>{% for row in mail_deliveries %}<tr><td>{{ 'Dopasowane' if row.decision == 'processed' else 'Bez dopasowania' }}</td><td>{{ 'Zakończone' if row.move_status == 'moved' else 'Oczekujące' }}</td><td>{{ row.count }}</td></tr>{% endfor %}</tbody>
   </table>
   <h2>Ostatnie 50 importów</h2>
   <table><thead><tr><th>Początek</th><th>Źródło rekordu</th><th>Stan</th><th>Statystyki</th><th>Błąd</th></tr></thead>
@@ -43,6 +49,6 @@
     <tbody>{% for row in issues %}<tr><td>{{ row.created_at }}</td><td>{{ row.record_id }}</td>
       <td>{{ row.code }}</td><td>{{ row.metric }}</td></tr>{% endfor %}</tbody>
   </table>
-  <p>DPLAC pozostają w katalogu źródłowym. Archiwizacja dotyczy wyłącznie Toner, All Supplies i Reporting.</p>
+  <p>Po włączeniu nowej polityki wszystkie CSV, również DPLAC, trafiają do właściwego archiwum po zatwierdzeniu bazy. Pliki archiwalne są wyłącznie odczytywane. Harmonogram: codziennie 23:55 czasu polskiego.</p>
 </body>
 </html>

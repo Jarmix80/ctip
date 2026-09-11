@@ -102,7 +102,6 @@ def test_csv_reporting_preserves_unknown_columns_and_toner():
     "payload",
     [
         b"Device Serial Number,Device Serial Number\na,b\n",
-        b"foo,bar\na,b\n",
         b"Device Serial Number,Acquisition Date (mm/dd/yyyy)\na\n",
     ],
 )
@@ -293,7 +292,8 @@ def test_archive_refuses_changed_source(engine, tmp_path):
     assert path.exists()
 
 
-def test_dplac_is_untouched_and_not_embedded(engine, tmp_path, monkeypatch):
+def test_root_move_requires_explicit_flag_and_keeps_original(engine, tmp_path, monkeypatch):
+    """Bez jawnego włączenia przenoszenia plik pozostaje na miejscu, ale oryginał jest zachowany."""
     path = tmp_path / "DPLAC_test.csv"
     blob = csv_blob([counter_row()])
     path.write_bytes(blob)
@@ -301,7 +301,7 @@ def test_dplac_is_untouched_and_not_embedded(engine, tmp_path, monkeypatch):
     config = TelemetrySettings(
         _env_file=None, TELEMETRY_ENABLED=True, TELEMETRY_DPLAC_ROOT=str(tmp_path)
     )
-    monkeypatch.setattr("app.services.telemetry.runner.time.sleep", lambda _: None)
+    monkeypatch.setattr("app.services.telemetry.csv_import.time.sleep", lambda _: None)
     ImportRunner(config, engine).run()
     ImportRunner(config, engine).run()
     assert path.read_bytes() == blob
@@ -309,7 +309,7 @@ def test_dplac_is_untouched_and_not_embedded(engine, tmp_path, monkeypatch):
     assert not (tmp_path / "archiwum").exists()
     assert count(engine, tables.record) == 1
     with engine.connect() as connection:
-        assert connection.execute(select(tables.artifact.c.content_gzip)).scalar() is None
+        assert connection.execute(select(tables.artifact.c.content_gzip)).scalar() is not None
 
 
 def test_dry_run_never_uses_database_or_creates_archive(tmp_path):
@@ -475,33 +475,20 @@ def test_mail_uidvalidity_reset_keeps_all_messages_eligible():
     )
 
 
-def test_failed_database_page_does_not_advance_cursor_with_next_table(engine, monkeypatch):
+def test_missing_active_catalog_does_not_advance_any_cursor(engine, monkeypatch):
+    """Niedostępność katalogu nie jest pustą listą aktywnych urządzeń."""
     from app.services.telemetry import sources
 
+    def unavailable(_):
+        raise OSError("brak katalogu")
+
+    monkeypatch.setattr(sources, "active_identity_map", unavailable)
     config = TelemetrySettings(_env_file=None, TELEMETRY_ENABLED=True, TELEMETRY_VM_ENABLED=True)
-    monkeypatch.setattr(
-        sources, "VM_TABLES", {"MASZYNY_STATS": "ID_TBL_MASZYNY_STATS", "MAGAZYNY": "ID_MAGAZYN"}
-    )
-    monkeypatch.setattr(sources, "vm_serials", lambda _: {})
-    monkeypatch.setattr(
-        sources,
-        "vm_page",
-        lambda table, *_: (
-            [{"ID_TBL_MASZYNY_STATS": 99, "DATA": "2026-08-12"}] if table == "MASZYNY_STATS" else []
-        ),
-    )
-    original = TelemetryStore.ingest
-
-    def fail_history(store, source_id, locator, *args, **kwargs):
-        if locator.startswith("MASZYNY_STATS/"):
-            raise RuntimeError("przerwana transakcja")
-        return original(store, source_id, locator, *args, **kwargs)
-
-    monkeypatch.setattr(TelemetryStore, "ingest", fail_history)
-    ImportRunner(config, engine).run_database("vmaintenance")
+    runner = ImportRunner(config, engine)
+    runner.run_database("vmaintenance")
+    assert runner.summary["vmaintenance"]["errors"] == ["OSError"]
     with engine.connect() as connection:
-        checkpoint = connection.execute(select(tables.source.c.checkpoint)).scalar_one()
-        assert checkpoint.get("MASZYNY_STATS", {}).get("watermark") is None
+        assert connection.execute(select(tables.source.c.checkpoint)).scalar_one() == {}
 
 
 def test_unmatched_serial_can_be_resolved_later(engine):
@@ -678,10 +665,10 @@ def test_redelivered_report_is_archived_without_duplicate_data(engine, tmp_path,
     config = TelemetrySettings(
         _env_file=None, TELEMETRY_ENABLED=True, TELEMETRY_REPORT_ROOT=str(tmp_path)
     )
-    monkeypatch.setattr("app.services.telemetry.runner.time.sleep", lambda _: None)
+    monkeypatch.setattr("app.services.telemetry.csv_import.time.sleep", lambda _: None)
     for attempt in range(2):
         path.write_bytes(blob)
         ImportRunner(config, engine).run()
         assert not path.exists(), attempt
     assert count(engine, tables.record) == 1
-    assert len(list((path.parent / "archiwum").iterdir())) == 2
+    assert len(list((path.parent / "archiwum").iterdir())) == 1

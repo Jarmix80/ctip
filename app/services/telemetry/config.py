@@ -11,7 +11,7 @@ from app.core.config import SETTINGS_ENV_FILE, settings
 
 
 class TelemetrySettings(BaseSettings):
-    """Parametry niezależnego, wyłącznie odczytowego dostępu do źródeł."""
+    """Oddzielne zakresy źródeł i jawne uprawnienia do archiwizacji plików oraz poczty."""
 
     model_config = SettingsConfigDict(
         env_file=(SETTINGS_ENV_FILE, SETTINGS_ENV_FILE + ".telemetry"), extra="ignore"
@@ -26,6 +26,15 @@ class TelemetrySettings(BaseSettings):
     ms_enabled: bool = Field(False, alias="TELEMETRY_MS_ENABLED")
     ms_cpc_enabled: bool = Field(False, alias="TELEMETRY_MS_CPC_ENABLED")
     history_years: int = Field(3, ge=1, le=10, alias="TELEMETRY_HISTORY_YEARS")
+    vm_history_years: int = Field(2, ge=1, le=10, alias="TELEMETRY_VM_HISTORY_YEARS")
+    printradar_history_years: int = Field(
+        2, ge=1, le=10, alias="TELEMETRY_PRINTRADAR_HISTORY_YEARS"
+    )
+    reconcile_days: int = Field(7, ge=1, le=90, alias="TELEMETRY_RECONCILE_DAYS")
+    archive_root_csv: bool = Field(False, alias="TELEMETRY_ARCHIVE_ROOT_CSV")
+    mail_move_enabled: bool = Field(False, alias="TELEMETRY_MAIL_MOVE_ENABLED")
+    mail_processed_folder: str = Field("przetworzone", alias="TELEMETRY_MAIL_PROCESSED_FOLDER")
+    mail_rejected_folder: str = Field("odrzucone", alias="TELEMETRY_MAIL_REJECTED_FOLDER")
     vm_host: str = Field(settings.fb_v_host, alias="TELEMETRY_VM_HOST")
     vm_database: str = Field(settings.fb_v_database, alias="TELEMETRY_VM_DATABASE")
     vm_charset: str = Field("UTF8", alias="TELEMETRY_VM_CHARSET")
@@ -70,12 +79,23 @@ def validate_runtime(config: TelemetrySettings):
         check_test_host(config.vm_host)
         if not config.vm_user or config.vm_user.upper() == "SYSDBA":
             raise ValueError("vmaintenance_readonly_user_required")
-    if config.ms_enabled or config.ms_cpc_enabled:
+    if (
+        config.ms_enabled
+        or config.ms_cpc_enabled
+        or config.vm_enabled
+        or config.mail_enabled
+        or config.printradar_dsn.get_secret_value()
+    ):
         check_test_host(settings.fb_host)
         if not config.ms_user or config.ms_user.upper() == "SYSDBA":
             raise ValueError("ms_readonly_user_required")
     if config.mail_enabled:
         check_test_host(config.imap_host)
+        folders = (config.imap_folder, config.mail_processed_folder, config.mail_rejected_folder)
+        if len({value.casefold() for value in folders}) != 3 or any(
+            not value.strip() or any(char in value for char in '\r\n"\\') for value in folders
+        ):
+            raise ValueError("imap_folders_invalid")
     if config.printradar_dsn.get_secret_value():
         from psycopg.conninfo import conninfo_to_dict
 

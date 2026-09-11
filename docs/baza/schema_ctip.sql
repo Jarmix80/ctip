@@ -1727,3 +1727,32 @@ CREATE INDEX idx_telemetry_record_semantic ON ctip.telemetry_record (semantic_ke
 CREATE INDEX idx_telemetry_record_series ON ctip.telemetry_record (source_id, serial, observed_at);
 
 CREATE INDEX idx_telemetry_origin_archive ON ctip.telemetry_record_origin (archive_status);
+
+CREATE INDEX idx_telemetry_origin_archive_path ON ctip.telemetry_record_origin (source_id, archive_path);
+
+CREATE TABLE ctip.telemetry_mail_delivery (
+	id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	folder TEXT NOT NULL,
+	uidvalidity TEXT NOT NULL,
+	uid BIGINT NOT NULL,
+	sha256 TEXT NOT NULL,
+	message_id TEXT,
+	artifact_id TEXT,
+	decision TEXT NOT NULL,
+	reason TEXT NOT NULL,
+	target_folder TEXT NOT NULL,
+	move_status TEXT NOT NULL,
+	target_uidvalidity TEXT,
+	target_uid BIGINT,
+	attempts BIGINT NOT NULL,
+	last_error TEXT,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_telemetry_mail_uid UNIQUE (source_id, folder, uidvalidity, uid),
+	FOREIGN KEY(source_id) REFERENCES ctip.telemetry_source (id),
+	FOREIGN KEY(artifact_id) REFERENCES ctip.telemetry_artifact (id)
+);
+CREATE INDEX idx_telemetry_mail_hash ON ctip.telemetry_mail_delivery (sha256);
+CREATE INDEX idx_telemetry_mail_pending ON ctip.telemetry_mail_delivery (source_id, move_status);
