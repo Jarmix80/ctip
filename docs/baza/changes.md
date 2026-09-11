@@ -1,5 +1,12 @@
 # Zmiany schematu bazy CTIP
 
+## 2026-09-11
+
+- Migracja `a6d9e1f3b520` po `f2b7c9d4e6a1` dodaje siedem tabel `ctip.telemetry_*`: źródła, przebiegi importów, oryginały, wersje rekordów, pochodzenie, powiązania urządzeń oraz ostrzeżenia jakości.
+- Unikalność SHA-256 i wersji rekordów zabezpiecza ponowienia. Indeksy obejmują grupy semantyczne, serie czasowe, archiwizację i tożsamości urządzeń.
+- Nowe tabele nie zmieniają Shipping ani historii przyjęć magazynowych. Oryginały DPLAC pozostają w katalogu źródłowym; JSONB zachowuje odczytane dane.
+- Automatyczny downgrade jest zablokowany, aby rollback kodu nie usuwał pozyskanej historii. Szczegóły eksploatacji: `docs/instal/telemetria_urzadzen.md`.
+
 ## 2026-08-28
 
 - Migracja `c3d5e7f9a1b2` dodaje addytywne śledzenie DPD InfoServices bez zmiany danych zleceń, dokumentów MS ani istniejącego Archiwum.

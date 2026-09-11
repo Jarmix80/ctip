@@ -68,3 +68,4 @@ from .shipping import (  # noqa: F401
 )
 from .sms_out import SmsOut  # noqa: F401
 from .sms_template import SmsTemplate  # noqa: F401
+from .telemetry import TELEMETRY_TABLES  # noqa: F401

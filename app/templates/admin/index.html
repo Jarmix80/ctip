@@ -50,6 +50,7 @@
           <span>CTIP Administrator</span>
         </div>
         <nav class="admin-nav">
+          <a x-show="isAdmin" x-cloak href="/admin/telemetry">Źródła danych urządzeń</a>
           <button :class="{ 'active': section === 'dashboard' }" @click.prevent="openSection('dashboard')">
             <span class="icon">🏠</span>
             Dashboard
