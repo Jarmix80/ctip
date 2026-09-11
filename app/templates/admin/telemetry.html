@@ -23,12 +23,13 @@
   </div>
   <h2>Źródła i świeżość</h2>
   <table>
-    <thead><tr><th>Źródło</th><th>Włączone</th><th>Ostatnia kontrola</th><th>Ostatni pomiar</th><th>Błąd</th></tr></thead>
+    <thead><tr><th>Źródło</th><th>Włączone</th><th>Ostatnia kontrola</th><th>Ostatni pomiar</th><th>Okres CPC (początek)</th><th>Błąd</th></tr></thead>
     <tbody>{% for row in sources %}<tr>
       <td>{{ row.name }}</td><td>{{ 'Tak' if row.enabled else 'Nie' }}</td>
       <td>{{ row.last_success_at or 'Brak' }}</td><td>{{ row.last_observed_at or 'Brak ustalonej daty' }}</td>
+      <td>{{ row.last_billing_period or '—' }}</td>
       <td class="error">{{ row.last_error or '—' }}</td>
-    </tr>{% else %}<tr><td colspan="5">Brak uruchomionych źródeł.</td></tr>{% endfor %}</tbody>
+    </tr>{% else %}<tr><td colspan="6">Brak uruchomionych źródeł.</td></tr>{% endfor %}</tbody>
   </table>
   <h2>Ostatnie 50 importów</h2>
   <table><thead><tr><th>Początek</th><th>Źródło rekordu</th><th>Stan</th><th>Statystyki</th><th>Błąd</th></tr></thead>

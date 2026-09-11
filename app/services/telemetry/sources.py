@@ -7,6 +7,7 @@ import re
 import ssl
 import unicodedata
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import firebirdsql
 import psycopg
@@ -123,6 +124,43 @@ def vm_serials(config=None) -> dict:
             normalized = serial_number(serial)
             result[key] = normalized if key not in result or result[key] == normalized else ""
     return result
+
+
+def ms_cpc_serials(config) -> dict:
+    """Wybiera urządzenia aktywnych umów, używając logicznego ID_MASZYNA i technicznego ID umowy."""
+    result = {}
+    with firebird_connection(config=config) as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            "SELECT m.ID_MASZYNA, m.SERIAL FROM MASZYNA m "
+            "JOIN UMOWACPC u ON u.ID_UMOWACPC_TABLE=m.ID_UMOWACPC WHERE u.AKTYWNA='TAK'"
+        )
+        for identifier, serial in cursor.fetchall():
+            normalized = serial_number(serial)
+            result[identifier] = (
+                normalized if identifier not in result or result[identifier] == normalized else ""
+            )
+    return result
+
+
+def ms_cpc_page(after, limit: int, config):
+    """Czyta trzy lata okresów tylko urządzeń obecnie na aktywnych umowach, bez zapisu MS."""
+    today = datetime.now(UTC).date()
+    start_year = today.year - config.history_years
+    with firebird_connection(config=config) as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            f"SELECT FIRST {int(limit)} c.* FROM CPC c WHERE c.ID_CPC_TABLE>? "
+            "AND (c.ROK>? OR (c.ROK=? AND c.MIESIAC>=?)) "
+            "AND (c.ROK<? OR (c.ROK=? AND c.MIESIAC<=?)) "
+            "AND c.MIESIAC BETWEEN 1 AND 12 "
+            "AND EXISTS (SELECT 1 FROM MASZYNA m JOIN UMOWACPC u "
+            "ON u.ID_UMOWACPC_TABLE=m.ID_UMOWACPC "
+            "WHERE m.ID_MASZYNA=c.ID_MASZYNA AND u.AKTYWNA='TAK') ORDER BY c.ID_CPC_TABLE",
+            (after or 0, start_year, start_year, today.month, today.year, today.year, today.month),
+        )
+        names = [column[0].strip() for column in cursor.description]
+        return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
 
 
 def vm_page(table: str, after, limit: int, config=None):

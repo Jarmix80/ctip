@@ -19,6 +19,7 @@ Migracja addytywna: `a6d9e1f3b520`, poprzednik `f2b7c9d4e6a1`.
 | V-Maintenance | MASZYNY, MASZYNY_STATS, WEZWANIE, MAGAZYNY, DODAJ, CPC | Wersjonowane dokumenty JSON, identyfikatory tabel i wierszy |
 | PrintRadar | Urządzenia, liczniki, migawki serwisowe, materiały, jakość źródła | Przetworzone dane JSON, identyfikatory próbek; pełne tablice SNMP/HTML pozostają w PrintRadar |
 | MS | Powiązanie SERIAL z ID_MASZYNA i ID_KLIENT | Wersjonowane powiązania, bez kopiowania dokumentów magazynowych |
+| MS CPC | Miesięczne liczniki początku i końca, okres, historyczne ID urządzenia/klienta/umowy/FV, pełny wiersz CPC | Wersjonowany JSON w tych samych tabelach; bez odczytu i kopiowania pozycji FV |
 
 Źródła nie są traktowane jako dowody faktycznej wysyłki tonera. Pola `ZAPAS_*`
 oraz zapotrzebowanie ze zgłoszeń V-Maintenance pozostają danymi źródłowymi.
@@ -42,6 +43,8 @@ połączenia źródłowe pozostają wyłączone.
 | TELEMETRY_MAIL_ENABLED | Włączenie poczty; używa REMOTE_EMAIL_ADDRESS, REMOTE_EMAIL_PASSWORD, REMOTE_IMAP_HOST, REMOTE_IMAP_PORT |
 | TELEMETRY_IMAP_FOLDER | Domyślnie INBOX |
 | TELEMETRY_VM_ENABLED / TELEMETRY_MS_ENABLED | Włączenie odczytu Firebird |
+| TELEMETRY_MS_CPC_ENABLED | Niezależne, domyślnie wyłączone pozyskiwanie miesięcznych liczników MS |
+| TELEMETRY_HISTORY_YEARS | Domyślnie 3 lata; MS CPC pobiera 36 pełnych miesięcy oraz bieżący okres, tylko urządzenia aktualnie na aktywnych umowach |
 | TELEMETRY_VM_HOST / TELEMETRY_VM_DATABASE / TELEMETRY_VM_CHARSET | Osobny adres, baza i kodowanie V-Maintenance |
 | TELEMETRY_VM_USER / TELEMETRY_VM_PASSWORD | Dedykowane konto odczytowe V-Maintenance |
 | TELEMETRY_MS_USER / TELEMETRY_MS_PASSWORD | Dedykowane konto odczytowe MS, bez zmiany konta używanego przez Shipping |
@@ -117,6 +120,82 @@ Podgląd administratora: `/admin/telemetry`; API tylko do odczytu:
 grupy semantyczne, kolejkę archiwizacji i ostatnie 50 importów oraz ostrzeżeń.
 Oryginalne wiadomości i poświadczenia nie są zwracane przez to API.
 
+### Miesięczne liczniki MS
+
+Źródło `ms_cpc` zapisuje rekordy `kind=billing_period`, klucz `CPC:ID_CPC_TABLE`.
+Nie wymaga nowych tabel ani kolejnej migracji: istniejące JSONB, historia wersji,
+pochodzenie, powiązania i ostrzeżenia obejmują również te dane.
+
+- `LICZNIK_MONO_START/END`, `LICZNIK_KOLOR_START/END`, `LICZNIK_MONOA3_START/END`,
+  `LICZNIK_KOLORA3_START/END` oraz `LICZNIK_SKAN_START/END` są osobnymi pomiarami
+  `billing.start.*` i `billing.end.*`; A3 nie jest ponownie dodawane do sumy.
+- `ROK` i `MIESIAC` wyznaczają `payload.__ctip_billing__.start/end`. Brak daty
+  faktycznego odczytu oznacza `observed_at=NULL`, `time_precision=month`.
+  Okres jest pokazany osobno w panelu i nie poprawia świeżości telemetrii.
+- `ID_FAKTURA` oznacza wyłącznie powiązanie z fakturą. Nie dowodzi daty odczytu
+  ani fizycznej dostawy tonera. Pozycje bez FV pozostają z `billing_uninvoiced`.
+- Pierwotne `ID_KLIENT` i `ID_MASZYNA` tworzą powiązanie `source_confirmed`;
+  późniejszy obecny właściciel numeru seryjnego nie nadpisuje historii.
+- Spadek między początkiem i końcem daje `billing_counter_decrease`; pomiędzy
+  zafakturowanymi okresami tej samej maszyny i umowy — `billing_period_decrease`.
+  Błędny okres pozostaje ostrzeżeniem parsera, nigdy nie jest normalizowany z
+  miesiąca 0 na styczeń. Zapytanie zakresowe nie pobiera okresów spoza okna.
+
+Zakres aktywności wynika z `MASZYNA.ID_UMOWACPC -> UMOWACPC.ID_UMOWACPC_TABLE`
+i `UMOWACPC.AKTYWNA='TAK'`. Maszyny wycofane z aktywnych umów nie są pobierane.
+Historia obecnie aktywnej maszyny może zawierać poprzednich klientów; ich
+identyfikatory są zachowane i przyszła analiza zamówień musi je rozdzielać.
+
+Klucz maszyny w CPC wskazuje **logiczne `MASZYNA.ID_MASZYNA`**, nie techniczne
+`ID_MASZYNA_TABLE`. Potwierdzono to na produkcji przez zgodność numerów seryjnych
+z opisami pozycji faktur: 27 zgodnych przypadków, 3 bez rozstrzygającego opisu,
+0 potwierdzeń alternatywnego połączenia technicznego. Analogicznie nie należy
+zastępować technicznego ID umowy jej numerem logicznym.
+
+Audyt 11 września 2026 r.: CPC zawiera 174763 wiersze dla 3885 historycznych
+urządzeń. Dla 1001 z 1019 urządzeń aktualnie aktywnych umów istnieje licznik mono
+końca okresu lipiec–wrzesień 2026 r. (98,2%). To pokrycie okresowe, nie gwarancja
+świeżego odczytu. W całej historii znaleziono 1435 błędnych okresów, 87 spadków
+wewnątrz okresu i 2455 grup wielokrotnych wpisów maszyna/umowa/miesiąc. Nie
+usuwamy tych danych z MS; wersje i grupy semantyczne nie wybierają arbitralnie wyniku.
+
+W zakresie wrzesień 2023–wrzesień 2026 dla maszyn obecnie na aktywnych umowach
+zapytanie zwraca 25461 okresów dla 1001 urządzeń. Nie pobiera całej historii
+174763 okresów ani urządzeń wycofanych z aktywnych umów.
+
+### Dane dla przyszłej osi czasu urządzenia
+
+Wykresy i blokowanie zamówień nie należą do tego etapu. Oryginały i ich pełne
+pola muszą jednak pozwolić na późniejsze odtworzenie następujących zdarzeń:
+
+| Zdarzenie | Źródło i interpretacja |
+| --- | --- |
+| Narastający licznik i przyrost kopii | Reporting/DPLAC, V-Maintenance, PrintRadar; CPC jako osobny okres rozliczeniowy, nie odczyt dzienny |
+| Wymiana tonera, kolor, licznik wymiany | Toner/All Supplies, zdarzenia Remote i historie materiałów; wzrost poziomu jest poszlaką, nie dowodem wysyłki |
+| Zamówienie materiału | Zgłoszenie i zlecenie; nie jest równoznaczne z wydaniem ani wymianą |
+| Wydanie magazynowe | MS `ZAKUPY` RW/WZ i `ZAKPOZYCJA`; ilość faktycznie pobrana jest liczbą w `POBRANO`, nie flagą TAK/NIE |
+| Nadanie, odbiór kuriera, doręczenie | MS `ZLECENIE.DATA_PRZES/PRZESYLKA`, CTIP `shipping_shipment.handed_over_at`, zdarzenia `shipping_tracking_event.event_time` wraz z anulowaniem |
+| Awaria, zacięcie, naprawa | Historie XML/tekst Remote, przetworzone migawki PrintRadar, V `WEZWANIE`, MS `ZLECENIE.PROBLEM/USZKODZENIE` i daty serwisu |
+
+Potwierdzono odczyt historii RW/WZ z produkcyjnego MS. W trzyletnim zakresie
+połączonym z aktualnie aktywnymi maszynami występuje 6375 powiązań pozycji RW
+i 7 WZ. Warunek nazwy zawierającej `TONER` wskazuje 4845 powiązań kandydatów;
+to **nie** jest jeszcze liczba jednoznacznych wysyłek ani zatwierdzony słownik
+tonerów. Część nazw może dotyczyć innych materiałów, a dokument może obsługiwać
+wiele zleceń. Tylko 72 z tych powiązań zawierają `DATA_PRZES`; brak tej daty nie
+może zostać zastąpiony datą rozchodu jako rzekomo potwierdzoną wysyłką.
+
+Przy kolejnym importerze rozchodów należy zachować `ID_ZAKPOZYCJA_TABLE`,
+`ID_ZAKUPY_TABLE`, `RODZAJ_DOK`, `DATA_WYST`, `DATA_PRZY_WYDA`, `ID_MAGAZYN`,
+`INDEKS`, `NAZWA`, `ILOSC`, `POBRANO` oraz źródłowe zlecenie/klienta/maszynę.
+Dokument łączymy przez globalne `ZLECENIE.ID_RW/ID_WZ`; pozycje zlecenia
+`ZPOZYCJA` przez parę logiczny numer/rok. Nie mnożymy całej ilości wspólnego
+dokumentu przez liczbę maszyn i nie liczymy ponownie tej samej dostawy jako FV.
+Niejednoznaczny podział pozostaje do weryfikacji. Kolor i typ materiału wymagają
+zgodności kartoteki z kodami `MODEL.TONER/TONER_C/TONER_M/TONER_Y`, a nie tylko
+wyszukania słowa w nazwie. Ten importer rozchodów jest przygotowany koncepcyjnie
+na bazie potwierdzonych pól; nie jest jeszcze włączony jako źródło workera.
+
 - `counter_decrease`: spadek porównywalnego licznika narastającego, także wykryty po dołożeniu starszej historii.
 - `conflicting_value`: różne wartości w tej samej grupie semantycznej.
 - `invalid_range`: licznik ujemny lub procent poza zakresem 0–100.
@@ -146,6 +225,8 @@ Raportowane są kody błędów, nie pełne wyjątki sterowników zawierające po
    tabel i zapisuje `.env.telemetry` z prywatnymi ACL dla SYSTEM, administratorów
    i konta wykonującego wdrożenie. Nie zmienia globalnego profilu SYSTEM ani
    poświadczeń istniejących aplikacji. Przy niepowodzeniu moduł pozostaje wyłączony.
+   Opcja `--ms-cpc` dodatkowo nadaje SELECT do `CPC` i `UMOWACPC` w MS oraz
+   włącza źródło miesięczne. Nie nadaje praw do zapisu ani do tabel faktur.
 4. Wykonać kontrolny odczyt przez `scripts/windows/run_telemetry.py --dry-run --once`.
 5. Zarejestrować `scripts/windows/install_telemetry_task.ps1`, a dla pierwszego
    pełnego pobrania dodatkowo wywołać go z `-Backfill`. Zadanie regularne działa

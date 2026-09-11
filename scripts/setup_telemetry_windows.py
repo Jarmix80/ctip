@@ -146,9 +146,12 @@ def provision_postgres(base: dict, printradar: dict, password: str, existing_pas
     return make_conninfo(**values)
 
 
-def provision_firebird(base: dict, password: str, existing_password: bool, vm_database: str):
+def provision_firebird(
+    base: dict, password: str, existing_password: bool, vm_database: str, *, ms_cpc=False
+):
     """Nadaje SELECT do jawnej listy tabel, używając osobnego kodowania V-Maintenance."""
-    for database, tables in ((base["FB_DATABASE"], ("MASZYNA",)), (vm_database, VM_TABLES)):
+    ms_tables = ("MASZYNA", "CPC", "UMOWACPC") if ms_cpc else ("MASZYNA",)
+    for database, tables in ((base["FB_DATABASE"], ms_tables), (vm_database, VM_TABLES)):
         charset = VM_CHARSET if database == vm_database else base.get("FB_CHARSET", "WIN1250")
         connection = firebirdsql.connect(
             host=base["FB_HOST"],
@@ -205,6 +208,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Konfiguracja produkcyjnej telemetrii CTIP")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument(
+        "--ms-cpc",
+        action="store_true",
+        help="Dodanie wyłącznie odczytu historii rozliczeniowej MS CPC",
+    )
+    parser.add_argument(
         "--mail-stdin",
         action="store_true",
         help="Pobranie wyłącznie czterech ustawień IMAP ze standardowego wejścia",
@@ -246,6 +254,9 @@ def main(argv=None):
         "TELEMETRY_DPLAC_ROOT": str(root),
         "TELEMETRY_VM_ENABLED": "true",
         "TELEMETRY_MS_ENABLED": "true",
+        "TELEMETRY_MS_CPC_ENABLED": (
+            "true" if args.ms_cpc or existing.get("TELEMETRY_MS_CPC_ENABLED") == "true" else "false"
+        ),
         "TELEMETRY_MAIL_ENABLED": "true",
         "TELEMETRY_VM_HOST": base["FB_HOST"],
         "TELEMETRY_VM_DATABASE": vm_database,
@@ -264,7 +275,13 @@ def main(argv=None):
         verification.execute("SELECT sample_id FROM raw_counter_samples LIMIT 1").fetchone()
         verification.rollback()
     print(json.dumps({"step": "postgres_readonly_verified"}))
-    provision_firebird(base, fb_password, bool(existing.get("TELEMETRY_VM_PASSWORD")), vm_database)
+    provision_firebird(
+        base,
+        fb_password,
+        bool(existing.get("TELEMETRY_VM_PASSWORD")),
+        vm_database,
+        ms_cpc=values["TELEMETRY_MS_CPC_ENABLED"] == "true",
+    )
     print(json.dumps({"step": "firebird_readonly_verified"}))
     for name in ("Toner", "All Supplies", "Reporting"):
         directory = root / "tonery" / name

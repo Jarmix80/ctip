@@ -13,6 +13,7 @@ from sqlalchemy import select, update
 
 from app.models import telemetry as tables
 from app.services.telemetry import sources
+from app.services.telemetry.billing import cpc_reading
 from app.services.telemetry.parsers import Reading, parse_csv, parse_mail, serial_number
 from app.services.telemetry.store import TelemetryStore
 
@@ -296,6 +297,9 @@ class ImportRunner:
         if kind == "vmaintenance":
             identities = sources.vm_serials(self.config)
             tables_map = sources.VM_TABLES
+        elif kind == "ms_cpc":
+            identities = sources.ms_cpc_serials(self.config)
+            tables_map = {"CPC": "ID_CPC_TABLE"}
         else:
             identities = {}
             after = None
@@ -318,7 +322,7 @@ class ImportRunner:
             tables_map = sources.PR_TABLES
         for table, primary in tables_map.items():
             state = checkpoint.setdefault(table, {})
-            mutable = table in {
+            mutable = kind != "ms_cpc" and table in {
                 "MASZYNY",
                 "WEZWANIE",
                 "MAGAZYNY",
@@ -334,6 +338,9 @@ class ImportRunner:
                     if kind == "vmaintenance":
                         rows = sources.vm_page(table, after, self.config.page_size, self.config)
                         readings = [sources.vm_reading(table, row, identities) for row in rows]
+                    elif kind == "ms_cpc":
+                        rows = sources.ms_cpc_page(after, self.config.page_size, self.config)
+                        readings = [cpc_reading(row, identities) for row in rows]
                     else:
                         rows = sources.printradar_page(
                             self.config.printradar_dsn.get_secret_value(),
@@ -350,14 +357,14 @@ class ImportRunner:
                     if rows:
                         watermark = (
                             max(row[primary] for row in rows)
-                            if kind == "vmaintenance" or mutable
+                            if kind in {"vmaintenance", "ms_cpc"} or mutable
                             else max([row["created_at"], row[primary]] for row in rows)
                         )
                         if state.get("watermark") is None or watermark > state["watermark"]:
                             state["watermark"] = watermark
                         after = (
                             rows[-1][primary]
-                            if full or kind == "vmaintenance"
+                            if full or kind in {"vmaintenance", "ms_cpc"}
                             else [rows[-1]["created_at"], rows[-1][primary]]
                         )
                     if full:
@@ -380,6 +387,7 @@ class ImportRunner:
                 connection.execute(update(tables.source).values(enabled=False))
         self.run_csv()
         for enabled, name, callback in (
+            (self.config.ms_cpc_enabled, "ms_cpc", lambda: self.run_database("ms_cpc")),
             (self.config.mail_enabled, "remote_mail", self.run_mail),
             (self.config.vm_enabled, "vmaintenance", lambda: self.run_database("vmaintenance")),
             (

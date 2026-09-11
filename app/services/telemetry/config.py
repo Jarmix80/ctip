@@ -24,6 +24,8 @@ class TelemetrySettings(BaseSettings):
     mail_enabled: bool = Field(False, alias="TELEMETRY_MAIL_ENABLED")
     vm_enabled: bool = Field(False, alias="TELEMETRY_VM_ENABLED")
     ms_enabled: bool = Field(False, alias="TELEMETRY_MS_ENABLED")
+    ms_cpc_enabled: bool = Field(False, alias="TELEMETRY_MS_CPC_ENABLED")
+    history_years: int = Field(3, ge=1, le=10, alias="TELEMETRY_HISTORY_YEARS")
     vm_host: str = Field(settings.fb_v_host, alias="TELEMETRY_VM_HOST")
     vm_database: str = Field(settings.fb_v_database, alias="TELEMETRY_VM_DATABASE")
     vm_charset: str = Field("UTF8", alias="TELEMETRY_VM_CHARSET")
@@ -68,7 +70,7 @@ def validate_runtime(config: TelemetrySettings):
         check_test_host(config.vm_host)
         if not config.vm_user or config.vm_user.upper() == "SYSDBA":
             raise ValueError("vmaintenance_readonly_user_required")
-    if config.ms_enabled:
+    if config.ms_enabled or config.ms_cpc_enabled:
         check_test_host(settings.fb_host)
         if not config.ms_user or config.ms_user.upper() == "SYSDBA":
             raise ValueError("ms_readonly_user_required")
