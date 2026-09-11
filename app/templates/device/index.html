@@ -57,7 +57,7 @@
             </a>
             <a href="/device/bnp-buyout" data-device-nav="bnp-buyout">
               <span class="device-nav-symbol" aria-hidden="true">W</span>
-              <span><strong>Wykup BNP</strong><small>Zmiana KP na WKP</small></span>
+              <span><strong>Wykup BNP</strong><small>Ewidencja WKP i PZ</small></span>
             </a>
             <a href="/device/warehouse" data-device-nav="warehouse">
               <span class="device-nav-symbol" aria-hidden="true">▦</span>
@@ -306,7 +306,7 @@
               <h2>Wykup BNP</h2>
               <p class="flow-panel-lead">
                 Wyszukaj urządzenie po numerze seryjnym, sprawdź klienta i kartoteki,
-                a następnie utwórz PZ wykupu i zmień KP na WKP.
+                a następnie utwórz PZ wykupu i ustaw docelową ewidencję WKP.
               </p>
             </div>
             {% if show_intake_prototypes %}
@@ -399,7 +399,7 @@
                     <h3>Brakuje pozycji na magazynie 27</h3>
                     <p>
                       Przycisk utworzy kartotekę <strong>WKP</strong> ze stanem
-                      <strong>0 szt.</strong> Nie tworzy jeszcze dokumentu PZ i nie zmienia KP maszyny.
+                      <strong>0 szt.</strong> Nie tworzy jeszcze dokumentu PZ i nie zmienia ewidencji maszyny.
                     </p>
                   </div>
                   <button
@@ -412,7 +412,7 @@
                 </article>
                 <label class="device-check">
                   <input id="device-bnp-confirm" type="checkbox">
-                  <span>Potwierdzam dane dokumentu, zmianę KP na WKP i przyjęcie ilości 1.</span>
+                  <span>Potwierdzam dane dokumentu, zmianę ewidencji na docelową WKP i przyjęcie ilości 1.</span>
                 </label>
                 <article class="device-bnp-action-card device-bnp-action-card-complete">
                   <div>
@@ -420,8 +420,8 @@
                     <h3>Zapisz wykup BNP</h3>
                     <p>
                       Przycisk utworzy PZ z ilością <strong>1 szt.</strong>, przyjmie urządzenie na
-                      magazyn 27 oraz zmieni oznaczenie maszyny z <strong>KP</strong> na
-                      <strong>WKP</strong>.
+                      magazyn 27 oraz ustawi docelową ewidencję maszyny <strong>WKP</strong>
+                      według numeru KP lub numeru seryjnego.
                     </p>
                   </div>
                   <button
