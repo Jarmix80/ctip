@@ -5,7 +5,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import insert, or_, select, update
+from sqlalchemy import and_, insert, or_, select, update
 
 from app.models import telemetry as tables
 from app.services.telemetry.parsers import PARSER_VERSION, Reading, fingerprint
@@ -169,6 +169,7 @@ class TelemetryStore:
                     imported_at=utcnow(),
                     payload=reading.payload,
                     measurements=reading.measurements,
+                    device_link_id=self.billing_link(source_id, reading),
                 )
                 self.validate(record_id, source_id, reading)
                 counts["new"] += 1
@@ -215,6 +216,31 @@ class TelemetryStore:
             },
         }
 
+    def billing_link(self, source_id: str, reading: Reading):
+        """Zachowuje klienta z historycznego CPC zamiast dzisiejszego właściciela numeru seryjnego."""
+        if reading.kind != "billing_period":
+            return None
+        machine, customer = (reading.payload.get(key) for key in ("ID_MASZYNA", "ID_KLIENT"))
+        if not all(isinstance(value, int) and value > 0 for value in (machine, customer)):
+            return None
+        key = f"CPC:{machine}:{customer}"
+        current = self.connection.execute(
+            select(tables.device_link.c.id).where(
+                tables.device_link.c.source_id == source_id,
+                tables.device_link.c.external_key == key,
+            )
+        ).scalar()
+        return current or self.add(
+            tables.device_link,
+            source_id=source_id,
+            external_key=key,
+            serial=reading.serial or None,
+            ms_machine_id=machine,
+            ms_customer_id=customer,
+            status="source_confirmed",
+            valid_from=utcnow(),
+        )
+
     def add_issue(self, record_id: str, code: str, metric: str = "", related=None, **details):
         """Dodaje idempotentne ostrzeżenie, zachowując podejrzany pomiar."""
         present = self.connection.execute(
@@ -237,11 +263,13 @@ class TelemetryStore:
 
     def validate(self, record_id: str, source_id: str, reading: Reading):
         """Sprawdza zakresy i oba sąsiedztwa czasowe, bez korygowania wartości."""
+        if reading.kind == "billing_period":
+            self.validate_billing(record_id, source_id, reading)
         if not reading.serial:
             self.add_issue(record_id, "missing_serial")
-        if reading.observed_at is None:
+        if reading.observed_at is None and reading.kind != "billing_period":
             self.add_issue(record_id, "time_" + reading.time_basis)
-        elif reading.observed_at > utcnow() + timedelta(days=1):
+        elif reading.observed_at is not None and reading.observed_at > utcnow() + timedelta(days=1):
             self.add_issue(record_id, "future_time")
         for code, metric in reading.issues:
             self.add_issue(record_id, code, metric)
@@ -324,14 +352,60 @@ class TelemetryStore:
                     if reading.measurements[metric] != other["measurements"][metric]:
                         self.add_issue(record_id, "conflicting_value", metric, other["id"])
 
+    def validate_billing(self, record_id: str, source_id: str, reading: Reading):
+        """Porównuje zafakturowane okresy tej samej maszyny i umowy, nie daty wystawienia FV."""
+        period = reading.payload["__ctip_billing__"]
+        if not period["start"] or not period["invoice_linked"]:
+            return
+        period_column = tables.record.c.payload["__ctip_billing__"]["start"].as_string()
+        query = select(tables.record).where(
+            tables.record.c.source_id == source_id,
+            tables.record.c.kind == "billing_period",
+            tables.record.c.id != record_id,
+            tables.record.c.payload["ID_MASZYNA"].as_integer() == reading.payload.get("ID_MASZYNA"),
+            tables.record.c.payload["ID_UMOWACPC"].as_integer()
+            == reading.payload.get("ID_UMOWACPC"),
+            tables.record.c.payload["__ctip_billing__"]["invoice_linked"].as_boolean().is_(True),
+        )
+        for previous in (True, False):
+            condition = (
+                period_column < period["start"] if previous else period_column > period["start"]
+            )
+            order = period_column.desc() if previous else period_column.asc()
+            neighbor = (
+                self.connection.execute(
+                    query.where(condition)
+                    .order_by(order, tables.record.c.imported_at.desc())
+                    .limit(1)
+                )
+                .mappings()
+                .first()
+            )
+            if neighbor is None:
+                continue
+            for metric, value in reading.measurements.items():
+                other = neighbor["measurements"].get(metric)
+                if not metric.startswith("billing.end.") or other is None:
+                    continue
+                if (previous and value < other) or (not previous and other < value):
+                    self.add_issue(
+                        record_id if previous else neighbor["id"],
+                        "billing_period_decrease",
+                        metric,
+                        neighbor["id"] if previous else record_id,
+                    )
+
     def bind_devices(self, source_id: str, mapping: dict):
         """Wersjonuje wyłącznie jednoznaczne powiązania MS bez przepisywania historii."""
-        unresolved = or_(
-            tables.record.c.device_link_id.is_(None),
-            tables.record.c.device_link_id.in_(
-                select(tables.device_link.c.id).where(
-                    tables.device_link.c.status.in_(["unmatched", "ambiguous"])
-                )
+        unresolved = and_(
+            tables.record.c.kind != "billing_period",
+            or_(
+                tables.record.c.device_link_id.is_(None),
+                tables.record.c.device_link_id.in_(
+                    select(tables.device_link.c.id).where(
+                        tables.device_link.c.status.in_(["unmatched", "ambiguous"])
+                    )
+                ),
             ),
         )
         identities = (

@@ -85,8 +85,32 @@ async def telemetry_status(session, admin_context):
         .all()
     )
     dates = {row["source_id"]: row["observed_at"] for row in freshness}
+    billing = (
+        (
+            await session.execute(
+                select(
+                    tables.record.c.source_id,
+                    func.max(
+                        tables.record.c.payload["__ctip_billing__"]["start"].as_string()
+                    ).label("period"),
+                )
+                .where(tables.record.c.kind == "billing_period")
+                .group_by(tables.record.c.source_id)
+            )
+        )
+        .mappings()
+        .all()
+    )
+    periods = {row["source_id"]: row["period"] for row in billing}
     return {
-        "sources": [{**row, "last_observed_at": dates.get(row["id"])} for row in source_rows],
+        "sources": [
+            {
+                **row,
+                "last_observed_at": dates.get(row["id"]),
+                "last_billing_period": periods.get(row["id"]),
+            }
+            for row in source_rows
+        ],
         "imports": [dict(row) for row in imports],
         "issues": [dict(row) for row in issues],
         "records": count,
