@@ -1,5 +1,6 @@
 """Odczyt stronicowanych porcji Firebird, PrintRadar i IMAP bez zapisów źródłowych."""
 
+import base64
 import imaplib
 import json
 import re
@@ -44,7 +45,16 @@ PR_METRICS = {
 
 
 def serializable(value):
-    """Zachowuje daty i liczby źródłowe w bezstratnym dokumencie JSON."""
+    """Zachowuje dane źródłowe, kodując tekst z NUL niedopuszczalnym w PostgreSQL JSONB."""
+    if isinstance(value, str) and "\x00" in value:
+        return {
+            "__telemetry_encoding__": "utf-8/base64",
+            "value": base64.b64encode(value.encode("utf-8")).decode("ascii"),
+        }
+    if isinstance(value, dict):
+        return {key: serializable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [serializable(item) for item in value]
     return json.loads(json.dumps(value, default=str, ensure_ascii=False))
 
 
@@ -143,6 +153,11 @@ def vm_reading(table: str, row: dict, identities: dict) -> Reading:
     )
     result = Reading(
         f"{table}:{row[VM_TABLES[table]]}", kind, serial, payload, observed, precision, basis
+    )
+    result.issues.extend(
+        ("source_text_encoded", key)
+        for key, value in row.items()
+        if isinstance(value, str) and "\x00" in value
     )
     if kind == "reading":
         for source, target in VM_METRICS.items():

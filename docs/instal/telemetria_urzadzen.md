@@ -60,6 +60,10 @@ V-Maintenance wymaga osobnego połączenia `UTF8`: baza ma domyślne `WIN1250`, 
 część kolumn `NONE` zawiera tekst UTF-8. Dziedziczenie kodowania MS powodowało błąd
 dekodowania i wtórny błąd protokołu podczas zamykania połączenia. Nie zastępujemy
 nieznanych znaków ani nie zmieniamy bazy źródłowej; kodowanie MS pozostaje bez zmian.
+Niektóre pola V zawierają także znak NUL, którego PostgreSQL JSONB nie przyjmuje.
+Taki tekst jest zachowany jako obiekt `{"__telemetry_encoding__": "utf-8/base64",
+"value": "..."}` z bezstratnie zakodowaną wartością, bez obcinania treści. Rekord
+otrzymuje ostrzeżenie `source_text_encoded` z nazwą pola.
 
 ## Uruchamianie
 

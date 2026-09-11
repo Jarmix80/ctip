@@ -1,5 +1,6 @@
 """Izolowane testy pozyskiwania danych, bez dostępu do produkcji i źródeł sieciowych."""
 
+import base64
 import csv
 import io
 from datetime import UTC, datetime
@@ -395,6 +396,25 @@ def test_vmaintenance_preserves_text_status_and_source_stock():
     assert "toner.black.percent" not in reading.measurements
     assert reading.payload["ZAPAS_BK"] == 2
     assert reading.precision == "date"
+
+
+def test_vmaintenance_preserves_nul_text_without_invalid_jsonb(engine):
+    """Zachowuje NUL i polskie znaki bez usuwania treści oraz bez kolizji z tekstem ucieczki."""
+    from app.services.telemetry.sources import serializable
+
+    original = "Łódź\x00opis"
+    converted = serializable({"text": [original, r"Łódź\u0000opis"]})
+    encoded = converted["text"][0]
+    assert encoded["__telemetry_encoding__"] == "utf-8/base64"
+    assert base64.b64decode(encoded["value"]).decode("utf-8") == original
+    assert converted["text"][1] == r"Łódź\u0000opis"
+    reading = vm_reading(
+        "WEZWANIE", {"ID_TBL_WEZWANIE": 1, "OPIS": original, "ID_MASZYNA": 1}, {1: "TEST"}
+    )
+    assert reading.payload["OPIS"] == encoded
+    assert ("source_text_encoded", "OPIS") in reading.issues
+    assert ingest(engine, [reading])["new"] == 1
+    assert ingest(engine, [reading])["new"] == 0
 
 
 def test_printradar_material_aliases_share_semantic_key():
