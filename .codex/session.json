@@ -1,10 +1,12 @@
 {
-  "timestamp": "2026-09-10",
+  "timestamp": "2026-09-11",
   "summary": [
+    "Wdrożono fundament telemetrii na produkcji: 25461 okresów MS CPC dla 1001 aktywnych urządzeń oraz 1886 rekordów pilota pozostałych źródeł.",
+    "Kod produkcyjny 8302a6e, komponent testowy 7d55899; 73 testy ukierunkowane poprawne. Pełny import pozostałych źródeł i zadania cykliczne oczekują na ustalenie zakresu filtrów.",
     "Wdrożono wyrównanie izolowanego stosu ctip-test z poprawkami produkcyjnymi, obraz 902d0556f5580ad58833b6ef0088977e797faa69.",
     "Scalono gałąź release/genform-search-all-2026-09-03 z gałęzią test/shipping-retry-local-validation-2026-09-03, zachowując Delivery, CRM, LAB i Bot Identity.",
     "Profil testowy zachowuje PostgreSQL ctip_test, lokalny Firebird, PBX mock-ctip, DPD mock, przechwytywanie komunikacji oraz wyłączone zapisy Firebird i automatyczne uzgadnianie MS.",
-    "Użytkownik zatwierdził commit, push i wdrożenie testowego. Produkcja oraz MSConnector mają pozostać bez zmian; brak zgody na zmianę wspólnego profilu SYSTEM.",
+    "Podczas wcześniejszego wyrównania testowego produkcja oraz MSConnector pozostały bez zmian; nadal nie ma zgody na zmianę wspólnego profilu SYSTEM.",
     "Przełączenie, odczyt danych Shipping, serializacja JSON, synchronizacja Bot Identity i kontrola izolacji zakończyły się powodzeniem."
   ],
   "follow_up": [
@@ -14,10 +16,23 @@
   "context": {
     "branch_local": "test/shipping-retry-local-validation-2026-09-03",
     "worktree": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree",
-    "production_commit": "1bc17c064e0f6a1fb9581d9ecf3b53bb56d3619f",
+    "production_commit": "8302a6e09ebbf96c47431d8a91b954827f4c6b05",
     "merged_release_commit": "a0f758525fe3bfb3c8254ffd32539de0f674f28c",
     "previous_test_image": "ctip/test-runtime:ce9328e3213067b5670a2bd102a6e218f8bacc4e",
-    "alembic": "f2b7c9d4e6a1",
+    "alembic": "a6d9e1f3b520",
+    "telemetry": {
+      "component_commit": "7d5589953f103781098eb6c7ae233ab03609bedf",
+      "release_commit": "8302a6e09ebbf96c47431d8a91b954827f4c6b05",
+      "verification": "73 testy ukierunkowane; pre-commit poprawny; PostgreSQL ctip_test: migracja, blokada, rollback, JSONB z NUL i okresy CPC poprawne",
+      "full_suite": "888 passed, 4 deselected: znane wcześniej testy GenForm oraz raportów; przebieg przed rozszerzeniem CPC",
+      "test_backup": "backups/telemetry-20260911/ctip_test.dump",
+      "test_backup_sha256": "908eba4b9ab85faf648f80d0015784083f8ee389bab3eba0c0df66f8fab6aea5",
+      "test_stack_note": "Aktualne repo i migracja ctip_test; obrazu uruchomionego stosu testowego nie przebudowywano",
+      "production_note": "Dziewięć źródeł bez ostatniego błędu; 27347 rekordów, w tym 25461 okresów CPC dla 1001 aktywnych urządzeń z trzech lat i 1886 rekordów pilota; 218 DPLAC bez zmian, trzy archiwa utworzone; cztery usługi działają",
+      "ms_cpc_import_status": "zakonczony",
+      "ms_cpc_repeat": "Pełne ponowienie: 0 nowych rekordów, 25461 rozpoznanych powtórzeń, bez błędu",
+      "pending": "Zakres filtrowania pozostałych źródeł wymaga odpowiedzi na pytanie asynchroniczne; pełny backfill i zadania cykliczne nie są uruchomione. Dane rozchodów MS potwierdzone, importer rozchodów i wykresy są kolejnym etapem."
+    },
     "venv": "/home/marcin/projects/ctip/.venv",
     "deployment_status": "wdrozone_i_odebrane_testowe",
     "backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-alignment-20260910_135724",

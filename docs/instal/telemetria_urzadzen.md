@@ -198,6 +198,8 @@ zgodności kartoteki z kodami `MODEL.TONER/TONER_C/TONER_M/TONER_Y`, a nie tylko
 wyszukania słowa w nazwie. Ten importer rozchodów jest przygotowany koncepcyjnie
 na bazie potwierdzonych pól; nie jest jeszcze włączony jako źródło workera.
 
+### Ostrzeżenia jakości
+
 - `counter_decrease`: spadek porównywalnego licznika narastającego, także wykryty po dołożeniu starszej historii.
 - `conflicting_value`: różne wartości w tej samej grupie semantycznej.
 - `invalid_range`: licznik ujemny lub procent poza zakresem 0–100.
@@ -217,6 +219,46 @@ Logi: `docs/LOG/telemetry_YYYY-MM-DD.log`, każdy wpis ze znacznikiem czasu.
 Raportowane są kody błędów, nie pełne wyjątki sterowników zawierające poświadczenia.
 
 ## Wdrożenie Windows i rollback
+
+### Stan odbioru z 11 września 2026 r.
+
+- Produkcja: kod `8302a6e09ebbf96c47431d8a91b954827f4c6b05`, migracja
+  `a6d9e1f3b520`; backup przed ostatnią aktualizacją:
+  `D:\CTIP\backups\prod_20260911_052420`.
+- Zapisano 25461 różnych rekordów CPC dla 1001 z 1019 urządzeń aktualnie na
+  aktywnych umowach, okresy wrzesień 2023–wrzesień 2026. Żadne urządzenie nie
+  wykracza poza ten zakres aktywności. Nie nadano fikcyjnej daty odczytu.
+- Pozostałe źródła mają 1886 rekordów kontrolowanego pilota; łączny stan
+  wynosi 27347 rekordów. Dziewięć rejestrów źródeł nie zgłasza ostatniego błędu.
+- W CPC zachowano 7079 okresów bez powiązania z FV, 106 rekordów bez numeru
+  seryjnego i jeden z niepełną tożsamością źródłową. Zapisano 35 ostrzeżeń
+  spadku wewnątrz okresu, 37 między okresami i 11 konfliktów wartości.
+  Są to liczby ostrzeżeń, a nie liczby urządzeń ani potwierdzonych awarii.
+- Wykorzystanie indeksu serii potwierdzono przez `EXPLAIN` na produkcji.
+  Pierwszy przebieg przerwano wyłącznie na jego własnym procesie po zatwierdzeniu
+  10500 rekordów, aby wdrożyć optymalizację; wznowienie z kursora dopisało 14961.
+  Dane i punkt wznowienia są zatwierdzane razem, bez usuwania historii.
+  Ponowne pobranie całego zakresu zakończyło się bez błędu: 0 nowych rekordów
+  i 25461 rozpoznanych powtórzeń, bez zwiększenia historii.
+- Utworzono trzy podkatalogi `archiwum` i przeniesiono po jednym zatwierdzonym
+  raporcie z każdego katalogu. Kolejka archiwizacji jest pusta; wszystkie
+  218 oryginalnych DPLAC ma niezmienione SHA-256.
+- Cztery usługi CTIP działają. Health i Shipping zwracają HTTP 200, a panel
+  oraz API telemetrii bez sesji HTTP 401. Funkcję administratora i szablon
+  sprawdzono osobno na produkcyjnym PostgreSQL w transakcji tylko do odczytu.
+- Pre-commit oraz 73 testy ukierunkowane przechodzą na obu gałęziach.
+  Pełny przebieg przed rozszerzeniem CPC: 888 poprawnych testów, cztery
+  wcześniej potwierdzone problemy GenForm i raportów wyłączone z tego przebiegu.
+  Repozytorium testowe i jego schemat są aktualne; obrazu działającego stosu
+  testowego nie przebudowywano w ramach tego etapu.
+
+**Nie zarejestrowano jeszcze zadań cyklicznych ani nie uruchomiono pełnego
+pobrania pozostałych źródeł.** Do ustalenia pozostaje, czy trzyletni zakres i
+aktywne umowy mają ograniczać wszystkie importy, czy wyłącznie analizę przy
+zachowaniu szerszych danych surowych. Nie usuwać danych pilota bez osobnej decyzji.
+Importer wydań tonerów i wykresy nie są częścią odebranego kodu.
+
+### Procedura uruchomienia
 
 1. Wykonać testy, commit i push. Przez `scripts/deploy_windows_prod.py` wdrożyć
    dokładny SHA z migracją `f2b7c9d4e6a1 -> a6d9e1f3b520`, po poprawnym dry-run i backupie.
