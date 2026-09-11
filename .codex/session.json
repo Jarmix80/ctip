@@ -1,9 +1,9 @@
 {
   "timestamp": "2026-09-11",
   "summary": [
-    "Wdrożono fundament telemetrii w kodzie 8302a6e09ebbf96c47431d8a91b954827f4c6b05, migracja a6d9e1f3b520; dziewięć źródeł bez ostatniego błędu.",
-    "Zapisano 25461 okresów MS CPC dla 1001 aktualnie aktywnych urządzeń oraz 1886 rekordów pilota; 218 DPLAC niezmienionych, trzy archiwa utworzone.",
-    "Pełna historia pozostałych źródeł i zadania cykliczne pozostają wstrzymane do rozstrzygnięcia zakresu filtrów. Historia rozchodów tonerów potwierdzona odczytem, importer rozchodów jest kolejnym etapem.",
+    "Wdrożono i odebrano polityki telemetrii w produkcyjnym kodzie 1e822f6, migracja e8c7d6a5b410; zachowano poprawkę wykupu BNP 478e146.",
+    "Pełna historia: 298 CSV zarchiwizowanych, 15325 wiadomości rozliczonych, 25461 okresów MS dla 1001 aktywnych maszyn, 25954 migawki V i 630 PrintRadar; 200213 wersji rekordów.",
+    "Harmonogram CTIP-Telemetry działa codziennie 23:55 Europe/Warsaw i po starcie. Odbiór SYSTEM zakończony kodem 0; powtórzony slot already_completed bez dodatkowych importów. Backfill zakończony, nie pozostaje w toku.",
     "Na produkcji 192.168.0.8 ustawiono DPD_INFO_ENABLED=true po potwierdzeniu kompletnego DPD_INFO_CHANNEL; SHIPPING_COMPATIBILITY_WEB_ENABLED pozostawiono false zgodnie z decyzją użytkownika.",
     "Pierwsza ręczna synchronizacja kanału DPD InfoServices zakończyła się statusem success: pobrano 87 zdarzeń, zapisano 86 nowych, potwierdzono odbiór partii.",
     "Wykonano kontrolowany backfill dwóch produkcyjnych listów: pobrano i zapisano po 2 zdarzenia; ponowienie po wdrożeniu poprawki pobrało 2 zdarzenia i zapisało 0, potwierdzając idempotencję.",
@@ -42,8 +42,8 @@
     "branch_local": "release/genform-search-all-2026-09-03",
     "venv": "/home/marcin/projects/ctip/.venv",
     "focus": "telemetry-source-acquisition-ms-cpc",
-    "production_commit": "8302a6e09ebbf96c47431d8a91b954827f4c6b05",
-    "alembic": "a6d9e1f3b520",
+    "production_commit": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
+    "alembic": "e8c7d6a5b410",
     "telemetry": {
       "feature_release": "11d732cc0595a4ad31b2223d6feaeccb5f26f78f",
       "current_release": "8302a6e09ebbf96c47431d8a91b954827f4c6b05",
@@ -51,15 +51,7 @@
       "production_backup": "D:\\CTIP\\backups\\prod_20260911_052420",
       "readonly_account": "ctip_telemetry_ro",
       "private_configuration": "D:\\CTIP\\.env.telemetry",
-      "verification": [
-        "73 testy ukierunkowane i pre-commit: poprawne",
-        "Pełny zestaw przed rozszerzeniem CPC: 888 passed, 4 wcześniej znane błędy wyłączone",
-        "ctip_test: migracja, JSONB, rollback, blokada workera, NUL i okresy CPC poprawne",
-        "Odczyt kontrolny: 119639 wierszy DPLAC, 24404 wiersze pozostałych CSV, 15282 wiadomości, 109754 rekordy V i 94071 PrintRadar",
-        "Odbiór produkcyjny: 27347 rekordów łącznie, w tym 1886 pilota i 25461 CPC; dziewięć źródeł bez ostatniego błędu, kolejka archiwizacji pusta",
-        "Utworzono trzy archiwum; przeniesiono po jednym poprawnie zaimportowanym CSV; 218 DPLAC zachowuje identyczne SHA-256",
-        "HTTP health i Shipping 200, telemetria bez sesji 401; funkcja administratora i renderowanie sprawdzone na produkcyjnym PostgreSQL tylko do odczytu"
-      ],
+      "verification": "158 testów ukierunkowanych na obu gałęziach; 977 passed, 4 deselected w pełnym przebiegu; pre-commit poprawny; rzeczywisty PostgreSQL ctip_test: korekty A/B/A/B i rollback poprawne.",
       "ms_cpc": {
         "scope": "36 pełnych miesięcy plus bieżący; maszyny obecnie na aktywnych umowach",
         "eligible_rows": 25461,
@@ -75,12 +67,11 @@
         "resume_note": "Po 10500 zatwierdzonych rekordach zatrzymano wyłącznie własny proces importu; po wdrożeniu indeksowanej kontroli wznowiono z kursora i dopisano 14961 rekordów",
         "joins": "CPC.ID_MASZYNA -> MASZYNA.ID_MASZYNA; MASZYNA.ID_UMOWACPC -> UMOWACPC.ID_UMOWACPC_TABLE"
       },
-      "pending": [
-        "Brak uruchomionego pełnego backfill pozostałych źródeł i brak rejestracji zadań cyklicznych do rozstrzygnięcia zakresu filtrów",
-        "Pytanie asynchroniczne: ograniczać wszystkie importy do trzech lat i aktywnych umów czy tylko analizę, zachowując surowe źródła",
-        "Historia rozchodów tonerów MS potwierdzona odczytem; importer rozchodów i wykresy nie są jeszcze zaimplementowane",
-        "Nie zmieniano Shipping, stanów magazynowych, dokumentów ani danych źródłowych"
-      ]
+      "pending": "Importer dokumentów wydań tonerów, wykresy i blokady zamówień są osobnym etapem. Obrazu stosu testowego nie przebudowywano. Strefa czasu treści poczty wymaga potwierdzenia, dane zachowano bez zgadywania.",
+      "component_commit": "faa50fdf7c6f3bd3eed4e7c16efd1eb657d8a8ab",
+      "release_commit": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
+      "full_suite": "977 passed, 4 deselected; znane wcześniej wyłączenia GenForm i raportów",
+      "production_note": "Aktualny odbiór rozszerzenia i archiwizacji DPLAC zapisano w context.telemetry_policy; pierwotny pilot nie definiuje już bieżącej polityki."
     },
     "verification": [
       "pre-commit run --all-files: passed",
@@ -132,6 +123,68 @@
       "CTIP-Web: Running",
       "CTIP-SMS: Running",
       "CTIP-FormsPublic: Running"
-    ]
+    ],
+    "telemetry_policy": {
+      "component_commit": "faa50fdf7c6f3bd3eed4e7c16efd1eb657d8a8ab",
+      "release_commit": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
+      "production_backup": "D:\\CTIP\\backups\\prod_20260911_165801",
+      "verification": "158 testów ukierunkowanych na obu gałęziach; 977 passed, 4 deselected w pełnym przebiegu; pre-commit poprawny; rzeczywisty PostgreSQL ctip_test: korekty A/B/A/B i rollback poprawne.",
+      "test_image_note": "Repo i migracja testowe aktualne; uruchomiony obraz testowy pozostaje 902d055, nie był przebudowywany.",
+      "scope": "MS 36 miesięcy i bieżący; CSV wszystkie + archiwa, po zapisie przenoszenie także DPLAC; wszystkie wiadomości INBOX z filtrem aktywnych umów, MOVE do przetworzone/odrzucone; V i PrintRadar dwa lata, jedna migawka dzienna plus odrębne zdarzenia.",
+      "schedule": "CTIP-Telemetry: SYSTEM, codziennie 23:55 i po starcie; 12 godzin, sześć ponowień co 15 minut. Próbny przebieg 18:46–18:48 zakończony kodem 0, zatwierdzony slot 2026-09-10.",
+      "status": "wdrozone_i_odebrane",
+      "pending": "Importer dokumentów wydań tonerów, wykresy i blokady zamówień są osobnym etapem. Obrazu stosu testowego nie przebudowywano. Strefa czasu treści poczty wymaga potwierdzenia, dane zachowano bez zgadywania.",
+      "restrictions": "Bez zmian biznesowych Shipping, bez zapisów do źródłowych baz; bez szerokiego EXPUNGE i SMTP. Archiwizacja DPLAC jest jawnie dozwolona nową decyzją użytkownika.",
+      "acceptance": {
+        "production_commit": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
+        "migration": "e8c7d6a5b410",
+        "records": 200213,
+        "csv": 298,
+        "mail": {
+          "processed": 7264,
+          "rejected": 8061,
+          "inbox": 0,
+          "pending": 0
+        },
+        "ms": {
+          "periods": 25461,
+          "machines": 1001,
+          "active_total": 1019
+        },
+        "daily": {
+          "vmaintenance": {
+            "points": 25954,
+            "machines": 87
+          },
+          "printradar": {
+            "points": 630,
+            "machines": 59
+          }
+        },
+        "originals_checked": 7584,
+        "originals_bad": 0,
+        "daily_task": "CTIP-Telemetry",
+        "task_result": 0,
+        "completed_slot": "2026-09-10",
+        "next_daily": "2026-09-11T23:55:00+02:00",
+        "repeat_scheduled": "already_completed; bez przyrostu rekordów i importów",
+        "tests": "977 passed, 4 deselected, 38 warnings; 420.13s; 158 targeted passed on test and release; pre-commit passed; PostgreSQL daily correction rollback passed"
+      },
+      "repeat": {
+        "unchanged_files": 298,
+        "ms_new": 0,
+        "ms_duplicates": 25461,
+        "vm_new": 0,
+        "vm_duplicates": 26089,
+        "pr_new": 1,
+        "pr_duplicates": 15638,
+        "pr_change": "device_state.last_seen_at; rzeczywista zmiana źródła, nie nowy dzienny punkt",
+        "daily_points": 26584,
+        "finished": "2026-09-11T18:45:26+02:00",
+        "exit": 0
+      },
+      "backfill": "CTIP-Telemetry-Backfill: 17:07–18:34, wynik 0; zadanie jednorazowe bez następnego terminu.",
+      "runtime_note": "Produkcja jest czysta na wdrożonym SHA kodu; późniejsze commity dokumentacyjne nie wymagają restartu usług."
+    }
   }
 }

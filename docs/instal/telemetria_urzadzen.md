@@ -2,6 +2,72 @@
 
 ## Polityka dzienna — rozszerzenie z 11 września 2026 r.
 
+Stan wdrożenia: kod produkcyjny `1e822f67ce49fa601ae427609ff052d8fba0acc6`,
+migracja `e8c7d6a5b410`, backup `D:\CTIP\backups\prod_20260911_165801`.
+Zachowano poprawkę wykupu BNP obecną wcześniej na produkcji.
+Pilot zakończył się bez błędu. Pełny import działał w zadaniu
+`CTIP-Telemetry-Backfill` od 17:07 do 18:34 czasu serwera i zakończył się kodem 0.
+Zadanie jednorazowe zachowano jako ślad administracyjny, bez kolejnego terminu.
+
+### Wynik odbioru produkcyjnego
+
+| Źródło | Potwierdzony wynik |
+| --- | --- |
+| Główny katalog Remote | 222 CSV w `Archiwum`, bez CSV w katalogu roboczym |
+| Toner / All Supplies / Reporting | Odpowiednio 23 / 23 / 30 CSV w archiwach, katalogi robocze puste |
+| Poczta | 15325 wiadomości: 7264 w `przetworzone`, 8061 w `odrzucone`; INBOX i kolejka przeniesień puste |
+| MS CPC | 25461 okresów 2023-09–2026-09 dla 1001 z 1019 aktualnie aktywnych maszyn |
+| V-Maintenance | 25954 logiczne migawki dzienne dla 87 aktywnych urządzeń; zakres od 2024-09-11 |
+| PrintRadar | 630 logicznych migawek dla 59 aktywnych urządzeń; dostępne dane od 2026-05-28 |
+
+Migawki oraz nowo zaakceptowane wiadomości nie zawierają niedopasowanych urządzeń.
+Oryginalne 298 CSV zachowały zgodne skróty; istniejących wcześniej archiwów
+nie zmieniono. Sprawdzono także 7584 skompresowane oryginały w bazie:
+rozmiary i SHA-256 zgodne, bez uszkodzeń. Brak błędów importu, zaległych
+archiwizacji, niepotwierdzonych MOVE oraz powtórzonych wersji rekordów.
+Historyczne rekordy wcześniejszego pilota pozostają zachowane; dlatego liczba
+seriali w surowych rekordach może przewyższać liczbę aktywnie dopasowanych urządzeń.
+
+Pełne ponowienie zakończono o 18:45: wszystkie CSV rozpoznane bez ponownego
+importu danych, MS i V bez nowych rekordów, poczta bez ponownego przenoszenia.
+PrintRadar dodał tylko wersję kartoteki ze zmienionym źródłowym `last_seen_at`;
+liczba punktów dziennych pozostała równa 26584. Zmiana obserwacji obecności
+urządzenia nie jest duplikatem ani nową migawką.
+
+`CTIP-Telemetry` jest aktywne na koncie SYSTEM: codziennie 23:55 oraz po starcie
+systemu, limit 12 godzin, sześć ponowień co 15 minut, bez równoległych instancji.
+Próbny przebieg harmonogramu zakończono o 18:48 kodem 0; uzgodnienie objęło
+ostatnie siedem dni i zatwierdziło należny slot `2026-09-10`.
+Ponowny start workera zwrócił `already_completed`, bez przyrostu rekordów
+i importów. Kolejny należny przebieg: 11 września o 23:55 czasu polskiego.
+
+Końcowy stan zawiera 200213 wersji rekordów. Cztery usługi CTIP działają,
+oba endpointy health zwracają 200, a chroniony podgląd bez sesji zwraca 401.
+Sprawdzono odczyt metadanych i renderowanie panelu administratora.
+Źródłowe bazy nadal są odczytywane kontami tylko do odczytu; Shipping,
+dokumenty magazynowe oraz wspólny profil SYSTEM pozostały bez zmian.
+
+Weryfikacja kodu: 158 testów ukierunkowanych na obu gałęziach; pełny przebieg
+977 poprawnych i cztery wyłączone, znane wcześniej testy GenForm/raportów.
+Kontrola pre-commit oraz rzeczywiste korekty A/B/A/B i rollback w PostgreSQL
+`ctip_test` poprawne. Obrazu działającego stosu testowego nie przebudowywano.
+
+### Ograniczenia danych
+
+Ostrzeżenia jakości nie oznaczają błędu importu. Zachowano m.in. nieustaloną
+strefę czasu treści poczty, brakujące daty, 55 wskazań spadku licznika,
+84 wartości poza zakresem oraz 11 konfliktów wartości. Nie nadpisywano danych
+źródłowych ani nie zgadywano dat zdarzeń. Oryginalne EML i surowe pola pozostają
+dostępne do dalszej interpretacji. Parametr `TELEMETRY_MAIL_TIMEZONE` nadal
+wymaga potwierdzonej strefy, a nie przyjęcia jej na podstawie lokalizacji klienta.
+
+Zapisano osobno dostępne zgłoszenia V oraz 2004 różne obserwacje komunikatów
+PrintRadar. Obserwacja stanu nie dowodzi chwili nowej awarii, a zgłoszenie
+zapotrzebowania na toner nie potwierdza wysyłki. Importer dokumentów wydań,
+wykresy oraz blokady zamówień tonerów nie należą do tego wdrożenia.
+
+### Reguły eksploatacyjne
+
 Aktualne reguły zastępują wcześniejsze pozostawianie DPLAC i niezmienianie skrzynki.
 MS zachowuje 36 pełnych miesięcy i bieżący okres wyłącznie aktywnych umów.
 Remote CSV obejmuje wszystkie dostępne daty i urządzenia. Poczta nie ma granicy
