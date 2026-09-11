@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Źródła danych urządzeń — CTIP</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 2rem; color: #182633; background: #f5f7fa; }
+    table { width: 100%; border-collapse: collapse; background: white; margin-bottom: 2rem; }
+    th, td { border-bottom: 1px solid #dce3eb; padding: .65rem; text-align: left; overflow-wrap: anywhere; }
+    .summary { display: flex; gap: 2rem; flex-wrap: wrap; }
+    .error { color: #a32626; }
+  </style>
+</head>
+<body>
+  <a href="/admin">← Panel administratora</a>
+  <h1>Źródła danych urządzeń</h1>
+  <p>Wyłącznie zbieranie danych. Brak wpływu na Shipping i wydawanie tonerów.</p>
+  <div class="summary">
+    <p>Wersje rekordów: <strong>{{ records }}</strong></p>
+    <p>Grupy semantyczne: <strong>{{ semantic_groups }}</strong></p>
+    <p>Oczekuje na archiwizację: <strong>{{ archive_pending }}</strong></p>
+  </div>
+  <h2>Źródła i świeżość</h2>
+  <table>
+    <thead><tr><th>Źródło</th><th>Włączone</th><th>Ostatnia kontrola</th><th>Ostatni pomiar</th><th>Błąd</th></tr></thead>
+    <tbody>{% for row in sources %}<tr>
+      <td>{{ row.name }}</td><td>{{ 'Tak' if row.enabled else 'Nie' }}</td>
+      <td>{{ row.last_success_at or 'Brak' }}</td><td>{{ row.last_observed_at or 'Brak ustalonej daty' }}</td>
+      <td class="error">{{ row.last_error or '—' }}</td>
+    </tr>{% else %}<tr><td colspan="5">Brak uruchomionych źródeł.</td></tr>{% endfor %}</tbody>
+  </table>
+  <h2>Ostatnie 50 importów</h2>
+  <table><thead><tr><th>Początek</th><th>Źródło rekordu</th><th>Stan</th><th>Statystyki</th><th>Błąd</th></tr></thead>
+    <tbody>{% for row in imports %}<tr><td>{{ row.started_at }}</td><td>{{ row.locator }}</td>
+      <td>{{ row.status }}</td><td>{{ row.counts }}</td><td class="error">{{ row.error_code or '—' }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+  <h2>Ostatnie 50 ostrzeżeń</h2>
+  <p>Oryginały pozostają zachowane. Ostrzeżenie nie oznacza automatycznej korekty ani blokady zamówienia.</p>
+  <table><thead><tr><th>Czas</th><th>Rekord</th><th>Kod</th><th>Pomiar</th></tr></thead>
+    <tbody>{% for row in issues %}<tr><td>{{ row.created_at }}</td><td>{{ row.record_id }}</td>
+      <td>{{ row.code }}</td><td>{{ row.metric }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <p>DPLAC pozostają w katalogu źródłowym. Archiwizacja dotyczy wyłącznie Toner, All Supplies i Reporting.</p>
+</body>
+</html>

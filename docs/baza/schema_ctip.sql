@@ -1608,3 +1608,122 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ctip GRANT SELECT,INSERT,DE
 -- Preferencja wyglądu modułu Shipping:
 -- alembic/versions/a1c3e5f7b9d2_add_shipping_layout_to_admin_user.py
 -- alembic/versions/f2b7c9d4e6a1_add_dpd_semantic_dedupe.py
+
+-- Telemetria urządzeń: rewizja a6d9e1f3b520, 2026-09-11.
+CREATE TABLE ctip.telemetry_source (
+	id TEXT NOT NULL,
+	name TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	enabled BOOLEAN NOT NULL,
+	checkpoint JSONB NOT NULL,
+	last_success_at TIMESTAMP WITH TIME ZONE,
+	last_error TEXT,
+	PRIMARY KEY (id),
+	UNIQUE (name)
+);
+
+CREATE TABLE ctip.telemetry_import (
+	id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	locator TEXT NOT NULL,
+	started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	finished_at TIMESTAMP WITH TIME ZONE,
+	status TEXT NOT NULL,
+	counts JSONB NOT NULL,
+	error_code TEXT,
+	PRIMARY KEY (id),
+	FOREIGN KEY(source_id) REFERENCES ctip.telemetry_source (id)
+);
+
+CREATE TABLE ctip.telemetry_artifact (
+	id TEXT NOT NULL,
+	sha256 TEXT NOT NULL,
+	size_bytes BIGINT NOT NULL,
+	media_type TEXT NOT NULL,
+	content_gzip BYTEA,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE (sha256)
+);
+
+CREATE TABLE ctip.telemetry_device_link (
+	id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	external_key TEXT NOT NULL,
+	serial TEXT,
+	ms_machine_id BIGINT,
+	ms_customer_id BIGINT,
+	status TEXT NOT NULL,
+	valid_from TIMESTAMP WITH TIME ZONE NOT NULL,
+	valid_to TIMESTAMP WITH TIME ZONE,
+	PRIMARY KEY (id),
+	FOREIGN KEY(source_id) REFERENCES ctip.telemetry_source (id)
+);
+
+CREATE TABLE ctip.telemetry_record (
+	id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	external_key TEXT NOT NULL,
+	revision_hash TEXT NOT NULL,
+	parser_version TEXT NOT NULL,
+	semantic_key TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	serial TEXT,
+	observed_at TIMESTAMP WITH TIME ZONE,
+	time_precision TEXT NOT NULL,
+	time_basis TEXT NOT NULL,
+	received_at TIMESTAMP WITH TIME ZONE,
+	imported_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	payload JSONB NOT NULL,
+	measurements JSONB NOT NULL,
+	device_link_id TEXT,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_telemetry_record_revision UNIQUE (source_id, external_key, revision_hash, parser_version),
+	FOREIGN KEY(source_id) REFERENCES ctip.telemetry_source (id),
+	FOREIGN KEY(device_link_id) REFERENCES ctip.telemetry_device_link (id)
+);
+
+CREATE TABLE ctip.telemetry_record_origin (
+	id TEXT NOT NULL,
+	source_id TEXT NOT NULL,
+	import_id TEXT NOT NULL,
+	artifact_id TEXT,
+	record_id TEXT,
+	locator TEXT NOT NULL,
+	position TEXT NOT NULL,
+	fingerprint TEXT NOT NULL,
+	archive_path TEXT,
+	archive_status TEXT NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_telemetry_origin UNIQUE (source_id, locator, position, fingerprint),
+	FOREIGN KEY(source_id) REFERENCES ctip.telemetry_source (id),
+	FOREIGN KEY(import_id) REFERENCES ctip.telemetry_import (id),
+	FOREIGN KEY(artifact_id) REFERENCES ctip.telemetry_artifact (id),
+	FOREIGN KEY(record_id) REFERENCES ctip.telemetry_record (id)
+);
+
+CREATE TABLE ctip.telemetry_quality_issue (
+	id TEXT NOT NULL,
+	record_id TEXT NOT NULL,
+	code TEXT NOT NULL,
+	metric TEXT NOT NULL,
+	related_record_id TEXT,
+	details JSONB NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_telemetry_issue UNIQUE (record_id, code, metric),
+	FOREIGN KEY(record_id) REFERENCES ctip.telemetry_record (id),
+	FOREIGN KEY(related_record_id) REFERENCES ctip.telemetry_record (id)
+);
+
+CREATE INDEX idx_telemetry_import_source ON ctip.telemetry_import (source_id, started_at);
+
+CREATE INDEX idx_telemetry_device_identity ON ctip.telemetry_device_link (source_id, external_key);
+
+CREATE INDEX idx_telemetry_record_key ON ctip.telemetry_record (source_id, external_key);
+
+CREATE INDEX idx_telemetry_record_semantic ON ctip.telemetry_record (semantic_key);
+
+CREATE INDEX idx_telemetry_record_series ON ctip.telemetry_record (source_id, serial, observed_at);
+
+CREATE INDEX idx_telemetry_origin_archive ON ctip.telemetry_record_origin (archive_status);
