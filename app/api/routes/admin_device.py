@@ -221,22 +221,22 @@ class DevicePzWithdrawalRequest(StrictRequest):
 
 
 class DeviceBnpCatalogCreateRequest(StrictRequest):
-    """Dane utworzenia brakującej kartoteki wykupu BNP."""
+    """Dane kartoteki wykupu BNP, także dla pustej źródłowej ewidencji maszyny."""
 
     serial: str = Field(min_length=1, max_length=100)
     machine_table_id: int = Field(gt=0)
-    expected_ewidencja: str = Field(min_length=1, max_length=100)
+    expected_ewidencja: str = Field(max_length=100)
     warehouse_index: str = Field(min_length=1, max_length=100)
     item_name: str = Field(min_length=1, max_length=250)
 
 
 class DeviceBnpBuyoutCompleteRequest(StrictRequest):
-    """Dane finalizacji wykupu urządzenia BNP."""
+    """Dane finalizacji BNP według KP lub serialu z obowiązkową ewidencją źródłową."""
 
     serial: str = Field(min_length=1, max_length=100)
     machine_table_id: int = Field(gt=0)
     warehouse_item_id: int = Field(gt=0)
-    expected_ewidencja: str = Field(min_length=1, max_length=100)
+    expected_ewidencja: str = Field(max_length=100)
     target_ewidencja: str = Field(min_length=1, max_length=100)
     warehouse_index: str = Field(min_length=1, max_length=100)
     item_name: str = Field(min_length=1, max_length=250)
@@ -787,7 +787,7 @@ async def device_bnp_buyout_lookup(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zwraca urządzenie, klienta i kartoteki magazynowe dla wykupu BNP."""
+    """Zwraca urządzenie, tryb KP lub serialu, kartoteki i ostrzeżenia wykupu BNP."""
     _, admin_user = admin_context
     await _ensure_device_access(session, admin_user)
     try:
@@ -867,7 +867,7 @@ async def device_bnp_buyout_complete(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> dict:
-    """Zmienia KP na WKP i tworzy PZ wykupu na magazynie 27."""
+    """Ustawia WKP według KP lub serialu i tworzy PZ wykupu na magazynie 27."""
     admin_session, admin_user = admin_context
     firebird_user = await _ensure_device_writer(session, admin_user)
     runtime = await _ensure_firebird_write_enabled(session)

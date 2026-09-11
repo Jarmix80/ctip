@@ -585,8 +585,8 @@ def test_device_page_renders_devices_layout():
     client = TestClient(app)
     response = client.get("/device")
     assert response.status_code == 200
-    assert f"/static/device/device.css?v={app.version}-device-v0.6.4" in response.text
-    assert f"/static/device/device.js?v={app.version}-device-v0.6.4" in response.text
+    assert f"/static/device/device.css?v={app.version}-device-v0.6.5" in response.text
+    assert f"/static/device/device.js?v={app.version}-device-v0.6.5" in response.text
     assert "Obsługa urządzeń" in response.text
     assert "device-user-chip" in response.text
     assert "device-refresh" in response.text
@@ -604,7 +604,8 @@ def test_device_page_renders_devices_layout():
     assert "<strong>Wykup BNP</strong>" in response.text
     assert 'id="device-bnp-lookup-form"' in response.text
     assert 'id="device-bnp-create-catalog-action"' in response.text
-    assert "Nie tworzy jeszcze dokumentu PZ i nie zmienia KP maszyny" in response.text
+    assert "Nie tworzy jeszcze dokumentu PZ i nie zmienia ewidencji maszyny" in response.text
+    assert "według numeru KP lub numeru seryjnego" in response.text
     assert "przyjmie urządzenie na" in response.text
     assert "Nowy dokument PZ" in response.text
     assert 'id="device-intake-document-date"' in response.text
@@ -639,7 +640,7 @@ def test_device_page_renders_devices_layout():
     assert '<option value="blue">Niebieska</option>' in response.text
     assert '<option value="graphite">Grafitowa</option>' in response.text
     assert '<option value="mint">Miętowa</option>' in response.text
-    assert "/device v0.6.4" in response.text
+    assert "/device v0.6.5" in response.text
     assert "device-warehouse-table" in response.text
     assert "device-warehouse-card" in response.text
     assert "Urządzenie / CTIP" in response.text
