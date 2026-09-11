@@ -2,6 +2,10 @@
 
 ## 2026-09-11
 
+- Migracja `c4f2a9b8d610` po `a6d9e1f3b520` dodaje rejestr `telemetry_mail_delivery`: decyzję dopasowania, źródłowy UID i UIDVALIDITY, SHA-256, folder docelowy oraz wznawialny stan przeniesienia.
+- Unikalność obejmuje źródło/folder/generację/UID; indeksy obsługują kolejkę przeniesień i skróty treści. Downgrade nie usuwa rejestru.
+- Nowa polityka zastępuje pierwotne pozostawianie DPLAC: po zatwierdzeniu bazy CSV są przenoszone do właściwego archiwum. Migawki dzienne i zdarzenia korzystają z istniejącej historii rekordów.
+
 - Migracja `a6d9e1f3b520` po `f2b7c9d4e6a1` dodaje siedem tabel `ctip.telemetry_*`: źródła, przebiegi importów, oryginały, wersje rekordów, pochodzenie, powiązania urządzeń oraz ostrzeżenia jakości.
 - Unikalność SHA-256 i wersji rekordów zabezpiecza ponowienia. Indeksy obejmują grupy semantyczne, serie czasowe, archiwizację i tożsamości urządzeń.
 - Nowe tabele nie zmieniają Shipping ani historii przyjęć magazynowych. Oryginały DPLAC pozostają w katalogu źródłowym; JSONB zachowuje odczytane dane.

@@ -252,6 +252,13 @@ def main(argv=None):
         "TELEMETRY_ENABLED": "false",
         "TELEMETRY_REPORT_ROOT": str(root / "tonery"),
         "TELEMETRY_DPLAC_ROOT": str(root),
+        "TELEMETRY_ARCHIVE_ROOT_CSV": "true",
+        "TELEMETRY_MAIL_MOVE_ENABLED": "true",
+        "TELEMETRY_VM_HISTORY_YEARS": "2",
+        "TELEMETRY_PRINTRADAR_HISTORY_YEARS": "2",
+        "TELEMETRY_RECONCILE_DAYS": "7",
+        "TELEMETRY_MAIL_PROCESSED_FOLDER": "przetworzone",
+        "TELEMETRY_MAIL_REJECTED_FOLDER": "odrzucone",
         "TELEMETRY_VM_ENABLED": "true",
         "TELEMETRY_MS_ENABLED": "true",
         "TELEMETRY_MS_CPC_ENABLED": (
@@ -283,13 +290,14 @@ def main(argv=None):
         ms_cpc=values["TELEMETRY_MS_CPC_ENABLED"] == "true",
     )
     print(json.dumps({"step": "firebird_readonly_verified"}))
+    (root / "Archiwum").mkdir(exist_ok=True)
     for name in ("Toner", "All Supplies", "Reporting"):
         directory = root / "tonery" / name
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "archiwum").mkdir(exist_ok=True)
     values["TELEMETRY_ENABLED"] = "true"
     write_private_env(private_path, values)
-    print(json.dumps({"status": "configured", "readonly_user": READER, "dplac_archive": False}))
+    print(json.dumps({"status": "configured", "readonly_user": READER, "dplac_archive": True}))
     return 0
 
 

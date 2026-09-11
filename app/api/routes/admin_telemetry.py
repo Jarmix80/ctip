@@ -31,6 +31,7 @@ async def telemetry_status(session, admin_context):
                     tables.source.c.enabled,
                     tables.source.c.last_success_at,
                     tables.source.c.last_error,
+                    tables.source.c.checkpoint,
                 ).order_by(tables.source.c.name)
             )
         )
@@ -74,7 +75,9 @@ async def telemetry_status(session, admin_context):
                     func.max(tables.record.c.observed_at).label("observed_at"),
                 )
                 .where(
-                    tables.record.c.kind.in_(["reading", "supply_event", "remote_event"]),
+                    tables.record.c.kind.in_(
+                        ["reading", "supply_event", "remote_event", "daily_snapshot"]
+                    ),
                     tables.record.c.measurements != {},
                     tables.record.c.observed_at <= func.now(),
                 )
@@ -102,12 +105,46 @@ async def telemetry_status(session, admin_context):
         .all()
     )
     periods = {row["source_id"]: row["period"] for row in billing}
+    daily = (
+        (
+            await session.execute(
+                select(
+                    tables.record.c.source_id,
+                    func.count(func.distinct(tables.record.c.external_key)).label("days"),
+                )
+                .where(tables.record.c.kind == "daily_snapshot")
+                .group_by(tables.record.c.source_id)
+            )
+        )
+        .mappings()
+        .all()
+    )
+    daily_counts = {row["source_id"]: row["days"] for row in daily}
+    mail_counts = (
+        (
+            await session.execute(
+                select(
+                    tables.mail_delivery.c.decision,
+                    tables.mail_delivery.c.move_status,
+                    func.count().label("count"),
+                ).group_by(tables.mail_delivery.c.decision, tables.mail_delivery.c.move_status)
+            )
+        )
+        .mappings()
+        .all()
+    )
     return {
         "sources": [
             {
-                **row,
+                **{key: value for key, value in row.items() if key != "checkpoint"},
                 "last_observed_at": dates.get(row["id"]),
                 "last_billing_period": periods.get(row["id"]),
+                "daily_snapshots": daily_counts.get(row["id"], 0),
+                "daily_completed": row["checkpoint"].get("daily2", {}).get("completed"),
+                "daily_in_progress": row["checkpoint"].get("daily2", {}).get("in_progress", False),
+                "mail_retry": (
+                    len(row["checkpoint"].get("retry", [])) if row["name"] == "remote_mail" else 0
+                ),
             }
             for row in source_rows
         ],
@@ -116,6 +153,10 @@ async def telemetry_status(session, admin_context):
         "records": count,
         "semantic_groups": groups,
         "archive_pending": pending,
+        "mail_deliveries": [dict(row) for row in mail_counts],
+        "mail_move_pending": sum(
+            row["count"] for row in mail_counts if row["move_status"] == "pending"
+        ),
     }
 
 

@@ -1,5 +1,95 @@
 # Pozyskiwanie danych urządzeń
 
+## Polityka dzienna — rozszerzenie z 11 września 2026 r.
+
+Aktualne reguły zastępują wcześniejsze pozostawianie DPLAC i niezmienianie skrzynki.
+MS zachowuje 36 pełnych miesięcy i bieżący okres wyłącznie aktywnych umów.
+Remote CSV obejmuje wszystkie dostępne daty i urządzenia. Poczta nie ma granicy
+wieku, lecz dane zapisujemy tylko dla jednoznacznie dopasowanych aktywnych umów.
+V-Maintenance oraz PrintRadar obejmują dwa lata kalendarzowe aktywnych urządzeń.
+
+Wszystkie źródła są uruchamiane codziennie o 23:55 Europe/Warsaw. Zadanie po
+restarcie nadrabia ostatni należny przebieg, a trwały znacznik nie pozwala wykonać
+go drugi raz po sukcesie. Błędy nie zatwierdzają zakończenia całego harmonogramu.
+Zadanie ma sześć ponowień co 15 minut oraz limit wykonania 12 godzin.
+
+### CSV i oryginały
+
+Cztery wejścia to katalog główny `remote ricoh` i podkatalogi
+`tonery/All Supplies`, `tonery/Reporting`, `tonery/Toner`.
+Skanowanie głównego katalogu nie obejmuje ponownie podkatalogów tonerowych.
+Każde wejście obejmuje również swoje archiwum; plik już archiwalny nie jest
+przenoszony. Brakujący główny katalog otrzymuje nazwę `Archiwum`, a katalogi
+raportów zachowują istniejące `archiwum`.
+
+Po zapisie bazy przenoszone są także DPLAC. Ten sam plik pod tą samą nazwą
+i z identycznym SHA-256 wykorzystuje istniejące archiwum; inne dane o tej samej
+nazwie dostają przyrostek. Zmiana zawartości, uszkodzona struktura lub trwający
+zapis pozostawia plik roboczy do kolejnego przebiegu. Oryginał każdego CSV jest
+zachowany w bazie jako gzip, także dla wcześniejszych znaczników DPLAC.
+
+Obsługiwane są również polskie zestawienia liczników, UTF-8/CP1250, przecinek
+i średnik. Pola przyrostu pozostają osobne od liczników narastających.
+Nieznany poprawny format jest przechowywany jako `unclassified_csv`
+z ostrzeżeniem `csv_schema_unknown`, bez zgadywania tożsamości i pomiarów.
+
+### Poczta
+
+Źródłem jest INBOX. Foldery `przetworzone` i `odrzucone` są tworzone dopiero
+w jawnym trybie zapisu, nie są kolejnymi źródłami wejściowymi. Poprawnie
+przetworzona wiadomość z dopasowanymi danymi trafia do `przetworzone`; brak
+jednoznacznej aktywnej umowy do `odrzucone`. Przy wielu urządzeniach zapisujemy
+tylko dopasowane części. Odrzucenie zachowuje skrót, identyfikator i powód,
+ale nie tworzy telemetrii niedopasowanego urządzenia.
+
+HTML jest odczytywany wyłącznie jako tekst, XML z ochroną przed encjami,
+załączniki CSV istniejącymi parserami. Zachowane EML umożliwiają późniejsze
+rozszerzenie interpretacji. Nieudane parsowanie i błędy techniczne pozostawiają
+wiadomość w INBOX do ponowienia. Awaria odczytu aktywnych umów nigdy nie oznacza
+pustego katalogu i masowego odrzucenia.
+
+Tabela `telemetry_mail_delivery` przechowuje decyzję i kolejkę MOVE w tej samej
+transakcji co dane. Przenoszenie używa UID MOVE, nie zbiorczego EXPUNGE.
+Po utracie odpowiedzi sprawdzana jest identyczna treść w folderze docelowym.
+Inna generacja UID lub niezgodny skrót blokują operację. Foldery wynikowe
+nie są automatycznie ponownie klasyfikowane przy późniejszej zmianie umowy.
+
+### Migawki i zdarzenia
+
+`daily_snapshot` ma stały klucz źródło/serial/dzień oraz wersjonowany zestaw
+ostatnich składników: liczniki, serwis i materiały. Każdy składnik zachowuje
+swój czas, dokładność i identyfikator źródłowy. Późniejszy odczyt lub korekta
+tworzy wersję tej samej migawki, nie kolejny logiczny punkt wykresu.
+Brak pomiaru nie daje sztucznego zera ani świeżej daty.
+
+Każdy przebieg ponownie sprawdza co najmniej ostatnie siedem dni od poprzedniego
+ukończenia, a niedokończone porcje mają własny kursor. Zmiana katalogu aktywnych
+umów wymusza ponowne sprawdzenie dwuletniej historii. Zdarzenia i wpisy historii
+są zachowane niezależnie; powtarzający się stan bez daty wystąpienia jest
+`event_observation`, nie nową awarią. Wzrost poziomu tonera nie dowodzi wymiany.
+V korzysta z kartotek, historii liczników i zgłoszeń; globalne, niedopasowane
+operacje magazynowe nie są przypisywane arbitralnie do urządzenia.
+
+### Sterowanie i odbiór
+
+- `TELEMETRY_ARCHIVE_ROOT_CSV=true` jawnie włącza wszystkie CSV i archiwizację głównego katalogu.
+- `TELEMETRY_MAIL_MOVE_ENABLED=true` jawnie włącza foldery i przenoszenie wiadomości.
+- `TELEMETRY_VM_HISTORY_YEARS=2`, `TELEMETRY_PRINTRADAR_HISTORY_YEARS=2`, `TELEMETRY_RECONCILE_DAYS=7` rozdzielają zakresy od MS.
+- `--source NAZWA` wybiera źródło; opcję można powtarzać.
+- `--limit N` ogranicza pliki, wiadomości albo strony źródła bazodanowego w pilocie.
+- `--drain` opróżnia zaległe porcje bez rozszerzania zakresu dat, `--backfill` ponownie sprawdza pełną dozwoloną historię.
+- `--scheduled` wykonuje tylko zaległy pełny przebieg o 23:55; nie łączy się go z limitem i wyborem źródła.
+- `--dry-run` nie zapisuje danych, kursorów, folderów, przeniesień ani dziennika plikowego.
+
+Rozszerzenie wymaga migracji `a6d9e1f3b520 -> c4f2a9b8d610`. Przed włączeniem
+zadań należy wykonać kontrolny odczyt, ograniczony pilot, pełną historię i
+ponowienie bez przyrostu logicznych danych. Panel administracyjny pokazuje
+oddzielnie migawki, zaległości i decyzje pocztowe. Dziennik
+`docs/LOG/telemetry_YYYY-MM-DD.log` przełącza plik także przy pracy przez północ.
+
+Poniższy pierwotny odbiór jest zapisem historycznym sprzed aktywacji tych reguł;
+nie potwierdza jeszcze wdrożenia rozszerzenia.
+
 ## Zakres
 
 Moduł pozyskuje historię do tabel `ctip.telemetry_*`. Nie blokuje zamówień, nie

@@ -114,6 +114,22 @@ def ms_identity_map(config=None) -> dict:
     return result
 
 
+def active_identity_map(config) -> dict:
+    """Łączy serial wyłącznie z jednoznaczną maszyną aktualnie aktywnej umowy MS."""
+    result = {}
+    with firebird_connection(config=config) as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            "SELECT m.ID_MASZYNA,m.ID_KLIENT,m.SERIAL FROM MASZYNA m "
+            "JOIN UMOWACPC u ON u.ID_UMOWACPC_TABLE=m.ID_UMOWACPC WHERE u.AKTYWNA='TAK'"
+        )
+        for machine, customer, serial in cursor.fetchall():
+            normalized = serial_number(serial)
+            if normalized:
+                result.setdefault(normalized, set()).add((machine, customer))
+    return {serial: sorted(values) for serial, values in result.items()}
+
+
 def vm_serials(config=None) -> dict:
     """Buduje mapę logicznych identyfikatorów urządzeń wyłącznie wewnątrz V-Maintenance."""
     result = {}
@@ -182,7 +198,11 @@ def vm_reading(table: str, row: dict, identities: dict) -> Reading:
     serial = serial_number(
         row.get("ID_NR_SERYJNY") or row.get("NR_SERYJNY") or identities.get(row.get("ID_MASZYNA"))
     )
-    date_value = row.get("DATA_LICZNIKA") if table == "MASZYNY" else row.get("DATA")
+    date_value = (
+        row.get("DATA_LICZNIKA")
+        if table == "MASZYNY"
+        else row.get("DATA_ROZLICZENIA") if table == "CPC" else row.get("DATA")
+    )
     observed, precision, basis = timestamp(str(date_value or ""), str(row.get("CZAS") or ""))
     kind = (
         "reading"
@@ -321,14 +341,14 @@ def printradar_reading(table: str, row: dict, identities: dict) -> Reading:
 
 
 @contextmanager
-def remote_mailbox(config):
-    """Otwiera skrzynkę przez TLS bez flag zapisu ani poleceń SMTP."""
+def remote_mailbox(config, *, writable=False):
+    """Otwiera TLS; zapis dopuszcza wyłącznie jawna obsługa kolejki przeniesień."""
     mailbox = imaplib.IMAP4_SSL(
         config.imap_host, config.imap_port, ssl_context=ssl.create_default_context(), timeout=30
     )
     try:
         mailbox.login(config.email_address, config.email_password.get_secret_value())
-        status, _ = mailbox.select(config.imap_folder, readonly=True)
+        status, _ = mailbox.select(config.imap_folder, readonly=not writable)
         if status != "OK":
             raise ValueError("imap_select")
         yield mailbox
@@ -339,12 +359,13 @@ def remote_mailbox(config):
             pass
 
 
-def mail_uids(mailbox, checkpoint: dict):
+def mail_uids(mailbox, checkpoint: dict, generation=None):
     """Unieważnia kursor po zmianie UIDVALIDITY, zachowując deduplikację treści."""
-    validity = mailbox.response("UIDVALIDITY")[1]
-    if not validity or not validity[0]:
-        raise ValueError("imap_uidvalidity")
-    generation = validity[0].decode()
+    if generation is None:
+        validity = mailbox.response("UIDVALIDITY")[1]
+        if not validity or not validity[0]:
+            raise ValueError("imap_uidvalidity")
+        generation = validity[0].decode()
     last = int(checkpoint.get("uid", 0)) if checkpoint.get("uidvalidity") == generation else 0
     status, data = mailbox.uid("search", None, "UID", f"{last+1}:*")
     if status != "OK":

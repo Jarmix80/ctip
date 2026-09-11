@@ -106,9 +106,10 @@ class Reading:
     measurements: dict = field(default_factory=dict)
     semantic_key: str = ""
     issues: list[tuple[str, str]] = field(default_factory=list)
+    origin_key: str = ""
 
 
-def parse_csv(blob: bytes, zone: str = "Europe/Warsaw") -> list[Reading]:
+def _parse_remote_csv(blob: bytes, zone: str = "Europe/Warsaw") -> list[Reading]:
     """Czyta pięć odmian CSV po nagłówkach, nigdy według nazwy eksportu."""
     decoded = None
     for encoding in ("utf-8-sig", "cp1250"):
@@ -177,6 +178,81 @@ def parse_csv(blob: bytes, zone: str = "Europe/Warsaw") -> list[Reading]:
                 value = number(row.get(header))
                 if value is not None:
                     reading.measurements[metric] = value
+        result.append(reading)
+    return result
+
+
+def parse_csv(blob: bytes, zone: str = "Europe/Warsaw") -> list[Reading]:
+    """Czyta Remote i polskie zestawienia; obcy poprawny format zachowuje bez zgadywania."""
+    decoded = None
+    for encoding in ("utf-8-sig", "cp1250"):
+        try:
+            decoded = blob.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if decoded is None:
+        raise ValueError("csv_encoding")
+    first_line = decoded.splitlines()[0] if decoded.splitlines() else ""
+    delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
+    reader = csv.DictReader(io.StringIO(decoded, newline=""), delimiter=delimiter, strict=True)
+    headers = reader.fieldnames or []
+    if not headers or any(not value for value in headers) or len(headers) != len(set(headers)):
+        raise ValueError("csv_headers")
+    rows = list(reader)
+    if any(None in row or any(value is None for value in row.values()) for row in rows):
+        raise ValueError("csv_incomplete_row")
+    if "Device Serial Number" in headers:
+        if delimiter == ",":
+            return _parse_remote_csv(blob, zone)
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+        return _parse_remote_csv(output.getvalue().encode("utf-8"), zone)
+    polish = "Numer seryjny" in headers and "Data ostatniego odczytu" in headers
+    result = []
+    for position, row in enumerate(rows):
+        observed, precision, basis = None, "unknown", "missing"
+        serial = serial_number(row.get("Numer seryjny")) if polish else ""
+        if polish:
+            raw = row["Data ostatniego odczytu"].strip()
+            for pattern in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+                try:
+                    parsed = datetime.strptime(raw, pattern)
+                    raw = parsed.isoformat(sep=" ") if ":" in raw else parsed.date().isoformat()
+                    break
+                except ValueError:
+                    continue
+            observed, precision, basis = timestamp(raw, zone=zone)
+        key = fingerprint(["polish_counters" if polish else "raw_csv", row, position])
+        reading = Reading(
+            key,
+            "reading" if polish else "unclassified_csv",
+            serial,
+            row,
+            observed,
+            precision,
+            basis,
+            semantic_key=key,
+        )
+        if polish:
+            for header, metric in {
+                "Licznik główny": "lifetime.total",
+                "Suma Cz/B": "lifetime.black",
+                "Suma Kolor": "lifetime.color",
+                "Kopiarka Cz/B": "lifetime.copy_black",
+                "Kopiarka Kolor": "lifetime.copy_color",
+                "Drukarka Cz/B": "lifetime.print_black",
+                "Drukarka Kolor": "lifetime.print_color",
+                "Skaner Cz/B": "lifetime.scan_black",
+                "Skaner Kolor": "lifetime.scan_color",
+            }.items():
+                value = number(row.get(header))
+                if value is not None:
+                    reading.measurements[metric] = value
+        else:
+            reading.issues.append(("csv_schema_unknown", ""))
         result.append(reading)
     return result
 

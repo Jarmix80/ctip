@@ -104,8 +104,6 @@ class TelemetryStore:
             else fingerprint([row.payload for row in readings])
         )
         marker = self.file_marker(source_id, locator, digest)
-        if marker:
-            return {"new": 0, "duplicates": len(readings), "marker": dict(marker)}
         artifact_id = None
         if blob is not None:
             artifact_id = self.connection.execute(
@@ -129,6 +127,8 @@ class TelemetryStore:
                     )
                     .values(content_gzip=gzip.compress(blob, mtime=0))
                 )
+        if marker:
+            return {"new": 0, "duplicates": len(readings), "marker": dict(marker)}
         run_id = self.add(
             tables.imports,
             source_id=source_id,
@@ -180,7 +180,7 @@ class TelemetryStore:
                 artifact_id=artifact_id,
                 record_id=record_id,
                 locator=locator,
-                position=str(position),
+                position=reading.origin_key or str(position),
                 fingerprint=digest + ":" + PARSER_VERSION,
                 archive_status="not_required",
             )
