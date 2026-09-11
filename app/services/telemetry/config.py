@@ -26,7 +26,7 @@ class TelemetrySettings(BaseSettings):
     ms_enabled: bool = Field(False, alias="TELEMETRY_MS_ENABLED")
     vm_host: str = Field(settings.fb_v_host, alias="TELEMETRY_VM_HOST")
     vm_database: str = Field(settings.fb_v_database, alias="TELEMETRY_VM_DATABASE")
-    vm_charset: str = Field(settings.fb_v_charset, alias="TELEMETRY_VM_CHARSET")
+    vm_charset: str = Field("UTF8", alias="TELEMETRY_VM_CHARSET")
     vm_user: str = Field("", alias="TELEMETRY_VM_USER")
     vm_password: SecretStr = Field(SecretStr(""), alias="TELEMETRY_VM_PASSWORD")
     ms_user: str = Field("", alias="TELEMETRY_MS_USER")

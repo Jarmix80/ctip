@@ -56,6 +56,11 @@ lub sieć izolowanego stosu `172.28.252.0/24`. Nie korzysta z produkcyjnego plik
 Połączenia Firebird jawnie używają transakcji READ ONLY, PostgreSQL PrintRadar
 ustawia `default_transaction_read_only=on` i ogranicza czas zapytania.
 
+V-Maintenance wymaga osobnego połączenia `UTF8`: baza ma domyślne `WIN1250`, lecz
+część kolumn `NONE` zawiera tekst UTF-8. Dziedziczenie kodowania MS powodowało błąd
+dekodowania i wtórny błąd protokołu podczas zamykania połączenia. Nie zastępujemy
+nieznanych znaków ani nie zmieniamy bazy źródłowej; kodowanie MS pozostaje bez zmian.
+
 ## Uruchamianie
 
 ```bash

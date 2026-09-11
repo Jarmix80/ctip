@@ -20,6 +20,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 ROOT = Path(__file__).resolve().parents[1]
 READER = "ctip_telemetry_ro"
+VM_CHARSET = "UTF8"
 VM_TABLES = ("MASZYNY", "MASZYNY_STATS", "WEZWANIE", "MAGAZYNY", "DODAJ", "CPC")
 PR_TABLES = ("device_fingerprints", "raw_counter_samples", "service_snapshots", "material_readings")
 MAIL_KEYS = (
@@ -146,15 +147,16 @@ def provision_postgres(base: dict, printradar: dict, password: str, existing_pas
 
 
 def provision_firebird(base: dict, password: str, existing_password: bool, vm_database: str):
-    """Nadaje SELECT tylko do jawnej listy tabel, bez modyfikacji danych biznesowych."""
+    """Nadaje SELECT do jawnej listy tabel, używając osobnego kodowania V-Maintenance."""
     for database, tables in ((base["FB_DATABASE"], ("MASZYNA",)), (vm_database, VM_TABLES)):
+        charset = VM_CHARSET if database == vm_database else base.get("FB_CHARSET", "WIN1250")
         connection = firebirdsql.connect(
             host=base["FB_HOST"],
             port=int(base.get("FB_PORT", "3050")),
             database=database,
             user=base["FB_USER"],
             password=base["FB_PASSWORD"],
-            charset=base.get("FB_CHARSET", "WIN1250"),
+            charset=charset,
             timeout=20,
         )
         try:
@@ -178,7 +180,7 @@ def provision_firebird(base: dict, password: str, existing_password: bool, vm_da
             database=database,
             user=READER,
             password=password,
-            charset=base.get("FB_CHARSET", "WIN1250"),
+            charset=charset,
             timeout=20,
             isolation_level=firebirdsql.ISOLATION_LEVEL_READ_COMMITED_RO,
         )
@@ -247,7 +249,7 @@ def main(argv=None):
         "TELEMETRY_MAIL_ENABLED": "true",
         "TELEMETRY_VM_HOST": base["FB_HOST"],
         "TELEMETRY_VM_DATABASE": vm_database,
-        "TELEMETRY_VM_CHARSET": base.get("FB_CHARSET", "WIN1250"),
+        "TELEMETRY_VM_CHARSET": VM_CHARSET,
         "TELEMETRY_VM_USER": READER,
         "TELEMETRY_VM_PASSWORD": fb_password,
         "TELEMETRY_MS_USER": READER,

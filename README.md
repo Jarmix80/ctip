@@ -5,7 +5,7 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
-- Pozyskiwanie danych urządzeń z Remote CSV/DPLAC, poczty, V-Maintenance i PrintRadar: `docs/instal/telemetria_urzadzen.md`. Oddzielny worker `app.telemetry_worker`, podgląd `/admin/telemetry`, migracja addytywna `a6d9e1f3b520`; DPLAC pozostają na miejscu. Moduł domyślnie wyłączony, bez zmian w Shipping.
+- Pozyskiwanie danych urządzeń z Remote CSV/DPLAC, poczty, V-Maintenance i PrintRadar: `docs/instal/telemetria_urzadzen.md`. Oddzielny worker `app.telemetry_worker`, podgląd `/admin/telemetry`, migracja addytywna `a6d9e1f3b520`; DPLAC pozostają na miejscu. Moduł domyślnie wyłączony, bez zmian w Shipping. V-Maintenance używa osobnego połączenia UTF8, bez zmiany kodowania MS.
 - Kanoniczny mechanizm wdrożenia produkcji Windows, backupu i rollbacku: `docs/instal/windows_release_deployment.md`.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.
 - Kanoniczny, niezmienny stos testowy na `192.168.0.9:8000`, jego backup i rollback: `docs/instal/test_server_runtime.md`.
