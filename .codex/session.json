@@ -1,6 +1,10 @@
 {
-  "timestamp": "2026-09-12 11:43:48 UTC",
+  "timestamp": "2026-09-12 12:06:05 UTC",
   "summary": [
+    "Wyrównano kanoniczny testowy 192.168.0.9:8000 z produkcyjnym dashboardem ef79672; działa niezmienny obraz 6be0224, zachowano CRM/LAB/Delivery/Bot Identity i pełną izolację.",
+    "Potwierdzono zgodność 63 wspólnych plików oraz rewizji b7e2d4f6a810. Produkcja działa na ef79672, bez nowego wdrożenia ani restartu.",
+    "Odbiór testowego: 15 usług bez restartów, HTTP 200, katalog 111 kartotek, chronione API 401, świeża synchronizacja Bot Identity. Kopie logiczne obu baz zweryfikowane.",
+    "48 testów zmiany poprawnych. Po korekcie pomocnika SQLite pozostały cztery wcześniej udokumentowane niepowodzenia testów FLOW/raportów; nie są regresją tonerów.",
     "Wdrożono dashboard Wydajności tonerów jako zakładkę obu wyglądów Shipping na produkcji 192.168.0.8, commit ef79672b6161c9cdb4d75bf33ac6d421328d6fc6.",
     "Katalog PostgreSQL obejmuje 220 kartotek, 151 dowodów i 146 wpisów historii. Dla aktywnych umów: 111 kartotek, 75 wydajności potwierdzonych, 24 szacunki, 12 braków; kompletność 89,2%.",
     "Szacunki wybierają niższą udokumentowaną wydajność zgodnych wariantów tego samego koloru. Import nie nadpisuje ręcznych korekt; wartości i historia są zapisywane atomowo z kontrolą wersji.",
@@ -49,6 +53,34 @@
     ],
     "toner_dashboard_path": "/shipping?view=toners",
     "toner_private_input": ".codex/bnp-buyout-prod-worktree/inbox/toner-yields-seed.json",
-    "toner_report": ".codex/bnp-buyout-prod-worktree/inbox/toner-deployment-result.json"
+    "toner_report": ".codex/bnp-buyout-prod-worktree/inbox/toner-deployment-result.json",
+    "test_alignment": {
+      "verified_at": "2026-09-12 12:06:05 UTC",
+      "production_head": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
+      "test_code_commit": "6be022468c021db2118b60db496f75c406ce5adb",
+      "test_image": "ctip/test-runtime:6be022468c021db2118b60db496f75c406ce5adb",
+      "test_worktree": ".codex/shipping-retry-local-validation-test-worktree",
+      "alembic": "b7e2d4f6a810",
+      "shared_files_checked": 63,
+      "differences": 0,
+      "production_changes": "Bez restartu, migracji i zmian danych; Git czysty, cztery usługi działają, HTTP 200.",
+      "test_services": "15 usług trwałych działa bez restartów, 9 aplikacyjnych na wspólnym obrazie; log-init exit 0, świeża synchronizacja Bot Identity.",
+      "test_api": "Oba wyglądy, katalog 111 kartotek, wyszukiwanie i historia poprawne; 401 bez sesji, sesja odbiorcza unieważniona.",
+      "isolation": "ctip_test; lokalny Firebird; SMS testowy; outbound capture; blokada komunikacji i zapisów Firebird; uzgadnianie MS wyłączone; PBX mock-ctip, DPD mock.",
+      "backup": "backups/test-alignment-20260912",
+      "firebird_restore": "81294 zlecenia, 174 modele, 7548 kartotek; poprawne SHA-256 kopii logicznych.",
+      "cutover_backup": "backups/test-cutover/20260912_135935",
+      "rollback": "runtime/deployments/test-cutover-20260912_140001",
+      "focused_tests": "48 passed; pre-commit i składnia JavaScript poprawne.",
+      "full_tests": "985 passed, 14 skipped, 5 failed w przebiegu rozpoczętym przed korektą pomocnika SQLite. Po korekcie ponowienie: 1 passed, 4 wcześniej znane niepowodzenia FLOW/raportów.",
+      "known_failures": [
+        "tests/test_admin_backend.py::AdminBackendTests::test_contracts_form_workflow_devices_approved_order_runs_binding_automation",
+        "tests/test_admin_backend.py::AdminBackendTests::test_contracts_form_workflow_status_approved_order_runs_binding_automation",
+        "tests/test_raport_static.py::test_raport_index_served_without_authentication",
+        "tests/test_raport_static.py::test_raport_csv_files_are_available_for_reading"
+      ],
+      "obsolete_container": "ctip-prod-mirror-web-1 zatrzymany bez usuwania; był w pętli restartów.",
+      "report": "runtime/deployments/raport-tonery-2026-09-12.json"
+    }
   }
 }
