@@ -5,6 +5,11 @@
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
+
+### Bieżące wydanie Shipping — 2026-09-12
+
+Katalog główny zachowuje archiwalny prototyp. Aktualny kod produkcyjny znajduje się w worktree `.codex/bnp-buyout-prod-worktree`, na gałęzi `release/bnp-buyout-serial-2026-09-11`. Wydanie `ef79672` udostępnia zakładkę **Wydajności tonerów** pod `/shipping?view=toners`, z wyszukiwaniem, edycją, historią i osobnym uprawnieniem. Bieżąca [instrukcja administratora](https://github.com/Jarmix80/ctip/blob/ef79672b6161c9cdb4d75bf33ac6d421328d6fc6/docs/instal/wydajnosci_tonerow.md) znajduje się w `docs/instal/wydajnosci_tonerow.md` tego wydania. Stan produkcji i wyniki kontroli zapisano w `.codex/session.json`; poniższe materiały opisują zachowany kontekst archiwalnego katalogu.
+
 - Proces automatyzacji wysyłek tonerów, integracji DPD, etykiety A4 i zamknięcia dnia: `docs/projekt/wysylki_dpd.md`.
 - Oryginalne, nieformatowane materiały techniczne przekazane przez DPD znajdują się w `docs/Dokumentacja-DPD-API/`; zasady ich wykorzystania przez CTIP opisuje polska dokumentacja projektowa.
 - Runbook izolowanego środowiska testowego odwzorowującego produkcję: `docs/instal/test_prod_mirror.md`.

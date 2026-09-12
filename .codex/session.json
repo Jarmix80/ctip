@@ -1,6 +1,14 @@
 {
-  "timestamp": "2026-09-11T16:11:38+02:00",
+  "timestamp": "2026-09-12 11:43:48 UTC",
   "summary": [
+    "Wdrożono dashboard Wydajności tonerów jako zakładkę obu wyglądów Shipping na produkcji 192.168.0.8, commit ef79672b6161c9cdb4d75bf33ac6d421328d6fc6.",
+    "Katalog PostgreSQL obejmuje 220 kartotek, 151 dowodów i 146 wpisów historii. Dla aktywnych umów: 111 kartotek, 75 wydajności potwierdzonych, 24 szacunki, 12 braków; kompletność 89,2%.",
+    "Szacunki wybierają niższą udokumentowaną wydajność zgodnych wariantów tego samego koloru. Import nie nadpisuje ręcznych korekt; wartości i historia są zapisywane atomowo z kontrolą wersji.",
+    "Edycja oraz odświeżanie MS wymagają administratora lub osobnego uprawnienia can_edit_toner_yields przy aktywnym dostępie do Shipping. Operatorom nie nadano automatycznie nowego prawa.",
+    "Walidacja: 928 testów poprawnych, 1 pominięty; pre-commit i składnia JS poprawne. Przeglądarka Chromium potwierdziła oba wyglądy, wyszukiwanie, zapis/przywrócenie wartości, odświeżanie i przełączanie zakładek bez błędów JS.",
+    "Wdrożono przez scripts/deploy_windows_prod.py po dry-run i backupie D:\\CTIP\\backups\\prod_20260912_133554; zrestartowano tylko CTIP-Web. Migracja b7e2d4f6a810 zachowuje wcześniejsze migracje dziennych migawek telemetrii.",
+    "Odbiór produkcyjny potwierdził HTTP 200 paneli, zasobów, health i FormsPublic, działające filtrowanie API, historię przykładowego szacunku oraz HTTP 401 bez sesji. Ponowienie importu nie dodaje kartotek, dowodów ani wersji wydajności.",
+    "Commity kodu c3f1399 i ef79672 wypchnięto na release/bnp-buyout-serial-2026-09-11. Główny katalog pozostaje archiwalnym prototypem; bieżący kod jest w .codex/bnp-buyout-prod-worktree. Pliki badań i importu pozostają w ignorowanym inbox tego worktree.",
     "Wdrożono na produkcji 192.168.0.8 wykup BNP dla wszystkich urządzeń bez poprawnej ewidencji KP: podpowiedź WKP/<serial> i ostrzeżenie o niespójności.",
     "Użytkownik potwierdził możliwość niezależnej edycji dopisków ewidencji i indeksu; bazowy numer KP lub serial pozostaje chroniony.",
     "Poprawne KP zachowuje standardową procedurę. Przygotowanie kartoteki daje stan 0, finalizacja tworzy jedno PZ i wymaga stanu 1; ponowienie nie dubluje PZ.",
@@ -13,34 +21,34 @@
     "W głównym katalogu roboczym przygotowano do commita i push lokalny odpowiednik zmian BNP wraz z pamięcią wdrożenia, na jawne polecenie użytkownika. Bieżąca gałąź archive/root-shipping-prototype-2026-08-29 pozostaje odrębna od wydania produkcyjnego w worktree .codex/bnp-buyout-prod-worktree; ta operacja nie wdraża ponownie produkcji."
   ],
   "follow_up": [
-    "Użytkownik może odświeżyć /device/bnp-buyout przez Ctrl+F5, przygotować kartoteki ze stanem 0 i zatwierdzić obie faktury; finalizacja tworzy PZ z ilością 1."
+    "Pozostałe 12 wydajności aktywnych umów wymaga wiarygodnego źródła lub ręcznej, jawnie oznaczonej decyzji. Szacunki nie blokują zamawiania tonerów.",
+    "Uprawnienie Edycja wydajności tonerów można nadawać operatorom w panelu użytkowników; wymagany jest również dostęp do Shipping.",
+    "Przed następnym wdrożeniem ponownie odczytać produkcyjny HEAD zamiast zakładać zgodność ze starszą pamięcią sesji."
   ],
   "context": {
     "repo": "ctip",
     "branch_local": "archive/root-shipping-prototype-2026-08-29",
     "release_branch": "release/bnp-buyout-serial-2026-09-11",
     "release_worktree": ".codex/bnp-buyout-prod-worktree",
-    "production_head": "478e14624c52524d5974519019440e217034c3bd",
-    "production_head_verified_at": "2026-09-11T16:05:12+02:00",
-    "previous_production_head": "8302a6e09ebbf96c47431d8a91b954827f4c6b05",
-    "production_backup": "D:\\CTIP\\backups\\prod_20260911_160138",
-    "production_alembic_revision": "a6d9e1f3b520",
+    "production_head": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
+    "production_head_verified_at": "2026-09-12 11:43:48 UTC",
+    "previous_production_head": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
+    "production_backup": "D:\\CTIP\\backups\\prod_20260912_133554",
+    "production_alembic_revision": "b7e2d4f6a810",
     "device_ui_version": "0.6.5",
     "venv": ".venv",
-    "focus": "bnp-buyout-serial-fallback",
+    "focus": "shipping-toner-yield-dashboard-production",
     "source_host": "192.168.0.9",
     "verification": [
-      ".venv i .env.test; PostgreSQL ctip_test, SMS_TEST_MODE=true",
-      "pre-commit run --all-files oraz osobna kontrola nowego testu UI: poprawne",
-      "python -m pytest -q tests/test_device_bnp_buyout.py tests/test_device_bnp_api.py tests/test_device_bnp_ui.py: 64 testy zaliczone",
-      "python -m pytest -q tests/test_admin_ui.py tests/test_device_intake.py tests/test_device_ui_idempotency.py -k device: 30 testów zaliczonych, 33 niewybrane",
-      "black --check i ruff check zmienionych plików Python: poprawne",
-      "node --check app/static/device/device.js: poprawne",
-      "Pełny zestaw testów w worktree wydania opartym na produkcji: 871 zaliczonych, 15 pominiętych",
-      "Produkcyjny HEAD zgodny z wydaniem; git status czysty; CTIP-Web, CollectorService, CTIP-SMS i CTIP-FormsPublic: Running",
-      "HTTP 200: /health i /device/bnp-buyout na porcie 8000 oraz FormsPublic /health na porcie 8100",
-      "Interfejs 0.6.5 i nowy JavaScript potwierdzone na serwerze oraz przez adres LAN 192.168.0.8:8000",
-      "Firebird MON$READ_ONLY=1; oba seriale: identifier_mode=serial, właściwe podpowiedzi WKP, warnings obecne, blockers puste, can_create_catalog=true"
-    ]
+      "python -m pytest -q: 928 passed, 1 skipped; pre-commit run --all-files: poprawny",
+      "Chromium: jasny i ciemny panel, wyszukiwanie, edycja i przywrócenie testowej wartości, odświeżanie MS; 0 błędów JavaScript",
+      "Produkcja: ef79672, Git clean, migracja b7e2d4f6a810; CTIP-Web i chronione usługi działają",
+      "Produkcja: 220 kartotek, 151 dowodów, 146 historii korekt; aktywne umowy: 75 confirmed, 24 estimated, 12 missing",
+      "Produkcja: API bez sesji 401; autoryzowany odczyt, filtrowanie koloru i źródła oraz historia poprawne",
+      "Ponowny dry-run importu: 0 nowych kartotek, 0 dowodów, 0 wartości; zachowano 146 istniejących wartości"
+    ],
+    "toner_dashboard_path": "/shipping?view=toners",
+    "toner_private_input": ".codex/bnp-buyout-prod-worktree/inbox/toner-yields-seed.json",
+    "toner_report": ".codex/bnp-buyout-prod-worktree/inbox/toner-deployment-result.json"
   }
 }
