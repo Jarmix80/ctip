@@ -110,10 +110,15 @@ edycji MS. Nie ma osobnej tabeli historii przypisań CPC; źródłem historii s�
 okresy, bieżąca kartoteka i umowy. Rekordy bez daty należy zachować z oznaczeniem braku.
 Statusy konfliktów i braków mają blokować udawanie pełnej marży/kosztu w projekcji.
 
-Odczyt używa stron po 500 rekordów i partii po 100 ID/par kluczy. Duże tabele są
+Odczyt używa porcji kursora po 500 rekordów, partii po 500 pojedynczych ID
+i po 100 par kluczy. Duże tabele są
 czytane po zebranych identyfikatorach i parach numer/rok. Wstępne zapytanie faktur
 z wieloma skorelowanymi `EXISTS` przekraczało 20-sekundowy limit połączenia; zastąpiono
 je odczytami partiami bez zmiany limitu ani indeksów źródła.
+
+Indeksy urządzenie → umowy oraz umowa → urządzenia powstają raz na migawkę.
+Przypisanie faktury nie skanuje ponownie CPC całej floty. Indeksy należą wyłącznie
+do danego importu i nie pozostają w globalnym cache między przebiegami.
 
 Pilot odczytowy 2026-09-12 dla testowego ID `105`: 1,30 s, `complete=true`,
 1 aktywne urządzenie, 24 fakty (16 CPC, 1 umowa, 7 zleceń), wszystkie `confirmed`.

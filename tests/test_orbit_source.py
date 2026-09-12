@@ -273,6 +273,7 @@ def snapshot(monkeypatch):
     state = SimpleNamespace(tables=sample_tables(), cursors=[], connections=[], failed_table=None)
     monkeypatch.setattr(source, "PAGE_SIZE", 2)
     monkeypatch.setattr(source, "BATCH_SIZE", 2)
+    monkeypatch.setattr(source, "ID_BATCH_SIZE", 2)
     monkeypatch.setattr(source, "check_test_host", lambda host: None)
     monkeypatch.setattr(
         source,
@@ -299,6 +300,27 @@ def snapshot(monkeypatch):
     monkeypatch.setattr(source, "firebird_connection", connection)
     state.load = source.load_orbit_snapshot
     return state
+
+
+def test_invoice_candidates_use_snapshot_index_without_scanning_fleet(monkeypatch):
+    """Powiązanie faktury nie odtwarza historii umów dla każdej maszyny."""
+    tables = sample_tables()
+    normalizer = source._Normalizer(tables)
+    normalizer.devices(set())
+    invoice = {"ID_FAKTURA_TABLE": 987654, "ID_UMOWACPC": 8}
+    expected = {
+        machine_id for machine_id in normalizer.first if 8 in normalizer.contract_ids(machine_id)
+    }
+    assert expected
+
+    def forbidden_scan(machine_id):
+        """Wykrywa kosztowne przeliczanie indeksu podczas obsługi dokumentu."""
+        raise AssertionError("Ponowne skanowanie historii umów floty")
+
+    monkeypatch.setattr(normalizer, "contract_ids", forbidden_scan)
+    assert normalizer.invoice_candidates(invoice) == expected
+    normalizer.first.clear()
+    assert normalizer.invoice_candidates(invoice) == set()
 
 
 def fact(result, key):
