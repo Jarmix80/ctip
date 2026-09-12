@@ -9,6 +9,9 @@ prognozy miesięczne CPC i audytowalne zasady ostrzeżeń bez blokowania wysyłk
 Domyślny zapas wynosi zero; wyjątki dziedziczą kolejno klient i urządzenie.
 Stan wdrożenia i odbiór wieloźródłowy opisuje [instrukcja ORBIT](docs/instal/orbit.md).
 
+Pełny import używa indeksu relacji umów budowanego raz na migawkę, bez
+ponownego skanowania historii całej floty dla każdej faktury.
+
 Raport `/shipping?view=orbit` łączy historię urządzenia, umowy, liczniki, tonery,
 serwis i znane kwoty. Funkcja jest domyślnie wyłączona (`SHIPPING_ORBIT_ENABLED=false`)
 i nie blokuje zamówień ani nie zmienia dokumentów MS. Koszty umów obejmują

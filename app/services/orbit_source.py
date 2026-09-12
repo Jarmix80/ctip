@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 500
 BATCH_SIZE = 100
+ID_BATCH_SIZE = 500
 PRIMARY_KEYS = {
     "MASZYNA": "ID_MASZYNA_TABLE",
     "MODEL": "ID_MODEL",
@@ -99,11 +100,12 @@ def _groups(rows, key):
     return result
 
 
-def _batches(values):
+def _batches(values, *, size=None):
     """Dzieli identyfikatory na porcje mieszczące się w limitach parametrów Firebird."""
     ordered = sorted(set(value for value in values if value is not None))
-    for offset in range(0, len(ordered), BATCH_SIZE):
-        yield ordered[offset : offset + BATCH_SIZE]
+    size = size or BATCH_SIZE
+    for offset in range(0, len(ordered), size):
+        yield ordered[offset : offset + size]
 
 
 def _placeholders(values):
@@ -112,7 +114,7 @@ def _placeholders(values):
 
 
 class _Reader:
-    """Czyta wyłącznie dozwolone tabele, stronicując po ich technicznych kluczach."""
+    """Czyta dozwolone tabele porcjami kursora, zachowując kontrolę kluczy technicznych."""
 
     def __init__(self, cursor):
         """Sprawdza metadane przed wyborem kolumn, wykluczając BLOB-y i tablice."""
@@ -172,7 +174,7 @@ class _Reader:
 
     def by_ids(self, table, field, identifiers):
         """Pobiera rekordy powiązane partiami, bez zapytań dla pojedynczej maszyny."""
-        for batch in _batches(identifiers):
+        for batch in _batches(identifiers, size=ID_BATCH_SIZE):
             self.read(table, f"t.{field} IN ({_placeholders(batch)})", batch)
 
     def by_pairs(self, table, fields, pairs, where="1=1"):
@@ -401,6 +403,18 @@ class _Normalizer:
         self.machines = _groups(tables["MASZYNA"], lambda row: _id(row.get("ID_MASZYNA")))
         self.contracts = {row["ID_UMOWACPC_TABLE"]: row for row in tables["UMOWACPC"]}
         self.cpc = _groups(tables["CPC"], lambda row: _id(row.get("ID_MASZYNA")))
+        self.machine_contracts = {
+            machine_id: frozenset(
+                identifier
+                for row in rows + self.cpc[machine_id]
+                if (identifier := _id(row.get("ID_UMOWACPC"))) is not None
+            )
+            for machine_id, rows in self.machines.items()
+        }
+        self.contract_machines = defaultdict(set)
+        for machine_id, contract_ids in self.machine_contracts.items():
+            for contract_id in contract_ids:
+                self.contract_machines[contract_id].add(machine_id)
         self.orders = _groups(tables["ZLECENIE"], _order_key)
         self.parts = _groups(tables["ZPOZYCJA"], _order_key)
         self.documents = {row["ID_ZAKUPY_TABLE"]: row for row in tables["ZAKUPY"]}
@@ -454,12 +468,8 @@ class _Normalizer:
         self.first = {}
 
     def contract_ids(self, machine_id):
-        """Odtwarza powiązania CPC ze wszystkich okresów i bieżącej kartoteki."""
-        return {
-            identifier
-            for row in self.machines[machine_id] + self.cpc[machine_id]
-            if (identifier := _id(row.get("ID_UMOWACPC"))) is not None
-        }
+        """Zwraca niezmienny indeks umów zbudowany raz dla bieżącej migawki."""
+        return self.machine_contracts.get(machine_id, frozenset())
 
     def context(self, machine_id, observed, customer_id, service_type=None):
         """Wiąże koszt z okresem urządzenia, nie wyłącznie z aktualną umową klienta."""
@@ -1054,11 +1064,7 @@ class _Normalizer:
             result.update(_id(row.get("ID_MASZYNA")) for row in self.orders[key])
         result.update(_id(row.get("ID_MASZYNA")) for row in self.invoice_references[identifier])
         if contract_id := _id(invoice.get("ID_UMOWACPC")):
-            result.update(
-                machine_id
-                for machine_id in self.first
-                if contract_id in self.contract_ids(machine_id)
-            )
+            result.update(self.contract_machines[contract_id] & self.first.keys())
         result.discard(None)
         return result
 
