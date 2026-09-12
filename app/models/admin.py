@@ -27,7 +27,7 @@ from .base import Base
 
 
 class AdminUser(Base):
-    """Użytkownik panelu administracyjnego."""
+    """Użytkownik panelu z osobnym prawem podglądu finansów Orbit."""
 
     __tablename__ = "admin_user"
     __table_args__ = (
@@ -56,6 +56,9 @@ class AdminUser(Base):
     firebird_app_user_login: Mapped[str | None] = mapped_column(Text, nullable=True)
     can_withdraw_device_pz: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_edit_toner_yields: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    can_view_orbit_finance: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     device_theme: Mapped[str] = mapped_column(

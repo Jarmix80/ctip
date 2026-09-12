@@ -1,4 +1,4 @@
-"""Transakcyjny rejestr importów, pochodzenia i niezmiennych wersji danych."""
+"""Transakcyjny rejestr wersji, pochodzenia i ostatnich potwierdzonych obserwacji źródła."""
 
 import gzip
 import hashlib
@@ -86,6 +86,24 @@ class TelemetryStore:
             .first()
         )
 
+    def _accept_record_head(self, source_id: str, external_key: str, record_id: str):
+        """Zapisuje wskaźnik oraz czas akceptacji w UTC w transakcji wywołującego."""
+        values = {"record_id": record_id, "updated_at": utcnow()}
+        changed = self.connection.execute(
+            update(tables.record_head)
+            .where(
+                tables.record_head.c.source_id == source_id,
+                tables.record_head.c.external_key == external_key,
+            )
+            .values(**values)
+        )
+        if not changed.rowcount:
+            self.connection.execute(
+                insert(tables.record_head).values(
+                    source_id=source_id, external_key=external_key, **values
+                )
+            )
+
     def ingest(
         self,
         source_id: str,
@@ -96,8 +114,32 @@ class TelemetryStore:
         media_type="application/json",
         embedded=False,
         archive=False,
+        source_observation: bool | None = None,
     ):
-        """Atomowo zapisuje cały plik lub porcję bazy przed dopuszczeniem archiwizacji."""
+        """Atomowo zapisuje historię i head potwierdzonej obserwacji źródła.
+
+        Reguła source-observation: True oznacza świeży, uporządkowany odczyt
+        bieżącego stanu źródła i aktualizuje head również dla istniejącego
+        markera oraz powrotu A/B/A. None uznaje za taką obserwację wyłącznie
+        źródło typu database bez blob; odtwarzanie jego zrzutów wymaga False.
+        CSV, poczta i inne artefakty wymagają jawnego True popartego kontekstem
+        źródła. False zapisuje historię, ale nie tworzy ani nie zmienia head.
+
+        Kolejność skanowania archiwum, nowa ścieżka, mtime i observed_at pomiaru
+        nie potwierdzają kolejności korekt. Dlatego powtórny CSV bez kontekstu
+        nie może cofnąć head. Istniejących wersji nie uzupełniamy heurystycznie:
+        ORBIT używa fallbacku i oznacza partial, jeśli bez head jest >1 wersja.
+        Dla daily_snapshot autorytatywny pozostaje osobny daily_head.
+        updated_at oznacza czas akceptacji w UTC, nie datę pomiaru.
+        """
+        if source_observation is None:
+            source_observation = (
+                blob is None
+                and self.connection.execute(
+                    select(tables.source.c.kind).where(tables.source.c.id == source_id)
+                ).scalar_one()
+                == "database"
+            )
         digest = (
             hashlib.sha256(blob).hexdigest()
             if blob is not None
@@ -128,6 +170,17 @@ class TelemetryStore:
                     .values(content_gzip=gzip.compress(blob, mtime=0))
                 )
         if marker:
+            if source_observation:
+                for reading in readings:
+                    record_id = self.connection.execute(
+                        select(tables.record.c.id).where(
+                            tables.record.c.source_id == source_id,
+                            tables.record.c.external_key == reading.external_key,
+                            tables.record.c.revision_hash == fingerprint(reading.payload),
+                            tables.record.c.parser_version == PARSER_VERSION,
+                        )
+                    ).scalar_one()
+                    self._accept_record_head(source_id, reading.external_key, record_id)
             return {"new": 0, "duplicates": len(readings), "marker": dict(marker)}
         run_id = self.add(
             tables.imports,
@@ -173,6 +226,8 @@ class TelemetryStore:
                 )
                 self.validate(record_id, source_id, reading)
                 counts["new"] += 1
+            if source_observation:
+                self._accept_record_head(source_id, reading.external_key, record_id)
             self.add(
                 tables.origin,
                 source_id=source_id,

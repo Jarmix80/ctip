@@ -108,6 +108,8 @@ def main(argv=None) -> int:
     if args.scheduled and (args.source or args.limit or args.backfill):
         parser.error("Harmonogram wymaga kompletnego, nieograniczonego przebiegu.")
     config = TelemetrySettings()
+    if settings.shipping_orbit_enabled:
+        config.ms_cpc_enabled = False
     try:
         validate_runtime(config)
     except Exception as error:

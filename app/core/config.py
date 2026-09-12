@@ -99,6 +99,14 @@ class Settings(BaseSettings):
     sms_api_password: str | None = Field(default=None, alias="SMS_API_PASSWORD")
     sms_test_mode: bool = Field(default=True, alias="SMS_TEST_MODE")
     shipping_enabled: bool = Field(default=False, alias="SHIPPING_ENABLED")
+    shipping_orbit_enabled: bool = Field(default=False, alias="SHIPPING_ORBIT_ENABLED")
+    shipping_orbit_scrap_customer_ids: list[int] = Field(
+        default_factory=list, alias="SHIPPING_ORBIT_SCRAP_CUSTOMER_IDS"
+    )
+    shipping_orbit_scrap_warehouse_ids: list[int] = Field(
+        default_factory=list, alias="SHIPPING_ORBIT_SCRAP_WAREHOUSE_IDS"
+    )
+    shipping_orbit_stale_days: int = Field(default=3, ge=1, alias="SHIPPING_ORBIT_STALE_DAYS")
     shipping_catalog_mutations_enabled: bool = Field(
         default=False, alias="SHIPPING_CATALOG_MUTATIONS_ENABLED"
     )

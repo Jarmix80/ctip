@@ -300,6 +300,7 @@ function renderShippingLabelTextMeta() {
 }
 
 function updateAutomaticShippingLabelText(force = false) {
+  scheduleShippingOrbitAdvice();
   const input = document.getElementById("shipping-label-text");
   if (!input) return;
   shippingState.generatedLabelText = automaticShippingLabelText(
@@ -839,6 +840,7 @@ async function attachShippingToExistingLabel() {
     shippingFeedback("Zaznacz jedną istniejącą etykietę i co najmniej jedno zgodne zlecenie gotowe do wysyłki.", true);
     return;
   }
+  await shippingOrbitEvaluate(null, additionalOrderIds);
   const weight = attachment.declared_weight_kg ? `${Number(attachment.declared_weight_kg).toLocaleString("pl-PL")} kg` : "wagę zapisaną na etykiecie";
   const orderNumbers = selectedItems.filter((item) => item.can_generate_label).map((item) => `${item.order_id}/${item.order_year}`);
   if (!window.confirm(`Dołączyć zlecenia ${orderNumbers.join(", ")} do etykiety ${attachment.tracking_number}? Potwierdzasz, że rzeczywista waga całej fizycznej paczki nie przekracza ${weight}.`)) return;
@@ -881,6 +883,7 @@ async function generateConsolidatedShipping() {
     return;
   }
   const orderNumbers = selectedItems.map((item) => `${item.order_id}/${item.order_year}`);
+  await shippingOrbitEvaluate(null, orderTableIds, true);
   const automaticText = normalizeShippingLabelText(
     selectedItems.map((item) => item.label_text || `${item.order_id}/${item.order_year}`).join("; "),
   );
@@ -927,6 +930,7 @@ async function generateShippingBulk(allReady = false) {
     return;
   }
   const sharedGroups = new Set(targetItems.map((item) => item.consolidation?.group_key).filter(Boolean));
+  if (orderTableIds.length) await shippingOrbitEvaluate(null, orderTableIds);
   if (sharedGroups.size && !window.confirm("Wśród wybranych zleceń są pozycje możliwe do wysłania wspólną paczką. Czy mimo to wygenerować dla nich osobne etykiety?")) return;
   shippingState.bulkBusy = true;
   renderShippingBulkActions();
@@ -1429,6 +1433,7 @@ function bindShippingStockRows() {
 }
 
 function renderShippingStock() {
+  scheduleShippingOrbitAdvice();
   const rows = shippingState.detail?.stock || [];
   const order = shippingState.detail?.order || {};
   const modelLabel = [order.device_brand || order.machine_brand, order.device_model || order.machine_model].filter(Boolean).join(" ");
@@ -1640,6 +1645,9 @@ function applyShippingBilling(order, caseData) {
 }
 
 async function loadShippingDetail(orderId) {
+  shippingOrbitAdviceRevision += 1;
+  document.getElementById("shipping-orbit-advice").hidden = true;
+  window.shippingOrbitDashboard?.updateOrderLink(null);
   shippingState.selectedOrderId = orderId;
   shippingState.liveOrderState = null;
   renderShippingQueue();
@@ -1663,6 +1671,7 @@ async function loadShippingDetail(orderId) {
     shippingState.allowNegativeStock = Array.from(shippingState.selectedItems.values()).some((item) => item.allow_negative_stock);
     document.getElementById("shipping-allow-negative-stock").checked = shippingState.allowNegativeStock;
     const order = detail.order;
+    window.shippingOrbitDashboard?.updateOrderLink(order);
     document.getElementById("shipping-detail").hidden = false;
     document.getElementById("shipping-empty").hidden = true;
     document.getElementById("shipping-order-title").textContent = `Zlecenie #${order.order_id}/${order.order_year}`;
@@ -1698,6 +1707,59 @@ function selectedShippingItems() {
     remember_for_model: Boolean(item.remember_for_model),
     allow_negative_stock: Boolean(item.allow_negative_stock),
   }));
+}
+
+let shippingOrbitAdviceTimer = null;
+let shippingOrbitAdviceRevision = 0;
+
+function scheduleShippingOrbitAdvice() {
+  window.clearTimeout(shippingOrbitAdviceTimer);
+  shippingOrbitAdviceRevision += 1;
+  document.getElementById("shipping-orbit-advice").hidden = true;
+  if (!window.shippingOrbitDashboard?.enabled) return;
+  shippingOrbitAdviceTimer = window.setTimeout(() => {
+    const order = shippingState.detail?.order;
+    const items = selectedShippingItems().filter((item) => Number(item.quantity) > 0);
+    if (!order?.machine_id || !items.length) return;
+    const drafts = [{order_table_id: Number(shippingState.selectedOrderId), device_id: `ms:${Number(order.machine_id)}`,
+      items: items.map((item) => ({item_id: Number(item.firebird_warehouse_item_id), quantity: Number(item.quantity)}))}];
+    void shippingOrbitEvaluate(drafts);
+  }, 300);
+}
+
+async function shippingOrbitEvaluate(drafts = null, orderIds = null, consolidated = false) {
+  if (!window.shippingOrbitDashboard?.enabled) return;
+  const revision = ++shippingOrbitAdviceRevision;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 2000);
+  let message;
+  try {
+    const response = await fetch(`/admin/shipping/orbit/shipment-assessment${orderIds ? "/saved" : ""}`, {
+      method: "POST", headers: {...shippingHeaders(), "Content-Type": "application/json"}, signal: controller.signal,
+      body: JSON.stringify(orderIds ? {order_table_ids: orderIds} : {drafts}),
+    });
+    if (!response.ok) throw new Error("Brak oceny ORBIT");
+    const result = await response.json();
+    const colors = {black: "Czarny", cyan: "Cyjan", magenta: "Magenta", yellow: "Żółty"};
+    const lines = (result.devices || []).flatMap((device) => (device.items || []).map((item) =>
+      `${device.device_id} · ${colors[item.color] || item.color}: ${(item.reasons || []).join(" ")} (zapas: ${item.policy?.spare_toners ?? "brak danych"})`));
+    lines.push(...(result.devices || []).filter((device) => device.note).map((device) => `${device.device_id}: ${device.note}`));
+    if ((result.unmatched_orders || []).length || (result.devices || []).some((device) => !device.items?.length)) {
+      lines.push("Część urządzeń lub pozycji nie ma danych pozwalających na ocenę.");
+    }
+    message = lines.join("\n") || "Brak danych do oceny pozycji.";
+  } catch (_error) {
+    message = "Ocena ORBIT jest niedostępna. Możesz kontynuować; sprawdź potrzebę dostawy samodzielnie.";
+  } finally { window.clearTimeout(timeout); }
+  if (revision !== shippingOrbitAdviceRevision) return;
+  const notice = document.getElementById("shipping-orbit-advice");
+  notice.textContent = `ORBIT — wskazówki, bez blokowania\n${message}`;
+  notice.hidden = false;
+  const copy = document.getElementById("shipping-orbit-consolidated-advice");
+  copy.hidden = !consolidated;
+  if (consolidated) {
+    copy.textContent = notice.textContent;
+  }
 }
 
 function shippingAddressFormData() {
@@ -2362,6 +2424,12 @@ async function synchronizeShippingTracking() {
 async function applyShippingDeepLink() {
   const params = new URLSearchParams(window.location.search);
   const view = params.get("view");
+  if (view === "orbit") {
+    await window.shippingOrbitDashboard?.initialize();
+    if (window.shippingOrbitDashboard?.enabled) switchShippingView("orbit", false);
+    else shippingAlert("KP ORBIT jest wyłączony lub niedostępny.", true);
+    return;
+  }
   if (view === "toners") {
     switchShippingView("toners", false);
     return;
@@ -2385,6 +2453,8 @@ async function applyShippingDeepLink() {
 }
 
 function switchShippingView(view, updateUrl = true) {
+  if (view === "orbit" && !window.shippingOrbitDashboard?.enabled) return;
+  if (view !== "orbit") window.shippingOrbitDashboard?.leave();
   document.getElementById("shipping-dispatch-view").hidden = view !== "dispatch";
   document.getElementById("shipping-catalog-view").hidden = view !== "catalog";
   const trackingView = document.getElementById("shipping-tracking-view");
@@ -2393,6 +2463,8 @@ function switchShippingView(view, updateUrl = true) {
   if (archiveView) archiveView.hidden = view !== "archive";
   const tonerView = document.getElementById("shipping-toners-view");
   if (tonerView) tonerView.hidden = view !== "toners";
+  const orbitView = document.getElementById("shipping-orbit-view");
+  if (orbitView) orbitView.hidden = view !== "orbit";
   document.querySelectorAll("[data-shipping-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.shippingView === view);
   });
@@ -2403,9 +2475,11 @@ function switchShippingView(view, updateUrl = true) {
   if (view === "tracking") loadShippingTracking();
   if (view === "archive") loadShippingArchive();
   if (view === "toners") window.tonerYieldDashboard?.load();
+  if (view === "orbit") { window.shippingOrbitDashboard?.open(updateUrl); return; }
   if (updateUrl) {
     const params = new URLSearchParams({ view });
-    window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
+    const leavingOrbit = new URLSearchParams(window.location.search).get("view") === "orbit";
+    window.history[leavingOrbit ? "pushState" : "replaceState"](null, "", `${window.location.pathname}?${params}`);
   }
 }
 
@@ -2674,6 +2748,7 @@ async function initializeShipping() {
       return;
     }
     document.body.classList.remove("shipping-layout-resolving");
+    window.shippingOrbitDashboard?.initialize();
     document.getElementById("shipping-user").textContent = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email;
     shippingState.config = await shippingJson("/admin/shipping/config");
     const config = shippingState.config;
@@ -2729,6 +2804,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-shipping-layout-choice]").forEach((link) => link.addEventListener("click", chooseShippingLayout));
   document.querySelectorAll("[data-shipping-view]").forEach((button) => button.addEventListener("click", () => switchShippingView(button.dataset.shippingView)));
   document.getElementById("shipping-refresh").addEventListener("click", () => {
+    const orbitActive = document.querySelector('[data-shipping-view="orbit"]')?.classList.contains("active");
+    if (orbitActive) { window.shippingOrbitDashboard?.refresh(); return; }
     const archiveActive = document.querySelector('[data-shipping-view="archive"]')?.classList.contains("active");
     const trackingActive = document.querySelector('[data-shipping-view="tracking"]')?.classList.contains("active");
     const tonersActive = document.querySelector('[data-shipping-view="toners"]')?.classList.contains("active");

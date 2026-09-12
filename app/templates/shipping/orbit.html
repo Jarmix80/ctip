@@ -1,0 +1,74 @@
+<section id="shipping-orbit-view" class="orbit-panel" aria-labelledby="orbit-title" hidden>
+  <header class="orbit-heading">
+    <div><p class="orbit-eyebrow">KP ORBIT</p><h2 id="orbit-title">Życie urządzenia</h2><p>Historia urządzenia, źródła danych i przebieg wybranej umowy.</p></div>
+    <button id="orbit-refresh" type="button">Odśwież raport</button>
+  </header>
+  <div id="orbit-feedback" class="orbit-notice" role="status" aria-live="polite" hidden></div>
+  <div class="orbit-workspace">
+    <aside class="orbit-card orbit-search-panel" aria-label="Wyszukiwarka urządzeń">
+      <form id="orbit-search" role="search">
+        <label for="orbit-query">Szukaj urządzenia</label>
+        <input id="orbit-query" type="search" maxlength="200" placeholder="Numer seryjny, model lub klient" autocomplete="off">
+        <label for="orbit-scope">Status urządzenia</label>
+        <select id="orbit-scope"><option value="active">Aktywne</option><option value="suspended">Zawieszone</option><option value="scrapped">Wycofane</option><option value="review">Do weryfikacji</option><option value="all">Wszystkie</option></select>
+        <button type="submit">Szukaj</button>
+      </form>
+      <p id="orbit-search-feedback" class="orbit-muted" role="status" aria-live="polite"></p>
+      <ul id="orbit-devices" class="orbit-devices" aria-label="Urządzenia"></ul>
+      <footer class="orbit-pagination">
+        <button id="orbit-devices-prev" type="button" aria-label="Poprzednia strona urządzeń" disabled>←</button>
+        <span id="orbit-devices-page">Nie pobrano listy</span>
+        <button id="orbit-devices-next" type="button" aria-label="Następna strona urządzeń" disabled>→</button>
+      </footer>
+    </aside>
+    <div class="orbit-report">
+      <p id="orbit-empty" class="orbit-empty">Wybierz urządzenie z listy lub otwórz jego raport ze zlecenia Shipping.</p>
+      <div id="orbit-detail" hidden>
+        <header id="orbit-identity" class="orbit-card orbit-identity"></header>
+        <form id="orbit-filters" class="orbit-card orbit-filters">
+          <label id="orbit-contract-field" hidden>Umowa<select id="orbit-contract"><option value="">Cała historia urządzenia</option></select></label>
+          <span id="orbit-contract-label" class="orbit-muted"></span>
+          <label>Od<input id="orbit-from" type="date"></label>
+          <label>Do<input id="orbit-to" type="date"></label>
+          <button type="submit">Zastosuj zakres</button>
+          <button type="button" data-orbit-range="all">Od początku</button>
+          <button type="button" data-orbit-range="year">Ten rok</button>
+          <p id="orbit-range-label" class="orbit-muted"></p>
+        </form>
+        <nav id="orbit-tabs" class="orbit-tabs" role="tablist" aria-label="Raport urządzenia">
+          <button id="orbit-tab-overview" type="button" role="tab" aria-controls="orbit-pane" aria-selected="true" data-orbit-tab="overview">Przegląd</button>
+          <button id="orbit-tab-timeline" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="timeline">Oś życia</button>
+          <button id="orbit-tab-toners" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="toners">Tonery</button>
+          <button id="orbit-tab-billing" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="billing" hidden>Rozliczenia</button>
+          <button id="orbit-tab-service" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="service">Serwis</button>
+          <button id="orbit-tab-contracts" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="contracts">Umowy</button>
+          <button id="orbit-tab-contractlife" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="contractlife">Przebieg umowy</button>
+          <button id="orbit-tab-story" type="button" role="tab" aria-controls="orbit-pane" aria-selected="false" tabindex="-1" data-orbit-tab="story">Opowieść</button>
+        </nav>
+        <section id="orbit-pane" role="tabpanel" aria-labelledby="orbit-tab-overview" tabindex="0"></section>
+        <section id="orbit-timeline" class="orbit-card" aria-labelledby="orbit-timeline-title" hidden>
+          <header class="orbit-heading"><div><h3 id="orbit-timeline-title">Oś życia</h3><p id="orbit-timeline-scope">Zdarzenia z bieżącej strony. Daty zachowują precyzję źródła.</p></div></header>
+          <div class="orbit-timeline-tools">
+            <label>Agregacja<select id="orbit-bucket"><option value="day">Dzień</option><option value="week">Tydzień</option><option value="month" selected>Miesiąc</option></select></label>
+            <label>Seria przyrostów<select id="orbit-counter-series"><option value="">Brak porównywalnych odczytów</option></select></label>
+            <button type="button" data-orbit-shift="-1" aria-label="Przesuń zakres do wcześniejszego okresu">← Okres</button>
+            <button type="button" data-orbit-shift="1" aria-label="Przesuń zakres do późniejszego okresu">Okres →</button>
+            <button type="button" data-orbit-zoom="0.5">Przybliż</button>
+            <button type="button" data-orbit-zoom="2">Oddal</button>
+            <button id="orbit-timeline-retry" type="button">Ponów odczyt osi</button>
+          </div>
+          <p id="orbit-timeline-feedback" role="status" aria-live="polite" class="orbit-muted"></p>
+          <div id="orbit-chart" class="orbit-chart"></div>
+          <details><summary>Liczba zdarzeń w okresach całego wybranego zakresu</summary><div id="orbit-buckets" class="orbit-table-scroll" tabindex="0" aria-label="Liczności zdarzeń według okresu"></div></details>
+          <div id="orbit-events" class="orbit-table-scroll" tabindex="0" aria-label="Tabela zdarzeń"></div>
+          <footer class="orbit-pagination"><button id="orbit-timeline-prev" type="button" disabled>Poprzednia</button><span id="orbit-timeline-page"></span><button id="orbit-timeline-next" type="button" disabled>Następna</button></footer>
+        </section>
+        <details class="orbit-card orbit-coverage"><summary>Dostępność i pochodzenie danych</summary><div id="orbit-coverage"></div></details>
+      </div>
+    </div>
+  </div>
+  <dialog id="orbit-evidence" class="orbit-evidence" aria-labelledby="orbit-evidence-title">
+    <header class="orbit-heading"><h3 id="orbit-evidence-title">Dane źródłowe zdarzenia</h3><button id="orbit-evidence-close" type="button" autofocus>Zamknij</button></header>
+    <div id="orbit-evidence-body" role="status" aria-live="polite"></div>
+  </dialog>
+</section>
