@@ -29,6 +29,16 @@ Na Windows produkcja wymaga jawnego `--production --env-file D:\CTIP\.env`. Bez 
 
 ## Bezpieczeństwo i utrzymanie
 
+### Dashboard Shipping
+
+Zakładka **Wydajności tonerów** jest dostępna w obu wyglądach Shipping; odnośnik bezpośredni: `/shipping?view=toners`. Wyszukiwarka obejmuje modele, nazwy, indeksy, SKU i EAN. Filtry obejmują aktywność umów, kolor, markę, dostawcę, rodzaj wkładu, jakość danych i dodatni stan magazynu. Domyślnie widoczne są aktywne umowy, również ze stanem zero. Kafelki pokazują kompletność dla bieżących filtrów; udział szacunków nie jest wliczany do potwierdzeń.
+
+Kliknięcie nazwy otwiera kartę z edytorem, źródłami i historią. Zapis wymaga uzasadnienia. Konflikt równoczesnej edycji zachowuje wpisany tekst i wymaga wczytania nowszej wersji. Zmiana na „Brak danych” usuwa bieżącą liczbę, ale nie historię ani źródła. Przycisk „Odśwież dane z MS” wykonuje odczyt na żądanie; nie uruchamia nowego harmonogramu i nie zmienia ręcznych wydajności.
+
+Prawo odczytu wymaga sekcji Shipping, również dla administratora. Edycja i odświeżanie wymagają roli administratora lub flagi **Edycja wydajności tonerów** w ustawieniach użytkownika. Flaga nie zastępuje dostępu do Shipping, nie tworzy nowej sekcji menu i jest domyślnie wyłączona. Starszy klient aktualizujący użytkownika bez tego pola zachowuje jego dotychczasową wartość.
+
+API pod `/admin/shipping/toner-yields` obsługuje `GET` listy, `GET /{item_id}`, `GET /{item_id}/history`, `PATCH /{item_id}` i `POST /refresh`. Korekta zawiera `revision`, `pages`, `status`, `source`, `basis`, `reason`. Błędy: 403 brak uprawnień, 404 niewłaściwa kartoteka, 409 konflikt wersji, 422 niepoprawne dane, 503 niedostępny odczyt MS. Nie ma publicznego importu faktur ani automatycznego odpytywania WWW.
+
 Zmiana wydajności wymaga aktualnej wersji, uzasadnienia, a dla wartości potwierdzonej źródła i dla szacunku podstawy oszacowania. Wartość i audyt są zatwierdzane razem. Równoległa korekta kończy się konfliktem zamiast utraty danych.
 
 Migracja `b7e2d4f6a810` dodaje tabele i domyślnie wyłączoną flagę użytkownika `can_edit_toner_yields`. Wycofanie aplikacji pozostawia tabele i historię. Nie wykonuje się automatycznego destrukcyjnego downgrade. Standardowe logi aplikacji w `docs/LOG` są rotowane dziennie (`*_YYYY-MM-DD.log`); każdy wpis ma znacznik czasu. Logi importu nie ujawniają haseł połączeń.

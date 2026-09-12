@@ -144,11 +144,13 @@ async def create_user(
     role: str,
     is_salesperson: bool = False,
     can_withdraw_device_pz: bool = False,
+    can_edit_toner_yields: bool = False,
     password: str | None = None,
     mobile_phone: str | None = None,
     firebird_app_user_id: int | None = None,
     firebird_app_user_login: str | None = None,
 ) -> tuple[AdminUser, str]:
+    """Tworzy konto z osobnym, domyślnie wyłączonym prawem edycji wydajności."""
     email_normalized = email.strip().lower()
     await ensure_unique_email(session, email_normalized)
 
@@ -166,6 +168,7 @@ async def create_user(
         is_active=True,
         is_salesperson=bool(is_salesperson),
         can_withdraw_device_pz=bool(can_withdraw_device_pz),
+        can_edit_toner_yields=bool(can_edit_toner_yields),
         mobile_phone=normalized_phone,
         firebird_app_user_id=firebird_app_user_id,
         firebird_app_user_login=(firebird_app_user_login or "").strip() or None,
@@ -186,10 +189,12 @@ async def update_user(
     role: str,
     is_salesperson: bool,
     can_withdraw_device_pz: bool,
+    can_edit_toner_yields: bool | None = None,
     mobile_phone: str | None,
     firebird_app_user_id: int | None,
     firebird_app_user_login: str | None,
 ) -> AdminUser:
+    """Aktualizuje konto, zachowując uprawnienie tonerów pominięte przez starszy klient."""
     email_normalized = email.strip().lower()
     if email_normalized != user.email:
         await ensure_unique_email(session, email_normalized, exclude_user_id=user.id)
@@ -203,6 +208,8 @@ async def update_user(
     user.role = role
     user.is_salesperson = bool(is_salesperson)
     user.can_withdraw_device_pz = bool(can_withdraw_device_pz)
+    if can_edit_toner_yields is not None:
+        user.can_edit_toner_yields = bool(can_edit_toner_yields)
     user.mobile_phone = normalized_phone
     user.firebird_app_user_id = firebird_app_user_id
     user.firebird_app_user_login = (firebird_app_user_login or "").strip() or None

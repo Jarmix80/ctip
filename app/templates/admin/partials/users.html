@@ -113,6 +113,13 @@
           <small>Administrator ma to prawo zawsze. Pozostali użytkownicy wymagają jawnego nadania.</small>
         </div>
         <div class="form-field">
+          <label class="users-section-option users-flag-option">
+            <input type="checkbox" x-model="form.canEditTonerYields" :disabled="form.role === 'admin'">
+            Edycja wydajności tonerów
+          </label>
+          <small>Wymaga dostępu do Shipping. Administrator ma prawo edycji zawsze.</small>
+        </div>
+        <div class="form-field">
           <label class="users-section-option users-flag-option" for="user-imap-use-ssl">
             <input id="user-imap-use-ssl" type="checkbox" x-model="form.imapUseSsl">
             IMAP SSL
@@ -488,6 +495,13 @@
                     Wycofywanie dokumentów PZ
                   </label>
                   <small>Osobne uprawnienie do operacji wycofania przyjęcia urządzeń.</small>
+                </div>
+                <div class="form-field">
+                  <label class="users-section-option users-flag-option">
+                    <input type="checkbox" x-model="modalEdit.canEditTonerYields" :disabled="modalEdit.role === 'admin'">
+                    Edycja wydajności tonerów
+                  </label>
+                  <small>Wymaga dostępu do Shipping. Administrator ma prawo edycji zawsze.</small>
                 </div>
               </div>
               <div class="form-actions">

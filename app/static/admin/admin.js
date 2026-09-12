@@ -1450,6 +1450,7 @@ document.addEventListener("alpine:init", () => {
       role: "operator",
       isSalesperson: false,
       canWithdrawDevicePz: false,
+      canEditTonerYields: false,
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
@@ -1479,6 +1480,7 @@ document.addEventListener("alpine:init", () => {
       role: "operator",
       isSalesperson: false,
       canWithdrawDevicePz: false,
+      canEditTonerYields: false,
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
@@ -1715,6 +1717,7 @@ document.addEventListener("alpine:init", () => {
       this.form.role = "operator";
       this.form.isSalesperson = false;
       this.form.canWithdrawDevicePz = false;
+      this.form.canEditTonerYields = false;
       this.form.mobilePhone = "";
       this.form.firebirdAppUserId = "";
       this.form.firebirdAppUserLogin = "";
@@ -1877,6 +1880,7 @@ document.addEventListener("alpine:init", () => {
         role: source.role || "operator",
         is_salesperson: Boolean(source.isSalesperson),
         can_withdraw_device_pz: Boolean(source.canWithdrawDevicePz),
+        can_edit_toner_yields: Boolean(source.canEditTonerYields),
         mobile_phone: mobile || null,
         firebird_app_user_id: this.normalizeMsUserId(source.firebirdAppUserId),
         sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
@@ -2037,6 +2041,7 @@ document.addEventListener("alpine:init", () => {
           this.modalEdit.role = data.role;
           this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
           this.modalEdit.canWithdrawDevicePz = Boolean(data.can_withdraw_device_pz);
+          this.modalEdit.canEditTonerYields = Boolean(data.can_edit_toner_yields);
           this.modalEdit.sections = this.normalizeSectionsForRole(
             data.sections,
             data.role || this.modalEdit.role,
@@ -2115,6 +2120,7 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.role = "operator";
       this.modalEdit.isSalesperson = false;
       this.modalEdit.canWithdrawDevicePz = false;
+      this.modalEdit.canEditTonerYields = false;
       this.modalEdit.mobilePhone = "";
       this.modalEdit.firebirdAppUserId = "";
       this.modalEdit.firebirdAppUserLogin = "";
@@ -2155,6 +2161,7 @@ document.addEventListener("alpine:init", () => {
         this.modalEdit.role = data.role || "operator";
         this.modalEdit.isSalesperson = Boolean(data.is_salesperson);
         this.modalEdit.canWithdrawDevicePz = Boolean(data.can_withdraw_device_pz);
+        this.modalEdit.canEditTonerYields = Boolean(data.can_edit_toner_yields);
         this.modalEdit.mobilePhone = data.mobile_phone || "";
         this.modalEdit.firebirdAppUserId = data.firebird_app_user_id
           ? String(data.firebird_app_user_id)

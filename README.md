@@ -4,6 +4,8 @@
 
 ## Katalog wydajności tonerów
 
+Zakładka **Wydajności tonerów** w jasnym i ciemnym Shipping (`/shipping?view=toners`) udostępnia wspólną wyszukiwarkę, filtry, kompletność danych, źródła i edycję z historią. Domyślny zakres obejmuje aktywne umowy, także tonery ze stanem zero. Administrator lub operator z osobnym prawem edycji może aktualizować wydajność i odświeżać dane MS; pozostali użytkownicy Shipping mają podgląd.
+
 Katalog PostgreSQL zachowuje nominalne wydajności, źródła oraz historię korekt niezależnie od MS i Optimy. Import `scripts/import_toner_yields.py` domyślnie wykonuje tylko próbę; ręczne decyzje nie są nadpisywane. Zasady zakresu aktywnych umów, importu i zabezpieczeń opisano w [instrukcji administratora](docs/instal/wydajnosci_tonerow.md).
 
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.

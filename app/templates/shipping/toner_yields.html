@@ -1,0 +1,50 @@
+<section id="shipping-toners-view" class="toner-panel" hidden>
+  <header class="toner-heading">
+    <div><p class="toner-eyebrow">KATALOG MATERIAŁÓW</p><h2>Wydajności tonerów</h2><p>Nominalna liczba stron na wkład. Źródła, szacunki i ręczne korekty w jednym miejscu.</p></div>
+    <div class="toner-sync"><button id="toner-refresh-ms" type="button" disabled>Odśwież dane z MS</button><small id="toner-sync-time">Nie pobrano informacji o synchronizacji</small></div>
+  </header>
+  <div id="toner-feedback" class="toner-feedback" role="status" aria-live="polite" hidden></div>
+  <div class="toner-stats" aria-label="Kompletność danych dla bieżących filtrów">
+    <article><span>Kartoteki w wyniku</span><strong id="toner-total">—</strong><small id="toner-coverage">—</small></article>
+    <article class="toner-confirmed"><span>Potwierdzone źródłem</span><strong id="toner-confirmed">—</strong><small>Deklaracja, nie pomiar zużycia</small></article>
+    <article class="toner-estimated"><span>Szacunkowe</span><strong id="toner-estimated">—</strong><small>Niższy zgodny wariant</small></article>
+    <article class="toner-missing"><span>Brak wydajności</span><strong id="toner-missing">—</strong><small id="toner-review-count">—</small></article>
+  </div>
+  <form id="toner-filters" class="toner-filters" role="search">
+    <label class="toner-search"><span>Szukaj tonera lub urządzenia</span><input id="toner-query" type="search" placeholder="Model, nazwa, indeks, SKU lub EAN" maxlength="200"></label>
+    <label><span>Zakres urządzeń</span><select id="toner-scope"><option value="active">Aktywne umowy</option><option value="all">Wszystkie kartoteki</option><option value="inactive">Poza aktywnymi umowami</option><option value="review">Wymagające sprawdzenia</option></select></label>
+    <label><span>Kolor</span><select id="toner-color"><option value="">Wszystkie kolory</option><option value="black">Czarny (K)</option><option value="cyan">Cyjan (C)</option><option value="magenta">Magenta (M)</option><option value="yellow">Żółty (Y)</option><option value="unknown">Nieustalony</option></select></label>
+    <label><span>Producent / marka</span><select id="toner-brand"><option value="">Wszystkie marki</option></select></label>
+    <label><span>Dostawca</span><select id="toner-supplier"><option value="">Wszyscy dostawcy</option></select></label>
+    <label><span>Rodzaj wkładu</span><select id="toner-kind"><option value="">Wszystkie rodzaje</option><option value="original">Oryginał</option><option value="compatible">Zamiennik</option><option value="remanufactured">Regenerowany</option><option value="unknown">Nieustalony</option></select></label>
+    <label><span>Wiarygodność</span><select id="toner-status"><option value="">Wszystkie statusy</option><option value="confirmed">Potwierdzone</option><option value="estimated">Szacunkowe</option><option value="missing">Brak danych</option></select></label>
+    <label class="toner-available"><input id="toner-available" type="checkbox"><span>Tylko ze stanem &gt; 0</span></label>
+    <button id="toner-reset" type="button">Wyczyść filtry</button>
+  </form>
+  <div class="toner-workspace">
+    <section class="toner-results" aria-label="Wyniki wyszukiwania">
+      <div class="toner-table-wrap"><table class="toner-table"><thead><tr><th>Toner / modele urządzeń</th><th>Kolor</th><th>Stan</th><th>Stron / wkład</th><th>Źródło / status</th></tr></thead><tbody id="toner-rows"><tr><td colspan="5">Wybierz zakładkę, aby pobrać katalog.</td></tr></tbody></table></div>
+      <footer class="toner-pagination"><button id="toner-prev" type="button" disabled>Poprzednia</button><span id="toner-page">Strona 1</span><button id="toner-next" type="button" disabled>Następna</button></footer>
+    </section>
+    <aside id="toner-detail" class="toner-detail" aria-label="Szczegóły i edycja wydajności" hidden>
+      <header><div><p class="toner-eyebrow">KARTA TONERA</p><h3 id="toner-detail-name"></h3></div><button id="toner-detail-close" type="button" aria-label="Zamknij szczegóły">×</button></header>
+      <p id="toner-detail-meta" class="toner-muted"></p><p id="toner-detail-models"></p><p id="toner-detail-scope" class="toner-muted"></p>
+      <p id="toner-readonly" class="toner-note" hidden>Tryb podglądu. Edycja wymaga osobnego uprawnienia nadanego przez administratora.</p>
+      <form id="toner-edit-form">
+        <fieldset id="toner-edit-fields">
+          <label><span>Wydajność nominalna [stron / wkład]</span><input id="toner-edit-pages" type="number" min="1" max="2147483647" step="1" inputmode="numeric"></label>
+          <label><span>Status danych</span><select id="toner-edit-status"><option value="confirmed">Potwierdzona źródłem</option><option value="estimated">Szacunkowa</option><option value="missing">Brak danych</option></select></label>
+          <label><span>Źródło / odnośnik / numer dokumentu</span><textarea id="toner-edit-source" rows="2" maxlength="2000"></textarea></label>
+          <label><span>Norma, pokrycie lub podstawa szacunku</span><textarea id="toner-edit-basis" rows="2" maxlength="2000" placeholder="Pozostaw puste, jeżeli źródło nie podaje warunków. Dla szacunku podaj podstawę."></textarea></label>
+          <label><span>Uzasadnienie korekty</span><textarea id="toner-edit-reason" rows="2" minlength="3" maxlength="2000" required placeholder="Co poprawiasz i na jakiej podstawie?"></textarea></label>
+        </fieldset>
+        <p id="toner-edit-feedback" class="toner-feedback" role="status" hidden></p>
+        <button id="toner-save" class="toner-primary" type="submit">Zapisz wydajność</button>
+        <button id="toner-reload-detail" type="button" hidden>Wczytaj aktualną wersję</button>
+      </form>
+      <details open><summary>Źródła i warianty wkładu</summary><div id="toner-evidence"></div></details>
+      <details><summary>Historia zmian</summary><div id="toner-history"></div></details>
+      <p class="toner-note">Zmiana nie modyfikuje stanów MS i nie blokuje zamawiania tonerów.</p>
+    </aside>
+  </div>
+</section>

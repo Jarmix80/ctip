@@ -2,13 +2,21 @@
 
 import unittest
 from copy import deepcopy
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import httpx
 import pytest
+from fastapi import FastAPI
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import get_admin_session_context, get_db_session
+from app.api.routes import admin_toner_yields
+from app.core.config import settings
 from app.models import (
     AdminSetting,
     AdminUser,
@@ -188,6 +196,49 @@ class TonerYieldStoreTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual([item["item_id"] for item in result["items"]], [12])
 
+    async def test_rejected_mapping_does_not_keep_toner_on_active_contract(self):
+        document = sample_document()
+        document["items"][0]["models"][0]["id"] = 99
+        now = datetime.now(UTC)
+        async with self.sessions() as session:
+            await import_yields(session, document)
+            session.add(
+                ShippingConsumableCompatibility(
+                    firebird_model_id=99,
+                    firebird_warehouse_item_id=11,
+                    model_label="Ricoh IM C3000",
+                    item_name="Toner testowy",
+                    status="rejected",
+                    evidence=[],
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await session.commit()
+            await refresh_catalog(
+                session,
+                {
+                    "warehouse_id": 1,
+                    "items": [
+                        {
+                            "item_id": 11,
+                            "item_index": "TEST",
+                            "name": "Toner testowy",
+                            "brand": "Ricoh",
+                            "stock": 1,
+                        }
+                    ],
+                    "models": {99: {"id": 99, "brand": "Ricoh", "model": "IM C3000"}},
+                    "active_keys": [model_key("Ricoh", "IM C3000")],
+                },
+            )
+            detail = await yield_detail(session, 11)
+            self.assertEqual(detail["scope"], "review")
+            self.assertEqual(detail["models"], [])
+            self.assertEqual(detail["pages"], 31000)
+
     async def test_import_invalid_duplicate_rolls_back_whole_batch(self):
         document = sample_document()
         document["items"].append(deepcopy(document["items"][0]))
@@ -196,6 +247,93 @@ class TonerYieldStoreTests(unittest.IsolatedAsyncioTestCase):
                 await import_yields(session, document)
             await session.rollback()
             self.assertEqual(list(await session.scalars(select(TonerYield))), [])
+
+    async def test_api_permissions_history_conflict_and_refresh_failure(self):
+        now = datetime.now(UTC)
+        user = AdminUser(
+            id=20,
+            email="operator@example.com",
+            role="operator",
+            can_edit_toner_yields=False,
+            password_hash="test",
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        async with self.sessions() as session:
+            session.add(user)
+            session.add(
+                AdminSetting(
+                    key="user_sections.20", value='["shipping"]', is_secret=False, updated_at=now
+                )
+            )
+            await import_yields(session, sample_document())
+            await session.commit()
+
+        app = FastAPI()
+        app.include_router(admin_toner_yields.router)
+
+        async def database():
+            """Podstawia wyłącznie testową bazę SQLite."""
+            async with self.sessions() as session:
+                yield session
+
+        async def context():
+            """Udostępnia syntetycznego operatora bez tokenów produkcyjnych."""
+            return SimpleNamespace(client_ip="127.0.0.1"), user
+
+        app.dependency_overrides[get_db_session] = database
+        app.dependency_overrides[get_admin_session_context] = context
+        payload = {
+            "revision": 1,
+            "pages": 30000,
+            "status": "estimated",
+            "source": "Źródło testowe",
+            "basis": "Niższy zgodny wariant",
+            "reason": "Sprawdzenie zapisu",
+        }
+        with (
+            patch.object(settings, "shipping_enabled", True),
+            patch.object(settings, "shipping_warehouse_id", 1),
+        ):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                base = "/admin/shipping/toner-yields"
+                response = await client.get(base)
+                self.assertEqual(response.status_code, 200)
+                self.assertFalse(response.json()["can_edit"])
+                self.assertEqual((await client.patch(f"{base}/11", json=payload)).status_code, 403)
+                with patch.object(admin_toner_yields, "load_toner_catalog") as source:
+                    self.assertEqual((await client.post(f"{base}/refresh")).status_code, 403)
+                    source.assert_not_called()
+                user.can_edit_toner_yields = True
+                response = await client.patch(f"{base}/11", json=payload)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual((await client.patch(f"{base}/11", json=payload)).status_code, 409)
+                history = (await client.get(f"{base}/11/history")).json()["items"]
+                self.assertEqual(len(history), 2)
+                self.assertEqual(history[0]["actor"], user.email)
+                with patch.object(
+                    admin_toner_yields,
+                    "load_toner_catalog",
+                    side_effect=RuntimeError("awaria testowa"),
+                ):
+                    response = await client.post(f"{base}/refresh")
+                    self.assertEqual(response.status_code, 503)
+                    self.assertNotIn("awaria testowa", response.text)
+                self.assertEqual((await client.get(f"{base}/11")).json()["pages"], 30000)
+                self.assertEqual((await client.get(f"{base}/999")).status_code, 404)
+                self.assertEqual((await client.get(base + "?color=red")).status_code, 422)
+                user.role = "admin"
+                self.assertEqual((await client.get(base)).status_code, 200)
+                async with self.sessions() as session:
+                    setting = await session.get(AdminSetting, "user_sections.20")
+                    setting.value = '["admin"]'
+                    await session.commit()
+                self.assertEqual((await client.get(base)).status_code, 403)
+                app.dependency_overrides.pop(get_admin_session_context)
+                self.assertIn((await client.get(base)).status_code, (401, 403))
 
 
 @pytest.mark.parametrize(

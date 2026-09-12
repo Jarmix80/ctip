@@ -7,7 +7,9 @@
     <link rel="icon" type="image/svg+xml" href="/static/root/favicon.svg">
     <link rel="stylesheet" href="/static/shipping/shipping.css?v={{ request.app.version }}-ms-reconcile-01">
     <link rel="stylesheet" href="/static/shipping/shipping-v2.css?v={{ request.app.version }}-ms-reconcile-01">
-    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-ms-reconcile-01"></script>
+    <link rel="stylesheet" href="/static/shipping/toner-yields.css?v={{ request.app.version }}-toners-01">
+    <script defer src="/static/shipping/shipping.js?v={{ request.app.version }}-toners-01"></script>
+    <script defer src="/static/shipping/toner-yields.js?v={{ request.app.version }}-toners-01"></script>
     <script defer src="/static/shipping/shipping-v2.js?v={{ request.app.version }}-device-model-01"></script>
   </head>
   <body class="shipping-v2-body{% if shipping_default_entry %} shipping-layout-resolving{% endif %}" data-shipping-layout="v2" data-shipping-default-entry="{{ 'true' if shipping_default_entry else 'false' }}">
@@ -21,6 +23,7 @@
           <button type="button" class="shipping-v2-tab active" data-shipping-view="dispatch">Realizacja wysyłek <b id="shipping-count">0</b></button>
           <button type="button" class="shipping-v2-tab" data-shipping-view="tracking">Status przesyłek <b id="shipping-tracking-tab-count">0</b></button>
           <button type="button" class="shipping-v2-tab" data-shipping-view="catalog">Katalog zgodności</button>
+          <button type="button" class="shipping-v2-tab" data-shipping-view="toners">Wydajności tonerów</button>
           <button type="button" class="shipping-v2-tab" data-shipping-view="archive">Archiwum <b id="shipping-archive-tab-count">0</b></button>
         </nav>
         <div class="shipping-v2-user">
@@ -34,6 +37,7 @@
 
       <section id="shipping-alert" class="shipping-alert shipping-v2-alert" hidden></section>
 
+      {% include "shipping/toner_yields.html" %}
       <section id="shipping-dispatch-view">
         <div class="shipping-v2-infobar">
           <article><i class="online"></i><span><small>DPD</small><strong id="shipping-dpd-status">—</strong></span><button id="shipping-dpd-demo-test" type="button" hidden>Test DPD Demo</button></article>

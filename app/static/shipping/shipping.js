@@ -2362,6 +2362,10 @@ async function synchronizeShippingTracking() {
 async function applyShippingDeepLink() {
   const params = new URLSearchParams(window.location.search);
   const view = params.get("view");
+  if (view === "toners") {
+    switchShippingView("toners", false);
+    return;
+  }
   if (view === "tracking") {
     switchShippingView("tracking", false);
     await loadShippingTracking();
@@ -2387,6 +2391,8 @@ function switchShippingView(view, updateUrl = true) {
   if (trackingView) trackingView.hidden = view !== "tracking";
   const archiveView = document.getElementById("shipping-archive-view");
   if (archiveView) archiveView.hidden = view !== "archive";
+  const tonerView = document.getElementById("shipping-toners-view");
+  if (tonerView) tonerView.hidden = view !== "toners";
   document.querySelectorAll("[data-shipping-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.shippingView === view);
   });
@@ -2396,6 +2402,7 @@ function switchShippingView(view, updateUrl = true) {
   }
   if (view === "tracking") loadShippingTracking();
   if (view === "archive") loadShippingArchive();
+  if (view === "toners") window.tonerYieldDashboard?.load();
   if (updateUrl) {
     const params = new URLSearchParams({ view });
     window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
@@ -2724,6 +2731,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shipping-refresh").addEventListener("click", () => {
     const archiveActive = document.querySelector('[data-shipping-view="archive"]')?.classList.contains("active");
     const trackingActive = document.querySelector('[data-shipping-view="tracking"]')?.classList.contains("active");
+    const tonersActive = document.querySelector('[data-shipping-view="toners"]')?.classList.contains("active");
+    if (tonersActive) { window.tonerYieldDashboard?.load(); return; }
     if (trackingActive) loadShippingTracking();
     else if (archiveActive) loadShippingArchive();
     else refreshShippingQueueManually();

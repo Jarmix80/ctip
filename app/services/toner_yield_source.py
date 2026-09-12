@@ -36,8 +36,8 @@ def toner_color(name: str) -> str:
 
 def is_toner(name: str) -> bool:
     """Odrzuca pojemniki odpadowe, podzespoły i proszki zamiast pełnego wkładu."""
-    return bool(re.search(r"\btoner\b", name, re.I)) and not re.search(
-        r"waste|zużyt|zuzyt|pojemnik|butelka\s+na|proszek|developer|bęben|beben|chip|czujnik|silnik|sprzęg|sprzeg|ślimak|slimak|zasyp",
+    return bool(re.match(r"\s*toner\b", name, re.I)) and not re.search(
+        r"waste|zużyt|zuzyt|pojemnik|butelka\s+na|proszek|developer|bęben|beben|chip|czujnik|silnik|sprzęg|sprzeg|ślimak|slimak|zasyp|hopper|bottle|supply|tank|recykling|separation|sensor|epson\s+(?:wf[ -]?|869r)",
         name,
         re.I,
     )

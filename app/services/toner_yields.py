@@ -100,6 +100,10 @@ async def change_yield(
     item = await session.get(TonerYield, item_id)
     if item is None:
         raise LookupError("Nie znaleziono kartoteki tonera.")
+    if item.revision != payload.revision:
+        raise YieldConflict(
+            "Dane zmieniły się w międzyczasie. Wczytaj aktualną wersję przed zapisem."
+        )
     before = value_snapshot(item)
     after = {**payload.model_dump(exclude={"revision"}), "manual_override": manual}
     changed_at = utcnow()
@@ -153,12 +157,18 @@ async def refresh_catalog(session, snapshot):
     mappings = list(
         await session.scalars(
             select(ShippingConsumableCompatibility).where(
-                ShippingConsumableCompatibility.status == "confirmed"
+                ShippingConsumableCompatibility.status.in_(["confirmed", "rejected"])
             )
         )
     )
     by_item = {}
+    rejected_by_item = {}
     for mapping in mappings:
+        if mapping.status == "rejected":
+            rejected_by_item.setdefault(mapping.firebird_warehouse_item_id, set()).add(
+                mapping.firebird_model_id
+            )
+            continue
         model = snapshot["models"].get(mapping.firebird_model_id)
         if model:
             by_item.setdefault(mapping.firebird_warehouse_item_id, []).append(model)
@@ -184,9 +194,16 @@ async def refresh_catalog(session, snapshot):
             setattr(item, field, row[field])
         if not item.brand:
             item.brand = row["brand"]
-        models = {model_key(model["brand"], model["model"]): model for model in item.models}
+        if item.color == "unknown":
+            item.color = toner_color(row["name"])
+        blocked = set(item.excluded_model_ids) | rejected_by_item.get(item_id, set())
+        models = {
+            model_key(model["brand"], model["model"]): model
+            for model in item.models
+            if model.get("id") not in blocked
+        }
         for model in by_item.get(item_id, []):
-            if model["id"] not in item.excluded_model_ids:
+            if model["id"] not in blocked:
                 models.setdefault(model_key(model["brand"], model["model"]), model)
         item.models = list(models.values())
         item.scope = scope_for(item, active_keys)
@@ -264,6 +281,20 @@ async def import_yields(session, document):
             session.add(item)
             await session.flush()
             counts["created"] += 1
+        else:
+            for field in ("brand", "supplier", "sku", "ean", "color", "kind"):
+                if getattr(item, field) in ("", "unknown") and row.get(field) not in (
+                    None,
+                    "",
+                    "unknown",
+                ):
+                    setattr(item, field, row[field])
+            item.excluded_model_ids = sorted(
+                set(item.excluded_model_ids) | set(row.get("excluded_model_ids", []))
+            )
+            item.models = [
+                model for model in item.models if model.get("id") not in item.excluded_model_ids
+            ]
         fingerprints = set(
             await session.scalars(
                 select(TonerYieldEvidence.fingerprint).where(TonerYieldEvidence.item_id == item_id)

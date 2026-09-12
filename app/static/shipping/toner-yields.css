@@ -1,0 +1,61 @@
+.toner-panel { --toner-bg: #fff; --toner-muted: #64748b; --toner-line: #dbe3ee; --toner-soft: #f3f6fa; --toner-text: #18283d; --toner-accent: #087858; padding: 22px; color: var(--toner-text); }
+.shipping-v2-body .toner-panel { --toner-bg: #111e30; --toner-muted: #9aacc1; --toner-line: #30445b; --toner-soft: #192a40; --toner-text: #e2eaf4; --toner-accent: #59d9a6; }
+.toner-panel[hidden], .toner-panel [hidden] { display: none !important; }
+.toner-heading, .toner-detail > header { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.toner-heading h2 { margin: 4px 0 8px; font-size: 26px; }
+.toner-heading p { margin: 0 0 14px; color: var(--toner-muted); }
+.toner-panel .toner-eyebrow { margin: 0; color: var(--toner-accent); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.toner-sync { display: grid; justify-items: end; gap: 8px; }
+.toner-sync small, .toner-muted { color: var(--toner-muted); font-size: 12px; }
+.toner-panel button { padding: 9px 13px; border: 1px solid var(--toner-line); border-radius: 7px; color: var(--toner-text); background: var(--toner-bg); cursor: pointer; font: inherit; font-size: 12px; }
+.toner-panel button:hover { border-color: var(--toner-accent); }
+.toner-panel button:disabled { opacity: .55; cursor: not-allowed; }
+.toner-panel .toner-primary { color: #fff; background: #087858; border-color: #087858; font-weight: 700; }
+.toner-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 12px 0 18px; }
+.toner-stats article { display: grid; gap: 6px; padding: 17px; border: 1px solid var(--toner-line); border-radius: 10px; background: var(--toner-bg); }
+.toner-stats span, .toner-stats small { color: var(--toner-muted); font-size: 12px; }
+.toner-stats strong { font-size: 29px; font-variant-numeric: tabular-nums; }
+.toner-confirmed strong { color: var(--toner-accent); }
+.toner-estimated strong { color: #bc8608; }
+.toner-missing strong { color: #db6662; }
+.toner-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 16px; margin-bottom: 16px; border: 1px solid var(--toner-line); border-radius: 10px; background: var(--toner-bg); }
+.toner-panel label { display: grid; gap: 6px; font-size: 12px; color: var(--toner-muted); }
+.toner-search { flex: 1 1 320px; }
+.toner-panel input, .toner-panel select, .toner-panel textarea { box-sizing: border-box; min-height: 38px; width: 100%; padding: 8px 10px; border: 1px solid var(--toner-line); border-radius: 6px; color: var(--toner-text); background: var(--toner-soft); font: inherit; font-size: 13px; }
+.toner-panel textarea { resize: vertical; }
+.toner-panel .toner-available { display: flex; align-items: center; min-height: 38px; }
+.toner-available input { width: 16px; min-height: 16px; }
+.toner-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.toner-workspace:has(.toner-detail:not([hidden])) { grid-template-columns: minmax(0, 1.5fr) minmax(340px, 1fr); }
+.toner-results, .toner-detail { border: 1px solid var(--toner-line); border-radius: 10px; background: var(--toner-bg); overflow: hidden; }
+.toner-table-wrap { overflow: auto; max-height: 66vh; }
+.toner-table { border-collapse: collapse; width: 100%; text-align: left; font-size: 13px; }
+.toner-table th { position: sticky; top: 0; z-index: 1; padding: 13px 12px; color: var(--toner-muted); background: var(--toner-soft); font-size: 11px; }
+.toner-table td { padding: 13px 12px; border-bottom: 1px solid var(--toner-line); vertical-align: top; }
+.toner-table tr:nth-child(even) { background: var(--toner-soft); }
+.toner-table td small { display: block; margin-top: 5px; color: var(--toner-muted); overflow-wrap: anywhere; }
+.toner-panel .toner-open { padding: 0; border: 0; background: transparent; text-align: left; font-size: 13px; font-weight: 700; }
+.toner-selected { box-shadow: inset 3px 0 var(--toner-accent); }
+.toner-numeric { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.toner-badge { display: inline-block; padding: 4px 7px; border-radius: 5px; font-size: 11px; background: var(--toner-soft); border: 1px solid var(--toner-line); }
+.toner-badge.confirmed { color: var(--toner-accent); }
+.toner-badge.estimated { color: #bc8608; }
+.toner-badge.missing { color: #db6662; }
+.toner-color-dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border: 1px solid #8090a0; border-radius: 50%; }
+.toner-color-dot.black { background: #252b35; }.toner-color-dot.cyan { background: #15b9dd; }.toner-color-dot.magenta { background: #dc4e9a; }.toner-color-dot.yellow { background: #edc643; }
+.toner-pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px; font-size: 12px; color: var(--toner-muted); }
+.toner-detail { padding: 17px; position: sticky; top: 90px; max-height: calc(100vh - 120px); overflow: auto; }
+.toner-detail h3 { margin: 6px 0; font-size: 17px; }
+.toner-detail fieldset { display: grid; gap: 12px; margin: 14px 0; padding: 0; border: 0; }
+.toner-detail details { border-top: 1px solid var(--toner-line); margin-top: 18px; padding-top: 14px; font-size: 12px; }
+.toner-detail summary { cursor: pointer; font-weight: 700; }
+.toner-detail a { color: var(--toner-accent); }
+.toner-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: var(--toner-soft); padding: 10px; border-radius: 6px; }
+.toner-note { padding: 10px; background: var(--toner-soft); border-radius: 6px; color: var(--toner-muted); font-size: 12px; }
+.toner-feedback { margin: 10px 0; padding: 12px; border: 1px solid var(--toner-accent); border-radius: 7px; font-size: 13px; }
+.toner-feedback.error { border-color: #da6a66; color: #cb514b; }
+.toner-history-entry { border-bottom: 1px solid var(--toner-line); padding: 10px 0; }
+.toner-panel :focus-visible { outline: 2px solid var(--toner-accent); outline-offset: 3px; }
+.shipping-v2-tabs { flex-wrap: wrap; }
+@media (max-width: 1050px) { .toner-workspace:has(.toner-detail:not([hidden])) { grid-template-columns: 1fr; } .toner-detail { position: static; max-height: none; } .toner-stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 650px) { .toner-panel { padding: 12px; } .toner-heading { display: grid; } .toner-sync { justify-items: start; } .toner-filters > label { flex: 1 1 160px; } }
