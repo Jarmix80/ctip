@@ -489,6 +489,8 @@ class AdminUserImapUpdate(BaseModel):
 class AdminUserSummary(BaseModel):
     """Skrócony widok użytkownika, odporny na historyczne adresy testowe."""
 
+    can_edit_toner_yields: bool = False
+
     id: int
     email: str
     mobile_phone: str | None
@@ -543,6 +545,8 @@ class AdminUserListResponse(BaseModel):
 class AdminUserCreate(BaseModel):
     """Żądanie utworzenia użytkownika panelu."""
 
+    can_edit_toner_yields: bool = False
+
     email: EmailStr
     first_name: str | None = None
     last_name: str | None = None
@@ -572,6 +576,8 @@ class AdminUserCreateResponse(BaseModel):
 
 class AdminUserUpdate(BaseModel):
     """Aktualizacja danych użytkownika."""
+
+    can_edit_toner_yields: bool | None = None
 
     email: EmailStr
     first_name: str | None = None

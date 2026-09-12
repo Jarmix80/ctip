@@ -1,5 +1,10 @@
 # Zmiany schematu bazy CTIP
 
+## 2026-09-12 — wydajności tonerów
+
+- Migracja `b7e2d4f6a810` po `e8c7d6a5b410` dodaje katalog `shipping_toner_yield`, niezmienne dowody `shipping_toner_yield_evidence` i historię korekt `shipping_toner_yield_change`.
+- Wydajność nominalna rozróżnia dane potwierdzone, szacunki i braki. Unikalne skróty dowodów i wersje korekt chronią ponowienia oraz równoczesną edycję.
+- Flaga `admin_user.can_edit_toner_yields` jest domyślnie wyłączona. Migracja nie zmienia dokumentów MS, stanów magazynowych ani surowej telemetrii; downgrade nie usuwa historii.
 ## 2026-09-11
 
 - Migracja `e8c7d6a5b410` po `c4f2a9b8d610` dodaje `telemetry_daily_head`: jedną bieżącą wersję źródło/urządzenie/dzień. Powrót źródła do poprzedniej wartości nie powiela historii i poprawnie aktualizuje wskaźnik w transakcji z kursorem.

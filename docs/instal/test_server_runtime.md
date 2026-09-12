@@ -14,7 +14,29 @@ PostgreSQL ma w sieci wewnętrznej unikalny alias `ctip-test-postgres`. Nie woln
 zastępować go ogólną nazwą `postgres`, ponieważ usługa Bot Identity należy także
 do sieci CHAT_KP, w której występuje inna baza o takim aliasie.
 
-## Wyrównanie z produkcją — 10 września 2026
+## Wyrównanie z produkcją — 12 września 2026
+
+Gałąź testowa scala produkcyjne wydanie `ef79672b6161c9cdb4d75bf33ac6d421328d6fc6`.
+Shipping, katalog wydajności, telemetria i wykup BNP korzystają z kodu produkcyjnego,
+natomiast Delivery, CRM, LAB i Bot Identity pozostają dodatkami testowymi.
+Scalenie pól użytkownika zachowuje równocześnie powiadomienia CRM i osobne
+uprawnienie edycji wydajności tonerów. Pominięcie nowego prawa przez starszego
+klienta nie odbiera wcześniej przyznanego dostępu; regułę obejmuje test regresji.
+
+Docelowa rewizja obu baz to `b7e2d4f6a810`. Testowa baza osiągnęła ją podczas
+odbioru dashboardu, dlatego wyrównanie obrazu nie wymaga ponownej migracji,
+resetowania danych ani kopiowania baz produkcyjnych. Przed przełączeniem
+należy wykonać i sprawdzić kopie logiczne PostgreSQL oraz Firebird, a następnie
+użyć procedury `server-build`, `server-check` i `server-cutover` z tego runbooka.
+Nie należy przy tym wdrażać testowych rozszerzeń do produkcji ani jej restartować,
+jeżeli kontrola potwierdza dokładny SHA wydania, czysty Git i działające usługi.
+
+Dashboard testowy znajduje się pod `http://192.168.0.9:8000/shipping?view=toners`.
+Różnica SHA obrazu testowego względem produkcji jest zamierzona: obejmuje
+infrastrukturę oraz rozszerzenia testowe, nie inną wersję Shipping.
+Wynik przełączenia, SHA obrazu i kopie zapisuje końcowy protokół odbioru.
+
+## Poprzednie wyrównanie — 10 września 2026
 
 Gałąź `test/shipping-retry-local-validation-2026-09-03` zawiera scalenie wydania
 `release/genform-search-all-2026-09-03` z poprawkami produkcyjnymi do commita

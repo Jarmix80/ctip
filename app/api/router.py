@@ -23,6 +23,7 @@ from app.api.routes import (
     admin_sms,
     admin_status,
     admin_telemetry,
+    admin_toner_yields,
     admin_users,
     assistant,
     bot_identity,
@@ -59,6 +60,7 @@ api_router.include_router(admin_status.router)
 api_router.include_router(admin_telemetry.router)
 api_router.include_router(admin_sms.router)
 api_router.include_router(admin_shipping.router)
+api_router.include_router(admin_toner_yields.router)
 api_router.include_router(admin_users.router)
 api_router.include_router(health.router)
 api_router.include_router(operator_auth.router)

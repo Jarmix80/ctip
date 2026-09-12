@@ -64,6 +64,9 @@ class AdminUser(Base):
     firebird_app_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     firebird_app_user_login: Mapped[str | None] = mapped_column(Text, nullable=True)
     can_withdraw_device_pz: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_edit_toner_yields: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     device_theme: Mapped[str] = mapped_column(
         Text,
         nullable=False,

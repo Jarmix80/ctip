@@ -2,9 +2,16 @@
 
 # CTIP – kolektor zdarzeń CTI i dystrybucja alertów SMS
 
+## Katalog wydajności tonerów
+
+Zakładka **Wydajności tonerów** w jasnym i ciemnym Shipping (`/shipping?view=toners`) udostępnia wspólną wyszukiwarkę, filtry, kompletność danych, źródła i edycję z historią. Domyślny zakres obejmuje aktywne umowy, także tonery ze stanem zero. Administrator lub operator z osobnym prawem edycji może aktualizować wydajność i odświeżać dane MS; pozostali użytkownicy Shipping mają podgląd.
+
+Katalog PostgreSQL zachowuje nominalne wydajności, źródła oraz historię korekt niezależnie od MS i Optimy. Import `scripts/import_toner_yields.py` domyślnie wykonuje tylko próbę; ręczne decyzje nie są nadpisywane. Zasady zakresu aktywnych umów, importu i zabezpieczeń opisano w [instrukcji administratora](docs/instal/wydajnosci_tonerow.md).
+
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe
+- Wyrównanie z produkcyjnym dashboardem tonerów `ef79672` z 12 września 2026 r.: `docs/instal/test_server_runtime.md`. Kod Shipping, telemetrii i wykupu BNP jest wspólny; dodatkowe moduły testowe i izolacja pozostają zachowane. Docelowa rewizja obu baz: `b7e2d4f6a810`.
 - Bieżące wdrożenie telemetrii: produkcja `1e822f6`, migracja `e8c7d6a5b410`; pełna historia, ponowienie i zadanie codzienne 23:55 Europe/Warsaw odebrane 11 września 2026 r. Stan i procedura: `docs/instal/telemetria_urzadzen.md`.
 - Migawki dzienne rozróżniają normalny przyrost w ciągu dnia od sprzecznych danych z tej samej chwili; alternatywy pozostają zachowane z ostrzeżeniem jakości. Wskaźnik `telemetry_daily_head` zachowuje bieżącą wersję również po ponownej korekcie do wcześniejszych wartości.
 - Rozszerzenie telemetrii: wszystkie CSV wraz z archiwami, kolejka IMAP do folderów `przetworzone`/`odrzucone`, dopasowanie aktywnych umów oraz dwuletni zakres migawek dziennych V-Maintenance i PrintRadar z osobnymi zdarzeniami. Harmonogram działa codziennie o 23:55 Europe/Warsaw.

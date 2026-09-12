@@ -1,6 +1,8 @@
 {
-  "timestamp": "2026-09-11",
+  "timestamp": "2026-09-12",
   "summary": [
+    "Scalono produkcyjny dashboard tonerów ef79672 do istniejącej gałęzi testowej; zachowano Delivery, CRM, LAB i Bot Identity. Przygotowanie nowego obrazu testowego jest w toku.",
+    "Kontrola 12 września potwierdziła produkcyjny ef79672, czysty Git, cztery działające usługi i HTTP 200. Obie bazy mają rewizję b7e2d4f6a810; nie jest potrzebna kolejna migracja ani restart produkcji.",
     "Wdrożono i odebrano polityki telemetrii w produkcyjnym kodzie 1e822f6, migracja e8c7d6a5b410; zachowano poprawkę wykupu BNP 478e146.",
     "Pełna historia: 298 CSV zarchiwizowanych, 15325 wiadomości rozliczonych, 25461 okresów MS dla 1001 aktywnych maszyn, 25954 migawki V i 630 PrintRadar; 200213 wersji rekordów.",
     "Harmonogram CTIP-Telemetry działa codziennie 23:55 Europe/Warsaw i po starcie. Odbiór SYSTEM zakończony kodem 0; powtórzony slot already_completed bez dodatkowych importów. Backfill zakończony, nie pozostaje w toku.",
@@ -17,10 +19,10 @@
   "context": {
     "branch_local": "test/shipping-retry-local-validation-2026-09-03",
     "worktree": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree",
-    "production_commit": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
-    "merged_release_commit": "a0f758525fe3bfb3c8254ffd32539de0f674f28c",
+    "production_commit": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
+    "merged_release_commit": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
     "previous_test_image": "ctip/test-runtime:ce9328e3213067b5670a2bd102a6e218f8bacc4e",
-    "alembic": "e8c7d6a5b410",
+    "alembic": "b7e2d4f6a810",
     "telemetry": {
       "component_commit": "faa50fdf7c6f3bd3eed4e7c16efd1eb657d8a8ab",
       "release_commit": "1e822f67ce49fa601ae427609ff052d8fba0acc6",
