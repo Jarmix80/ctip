@@ -1,7 +1,10 @@
 {
-  "timestamp": "2026-09-12",
+  "timestamp": "2026-09-12 12:06:05 UTC",
   "summary": [
-    "Scalono produkcyjny dashboard tonerów ef79672 do istniejącej gałęzi testowej; zachowano Delivery, CRM, LAB i Bot Identity. Przygotowanie nowego obrazu testowego jest w toku.",
+    "Wyrównano kanoniczny testowy 192.168.0.9:8000 z produkcyjnym dashboardem ef79672; działa niezmienny obraz 6be0224, zachowano CRM/LAB/Delivery/Bot Identity i pełną izolację.",
+    "Potwierdzono zgodność 63 wspólnych plików oraz rewizji b7e2d4f6a810. Produkcja działa na ef79672, bez nowego wdrożenia ani restartu.",
+    "Odbiór testowego: 15 usług bez restartów, HTTP 200, katalog 111 kartotek, chronione API 401, świeża synchronizacja Bot Identity. Kopie logiczne obu baz zweryfikowane.",
+    "48 testów zmiany poprawnych. Po korekcie pomocnika SQLite pozostały cztery wcześniej udokumentowane niepowodzenia testów FLOW/raportów; nie są regresją tonerów.",
     "Kontrola 12 września potwierdziła produkcyjny ef79672, czysty Git, cztery działające usługi i HTTP 200. Obie bazy mają rewizję b7e2d4f6a810; nie jest potrzebna kolejna migracja ani restart produkcji.",
     "Wdrożono i odebrano polityki telemetrii w produkcyjnym kodzie 1e822f6, migracja e8c7d6a5b410; zachowano poprawkę wykupu BNP 478e146.",
     "Pełna historia: 298 CSV zarchiwizowanych, 15325 wiadomości rozliczonych, 25461 okresów MS dla 1001 aktywnych maszyn, 25954 migawki V i 630 PrintRadar; 200213 wersji rekordów.",
@@ -21,7 +24,7 @@
     "worktree": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree",
     "production_commit": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
     "merged_release_commit": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
-    "previous_test_image": "ctip/test-runtime:ce9328e3213067b5670a2bd102a6e218f8bacc4e",
+    "previous_test_image": "ctip/test-runtime:902d0556f5580ad58833b6ef0088977e797faa69",
     "alembic": "b7e2d4f6a810",
     "telemetry": {
       "component_commit": "faa50fdf7c6f3bd3eed4e7c16efd1eb657d8a8ab",
@@ -38,24 +41,20 @@
     },
     "venv": "/home/marcin/projects/ctip/.venv",
     "deployment_status": "wdrozone_i_odebrane_testowe",
-    "backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-alignment-20260910_135724",
-    "firebird_restore_file": "/home/marcin/projects/ctip/.runtime-firebird/.alignment_verify_20260910_135724.fdb",
+    "backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-alignment-20260912",
+    "firebird_restore_file": "/home/marcin/projects/ctip/.runtime-firebird/.alignment_verify_20260912.fdb",
     "verification": [
-      "236 testów ukierunkowanych: passed",
-      "Pełny pytest: 823 passed, 14 skipped, 4 failed; cztery błędy odtworzono na wcześniejszej bazie 09b74f2",
-      "pre-commit, ruff check, black --check i node --check: passed",
-      "Backup PostgreSQL i Firebird: zgodne SHA-256; Firebird odtworzony i odczytany (81294 zlecenia, 174 modele, 7548 kartotek)",
-      "Schemat bez zmian; wspólne pliki Shipping i GenForm zgodne z wydaniem produkcyjnym",
-      "15 usług trwałych działa bez restartów; 9 aplikacyjnych używa wspólnego obrazu 902d0556f5580ad58833b6ef0088977e797faa69, log-init zakończony kodem 0",
-      "HTTP: CTIP, formularze publiczne, CRM i LAB 200; Shipping i GenForm 200, chronione API 401 bez sesji; pliki JS zgodne z wydaniem",
-      "Odczyt Firebird: 9 pozycji kolejki, 3 szczegóły zleceń, poprawny JSON i serializacja czasu; mock CTIP zapisuje świeże zdarzenia",
-      "Bot Identity: poprawny kontrakt ctip-v1 i świeża synchronizacja read-only; aplikacje bez świeżych błędów, izolacja i blokady potwierdzone po starcie"
+      "48 passed; pre-commit i składnia JavaScript poprawne.",
+      "985 passed, 14 skipped, 5 failed w przebiegu rozpoczętym przed korektą pomocnika SQLite. Po korekcie ponowienie: 1 passed, 4 wcześniej znane niepowodzenia FLOW/raportów.",
+      "15 usług trwałych działa bez restartów, 9 aplikacyjnych na wspólnym obrazie; log-init exit 0, świeża synchronizacja Bot Identity.",
+      "Oba wyglądy, katalog 111 kartotek, wyszukiwanie i historia poprawne; 401 bez sesji, sesja odbiorcza unieważniona.",
+      "ctip_test; lokalny Firebird; SMS testowy; outbound capture; blokada komunikacji i zapisów Firebird; uzgadnianie MS wyłączone; PBX mock-ctip, DPD mock."
     ],
-    "deployed_code_commit": "902d0556f5580ad58833b6ef0088977e797faa69",
-    "deployed_image": "ctip/test-runtime:902d0556f5580ad58833b6ef0088977e797faa69",
-    "rollback_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/runtime/deployments/test-cutover-20260910_141329",
-    "cutover_backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-cutover/20260910_141316",
-    "acceptance_report": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/runtime/deployments/raport-odbioru-2026-09-10.json",
+    "deployed_code_commit": "6be022468c021db2118b60db496f75c406ce5adb",
+    "deployed_image": "ctip/test-runtime:6be022468c021db2118b60db496f75c406ce5adb",
+    "rollback_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/runtime/deployments/test-cutover-20260912_140001",
+    "cutover_backup_directory": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/backups/test-cutover/20260912_135935",
+    "acceptance_report": "/home/marcin/projects/ctip/.codex/shipping-retry-local-validation-test-worktree/runtime/deployments/raport-tonery-2026-09-12.json",
     "deployment_note": "Późniejszy commit dokumentacyjny nie zmienia obrazu; polecenia operatorskie wymagają przypięcia CTIP_TEST_IMAGE do wdrożonego SHA.",
     "telemetry_policy": {
       "component_commit": "faa50fdf7c6f3bd3eed4e7c16efd1eb657d8a8ab",
@@ -118,6 +117,34 @@
       },
       "backfill": "CTIP-Telemetry-Backfill: 17:07–18:34, wynik 0; zadanie jednorazowe bez następnego terminu.",
       "runtime_note": "Produkcja jest czysta na wdrożonym SHA kodu; późniejsze commity dokumentacyjne nie wymagają restartu usług."
+    },
+    "test_alignment": {
+      "verified_at": "2026-09-12 12:06:05 UTC",
+      "production_head": "ef79672b6161c9cdb4d75bf33ac6d421328d6fc6",
+      "test_code_commit": "6be022468c021db2118b60db496f75c406ce5adb",
+      "test_image": "ctip/test-runtime:6be022468c021db2118b60db496f75c406ce5adb",
+      "test_worktree": ".codex/shipping-retry-local-validation-test-worktree",
+      "alembic": "b7e2d4f6a810",
+      "shared_files_checked": 63,
+      "differences": 0,
+      "production_changes": "Bez restartu, migracji i zmian danych; Git czysty, cztery usługi działają, HTTP 200.",
+      "test_services": "15 usług trwałych działa bez restartów, 9 aplikacyjnych na wspólnym obrazie; log-init exit 0, świeża synchronizacja Bot Identity.",
+      "test_api": "Oba wyglądy, katalog 111 kartotek, wyszukiwanie i historia poprawne; 401 bez sesji, sesja odbiorcza unieważniona.",
+      "isolation": "ctip_test; lokalny Firebird; SMS testowy; outbound capture; blokada komunikacji i zapisów Firebird; uzgadnianie MS wyłączone; PBX mock-ctip, DPD mock.",
+      "backup": "backups/test-alignment-20260912",
+      "firebird_restore": "81294 zlecenia, 174 modele, 7548 kartotek; poprawne SHA-256 kopii logicznych.",
+      "cutover_backup": "backups/test-cutover/20260912_135935",
+      "rollback": "runtime/deployments/test-cutover-20260912_140001",
+      "focused_tests": "48 passed; pre-commit i składnia JavaScript poprawne.",
+      "full_tests": "985 passed, 14 skipped, 5 failed w przebiegu rozpoczętym przed korektą pomocnika SQLite. Po korekcie ponowienie: 1 passed, 4 wcześniej znane niepowodzenia FLOW/raportów.",
+      "known_failures": [
+        "tests/test_admin_backend.py::AdminBackendTests::test_contracts_form_workflow_devices_approved_order_runs_binding_automation",
+        "tests/test_admin_backend.py::AdminBackendTests::test_contracts_form_workflow_status_approved_order_runs_binding_automation",
+        "tests/test_raport_static.py::test_raport_index_served_without_authentication",
+        "tests/test_raport_static.py::test_raport_csv_files_are_available_for_reading"
+      ],
+      "obsolete_container": "ctip-prod-mirror-web-1 zatrzymany bez usuwania; był w pętli restartów.",
+      "report": "runtime/deployments/raport-tonery-2026-09-12.json"
     }
   }
 }

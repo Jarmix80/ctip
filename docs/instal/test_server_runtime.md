@@ -36,6 +36,51 @@ Różnica SHA obrazu testowego względem produkcji jest zamierzona: obejmuje
 infrastrukturę oraz rozszerzenia testowe, nie inną wersję Shipping.
 Wynik przełączenia, SHA obrazu i kopie zapisuje końcowy protokół odbioru.
 
+### Odbiór dashboardu tonerów
+
+Wdrożono obraz `ctip/test-runtime:6be022468c021db2118b60db496f75c406ce5adb`.
+Wszystkie 15 usług trwałych działa bez restartów; dziewięć aplikacyjnych używa
+tego obrazu, a `log-init` zakończył się kodem `0`. CTIP, formularze publiczne,
+CRM i LAB odpowiadają kodem `200`. Bot Identity potwierdził kontrakt `ctip-v1`
+i świeżą synchronizację Firebird tylko do odczytu. Brak nowych błędów startu.
+
+Porównanie 63 plików Shipping, wydajności, telemetrii i wykupu BNP z produkcyjnym
+`ef79672` nie wykazało różnic. Oba wyglądy, zasoby, autoryzowany katalog,
+wyszukiwanie `IMC300` z kolorem cyan oraz historia wydajności działają.
+API bez sesji zwraca `401`; sesję odbiorczą unieważniono. Aktywny zakres testowy
+ma 111 kartotek: 75 potwierdzonych, 24 szacunkowe i 12 braków, tak jak początkowy
+katalog produkcyjny. Dwa dodatkowe wpisy historii testowej pochodzą z wcześniejszej
+próby edycji i przywrócenia wartości; nie kopiowano ich do produkcji.
+
+Po starcie potwierdzono `ctip_test`, lokalny Firebird, `SMS_TEST_MODE=true`,
+przechwytywanie komunikacji, blokadę zapisów Firebird i uzgadniania MS,
+`PBX_HOST=mock-ctip`, `DPD_MODE=mock` oraz brak trasy domyślnej panelu.
+Zatrzymano nieużywany archiwalny kontener `ctip-prod-mirror-web-1`, który był
+w pętli restartów; nie usunięto kontenera ani jego danych.
+
+Logiczne kopie: `backups/test-alignment-20260912/` z poprawnymi SHA-256.
+Firebird odtworzono do osobnego pliku i potwierdzono 81294 zlecenia, 174 modele
+oraz 7548 kartotek. Dodatkowa kopia przełączenia znajduje się w
+`backups/test-cutover/20260912_135935/`, a stan rollbacku w
+`runtime/deployments/test-cutover-20260912_140001/`. Nie resetowano baz,
+nie wykonywano dodatkowej migracji ani restartu produkcji.
+
+Testy wydajności, grafu migracji i izolacji: 48 poprawnych. Kontrole pre-commit
+i składni JavaScript są poprawne. Pełny przebieg uruchomiony przed korektą
+pomocnika SQLite dał 985 poprawnych, 14 pominiętych i pięć niepowodzeń;
+brak funkcji `timezone` w nowym teście uprawnień usunięto i test ponownie zaliczono.
+Cztery pozostałe to udokumentowane wcześniej testy FLOW bez tabeli `delivery_case`
+oraz dwa testy statycznych raportów. Nie są regresją dashboardu i pozostają
+odrębnym zadaniem. Raporty JUnit i logi znajdują się w ignorowanym `inbox/`.
+
+Późniejszy commit odbiorczy zmienia wyłącznie dokumentację. Kontrola działającego
+obrazu wymaga jawnego przypięcia:
+
+```bash
+export CTIP_TEST_IMAGE=ctip/test-runtime:6be022468c021db2118b60db496f75c406ce5adb
+./ctiptest server-status
+```
+
 ## Poprzednie wyrównanie — 10 września 2026
 
 Gałąź `test/shipping-retry-local-validation-2026-09-03` zawiera scalenie wydania
