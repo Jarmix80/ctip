@@ -2,6 +2,10 @@
 
 # CTIP – kolektor zdarzeń CTI i dystrybucja alertów SMS
 
+## Katalog wydajności tonerów
+
+Katalog PostgreSQL zachowuje nominalne wydajności, źródła oraz historię korekt niezależnie od MS i Optimy. Import `scripts/import_toner_yields.py` domyślnie wykonuje tylko próbę; ręczne decyzje nie są nadpisywane. Zasady zakresu aktywnych umów, importu i zabezpieczeń opisano w [instrukcji administratora](docs/instal/wydajnosci_tonerow.md).
+
 CTIP agreguje zdarzenia telefoniczne emitowane przez centralę Slican, zapisuje je w bazie PostgreSQL oraz inicjuje wysyłkę powiadomień SMS na podstawie mapowania IVR. Projekt przeznaczony jest do wdrożeń on-premise, w których administrator musi zapewnić niezawodny odbiór strumienia CTIP i dalsze przetwarzanie danych.
 
 ## Dokumenty wdrożeniowe

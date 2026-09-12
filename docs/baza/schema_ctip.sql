@@ -1728,6 +1728,72 @@ CREATE INDEX idx_telemetry_record_series ON ctip.telemetry_record (source_id, se
 
 CREATE INDEX idx_telemetry_origin_archive ON ctip.telemetry_record_origin (archive_status);
 
+CREATE TABLE ctip.shipping_toner_yield (
+	item_id INTEGER NOT NULL,
+	warehouse_id INTEGER NOT NULL,
+	item_index TEXT NOT NULL,
+	name TEXT NOT NULL,
+	brand TEXT NOT NULL,
+	supplier TEXT NOT NULL,
+	sku TEXT NOT NULL,
+	ean TEXT NOT NULL,
+	color TEXT NOT NULL,
+	kind TEXT NOT NULL,
+	stock NUMERIC(16, 4) NOT NULL,
+	models JSON NOT NULL,
+	scope TEXT NOT NULL,
+	scope_note TEXT NOT NULL,
+	scope_review BOOLEAN NOT NULL,
+	excluded_model_ids JSON NOT NULL,
+	pages INTEGER,
+	status TEXT NOT NULL,
+	source TEXT NOT NULL,
+	basis TEXT NOT NULL,
+	reason TEXT NOT NULL,
+	manual_override BOOLEAN NOT NULL,
+	revision INTEGER NOT NULL,
+	synced_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (item_id),
+	CONSTRAINT toner_yield_status CHECK (status IN ('confirmed','estimated','missing')),
+	CONSTRAINT toner_yield_scope CHECK (scope IN ('active','inactive','review')),
+	CONSTRAINT toner_yield_pages CHECK ((status = 'missing' AND pages IS NULL) OR (status <> 'missing' AND pages IS NOT NULL AND pages > 0))
+);
+
+CREATE INDEX ix_ctip_shipping_toner_yield_scope ON ctip.shipping_toner_yield (scope);
+
+CREATE TABLE ctip.shipping_toner_yield_evidence (
+	id SERIAL NOT NULL,
+	item_id INTEGER NOT NULL,
+	fingerprint TEXT NOT NULL,
+	payload JSON NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_toner_yield_evidence UNIQUE (item_id, fingerprint),
+	FOREIGN KEY(item_id) REFERENCES ctip.shipping_toner_yield (item_id)
+);
+
+CREATE INDEX ix_ctip_shipping_toner_yield_evidence_item_id ON ctip.shipping_toner_yield_evidence (item_id);
+
+CREATE TABLE ctip.shipping_toner_yield_change (
+	id SERIAL NOT NULL,
+	item_id INTEGER NOT NULL,
+	revision INTEGER NOT NULL,
+	actor_id INTEGER,
+	actor_label TEXT NOT NULL,
+	before JSON NOT NULL,
+	after JSON NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT uq_toner_yield_revision UNIQUE (item_id, revision),
+	FOREIGN KEY(item_id) REFERENCES ctip.shipping_toner_yield (item_id),
+	FOREIGN KEY(actor_id) REFERENCES ctip.admin_user (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_ctip_shipping_toner_yield_change_item_id ON ctip.shipping_toner_yield_change (item_id);
+
+ALTER TABLE ctip.admin_user ADD COLUMN can_edit_toner_yields BOOLEAN NOT NULL DEFAULT false;
+
 CREATE INDEX idx_telemetry_origin_archive_path ON ctip.telemetry_record_origin (source_id, archive_path);
 
 CREATE TABLE ctip.telemetry_mail_delivery (
