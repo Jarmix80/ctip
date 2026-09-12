@@ -1,5 +1,20 @@
 # Zmiany schematu bazy CTIP
 
+## 2026-09-13 — dowody i polityki ORBIT
+
+- Migracja `d9a4f6b8c031` po `c8f3e5a7b920` dodaje wieloźródłowe dowody zdarzeń oraz częściowe nadpisania zasad ostrzeżeń dla zakresu globalnego, klienta, urządzenia i koloru.
+- Zapis polityk wykorzystuje istniejący audyt administratora. Oryginały pozostają w telemetrii; wyłączenie ORBIT nie usuwa tabel ani historii.
+
+## 2026-09-12 — ORBIT
+
+- Migracja `c8f3e5a7b920` po `b7e2d4f6a810` dodaje projekcję `shipping_orbit_device`, zdarzenia `shipping_orbit_event`, stan zadań `shipping_orbit_run` i wskaźnik `telemetry_record_head`. DDL jest zapisane w migracji niezależnie od późniejszych zmian modeli.
+- Urządzenia mają unikalny `ms_machine_id` i ograniczenie `orbit_device_status`: `active`, `suspended`, `scrapped`, `review`. Zdarzenia wskazują urządzenie oraz niezmienny `telemetry_record`; dopuszczają brak daty obserwacji i umowy. Tabele w `schema_ctip.sql` występują po swoich zależnościach.
+- Indeksy obsługują numer seryjny i status urządzenia, oś `(device_id, observed_at, id)` oraz umowę `(device_id, contract_id)`. Nowy `idx_telemetry_record_serial_time` na `(serial, observed_at)` pozwala odczytywać telemetrię urządzenia niezależnie od źródła.
+- Flaga `admin_user.can_view_orbit_finance` jest wymagana i domyślnie wyłączona także dla istniejących kont; dodanie kolumny nie nadaje prawa podglądu finansów.
+- `telemetry_record_head` ma PK `(source_id, external_key)`, FK do źródła i rekordu oraz wymagany `updated_at` zapisywany przez ingest w UTC. Migracja pozostawia wskaźniki puste: nie odgaduje bieżącej wersji z daty importu. ORBIT używa fallbacku i oznacza `partial` przy więcej niż jednej wersji bez head; dla migawek dziennych nadrzędny pozostaje `telemetry_daily_head`.
+- Reguła `source_observation`: odczyt bazy bez `blob` domyślnie potwierdza stan źródła, także przy powrocie A/B/A przez istniejący marker. CSV i poczta wymagają jawnego `True` z potwierdzonym kontekstem źródła, a odtwarzanie zrzutów bazy wymaga `False`. Odczyt archiwum, zmiana ścieżki i czas pliku nie uzasadniają cofnięcia head.
+- Upgrade jest addytywny, bez kopiowania lub przepisywania historii źródłowej. Downgrade jest zablokowany i wymaga osobnej zatwierdzonej procedury. Testy DDL generują SQL PostgreSQL offline, bez wykonywania migracji bazy.
+
 ## 2026-09-12 — wydajności tonerów
 
 - Migracja `b7e2d4f6a810` po `e8c7d6a5b410` dodaje katalog `shipping_toner_yield`, niezmienne dowody `shipping_toner_yield_evidence` i historię korekt `shipping_toner_yield_change`.

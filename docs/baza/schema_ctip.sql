@@ -1829,3 +1829,93 @@ CREATE TABLE ctip.telemetry_daily_head (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
     PRIMARY KEY (source_id, external_key)
 );
+
+CREATE TABLE ctip.telemetry_record_head (
+    source_id TEXT NOT NULL,
+    external_key TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    PRIMARY KEY (source_id, external_key),
+    FOREIGN KEY(source_id) REFERENCES ctip.telemetry_source (id),
+    FOREIGN KEY(record_id) REFERENCES ctip.telemetry_record (id)
+);
+
+CREATE INDEX idx_telemetry_record_serial_time ON ctip.telemetry_record (serial, observed_at);
+
+CREATE TABLE ctip.shipping_orbit_device (
+    id TEXT NOT NULL,
+    ms_machine_id INTEGER NOT NULL,
+    serial TEXT NOT NULL,
+    model TEXT NOT NULL,
+    customer TEXT NOT NULL,
+    status TEXT NOT NULL,
+    data JSON NOT NULL,
+    report JSON NOT NULL,
+    fingerprint TEXT NOT NULL,
+    synced_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT orbit_device_status CHECK (status IN ('active','suspended','scrapped','review')),
+    UNIQUE (ms_machine_id)
+);
+
+CREATE INDEX ix_ctip_shipping_orbit_device_serial ON ctip.shipping_orbit_device (serial);
+
+CREATE INDEX ix_ctip_shipping_orbit_device_status ON ctip.shipping_orbit_device (status);
+
+CREATE TABLE ctip.shipping_orbit_event (
+    id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    observed_at TIMESTAMP WITH TIME ZONE,
+    time_precision TEXT NOT NULL,
+    contract_id TEXT,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL,
+    data JSON NOT NULL,
+    finance JSON NOT NULL,
+    current BOOLEAN NOT NULL,
+    PRIMARY KEY (id),
+    FOREIGN KEY(device_id) REFERENCES ctip.shipping_orbit_device (id),
+    FOREIGN KEY(record_id) REFERENCES ctip.telemetry_record (id)
+);
+
+CREATE INDEX idx_orbit_device_contract ON ctip.shipping_orbit_event (device_id, contract_id);
+
+CREATE INDEX idx_orbit_device_time ON ctip.shipping_orbit_event (device_id, observed_at, id);
+
+CREATE TABLE ctip.shipping_orbit_run (
+    name TEXT NOT NULL,
+    finished_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    status TEXT NOT NULL,
+    counts JSON NOT NULL,
+    error_code TEXT,
+    PRIMARY KEY (name)
+);
+
+ALTER TABLE ctip.admin_user ADD COLUMN can_view_orbit_finance BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE ctip.shipping_orbit_evidence (
+    event_id TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    current BOOLEAN NOT NULL,
+    PRIMARY KEY (event_id, record_id),
+    FOREIGN KEY(event_id) REFERENCES ctip.shipping_orbit_event (id),
+    FOREIGN KEY(record_id) REFERENCES ctip.telemetry_record (id)
+);
+
+CREATE TABLE ctip.shipping_orbit_policy (
+    scope TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    color TEXT NOT NULL,
+    "values" JSON NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_by INTEGER,
+    PRIMARY KEY (scope, scope_id, color),
+    CONSTRAINT orbit_policy_scope CHECK (scope IN ('global','customer','device')),
+    CONSTRAINT orbit_policy_color CHECK (color IN ('all','black','cyan','magenta','yellow')),
+    FOREIGN KEY(updated_by) REFERENCES ctip.admin_user (id)
+);

@@ -72,6 +72,7 @@ def _map_summary(
     sections: list[str],
     imap: AdminUserImapConfig | None,
 ) -> AdminUserSummary:
+    """Serializuje zapisane uprawnienie finansów Orbit niezależnie od roli konta."""
     user = row.user
     return AdminUserSummary(
         id=user.id,
@@ -88,6 +89,7 @@ def _map_summary(
         crm_operations_sms_enabled=bool(user.crm_operations_sms_enabled),
         crm_operations_email_enabled=bool(user.crm_operations_email_enabled),
         can_edit_toner_yields=bool(user.can_edit_toner_yields),
+        can_view_orbit_finance=bool(user.can_view_orbit_finance),
         firebird_app_user_id=user.firebird_app_user_id,
         firebird_app_user_login=user.firebird_app_user_login,
         sections=sections,
@@ -205,6 +207,7 @@ async def create_admin_user(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> AdminUserCreateResponse:
+    """Tworzy konto oraz zapisuje nadanie uprawnienia finansów Orbit w audycie."""
     admin_session, admin_user = admin_context
     _ensure_admin(admin_user.role)
     try:
@@ -227,6 +230,7 @@ async def create_admin_user(
             crm_operations_sms_enabled=payload.crm_operations_sms_enabled,
             crm_operations_email_enabled=payload.crm_operations_email_enabled,
             can_edit_toner_yields=payload.can_edit_toner_yields,
+            can_view_orbit_finance=payload.can_view_orbit_finance,
             password=payload.password,
             mobile_phone=payload.mobile_phone,
             firebird_app_user_id=firebird_user.id if firebird_user else None,
@@ -285,6 +289,7 @@ async def create_admin_user(
             "crm_operations_sms_enabled": user.crm_operations_sms_enabled,
             "crm_operations_email_enabled": user.crm_operations_email_enabled,
             "can_edit_toner_yields": bool(user.can_edit_toner_yields),
+            "can_view_orbit_finance": bool(user.can_view_orbit_finance),
             "firebird_app_user_id": user.firebird_app_user_id,
             "firebird_app_user_login": user.firebird_app_user_login,
             "sections": normalized_sections,
@@ -330,6 +335,7 @@ async def update_admin_user(
     admin_context=Depends(get_admin_session_context),  # noqa: B008
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> AdminUserDetail:
+    """Aktualizuje konto i audytuje zapisaną wartość uprawnienia finansów Orbit."""
     admin_session, admin_user = admin_context
     _ensure_admin(admin_user.role)
     user = await admin_users.fetch_user(session, user_id)
@@ -358,6 +364,7 @@ async def update_admin_user(
             crm_operations_sms_enabled=payload.crm_operations_sms_enabled,
             crm_operations_email_enabled=payload.crm_operations_email_enabled,
             can_edit_toner_yields=payload.can_edit_toner_yields,
+            can_view_orbit_finance=payload.can_view_orbit_finance,
             mobile_phone=payload.mobile_phone,
             firebird_app_user_id=firebird_user.id if firebird_user else None,
             firebird_app_user_login=firebird_user.login_user if firebird_user else None,
@@ -403,6 +410,7 @@ async def update_admin_user(
             "crm_operations_sms_enabled": user.crm_operations_sms_enabled,
             "crm_operations_email_enabled": user.crm_operations_email_enabled,
             "can_edit_toner_yields": bool(user.can_edit_toner_yields),
+            "can_view_orbit_finance": bool(user.can_view_orbit_finance),
             "firebird_app_user_id": user.firebird_app_user_id,
             "firebird_app_user_login": user.firebird_app_user_login,
             "sections": normalized_sections,

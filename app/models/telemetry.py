@@ -1,4 +1,4 @@
-"""Tabele niezmiennej historii źródeł telemetrycznych urządzeń."""
+"""Niezmienna historia, wskaźniki wersji i indeks osi urządzenia wspólnej dla źródeł."""
 
 from sqlalchemy import (
     JSON,
@@ -112,6 +112,7 @@ issue = _table(
     UniqueConstraint("record_id", "code", "metric", name="uq_telemetry_issue"),
 )
 Index("idx_telemetry_record_series", record.c.source_id, record.c.serial, record.c.observed_at)
+Index("idx_telemetry_record_serial_time", record.c.serial, record.c.observed_at)
 Index("idx_telemetry_record_semantic", record.c.semantic_key)
 Index("idx_telemetry_record_key", record.c.source_id, record.c.external_key)
 Index("idx_telemetry_import_source", imports.c.source_id, imports.c.started_at)
@@ -149,6 +150,14 @@ daily_head = Table(
     Column("record_id", ForeignKey(record.c.id), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
+record_head = Table(
+    "telemetry_record_head",
+    Base.metadata,
+    Column("source_id", ForeignKey(source.c.id), primary_key=True),
+    Column("external_key", Text, primary_key=True),
+    Column("record_id", ForeignKey(record.c.id), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
 TELEMETRY_TABLES = (
     source,
     imports,
@@ -159,4 +168,5 @@ TELEMETRY_TABLES = (
     issue,
     mail_delivery,
     daily_head,
+    record_head,
 )

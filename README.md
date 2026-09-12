@@ -2,6 +2,31 @@
 
 # CTIP – kolektor zdarzeń CTI i dystrybucja alertów SMS
 
+## KP ORBIT w Shipping
+
+Rozszerzenie przygotowywane 13 września obejmuje wspólne dowody Shipping–MS,
+prognozy miesięczne CPC i audytowalne zasady ostrzeżeń bez blokowania wysyłki.
+Domyślny zapas wynosi zero; wyjątki dziedziczą kolejno klient i urządzenie.
+Stan wdrożenia i odbiór wieloźródłowy opisuje [instrukcja ORBIT](docs/instal/orbit.md).
+
+Raport `/shipping?view=orbit` łączy historię urządzenia, umowy, liczniki, tonery,
+serwis i znane kwoty. Funkcja jest domyślnie wyłączona (`SHIPPING_ORBIT_ENABLED=false`)
+i nie blokuje zamówień ani nie zmienia dokumentów MS. Koszty umów obejmują
+historyczne ceny **zakupu** faktycznie wydanych materiałów, nie ceny sprzedaży;
+braki i niejednoznaczne korekty pozostają jawne, bez deklarowania pełnej marży.
+Kwoty wymagają administratora lub prawa `can_view_orbit_finance` oprócz Shipping.
+
+Osobny worker odczytuje MS od pierwszej dostępnej umowy objętej floty oraz korzysta
+z istniejących oryginałów telemetrii. Archiwum urządzeń pozostaje zachowane.
+Migracje `c8f3e5a7b920` i `d9a4f6b8c031` są addytywne; sama obecność kodu nie oznacza wdrożenia
+produkcyjnego. Źródła i ograniczenia: [mapa danych](docs/projekt/orbit-data-source-map.md).
+Pilotaż, harmonogram, odbiór i wycofanie: [instrukcja ORBIT](docs/instal/orbit.md).
+
+Odbiór testowy 12 września: 1158 testów regresyjnych zaliczonych, pilotaż czterech
+urządzeń i 602 faktów, ponowienie bez zmian. Tymczasowy podgląd odpowiada lokalnie pod
+`http://192.168.0.9:18170/shipping?view=orbit`; użytkownik potwierdził działanie
+po dopuszczeniu portu w zaporze. Docelowe wdrożenie korzysta z głównego portu 8000.
+
 ## Katalog wydajności tonerów
 
 Zakładka **Wydajności tonerów** w jasnym i ciemnym Shipping (`/shipping?view=toners`) udostępnia wspólną wyszukiwarkę, filtry, kompletność danych, źródła i edycję z historią. Domyślny zakres obejmuje aktywne umowy, także tonery ze stanem zero. Administrator lub operator z osobnym prawem edycji może aktualizować wydajność i odświeżać dane MS; pozostali użytkownicy Shipping mają podgląd.

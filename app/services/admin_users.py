@@ -149,12 +149,13 @@ async def create_user(
     crm_operations_sms_enabled: bool = False,
     crm_operations_email_enabled: bool = False,
     can_edit_toner_yields: bool = False,
+    can_view_orbit_finance: bool = False,
     password: str | None = None,
     mobile_phone: str | None = None,
     firebird_app_user_id: int | None = None,
     firebird_app_user_login: str | None = None,
 ) -> tuple[AdminUser, str]:
-    """Tworzy konto z osobnym, domyślnie wyłączonym prawem edycji wydajności."""
+    """Tworzy konto z domyślnie wyłączoną edycją wydajności i podglądem finansów Orbit."""
     email_normalized = email.strip().lower()
     await ensure_unique_email(session, email_normalized)
 
@@ -177,6 +178,7 @@ async def create_user(
         crm_operations_sms_enabled=bool(crm_operations_sms_enabled),
         crm_operations_email_enabled=bool(crm_operations_email_enabled),
         can_edit_toner_yields=bool(can_edit_toner_yields),
+        can_view_orbit_finance=bool(can_view_orbit_finance),
         mobile_phone=normalized_phone,
         firebird_app_user_id=firebird_app_user_id,
         firebird_app_user_login=(firebird_app_user_login or "").strip() or None,
@@ -202,11 +204,12 @@ async def update_user(
     crm_operations_sms_enabled: bool,
     crm_operations_email_enabled: bool,
     can_edit_toner_yields: bool | None = None,
+    can_view_orbit_finance: bool | None = None,
     mobile_phone: str | None,
     firebird_app_user_id: int | None,
     firebird_app_user_login: str | None,
 ) -> AdminUser:
-    """Aktualizuje konto, zachowując uprawnienie tonerów pominięte przez starszy klient."""
+    """Aktualizuje konto, zachowując pominięte uprawnienia tonerów i finansów Orbit."""
     email_normalized = email.strip().lower()
     if email_normalized != user.email:
         await ensure_unique_email(session, email_normalized, exclude_user_id=user.id)
@@ -226,6 +229,8 @@ async def update_user(
     user.crm_operations_email_enabled = bool(crm_operations_email_enabled)
     if can_edit_toner_yields is not None:
         user.can_edit_toner_yields = bool(can_edit_toner_yields)
+    if can_view_orbit_finance is not None:
+        user.can_view_orbit_finance = bool(can_view_orbit_finance)
     user.mobile_phone = normalized_phone
     user.firebird_app_user_id = firebird_app_user_id
     user.firebird_app_user_login = (firebird_app_user_login or "").strip() or None

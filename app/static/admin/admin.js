@@ -1457,6 +1457,7 @@ document.addEventListener("alpine:init", () => {
       crmOperationsSmsEnabled: false,
       crmOperationsEmailEnabled: false,
       canEditTonerYields: false,
+      canViewOrbitFinance: false,
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
@@ -1491,6 +1492,7 @@ document.addEventListener("alpine:init", () => {
       crmOperationsSmsEnabled: false,
       crmOperationsEmailEnabled: false,
       canEditTonerYields: false,
+      canViewOrbitFinance: false,
       mobilePhone: "",
       firebirdAppUserId: "",
       firebirdAppUserLogin: "",
@@ -1757,6 +1759,7 @@ document.addEventListener("alpine:init", () => {
       this.form.crmOperationsSmsEnabled = false;
       this.form.crmOperationsEmailEnabled = false;
       this.form.canEditTonerYields = false;
+      this.form.canViewOrbitFinance = false;
       this.form.mobilePhone = "";
       this.form.firebirdAppUserId = "";
       this.form.firebirdAppUserLogin = "";
@@ -1924,6 +1927,7 @@ document.addEventListener("alpine:init", () => {
         crm_operations_sms_enabled: Boolean(source.crmOperationsSmsEnabled),
         crm_operations_email_enabled: Boolean(source.crmOperationsEmailEnabled),
         can_edit_toner_yields: Boolean(source.canEditTonerYields),
+        can_view_orbit_finance: Boolean(source.canViewOrbitFinance),
         mobile_phone: mobile || null,
         firebird_app_user_id: this.normalizeMsUserId(source.firebirdAppUserId),
         sections: this.normalizeSectionsForRole(source.sections, source.role || "operator"),
@@ -2091,6 +2095,7 @@ document.addEventListener("alpine:init", () => {
             data.crm_operations_email_enabled,
           );
           this.modalEdit.canEditTonerYields = Boolean(data.can_edit_toner_yields);
+          this.modalEdit.canViewOrbitFinance = Boolean(data.can_view_orbit_finance);
           this.modalEdit.sections = this.normalizeSectionsForRole(
             data.sections,
             data.role || this.modalEdit.role,
@@ -2174,6 +2179,7 @@ document.addEventListener("alpine:init", () => {
       this.modalEdit.crmOperationsSmsEnabled = false;
       this.modalEdit.crmOperationsEmailEnabled = false;
       this.modalEdit.canEditTonerYields = false;
+      this.modalEdit.canViewOrbitFinance = false;
       this.modalEdit.mobilePhone = "";
       this.modalEdit.firebirdAppUserId = "";
       this.modalEdit.firebirdAppUserLogin = "";
@@ -2221,6 +2227,7 @@ document.addEventListener("alpine:init", () => {
           data.crm_operations_email_enabled,
         );
         this.modalEdit.canEditTonerYields = Boolean(data.can_edit_toner_yields);
+        this.modalEdit.canViewOrbitFinance = Boolean(data.can_view_orbit_finance);
         this.modalEdit.mobilePhone = data.mobile_phone || "";
         this.modalEdit.firebirdAppUserId = data.firebird_app_user_id
           ? String(data.firebird_app_user_id)

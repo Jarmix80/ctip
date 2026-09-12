@@ -1,4 +1,4 @@
-"""Jawny, izolowany bootstrap produkcyjnego zadania telemetrii Windows."""
+"""Jawny bootstrap zadania ORBIT na produkcyjnym Windows."""
 
 import os
 import sys
@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 
 def main():
-    """Ładuje środowisko wyłącznie procesu zadania, bez zmian profilu SYSTEM."""
+    """Ładuje prywatne środowisko wyłącznie procesu wcześniej zatwierdzonego zadania."""
     root = Path(__file__).resolve().parents[2]
     if os.name != "nt" or not (root / ".env").is_file():
         raise RuntimeError("Wymagany produkcyjny Windows i plik .env.")
@@ -17,17 +17,9 @@ def main():
     load_dotenv(root / ".env", override=True)
     os.environ["CTIP_ENV_FILE"] = str(root / ".env")
     os.environ["CTIP_RUNTIME_PROFILE"] = "production"
-    from app.telemetry_worker import main as run
+    from app.orbit_worker import main as run
 
-    code = run()
-    from app.core.config import settings
-
-    if settings.shipping_orbit_enabled and "--scheduled" in sys.argv and code in {0, 1}:
-        from app.orbit_worker import main as run_orbit
-
-        orbit_code = run_orbit(["--once"])
-        return code or orbit_code
-    return code
+    return run()
 
 
 if __name__ == "__main__":

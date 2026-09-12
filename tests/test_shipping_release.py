@@ -15,10 +15,12 @@ class ShippingReleaseTests(unittest.TestCase):
     """Weryfikuje kanoniczną migrację i brak prototypowych rewizji."""
 
     def test_telemetria_rozszerza_jedyny_head_infoservices(self) -> None:
-        """Zachowuje telemetrię i katalog wydajności na jednej linii migracji Shipping."""
+        """Zachowuje telemetrię, wydajności i ORBIT na jednej linii migracji Shipping."""
         scripts = ScriptDirectory.from_config(Config("alembic.ini"))
 
-        self.assertEqual(scripts.get_heads(), ["b7e2d4f6a810"])
+        self.assertEqual(scripts.get_heads(), ["d9a4f6b8c031"])
+        self.assertEqual(scripts.get_revision("d9a4f6b8c031").down_revision, "c8f3e5a7b920")
+        self.assertEqual(scripts.get_revision("c8f3e5a7b920").down_revision, "b7e2d4f6a810")
         self.assertEqual(scripts.get_revision("b7e2d4f6a810").down_revision, "e8c7d6a5b410")
         self.assertEqual(scripts.get_revision("e8c7d6a5b410").down_revision, "c4f2a9b8d610")
         self.assertEqual(scripts.get_revision("c4f2a9b8d610").down_revision, "a6d9e1f3b520")
