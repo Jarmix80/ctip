@@ -8,6 +8,10 @@ Wydanie z 13 września obejmuje wspólne dowody Shipping–MS,
 prognozy miesięczne CPC i audytowalne zasady ostrzeżeń bez blokowania wysyłki.
 Domyślny zapas wynosi zero; wyjątki dziedziczą kolejno klient i urządzenie.
 Stan wdrożenia i odbiór wieloźródłowy opisuje [instrukcja ORBIT](docs/instal/orbit.md).
+Moduł jest włączony na produkcji i w głównym środowisku testowym; działa zadanie
+projekcji, a nocna sekwencja telemetria → MS jest skonfigurowana. Obserwację
+72 godzin można zakończyć najwcześniej 16 września 2026 r., po osobnym
+odbiorze dwóch pełnych cykli nocnych.
 
 Pełny import używa indeksu relacji umów budowanego raz na migawkę, bez
 ponownego skanowania historii całej floty dla każdej faktury.

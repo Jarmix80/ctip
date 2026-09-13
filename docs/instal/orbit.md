@@ -341,3 +341,52 @@ Windows PowerShell 5 według lokalnej strony kodowej. Komunikat instalatora
 zapisano po polsku, ale wyłącznie znakami ASCII; regresja sprawdza kodowanie,
 tryb `--project-only` oraz brak samoczynnego startu zadania przez instalator.
 Błąd wystąpił przed restartem WWW i nie przerwał pozostałych usług.
+
+## Publikacja i początek obserwacji
+
+ORBIT włączono na produkcji `192.168.0.8` i w głównym środowisku testowym
+`192.168.0.9:8000`. Produkcyjny panel:
+`http://192.168.0.8:8000/shipping?view=orbit`.
+Prywatna konfiguracja produkcji zawiera `SHIPPING_ORBIT_ENABLED=true`,
+`SHIPPING_ORBIT_SCRAP_CUSTOMER_IDS=[674]` i `SHIPPING_ORBIT_SCRAP_WAREHOUSE_IDS=[3]`.
+Poprzednią konfigurację zachowano poza Git razem z pierwszym backupem wdrożenia.
+
+Produkcyjny instalator z poprawką kodowania ma rewizję
+`580c1861c3a6347add0cb6337971f9064cfd2b64`; odpowiadający commit testowy to
+`4793056cad4351e59eafc2fed374af3ea620aa77`. Zmiana po `602e475` dotyczy tylko
+instalatora Windows, jego regresji i dokumentacji, nie kodu WWW ani migracji.
+Zweryfikowano rzeczywisty parser Windows PowerShell oraz 30 testów workera
+w każdej gałęzi. Główny testowy obraz nadal jest przypięty do `479dc257`.
+
+Zadanie `CTIP-ORBIT` zarejestrowano i uruchomiono około 03:04 CEST według zegara
+produkcyjnego 13 września. Działa jako SYSTEM z argumentami
+`--loop --project-only`, uruchomieniem po restarcie systemu i przerwą 300 sekund
+między przebiegami. Stan `Running` oraz kod `267009` oznaczają działające zadanie,
+nie błąd. Nie utworzono równoległego importera e-maili ani CSV.
+
+Istniejąca telemetria pozostała aktywna: poprzedni wynik `0`, następny start
+13 września o 23:55; wrapper uruchamia po niej nocny ORBIT/MS. Zadanie backfill
+pozostaje zakończone wynikiem `0`, bez dodatkowego uruchamiania. Podczas publikacji
+restartowano wyłącznie `CTIP-Web`; kolektor, SMS i formularze publiczne zachowały
+stan `Running`. Kontrola zdrowia WWW zwraca `200`.
+
+Odbiór rzeczywistego produkcyjnego HTTP: uprawnienia, lista 1008 aktywnych
+urządzeń, szczegóły, oś czasu, dowody i oba wyglądy Shipping działają. API bez sesji
+zwraca `401`; sesję odbiorczą unieważniono. Czasy pomiaru: 24–75 ms.
+Zasoby JS/CSS są zgodne z wydaniem po uwzględnieniu końców linii Windows.
+Nie wystawiano testowych etykiet ani dokumentów i nie zmieniano stanów magazynowych.
+
+Ponowienie pełnej projekcji odświeżyło dwie karty, zachowując liczby oryginałów
+i zdarzeń oraz brak powielonych przesyłek. To odbiór ponowienia projekcji całej
+floty i wcześniejszego importu MS pilota, nie drugi pełny odczyt MS całej floty.
+Pierwszy przebieg zadania SYSTEM zakończył się 13 września o 03:07:26 według
+zegara produkcji: `status=ok`, `updated=1`, bez kodu błędu. Licznik `updated`
+opisuje odświeżone karty, nie liczbę nowych oryginałów. Nie deklaruje się
+`updated=0` dla produkcyjnego ponowienia całej floty. Log ostatniego startu WWW
+potwierdza gotowość aplikacji bez nowych wpisów ERROR, CRITICAL ani Traceback.
+
+**Pozostają 72 godziny obserwacji i odbiór dwóch pełnych cykli nocnych.**
+Najwcześniejszy koniec obserwacji przypada 16 września około 03:06 CEST;
+należy osobno sprawdzić cykle rozpoczynające się 13 i 14 września o 23:55.
+Statusy, świeżość danych, duplikaty i błędy ocenia się według procedury monitoringu,
+nie na podstawie samego działania WWW. Nie uznano tej obserwacji za zakończoną.
