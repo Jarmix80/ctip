@@ -14,6 +14,56 @@ PostgreSQL ma w sieci wewnętrznej unikalny alias `ctip-test-postgres`. Nie woln
 zastępować go ogólną nazwą `postgres`, ponieważ usługa Bot Identity należy także
 do sieci CHAT_KP, w której występuje inna baza o takim aliasie.
 
+## Odbiór KP ORBIT — 13 września 2026
+
+Aktualny obraz to `ctip/test-runtime:479dc257a09605c650a9f6f0160d547ef789e2ad`.
+Kod ORBIT odpowiada produkcyjnemu `602e4755145c8f54b053643bea7e92db79d8dbda`;
+Delivery, CRM, LAB i Bot Identity pozostały rozszerzeniami testowymi. Baza
+`ctip_test` jest na rewizji `d9a4f6b8c031`. Starsze opisy odbiorów poniżej
+są historyczne, nie wyznaczają obecnego obrazu ani migracji.
+
+Przełączenie zakończono około 02:53 CEST. Wszystkie 15 usług trwałych działa
+bez restartów, dziewięć aplikacyjnych używa przypiętego obrazu. Kontrole CTIP,
+formularzy, CRM, LAB oraz kontraktu i świeżej synchronizacji Bot Identity
+zakończyły się poprawnie. Zachowano testowe atrapy, przechwytywanie komunikacji,
+`SMS_TEST_MODE=true` i blokadę zapisów do Firebird; nie kopiowano konfiguracji
+produkcyjnego złomu.
+
+Pełny import MS zapisał 1019 urządzeń: 1011 aktywnych i osiem wymagających
+weryfikacji, oraz 101091 faktów. Projekcja zawiera 100535 zdarzeń bieżących:
+36845 CPC, 63687 MS ORBIT i trzy Shipping. Historia rozliczeń obejmuje
+2014-08–2026-08. Pierwsze ponowienie odświeżyło jedną projekcję bez zmiany liczby
+oryginałów i zdarzeń; kolejne zwróciło `updated=0`. Nie znaleziono powielonych
+potwierdzonych przesyłek. Testowa kopia nie zawiera całej produkcyjnej telemetrii;
+nie jest dowodem rzeczywistego pokrycia Remote, v-maintenance ani PrintRadar.
+
+Autoryzowane API listy, szczegółów, osi czasu i dowodów oraz oba wyglądy Shipping
+odpowiadają kodem `200`; bez sesji API zwraca `401`. Zapas domyślny wynosi zero.
+Czasy odbioru HTTP wyniosły 14–39 ms. Sesję odbiorczą unieważniono. Zakładka
+działa pod `http://192.168.0.9:8000/shipping?view=orbit`; odświeżono także
+tymczasowy podgląd na porcie `18170`, bez uruchamiania w nim harmonogramów.
+
+Kopie przełączenia: `backups/test-cutover/20260913_025012/`; stan wycofania:
+`runtime/deployments/test-cutover-20260913_025056/`. SHA-256:
+
+- `ctip_test.dump`: `d07a310f1ae1139d04e031025629baffe64406e7f02bec4024598295a153f788`;
+- `BAZAMS_TEST.FDB`: `0ab55eacfc4ef13035c6629a29074816b4919a832f249237305f5894d871a71a`.
+
+Kopia FDB przełączenia jest kopią plikową; nie zastępuje logicznego backupu
+i kontroli odtworzenia opisanych w procedurze. Nie resetowano żadnej bazy.
+Walidacja domenowa gałęzi testowej: 478 testów i dodatkowe 92 testy po zmianie
+odczytu MS. Pełna regresja wydania produkcyjnego: 1189 poprawnych, 15 pominiętych.
+Kontrole pre-commit obu gałęzi są poprawne. Testy zależne od daty wykonywano
+z `TZ=UTC`; proces testów jednostkowych miał `SHIPPING_ORBIT_ENABLED=false`.
+
+Późniejszy commit dokumentacji nie wymaga przebudowy obrazu. Przy poleceniach
+operatorskich należy nadal jawnie przypinać obraz:
+
+```bash
+export CTIP_TEST_IMAGE=ctip/test-runtime:479dc257a09605c650a9f6f0160d547ef789e2ad
+./ctiptest server-status
+```
+
 ## Wyrównanie z produkcją — 12 września 2026
 
 Gałąź testowa scala produkcyjne wydanie `ef79672b6161c9cdb4d75bf33ac6d421328d6fc6`.
