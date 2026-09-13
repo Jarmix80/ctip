@@ -259,3 +259,85 @@ Wycofanie: wyłączyć flagę i zatrzymać zadanie ORBIT, bez wycofywania lub us
 danych. Automatyczny downgrade migracji jest zablokowany. Archiwum pozostaje
 dostępne dla kolejnego wdrożenia. Oryginały telemetrii i proces Shipping nie są
 usuwane ani rekonfigurowane przez ORBIT.
+
+## Odbiór danych i regresji — 13 września 2026
+
+Wydanie kodu: produkcyjne `602e4755145c8f54b053643bea7e92db79d8dbda`,
+testowe `479dc257a09605c650a9f6f0160d547ef789e2ad`. Obie gałęzie wypchnięto
+do GitHub. Testowy obraz zachowuje Delivery, CRM, LAB i Bot Identity.
+Oba schematy osiągnęły `d9a4f6b8c031` bez resetowania danych. Późniejszy
+commit protokołu nie zmienia kodu ani nie wymaga przebudowy obrazu testowego.
+
+Pełny odczyt produkcyjny zakończył się statusem `ok`: 1019 urządzeń i 101554
+fakty MS. Cztery urządzenia objęto wcześniejszym pilotażem, dlatego pełna
+projekcja zaktualizowała 1015 kart. Zakres obejmuje 1008 aktywnych urządzeń,
+sześć do weryfikacji i pięć złomowanych. Złom identyfikują potwierdzone na
+produkcji klient `674` i magazyn `3`. Historii nie usuwano.
+
+Projekcja zawiera 195228 bieżących zdarzeń:
+
+| Źródło | Zdarzenia |
+| --- | ---: |
+| MS CPC | 36996 |
+| MS ORBIT | 64070 |
+| PrintRadar | 2718 |
+| Remote All Supplies | 109 |
+| Remote DPLAC | 53371 |
+| Remote e-mail | 5836 |
+| Remote Reporting | 6055 |
+| Remote Toner | 1 |
+| Shipping | 46 |
+| v-maintenance | 26026 |
+
+Historia miesięcznych rozliczeń obejmuje 2014-08–2026-09. Obecność bieżącego
+miesiąca w historii nie oznacza wykorzystania go w prognozie: ta wymaga
+zakończonych okresów. Sześć przesyłek ma wspólne dowody MS i Shipping.
+Nie wykryto powielonych potwierdzonych przesyłek według urządzenia, numeru
+i roku zlecenia, kierunku oraz numeru listu. Pozycje Shipping pozostają
+dowodami jednej przesyłki, a nie dodatkowymi kosztami materiału.
+
+W pilotażu urządzeń `6872`, `7486`, `7675` i `7763` sprawdzono 951 zdarzeń
+z dziewięciu źródeł, prognozy CPC i jedną wspólną przesyłkę. Ponowienie importu
+MS pilota zwróciło `updated=0`. Identyczne zdarzenia Toner i All Supplies
+korzystają ze wspólnego klucza semantycznego; mniejsza liczba zdarzeń Toner
+nie oznacza skasowania oryginałów CSV. Liczby oryginałów i projekcji nie
+muszą być równe: projekcja scala dowody i pomija wycofane wersje.
+
+Testowy import: 1019 urządzeń, 101091 faktów MS, 100535 zdarzeń; 1011 urządzeń
+aktywnych i osiem do weryfikacji. Powtórzenia zachowały liczby oryginałów
+i zdarzeń, ostatnia projekcja zwróciła `updated=0`. Nie kopiowano produkcyjnej
+telemetrii do testów. Główny testowy panel działa na porcie `8000`; odświeżony
+podgląd `18170` nie uruchamia harmonogramów. Odbiór HTTP obu wyglądów, listy,
+szczegółów, osi czasu i dowodów: `200`; API bez sesji: `401`. Sesje odbiorcze
+unieważniono. Czas odpowiedzi głównego testowego panelu: 14–39 ms.
+
+Pełna regresja kodu produkcyjnego: **1189 poprawnych testów, 15 pominiętych**.
+Dodatkowa walidacja gałęzi testowej: 478 testów domenowych oraz 92 po optymalizacji
+MS. Scenariusze przeglądarkowe obejmują oba wyglądy, ustawienia zera/dziedziczenia
+i doradcze ostrzeżenia zwykłych oraz łączonych paczek. Pre-commit obu gałęzi
+zakończył się poprawnie. Testy zależne od daty uruchamiano z `TZ=UTC`;
+`SHIPPING_ORBIT_ENABLED=false` obowiązywało wyłącznie proces testów jednostkowych.
+
+Kopie produkcyjne: `D:\CTIP\backups\prod_20260913_013944\` oraz
+`D:\CTIP\backups\prod_20260913_015656\`. Pierwszy komplet:
+
+- PostgreSQL: 164754829 bajtów, SHA-256
+  `6ac08df9d249bc11b767ceaddad466e3d334477ba31a71d4d2c2c6aec010fd09`;
+- Firebird: 388592640 bajtów, SHA-256
+  `4a91b0f3e397417b34f3772731ace01067b297393f75b2f01f1250f4d426618c`.
+
+`pg_restore --list` i wykonanie `gbak` zakończyły się poprawnie. Nie deklaruje
+to pełnego próbnego odtworzenia tego produkcyjnego kompletu. Przed rozszerzeniem
+testowej migracji wykonano osobny dump z poprawnym odczytem katalogu; przełączenie
+obrazu wykonało kolejną kopię w `backups/test-cutover/20260913_025012/`.
+Stan rollbacku: `runtime/deployments/test-cutover-20260913_025056/`.
+
+Odbiór nie oznacza potwierdzonego fizycznego zapasu tonerów ani kompletnej marży.
+Nieznane ceny, waluty, zwroty i niejednoznaczne wymiany pozostają jawne.
+Wszystkie ostrzeżenia są doradcze; domyślny zapas wynosi zero.
+
+Podczas rejestracji zadania wykryto interpretowanie pliku UTF-8 bez BOM przez
+Windows PowerShell 5 według lokalnej strony kodowej. Komunikat instalatora
+zapisano po polsku, ale wyłącznie znakami ASCII; regresja sprawdza kodowanie,
+tryb `--project-only` oraz brak samoczynnego startu zadania przez instalator.
+Błąd wystąpił przed restartem WWW i nie przerwał pozostałych usług.

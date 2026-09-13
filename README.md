@@ -4,13 +4,15 @@
 
 ## KP ORBIT w Shipping
 
-Rozszerzenie przygotowywane 13 września obejmuje wspólne dowody Shipping–MS,
+Wydanie z 13 września obejmuje wspólne dowody Shipping–MS,
 prognozy miesięczne CPC i audytowalne zasady ostrzeżeń bez blokowania wysyłki.
 Domyślny zapas wynosi zero; wyjątki dziedziczą kolejno klient i urządzenie.
 Stan wdrożenia i odbiór wieloźródłowy opisuje [instrukcja ORBIT](docs/instal/orbit.md).
 
 Pełny import używa indeksu relacji umów budowanego raz na migawkę, bez
 ponownego skanowania historii całej floty dla każdej faktury.
+Instalator zadania Windows używa komunikatów ASCII, niezależnych od strony
+kodowej Windows PowerShell 5; regresja kontroluje także tryb samej projekcji.
 
 Raport `/shipping?view=orbit` łączy historię urządzenia, umowy, liczniki, tonery,
 serwis i znane kwoty. Funkcja jest domyślnie wyłączona (`SHIPPING_ORBIT_ENABLED=false`)
@@ -25,10 +27,12 @@ Migracje `c8f3e5a7b920` i `d9a4f6b8c031` są addytywne; sama obecność kodu nie
 produkcyjnego. Źródła i ograniczenia: [mapa danych](docs/projekt/orbit-data-source-map.md).
 Pilotaż, harmonogram, odbiór i wycofanie: [instrukcja ORBIT](docs/instal/orbit.md).
 
-Odbiór testowy 12 września: 1158 testów regresyjnych zaliczonych, pilotaż czterech
-urządzeń i 602 faktów, ponowienie bez zmian. Tymczasowy podgląd odpowiada lokalnie pod
-`http://192.168.0.9:18170/shipping?view=orbit`; użytkownik potwierdził działanie
-po dopuszczeniu portu w zaporze. Docelowe wdrożenie korzysta z głównego portu 8000.
+Pełny odczyt produkcyjny objął 1019 urządzeń, w tym 1008 aktywnych, oraz
+195228 bieżących zdarzeń z dziesięciu źródeł, bez powielonych przesyłek.
+Pełna regresja: 1189 testów poprawnych, 15 pominiętych. Protokół, kopie,
+ograniczenia danych i wymagany monitoring opisuje instrukcja ORBIT.
+Główny panel testowy: `http://192.168.0.9:8000/shipping?view=orbit`;
+odświeżony podgląd `http://192.168.0.9:18170/shipping?view=orbit` pozostaje pomocniczy.
 
 ## Katalog wydajności tonerów
 

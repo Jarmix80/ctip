@@ -11,4 +11,4 @@ $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 6 -RestartInterval (New-TimeSpan -Minutes 5)
 Register-ScheduledTask -TaskName 'CTIP-ORBIT' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-Write-Output 'Zarejestrowano CTIP-ORBIT. Uruchomienie wymaga włączonej flagi i osobnego odbioru produkcyjnego.'
+Write-Output 'Zarejestrowano CTIP-ORBIT. Start wymaga aktywnej flagi oraz osobnego odbioru produkcyjnego.'

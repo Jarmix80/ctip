@@ -3,6 +3,7 @@
 import logging
 from contextlib import nullcontext
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
@@ -19,6 +20,15 @@ NEXT_SLOT = "2026-09-12"
 
 class StopLoop(BaseException):
     """Kończy wyłącznie pętlę testową, bez rzeczywistego oczekiwania."""
+
+
+def test_windows_task_installer_is_independent_of_ansi_code_page():
+    """ASCII zapobiega błędnej interpretacji UTF-8 bez BOM przez Windows PowerShell 5."""
+    installer = Path("scripts/windows/install_orbit_task.ps1").read_bytes()
+    assert installer.isascii()
+    assert b"--loop --project-only" in installer
+    assert b"-MultipleInstances IgnoreNew" in installer
+    assert b"Start-ScheduledTask" not in installer
 
 
 def snapshot(identifiers=(7, 8)):
